@@ -1,436 +1,417 @@
-// /server/shared/config/swagger.js
+'use strict';
 
 /**
- * @file Swagger/OpenAPI Configuration
- * @description API documentation configuration for the Insightserenity platform
- * @version 3.0.0
+ * @fileoverview Swagger/OpenAPI configuration for API documentation
+ * @module shared/config/swagger-config
  */
 
-const swaggerJsdoc = require('swagger-jsdoc');
+const { parseBoolean, parseArray } = require('./base-config').helpers;
 
-const constants = require('./constants');
+// Swagger configuration object
+const swaggerConfig = {
+  // Swagger UI settings
+  enabled: parseBoolean(process.env.SWAGGER_ENABLED, true),
+  title: process.env.SWAGGER_TITLE || 'InsightSerenity Platform API',
+  version: process.env.SWAGGER_VERSION || '1.0.0',
+  description: process.env.SWAGGER_DESCRIPTION || 'Comprehensive API documentation for InsightSerenity Platform - Enterprise Multi-tenant Solution for Consulting and Recruitment',
+  
+  // API documentation paths
+  paths: {
+    admin: process.env.SWAGGER_ADMIN_PATH || '/api-docs/admin',
+    services: process.env.SWAGGER_SERVICES_PATH || '/api-docs/services',
+    combined: process.env.SWAGGER_COMBINED_PATH || '/api-docs',
+    json: process.env.SWAGGER_JSON_PATH || '/api-docs.json'
+  },
 
-/**
- * Base Swagger configuration
- */
-const baseConfig = {
-  definition: {
-    openapi: '3.0.0',
+  // OpenAPI specification
+  openapi: {
+    version: process.env.OPENAPI_VERSION || '3.0.3',
     info: {
-      title: constants.APP.NAME + ' API',
-      version: constants.APP.VERSION,
-      description: 'Comprehensive API documentation for the Insightserenity multi-tenant platform',
-      termsOfService: 'https://insightserenity.com/terms',
+      title: process.env.API_TITLE || 'InsightSerenity Platform API',
+      version: process.env.API_VERSION || '1.0.0',
+      description: process.env.API_DESCRIPTION || 'Enterprise-grade multi-tenant platform API for consulting and recruitment services',
+      termsOfService: process.env.API_TERMS_URL || 'https://insightserenity.com/terms',
       contact: {
-        name: 'API Support',
-        url: 'https://insightserenity.com/support',
-        email: constants.APP.SUPPORT_EMAIL
+        name: process.env.API_CONTACT_NAME || 'API Support Team',
+        email: process.env.API_CONTACT_EMAIL || 'api-support@insightserenity.com',
+        url: process.env.API_CONTACT_URL || 'https://insightserenity.com/support'
       },
       license: {
-        name: 'Proprietary',
-        url: 'https://insightserenity.com/license'
+        name: process.env.API_LICENSE_NAME || 'Proprietary',
+        url: process.env.API_LICENSE_URL || 'https://insightserenity.com/license'
       }
     },
-    servers: [
-      {
-        url: 'https://api.insightserenity.com/v2',
-        description: 'Production server',
-        variables: {
-          version: {
-            default: 'v2',
-            enum: ['v1', 'v2'],
-            description: 'API version'
-          }
-        }
-      },
-      {
-        url: 'https://staging-api.insightserenity.com/v2',
-        description: 'Staging server'
-      },
-      {
-        url: 'http://localhost:3001/api/v2',
-        description: 'Development server'
-      }
-    ],
     externalDocs: {
-      description: 'Find more info',
-      url: 'https://docs.insightserenity.com'
+      description: process.env.API_DOCS_DESCRIPTION || 'Find more information in our developer portal',
+      url: process.env.API_DOCS_URL || 'https://developers.insightserenity.com'
     }
   },
-  apis: []
-};
 
-/**
- * Security schemes configuration
- */
-const securitySchemes = {
-  bearerAuth: {
-    type: 'http',
-    scheme: 'bearer',
-    bearerFormat: 'JWT',
-    description: 'JWT authorization header using the Bearer scheme'
-  },
-  apiKeyAuth: {
-    type: 'apiKey',
-    in: 'header',
-    name: 'X-API-Key',
-    description: 'API key for external service authentication'
-  },
-  oauth2: {
-    type: 'oauth2',
-    flows: {
-      authorizationCode: {
-        authorizationUrl: 'https://auth.insightserenity.com/oauth/authorize',
-        tokenUrl: 'https://auth.insightserenity.com/oauth/token',
-        refreshUrl: 'https://auth.insightserenity.com/oauth/refresh',
-        scopes: {
-          'read:profile': 'Read user profile',
-          'write:profile': 'Modify user profile',
-          'read:organizations': 'Read organization data',
-          'write:organizations': 'Modify organization data',
-          'read:recruitment': 'Read recruitment data',
-          'write:recruitment': 'Modify recruitment data',
-          'admin': 'Admin access'
-        }
-      }
+  // Server configuration
+  servers: {
+    development: {
+      url: process.env.SWAGGER_DEV_SERVER || 'http://localhost:3000',
+      description: 'Development server'
+    },
+    staging: {
+      url: process.env.SWAGGER_STAGING_SERVER || 'https://staging-api.insightserenity.com',
+      description: 'Staging server'
+    },
+    production: {
+      url: process.env.SWAGGER_PROD_SERVER || 'https://api.insightserenity.com',
+      description: 'Production server'
     }
   },
-  cookieAuth: {
-    type: 'apiKey',
-    in: 'cookie',
-    name: 'session',
-    description: 'Session cookie authentication'
-  }
-};
 
-/**
- * Common schemas configuration
- */
-const commonSchemas = {
-  Error: {
-    type: 'object',
-    properties: {
-      success: {
-        type: 'boolean',
-        example: false
+  // Security schemes
+  security: {
+    schemes: {
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'JWT Authorization header using the Bearer scheme'
       },
-      error: {
-        type: 'object',
-        properties: {
-          message: {
-            type: 'string',
-            example: 'An error occurred'
-          },
-          code: {
-            type: 'string',
-            example: 'E1000'
-          },
-          details: {
-            type: 'array',
-            items: {
-              type: 'object'
+      apiKey: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-API-Key',
+        description: 'API Key authentication'
+      },
+      oauth2: {
+        type: 'oauth2',
+        description: 'OAuth2 authentication',
+        flows: {
+          authorizationCode: {
+            authorizationUrl: process.env.OAUTH_AUTH_URL || 'https://auth.insightserenity.com/oauth/authorize',
+            tokenUrl: process.env.OAUTH_TOKEN_URL || 'https://auth.insightserenity.com/oauth/token',
+            refreshUrl: process.env.OAUTH_REFRESH_URL || 'https://auth.insightserenity.com/oauth/refresh',
+            scopes: {
+              'read:users': 'Read user information',
+              'write:users': 'Modify user information',
+              'read:organizations': 'Read organization data',
+              'write:organizations': 'Modify organization data',
+              'read:projects': 'Read project data',
+              'write:projects': 'Modify project data',
+              'admin': 'Full administrative access'
             }
           }
         }
       },
-      timestamp: {
-        type: 'string',
-        format: 'date-time'
+      cookieAuth: {
+        type: 'apiKey',
+        in: 'cookie',
+        name: 'sessionId',
+        description: 'Cookie-based session authentication'
+      }
+    },
+    defaultSecurity: parseArray(process.env.SWAGGER_DEFAULT_SECURITY, ['bearerAuth'])
+  },
+
+  // Tags configuration
+  tags: [
+    {
+      name: 'Authentication',
+      description: 'Authentication and authorization endpoints',
+      externalDocs: {
+        description: 'Learn more about authentication',
+        url: 'https://docs.insightserenity.com/auth'
+      }
+    },
+    {
+      name: 'Users',
+      description: 'User management operations',
+      externalDocs: {
+        description: 'User management guide',
+        url: 'https://docs.insightserenity.com/users'
+      }
+    },
+    {
+      name: 'Organizations',
+      description: 'Organization management and multi-tenancy',
+      externalDocs: {
+        description: 'Multi-tenant architecture',
+        url: 'https://docs.insightserenity.com/organizations'
+      }
+    },
+    {
+      name: 'Projects',
+      description: 'Project and engagement management',
+      externalDocs: {
+        description: 'Project management guide',
+        url: 'https://docs.insightserenity.com/projects'
+      }
+    },
+    {
+      name: 'Clients',
+      description: 'Client relationship management',
+      externalDocs: {
+        description: 'CRM features',
+        url: 'https://docs.insightserenity.com/clients'
+      }
+    },
+    {
+      name: 'Consultants',
+      description: 'Consultant management and scheduling',
+      externalDocs: {
+        description: 'Consultant management',
+        url: 'https://docs.insightserenity.com/consultants'
+      }
+    },
+    {
+      name: 'Jobs',
+      description: 'Job posting and management',
+      externalDocs: {
+        description: 'Recruitment features',
+        url: 'https://docs.insightserenity.com/jobs'
+      }
+    },
+    {
+      name: 'Candidates',
+      description: 'Candidate management and tracking',
+      externalDocs: {
+        description: 'ATS features',
+        url: 'https://docs.insightserenity.com/candidates'
+      }
+    },
+    {
+      name: 'Billing',
+      description: 'Billing and subscription management',
+      externalDocs: {
+        description: 'Billing documentation',
+        url: 'https://docs.insightserenity.com/billing'
+      }
+    },
+    {
+      name: 'Reports',
+      description: 'Analytics and reporting endpoints',
+      externalDocs: {
+        description: 'Analytics guide',
+        url: 'https://docs.insightserenity.com/reports'
+      }
+    },
+    {
+      name: 'Admin',
+      description: 'Platform administration endpoints',
+      externalDocs: {
+        description: 'Admin guide',
+        url: 'https://docs.insightserenity.com/admin'
+      }
+    },
+    {
+      name: 'Webhooks',
+      description: 'Webhook management and events',
+      externalDocs: {
+        description: 'Webhook integration',
+        url: 'https://docs.insightserenity.com/webhooks'
+      }
+    },
+    {
+      name: 'System',
+      description: 'System health and monitoring',
+      externalDocs: {
+        description: 'System monitoring',
+        url: 'https://docs.insightserenity.com/monitoring'
+      }
+    }
+  ],
+
+  // UI configuration
+  ui: {
+    theme: process.env.SWAGGER_UI_THEME || 'flattop',
+    customCss: process.env.SWAGGER_CUSTOM_CSS || '',
+    customJs: process.env.SWAGGER_CUSTOM_JS || '',
+    favicon: process.env.SWAGGER_FAVICON || '/favicon.ico',
+    logo: {
+      url: process.env.SWAGGER_LOGO_URL || '/assets/logo.png',
+      backgroundColor: process.env.SWAGGER_LOGO_BG || '#FFFFFF',
+      altText: process.env.SWAGGER_LOGO_ALT || 'InsightSerenity Logo'
+    },
+    tryItOut: parseBoolean(process.env.SWAGGER_TRY_IT_OUT, true),
+    deepLinking: parseBoolean(process.env.SWAGGER_DEEP_LINKING, true),
+    displayOperationId: parseBoolean(process.env.SWAGGER_DISPLAY_OPERATION_ID, false),
+    defaultModelsExpandDepth: parseInt(process.env.SWAGGER_MODELS_EXPAND_DEPTH) || 1,
+    defaultModelExpandDepth: parseInt(process.env.SWAGGER_MODEL_EXPAND_DEPTH) || 1,
+    defaultModelRendering: process.env.SWAGGER_MODEL_RENDERING || 'example',
+    displayRequestDuration: parseBoolean(process.env.SWAGGER_DISPLAY_REQUEST_DURATION, true),
+    docExpansion: process.env.SWAGGER_DOC_EXPANSION || 'list', // none, list, full
+    filter: parseBoolean(process.env.SWAGGER_FILTER, true),
+    showExtensions: parseBoolean(process.env.SWAGGER_SHOW_EXTENSIONS, true),
+    showCommonExtensions: parseBoolean(process.env.SWAGGER_SHOW_COMMON_EXTENSIONS, true),
+    persistAuthorization: parseBoolean(process.env.SWAGGER_PERSIST_AUTH, true)
+  },
+
+  // Schema configuration
+  schemas: {
+    definitions: {
+      Error: {
+        type: 'object',
+        required: ['code', 'message'],
+        properties: {
+          code: {
+            type: 'string',
+            description: 'Error code'
+          },
+          message: {
+            type: 'string',
+            description: 'Error message'
+          },
+          details: {
+            type: 'object',
+            description: 'Additional error details'
+          },
+          timestamp: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Error timestamp'
+          }
+        }
+      },
+      Pagination: {
+        type: 'object',
+        properties: {
+          page: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Current page number'
+          },
+          limit: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 100,
+            description: 'Items per page'
+          },
+          total: {
+            type: 'integer',
+            description: 'Total number of items'
+          },
+          pages: {
+            type: 'integer',
+            description: 'Total number of pages'
+          }
+        }
+      },
+      ApiResponse: {
+        type: 'object',
+        properties: {
+          success: {
+            type: 'boolean',
+            description: 'Indicates if the request was successful'
+          },
+          data: {
+            type: 'object',
+            description: 'Response data'
+          },
+          meta: {
+            type: 'object',
+            description: 'Response metadata'
+          },
+          errors: {
+            type: 'array',
+            items: {
+              $ref: '#/components/schemas/Error'
+            },
+            description: 'Array of errors if any'
+          }
+        }
       }
     }
   },
-  
-  Pagination: {
-    type: 'object',
-    properties: {
-      page: {
-        type: 'integer',
-        minimum: 1,
-        example: 1
-      },
-      limit: {
-        type: 'integer',
-        minimum: 1,
-        maximum: 100,
-        example: 20
-      },
-      total: {
-        type: 'integer',
-        example: 100
-      },
-      totalPages: {
-        type: 'integer',
-        example: 5
-      }
+
+  // Examples configuration
+  examples: {
+    includeExamples: parseBoolean(process.env.SWAGGER_INCLUDE_EXAMPLES, true),
+    exampleValues: {
+      bearerToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+      apiKey: 'isk_1234567890abcdef',
+      userId: '507f1f77bcf86cd799439011',
+      organizationId: '507f191e810c19729de860ea',
+      email: 'user@example.com',
+      password: 'SecurePassword123!',
+      timestamp: new Date().toISOString()
     }
   },
-  
-  Success: {
-    type: 'object',
-    properties: {
-      success: {
-        type: 'boolean',
-        example: true
-      },
-      message: {
-        type: 'string',
-        example: 'Operation completed successfully'
-      }
-    }
+
+  // Options
+  options: {
+    enableCORS: parseBoolean(process.env.SWAGGER_ENABLE_CORS, true),
+    enableValidation: parseBoolean(process.env.SWAGGER_ENABLE_VALIDATION, true),
+    enableMocking: parseBoolean(process.env.SWAGGER_ENABLE_MOCKING, process.env.NODE_ENV !== 'production'),
+    enableSchemaValidation: parseBoolean(process.env.SWAGGER_SCHEMA_VALIDATION, true),
+    enableResponseValidation: parseBoolean(process.env.SWAGGER_RESPONSE_VALIDATION, true),
+    hideSchemas: parseBoolean(process.env.SWAGGER_HIDE_SCHEMAS, false),
+    hideProduction: parseBoolean(process.env.SWAGGER_HIDE_PRODUCTION, false),
+    customMiddleware: parseArray(process.env.SWAGGER_CUSTOM_MIDDLEWARE, [])
   },
-  
-  Timestamps: {
-    type: 'object',
-    properties: {
-      createdAt: {
-        type: 'string',
-        format: 'date-time'
-      },
-      updatedAt: {
-        type: 'string',
-        format: 'date-time'
-      }
-    }
+
+  // Access control
+  access: {
+    requireAuth: parseBoolean(process.env.SWAGGER_REQUIRE_AUTH, process.env.NODE_ENV === 'production'),
+    allowedRoles: parseArray(process.env.SWAGGER_ALLOWED_ROLES, ['admin', 'developer']),
+    ipWhitelist: parseArray(process.env.SWAGGER_IP_WHITELIST, []),
+    username: process.env.SWAGGER_USERNAME || 'admin',
+    password: process.env.SWAGGER_PASSWORD || 'admin'
+  },
+
+  // Generation options
+  generation: {
+    autoGenerate: parseBoolean(process.env.SWAGGER_AUTO_GENERATE, true),
+    scanPaths: parseArray(process.env.SWAGGER_SCAN_PATHS, [
+      './servers/admin-server/modules/**/routes/*.js',
+      './servers/customer-services/modules/**/routes/*.js'
+    ]),
+    ignorePaths: parseArray(process.env.SWAGGER_IGNORE_PATHS, [
+      '*/test/*',
+      '*/tests/*',
+      '*/mocks/*'
+    ]),
+    outputPath: process.env.SWAGGER_OUTPUT_PATH || './docs/api/swagger.json',
+    baseDir: process.env.SWAGGER_BASE_DIR || process.cwd()
   }
 };
 
-/**
- * Create Swagger configuration for specific API modules
- */
-const createSwaggerConfig = (module, options = {}) => {
-  const moduleConfigs = {
-    auth: {
-      tags: [
-        {
-          name: 'Authentication',
-          description: 'User authentication and authorization'
-        }
-      ],
-      paths: [
-        './server/shared/auth/routes/*.js',
-        './server/shared/auth/controllers/*.js'
-      ]
-    },
-    
-    users: {
-      tags: [
-        {
-          name: 'Users',
-          description: 'User management operations'
-        }
-      ],
-      paths: [
-        './server/shared/users/routes/*.js',
-        './server/shared/users/controllers/*.js'
-      ]
-    },
-    
-    organizations: {
-      tags: [
-        {
-          name: 'Organizations',
-          description: 'Organization management'
-        }
-      ],
-      paths: [
-        './server/hosted-organizations/organizations/routes/*.js',
-        './server/hosted-organizations/organizations/controllers/*.js'
-      ]
-    },
-    
-    recruitment: {
-      tags: [
-        {
-          name: 'Recruitment',
-          description: 'Recruitment platform operations'
-        },
-        {
-          name: 'Jobs',
-          description: 'Job posting and management'
-        },
-        {
-          name: 'Candidates',
-          description: 'Candidate management'
-        },
-        {
-          name: 'Applications',
-          description: 'Job application management'
-        }
-      ],
-      paths: [
-        './server/recruitment-services/*/routes/*.js',
-        './server/recruitment-services/*/controllers/*.js'
-      ]
-    },
-    
-    billing: {
-      tags: [
-        {
-          name: 'Billing',
-          description: 'Billing and subscription management'
-        }
-      ],
-      paths: [
-        './server/shared/billing/routes/*.js',
-        './server/shared/billing/controllers/*.js'
-      ]
-    },
-    
-    admin: {
-      tags: [
-        {
-          name: 'Admin',
-          description: 'Platform administration'
-        }
-      ],
-      paths: [
-        './server/admin/*/routes/*.js',
-        './server/admin/*/controllers/*.js'
-      ]
-    }
-  };
-  
-  const moduleConfig = moduleConfigs[module] || { tags: [], paths: [] };
-  
-  return {
-    ...baseConfig,
-    definition: {
-      ...baseConfig.definition,
-      tags: moduleConfig.tags,
-      components: {
-        securitySchemes,
-        schemas: {
-          ...commonSchemas,
-          ...options.schemas
-        }
-      },
-      security: options.security || [
-        { bearerAuth: [] }
-      ]
-    },
-    apis: moduleConfig.paths
-  };
-};
+// Validate swagger configuration
+const validateSwaggerConfig = (config) => {
+  const errors = [];
 
-/**
- * Swagger UI options
- */
-const swaggerUiOptions = {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'Insightserenity API Documentation',
-  customfavIcon: '/favicon.ico',
-  swaggerOptions: {
-    persistAuthorization: true,
-    displayRequestDuration: true,
-    docExpansion: 'none',
-    filter: true,
-    showExtensions: true,
-    showCommonExtensions: true,
-    displayOperationId: false,
-    defaultModelsExpandDepth: 1,
-    defaultModelExpandDepth: 1,
-    tryItOutEnabled: process.env.NODE_ENV !== 'production',
-    validatorUrl: null,
-    supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
-    onComplete: () => {
-      console.log('Swagger UI loaded');
+  // Validate OpenAPI version
+  const validVersions = ['3.0.0', '3.0.1', '3.0.2', '3.0.3'];
+  if (!validVersions.includes(config.openapi.version)) {
+    errors.push(`Invalid OpenAPI version: ${config.openapi.version}`);
+  }
+
+  // Validate servers
+  if (!config.servers.development.url || !config.servers.production.url) {
+    errors.push('Development and production server URLs are required');
+  }
+
+  // Validate security schemes
+  if (Object.keys(config.security.schemes).length === 0) {
+    errors.push('At least one security scheme must be defined');
+  }
+
+  // Production-specific validations
+  if (process.env.NODE_ENV === 'production') {
+    if (!config.access.requireAuth) {
+      console.warn('Warning: Swagger documentation should require authentication in production');
+    }
+    if (config.options.enableMocking) {
+      errors.push('API mocking should be disabled in production');
+    }
+    if (config.access.username === 'admin' || config.access.password === 'admin') {
+      errors.push('Default Swagger credentials must be changed in production');
     }
   }
+
+  if (errors.length > 0) {
+    throw new Error('Swagger configuration validation failed:\n' + errors.join('\n'));
+  }
+
+  return true;
 };
 
-/**
- * Generate Swagger specs for all modules
- */
-const generateAllSpecs = () => {
-  const modules = ['auth', 'users', 'organizations', 'recruitment', 'billing', 'admin'];
-  const specs = {};
-  
-  modules.forEach(module => {
-    const config = createSwaggerConfig(module);
-    specs[module] = swaggerJsdoc(config);
-  });
-  
-  return specs;
-};
+// Validate the configuration
+validateSwaggerConfig(swaggerConfig);
 
-/**
- * Combined API documentation
- */
-const combinedSwaggerConfig = {
-  ...baseConfig,
-  definition: {
-    ...baseConfig.definition,
-    tags: [
-      {
-        name: 'Authentication',
-        description: 'User authentication and authorization'
-      },
-      {
-        name: 'Users',
-        description: 'User management operations'
-      },
-      {
-        name: 'Organizations',
-        description: 'Organization management'
-      },
-      {
-        name: 'Core Business',
-        description: 'Insightserenity consultancy operations'
-      },
-      {
-        name: 'Recruitment',
-        description: 'Recruitment platform operations'
-      },
-      {
-        name: 'Billing',
-        description: 'Billing and subscription management'
-      },
-      {
-        name: 'Notifications',
-        description: 'Notification management'
-      },
-      {
-        name: 'Analytics',
-        description: 'Analytics and reporting'
-      },
-      {
-        name: 'Admin',
-        description: 'Platform administration'
-      },
-      {
-        name: 'Webhooks',
-        description: 'Webhook management'
-      }
-    ],
-    components: {
-      securitySchemes,
-      schemas: commonSchemas
-    },
-    security: [
-      { bearerAuth: [] }
-    ]
-  },
-  apis: [
-    './server/shared/*/routes/*.js',
-    './server/shared/*/controllers/*.js',
-    './server/core-business/*/routes/*.js',
-    './server/core-business/*/controllers/*.js',
-    './server/hosted-organizations/*/routes/*.js',
-    './server/hosted-organizations/*/controllers/*.js',
-    './server/recruitment-services/*/routes/*.js',
-    './server/recruitment-services/*/controllers/*.js',
-    './server/admin/*/routes/*.js',
-    './server/admin/*/controllers/*.js',
-    './server/external-apis/*/routes/*.js'
-  ]
-};
-
-module.exports = {
-  baseConfig,
-  createSwaggerConfig,
-  swaggerUiOptions,
-  generateAllSpecs,
-  combinedSwaggerConfig,
-  commonSchemas,
-  securitySchemes
-};
+// Export configuration
+module.exports = swaggerConfig;
