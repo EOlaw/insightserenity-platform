@@ -941,7 +941,7 @@ class PolicyEngine {
       throw new AppError('Conditions must be an object', 400, 'INVALID_CONDITIONS');
     }
 
-    for (const key, condition of Object.entries(conditions)) {
+    for (const [key, condition of Object.entries(conditions)) {
       if (condition.operator) {
         // Validate operator
         if (!Object.values(PolicyEngine.#OPERATORS).includes(condition.operator)) {
