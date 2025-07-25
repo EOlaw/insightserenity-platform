@@ -1,66 +1,74 @@
 'use strict';
 
 /**
- * @fileoverview Payment method model for storing customer payment instruments
+ * @fileoverview Payment method model for storing customer payment methods
  * @module shared/lib/database/models/billing/payment-method-model
  * @requires mongoose
  * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
- * @requires module:shared/lib/security/encryption/encryption-service
  * @requires module:shared/lib/utils/validators/common-validators
+ * @requires module:shared/lib/security/encryption/encryption-service
+ * @requires module:shared/lib/utils/helpers/crypto-helper
  */
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
 const AppError = require('../../../utils/app-error');
-const EncryptionService = require('../../../security/encryption/encryption-service');
 const validators = require('../../../utils/validators/common-validators');
+const encryptionService = require('../../../security/encryption/encryption-service');
+const cryptoHelper = require('../../../utils/helpers/crypto-helper');
 
 /**
  * Payment method schema definition
  */
 const paymentMethodSchemaDefinition = {
-  // Owner Information
-  customerId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    index: true
-  },
-
-  customerType: {
+  // ==================== Core Identity ====================
+  methodId: {
     type: String,
+    unique: true,
     required: true,
-    enum: ['user', 'organization', 'tenant']
+    index: true,
+    default: function() {
+      return `pm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
   },
 
   organizationId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Organization',
+    required: true,
     index: true
   },
 
-  // Method Type and Details
+  tenantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tenant',
+    required: true,
+    index: true
+  },
+
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    index: true
+  },
+
+  // ==================== Method Details ====================
   type: {
     type: String,
+    enum: ['card', 'bank_account', 'paypal', 'alipay', 'wechat_pay', 'apple_pay', 'google_pay', 'crypto', 'wire_transfer', 'other'],
     required: true,
-    enum: ['credit_card', 'debit_card', 'bank_account', 'paypal', 'stripe_payment_method', 'wallet'],
     index: true
   },
 
-  provider: {
+  status: {
     type: String,
+    enum: ['pending', 'active', 'expired', 'failed', 'suspended', 'deleted'],
+    default: 'pending',
     required: true,
-    enum: ['stripe', 'paypal', 'square', 'braintree', 'authorize_net', 'manual'],
     index: true
-  },
-
-  // Display Information
-  displayName: {
-    type: String,
-    required: true,
-    maxlength: 100
   },
 
   isDefault: {
@@ -69,7 +77,12 @@ const paymentMethodSchemaDefinition = {
     index: true
   },
 
-  // Card Details (for card types)
+  nickname: {
+    type: String,
+    maxlength: 100
+  },
+
+  // ==================== Card Details ====================
   card: {
     brand: {
       type: String,
@@ -88,25 +101,36 @@ const paymentMethodSchemaDefinition = {
       type: Number,
       min: new Date().getFullYear()
     },
-    cardholderName: String,
-    country: String,
+    fingerprint: {
+      type: String,
+      index: true
+    },
     funding: {
       type: String,
       enum: ['credit', 'debit', 'prepaid', 'unknown']
     },
-    fingerprint: {
-      type: String,
-      select: false
+    country: String,
+    issuer: String,
+    network: String,
+    checks: {
+      addressLine1: String,
+      addressPostalCode: String,
+      cvcCheck: String
+    },
+    threeDSecure: {
+      supported: Boolean,
+      required: Boolean,
+      version: String
     }
   },
 
-  // Bank Account Details
+  // ==================== Bank Account Details ====================
   bankAccount: {
-    bankName: String,
     accountType: {
       type: String,
-      enum: ['checking', 'savings']
+      enum: ['checking', 'savings', 'business_checking', 'business_savings']
     },
+    bankName: String,
     last4: {
       type: String,
       match: /^\d{4}$/
@@ -121,23 +145,46 @@ const paymentMethodSchemaDefinition = {
       enum: ['individual', 'company']
     },
     country: String,
-    currency: String
+    currency: String,
+    fingerprint: String,
+    verified: {
+      type: Boolean,
+      default: false
+    },
+    verificationMethod: String,
+    verifiedAt: Date
   },
 
-  // Digital Wallet Details
-  wallet: {
+  // ==================== Digital Wallet Details ====================
+  digitalWallet: {
     walletType: {
       type: String,
-      enum: ['apple_pay', 'google_pay', 'samsung_pay', 'paypal', 'venmo', 'alipay', 'wechat_pay']
+      enum: ['paypal', 'apple_pay', 'google_pay', 'alipay', 'wechat_pay']
     },
-    email: String,
-    phone: String
+    email: {
+      type: String,
+      validate: {
+        validator: function(value) {
+          if (!value) return true;
+          return validators.isEmail(value);
+        },
+        message: 'Invalid email address'
+      }
+    },
+    phone: String,
+    accountId: String,
+    verified: {
+      type: Boolean,
+      default: false
+    }
   },
 
-  // Billing Address
+  // ==================== Billing Address ====================
   billingAddress: {
-    line1: String,
-    line2: String,
+    name: String,
+    company: String,
+    street1: String,
+    street2: String,
     city: String,
     state: String,
     postalCode: String,
@@ -145,131 +192,257 @@ const paymentMethodSchemaDefinition = {
       type: String,
       uppercase: true,
       match: /^[A-Z]{2}$/
+    },
+    phone: String,
+    email: {
+      type: String,
+      validate: {
+        validator: function(value) {
+          if (!value) return true;
+          return validators.isEmail(value);
+        },
+        message: 'Invalid email address'
+      }
     }
   },
 
-  // Provider References
-  providerCustomerId: {
-    type: String,
-    select: false,
-    index: true
-  },
-
-  providerPaymentMethodId: {
-    type: String,
-    select: false,
-    index: true
-  },
-
-  // Tokenization
-  tokenizationDetails: {
-    token: {
+  // ==================== Provider Integration ====================
+  provider: {
+    name: {
       type: String,
-      select: false
+      enum: ['stripe', 'paypal', 'square', 'authorize_net', 'braintree', 'manual', 'other'],
+      required: true
     },
-    tokenType: String,
-    tokenExpiry: Date
+    customerId: {
+      type: String,
+      index: true
+    },
+    paymentMethodId: {
+      type: String,
+      index: true
+    },
+    tokenId: String,
+    sourceId: String,
+    setupIntentId: String,
+    mandateId: String,
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      select: false
+    }
   },
 
-  // Verification
+  // ==================== Verification & Security ====================
   verification: {
     status: {
       type: String,
       enum: ['pending', 'verified', 'failed', 'expired'],
       default: 'pending'
     },
+    method: {
+      type: String,
+      enum: ['micro_deposits', 'plaid', 'manual', 'instant', 'challenge']
+    },
     verifiedAt: Date,
-    verificationMethod: String,
-    failureReason: String,
-    attempts: {
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    attempts: [{
+      attemptedAt: Date,
+      method: String,
+      success: Boolean,
+      error: String
+    }],
+    documents: [{
+      type: String,
+      url: String,
+      uploadedAt: Date,
+      verified: Boolean
+    }]
+  },
+
+  // ==================== Usage & Limits ====================
+  usage: {
+    lastUsedAt: Date,
+    totalTransactions: {
       type: Number,
       default: 0
+    },
+    totalAmount: {
+      type: Number,
+      default: 0
+    },
+    successfulTransactions: {
+      type: Number,
+      default: 0
+    },
+    failedTransactions: {
+      type: Number,
+      default: 0
+    },
+    limits: {
+      daily: {
+        amount: Number,
+        transactions: Number
+      },
+      monthly: {
+        amount: Number,
+        transactions: Number
+      },
+      perTransaction: {
+        min: Number,
+        max: Number
+      }
+    },
+    currentUsage: {
+      daily: {
+        amount: { type: Number, default: 0 },
+        transactions: { type: Number, default: 0 },
+        resetAt: Date
+      },
+      monthly: {
+        amount: { type: Number, default: 0 },
+        transactions: { type: Number, default: 0 },
+        resetAt: Date
+      }
     }
   },
 
-  // Security
-  encryptedData: {
-    type: String,
-    select: false
-  },
-
-  lastUsedAt: Date,
-  
-  usageCount: {
-    type: Number,
-    default: 0
-  },
-
-  // Risk Assessment
-  riskAssessment: {
+  // ==================== Risk & Compliance ====================
+  risk: {
+    level: {
+      type: String,
+      enum: ['low', 'medium', 'high', 'blocked'],
+      default: 'low'
+    },
     score: {
       type: Number,
       min: 0,
       max: 100
     },
-    level: {
-      type: String,
-      enum: ['low', 'medium', 'high', 'blocked']
-    },
-    factors: [String],
-    assessedAt: Date
-  },
-
-  // Status
-  status: {
-    type: String,
-    required: true,
-    enum: ['active', 'inactive', 'expired', 'suspended', 'deleted'],
-    default: 'active',
-    index: true
-  },
-
-  suspensionReason: String,
-  
-  expiresAt: Date,
-
-  // Metadata
-  metadata: {
-    source: {
-      type: String,
-      enum: ['web', 'mobile', 'api', 'import', 'manual']
-    },
-    ipAddress: String,
-    userAgent: String,
-    deviceId: String,
-    sessionId: String,
-    tags: [String],
-    customData: mongoose.Schema.Types.Mixed
-  },
-
-  // Compliance
-  complianceChecks: {
-    pciCompliant: {
-      type: Boolean,
-      default: false
-    },
-    amlChecked: {
-      type: Boolean,
-      default: false
-    },
-    sanctionsChecked: {
-      type: Boolean,
-      default: false
-    },
-    lastCheckedAt: Date
-  },
-
-  // Created/Updated By
-  createdBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    userType: {
-      type: String,
-      enum: ['user', 'admin', 'system']
+    factors: [{
+      factor: String,
+      severity: String,
+      description: String
+    }],
+    blocked: {
+      isBlocked: {
+        type: Boolean,
+        default: false
+      },
+      reason: String,
+      blockedAt: Date,
+      blockedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
     }
   },
 
-  deletedAt: Date,
-  deletedBy: mongoose.Schema.Types.ObjectId
+  // ==================== Tokenization ====================
+  tokenization: {
+    token: {
+      type: String,
+      unique: true,
+      sparse: true,
+      select: false
+    },
+    tokenizedAt: Date,
+    tokenProvider: String,
+    tokenMetadata: {
+      type: mongoose.Schema.Types.Mixed,
+      select: false
+    }
+  },
+
+  // ==================== Subscription Management ====================
+  subscriptions: [{
+    subscriptionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subscription'
+    },
+    attachedAt: Date,
+    isActive: Boolean
+  }],
+
+  // ==================== Metadata ====================
+  metadata: {
+    source: {
+      type: String,
+      enum: ['checkout', 'api', 'manual', 'import', 'migration'],
+      default: 'checkout'
+    },
+    ipAddress: String,
+    userAgent: String,
+    deviceFingerprint: String,
+    tags: [String],
+    customFields: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed
+    },
+    notes: [{
+      content: String,
+      addedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      addedAt: Date,
+      internal: {
+        type: Boolean,
+        default: true
+      }
+    }]
+  },
+
+  // ==================== Compliance ====================
+  compliance: {
+    pciCompliant: {
+      type: Boolean,
+      default: true
+    },
+    dataRetention: {
+      deleteAfter: Date,
+      retentionReason: String
+    },
+    consent: {
+      storage: {
+        consented: Boolean,
+        consentedAt: Date
+      },
+      recurring: {
+        consented: Boolean,
+        consentedAt: Date
+      }
+    },
+    audit: [{
+      action: String,
+      performedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      performedAt: Date,
+      details: mongoose.Schema.Types.Mixed,
+      ipAddress: String
+    }]
+  },
+
+  // ==================== Expiration Management ====================
+  expiration: {
+    expiresAt: Date,
+    reminders: [{
+      sentAt: Date,
+      daysBeforeExpiry: Number,
+      method: String
+    }],
+    autoUpdate: {
+      enabled: {
+        type: Boolean,
+        default: false
+      },
+      lastAttemptAt: Date,
+      nextAttemptAt: Date
+    }
+  }
 };
 
 // Create schema
@@ -278,76 +451,111 @@ const paymentMethodSchema = BaseModel.createSchema(paymentMethodSchemaDefinition
   timestamps: true
 });
 
-// Indexes
-paymentMethodSchema.index({ customerId: 1, status: 1, isDefault: -1 });
-paymentMethodSchema.index({ organizationId: 1, type: 1, status: 1 });
-paymentMethodSchema.index({ expiresAt: 1 }, { sparse: true });
-paymentMethodSchema.index({ 'card.fingerprint': 1 }, { sparse: true });
+// ==================== Indexes ====================
+paymentMethodSchema.index({ organizationId: 1, status: 1, isDefault: 1 });
+paymentMethodSchema.index({ tenantId: 1, status: 1 });
+paymentMethodSchema.index({ userId: 1, status: 1 });
+paymentMethodSchema.index({ 'provider.customerId': 1 });
+paymentMethodSchema.index({ 'provider.paymentMethodId': 1 });
+paymentMethodSchema.index({ type: 1, status: 1 });
+paymentMethodSchema.index({ 'card.fingerprint': 1 });
+paymentMethodSchema.index({ 'expiration.expiresAt': 1 });
 
-// Virtual fields
+// ==================== Virtual Fields ====================
 paymentMethodSchema.virtual('isExpired').get(function() {
-  if (this.type === 'credit_card' || this.type === 'debit_card') {
+  if (this.type === 'card' && this.card.expiryYear && this.card.expiryMonth) {
     const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-    
-    return this.card.expiryYear < currentYear || 
-           (this.card.expiryYear === currentYear && this.card.expiryMonth < currentMonth);
+    const expiry = new Date(this.card.expiryYear, this.card.expiryMonth - 1);
+    return expiry < now;
   }
-  
-  return this.expiresAt && this.expiresAt < new Date();
+  return false;
 });
 
 paymentMethodSchema.virtual('isActive').get(function() {
-  return this.status === 'active' && !this.isExpired;
+  return this.status === 'active' && !this.isExpired && !this.risk.blocked.isBlocked;
 });
 
-paymentMethodSchema.virtual('maskedNumber').get(function() {
-  if (this.type === 'credit_card' || this.type === 'debit_card') {
-    return `****${this.card.last4}`;
-  } else if (this.type === 'bank_account') {
-    return `****${this.bankAccount.last4}`;
+paymentMethodSchema.virtual('displayName').get(function() {
+  if (this.nickname) return this.nickname;
+  
+  switch (this.type) {
+    case 'card':
+      return `${this.card.brand} •••• ${this.card.last4}`;
+    case 'bank_account':
+      return `${this.bankAccount.bankName} •••• ${this.bankAccount.last4}`;
+    case 'paypal':
+      return `PayPal ${this.digitalWallet.email}`;
+    default:
+      return this.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  }
+});
+
+paymentMethodSchema.virtual('expiresIn').get(function() {
+  if (this.type === 'card' && this.card.expiryYear && this.card.expiryMonth) {
+    const now = new Date();
+    const expiry = new Date(this.card.expiryYear, this.card.expiryMonth - 1);
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const daysUntilExpiry = Math.ceil((expiry - now) / msPerDay);
+    return daysUntilExpiry;
   }
   return null;
 });
 
-// Pre-save middleware
+// ==================== Pre-save Middleware ====================
 paymentMethodSchema.pre('save', async function(next) {
   try {
-    // Set display name if not provided
-    if (!this.displayName && this.isNew) {
-      if (this.type === 'credit_card' || this.type === 'debit_card') {
-        this.displayName = `${this.card.brand} ****${this.card.last4}`;
-      } else if (this.type === 'bank_account') {
-        this.displayName = `${this.bankAccount.bankName} ****${this.bankAccount.last4}`;
-      } else if (this.type === 'paypal') {
-        this.displayName = `PayPal ${this.wallet?.email || ''}`;
-      } else {
-        this.displayName = this.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      }
+    // Generate card fingerprint if card details provided
+    if (this.type === 'card' && this.isModified('card') && this.card.last4) {
+      const fingerprintData = `${this.card.brand}-${this.card.last4}-${this.card.expiryMonth}-${this.card.expiryYear}`;
+      this.card.fingerprint = cryptoHelper.generateHash(fingerprintData);
     }
 
-    // Check expiration for cards
-    if ((this.type === 'credit_card' || this.type === 'debit_card') && this.card) {
-      const expiryDate = new Date(this.card.expiryYear, this.card.expiryMonth - 1);
-      this.expiresAt = new Date(expiryDate.getFullYear(), expiryDate.getMonth() + 1, 0); // Last day of expiry month
+    // Generate bank account fingerprint
+    if (this.type === 'bank_account' && this.isModified('bankAccount') && this.bankAccount.last4) {
+      const fingerprintData = `${this.bankAccount.bankName}-${this.bankAccount.last4}-${this.bankAccount.accountType}`;
+      this.bankAccount.fingerprint = cryptoHelper.generateHash(fingerprintData);
     }
 
-    // If setting as default, unset other defaults
-    if (this.isDefault && this.isModified('isDefault')) {
-      await this.constructor.updateMany(
-        {
-          customerId: this.customerId,
-          _id: { $ne: this._id },
-          isDefault: true
-        },
-        { isDefault: false }
+    // Set expiration date for cards
+    if (this.type === 'card' && this.card.expiryYear && this.card.expiryMonth) {
+      this.expiration.expiresAt = new Date(this.card.expiryYear, this.card.expiryMonth, 0);
+    }
+
+    // Encrypt sensitive data
+    if (this.isModified('bankAccount.routingNumber') && this.bankAccount.routingNumber) {
+      this.bankAccount.routingNumber = await encryptionService.encrypt(this.bankAccount.routingNumber);
+    }
+
+    if (this.isModified('provider.metadata') && this.provider.metadata) {
+      this.provider.metadata = await encryptionService.encrypt(
+        JSON.stringify(this.provider.metadata)
       );
     }
 
-    // Encrypt sensitive data if provided
-    if (this.isModified('tokenizationDetails.token') && this.tokenizationDetails?.token) {
-      this.tokenizationDetails.token = await EncryptionService.encrypt(this.tokenizationDetails.token);
+    // Generate secure token
+    if (!this.tokenization.token && this.status === 'active') {
+      this.tokenization.token = await cryptoHelper.generateSecureToken(32);
+      this.tokenization.tokenizedAt = new Date();
+    }
+
+    // Update status based on expiration
+    if (this.isExpired && this.status === 'active') {
+      this.status = 'expired';
+    }
+
+    // Add to audit log
+    if (!this.isNew && this.isModified()) {
+      if (!this.compliance.audit) {
+        this.compliance.audit = [];
+      }
+      
+      this.compliance.audit.push({
+        action: 'update',
+        performedAt: new Date(),
+        details: {
+          modifiedFields: this.modifiedPaths()
+        }
+      });
     }
 
     next();
@@ -356,346 +564,588 @@ paymentMethodSchema.pre('save', async function(next) {
   }
 });
 
-// Post-save middleware
-paymentMethodSchema.post('save', async function() {
-  try {
-    // Ensure at least one default payment method
-    if (!this.isDefault) {
-      const defaultExists = await this.constructor.exists({
-        customerId: this.customerId,
-        isDefault: true,
-        status: 'active'
-      });
-
-      if (!defaultExists) {
-        await this.constructor.findByIdAndUpdate(this._id, { isDefault: true });
-      }
-    }
-  } catch (error) {
-    logger.error('Error in payment method post-save', error);
+// ==================== Instance Methods ====================
+paymentMethodSchema.methods.activate = async function() {
+  if (this.status === 'active') {
+    throw new AppError('Payment method is already active', 400, 'ALREADY_ACTIVE');
   }
-});
 
-// Instance methods
+  if (this.isExpired) {
+    throw new AppError('Cannot activate expired payment method', 400, 'EXPIRED');
+  }
+
+  if (this.risk.blocked.isBlocked) {
+    throw new AppError('Cannot activate blocked payment method', 400, 'BLOCKED');
+  }
+
+  this.status = 'active';
+  this.verification.status = 'verified';
+  this.verification.verifiedAt = new Date();
+
+  await this.save();
+
+  logger.info('Payment method activated', {
+    paymentMethodId: this._id,
+    organizationId: this.organizationId,
+    type: this.type
+  });
+
+  return this;
+};
+
 paymentMethodSchema.methods.setAsDefault = async function() {
-  // Unset current default
+  if (!this.isActive) {
+    throw new AppError('Only active payment methods can be set as default', 400, 'NOT_ACTIVE');
+  }
+
+  // Remove default from other methods
   await this.constructor.updateMany(
     {
-      customerId: this.customerId,
-      _id: { $ne: this._id }
+      organizationId: this.organizationId,
+      _id: { $ne: this._id },
+      isDefault: true
     },
     { isDefault: false }
   );
 
   this.isDefault = true;
   await this.save();
-  
+
+  logger.info('Payment method set as default', {
+    paymentMethodId: this._id,
+    organizationId: this.organizationId
+  });
+
   return this;
 };
 
 paymentMethodSchema.methods.verify = async function(verificationData) {
-  const { method, result } = verificationData;
+  if (this.verification.status === 'verified') {
+    throw new AppError('Payment method already verified', 400, 'ALREADY_VERIFIED');
+  }
 
-  this.verification.verificationMethod = method;
-  this.verification.attempts += 1;
+  // Record verification attempt
+  if (!this.verification.attempts) {
+    this.verification.attempts = [];
+  }
 
-  if (result.success) {
+  const attempt = {
+    attemptedAt: new Date(),
+    method: verificationData.method,
+    success: false
+  };
+
+  try {
+    // Perform verification based on method type
+    // This would integrate with actual verification providers
+    
     this.verification.status = 'verified';
     this.verification.verifiedAt = new Date();
-  } else {
-    this.verification.status = 'failed';
-    this.verification.failureReason = result.reason;
+    this.verification.method = verificationData.method;
+    attempt.success = true;
+    
+    if (this.status === 'pending') {
+      this.status = 'active';
+    }
+    
+  } catch (error) {
+    attempt.error = error.message;
+    this.verification.attempts.push(attempt);
+    
+    if (this.verification.attempts.length >= 3) {
+      this.verification.status = 'failed';
+      this.status = 'failed';
+    }
+    
+    await this.save();
+    throw error;
   }
 
+  this.verification.attempts.push(attempt);
   await this.save();
+
+  logger.info('Payment method verified', {
+    paymentMethodId: this._id,
+    method: verificationData.method
+  });
+
   return this;
 };
 
-paymentMethodSchema.methods.suspend = async function(reason) {
+paymentMethodSchema.methods.suspend = async function(reason, userId) {
+  if (this.status === 'suspended') {
+    throw new AppError('Payment method is already suspended', 400, 'ALREADY_SUSPENDED');
+  }
+
   this.status = 'suspended';
-  this.suspensionReason = reason;
-  await this.save();
   
+  if (!this.compliance.audit) {
+    this.compliance.audit = [];
+  }
+  
+  this.compliance.audit.push({
+    action: 'suspend',
+    performedBy: userId,
+    performedAt: new Date(),
+    details: { reason }
+  });
+
+  await this.save();
+
   logger.warn('Payment method suspended', {
     paymentMethodId: this._id,
-    customerId: this.customerId,
+    organizationId: this.organizationId,
     reason
   });
-  
+
   return this;
 };
 
-paymentMethodSchema.methods.reactivate = async function() {
-  if (this.isExpired) {
-    throw new AppError('Cannot reactivate expired payment method', 400, 'EXPIRED_METHOD');
-  }
+paymentMethodSchema.methods.block = async function(reason, userId) {
+  this.risk.blocked = {
+    isBlocked: true,
+    reason,
+    blockedAt: new Date(),
+    blockedBy: userId
+  };
+  
+  this.status = 'suspended';
 
-  this.status = 'active';
-  this.suspensionReason = undefined;
   await this.save();
-  
-  return this;
-};
 
-paymentMethodSchema.methods.softDelete = async function(deletedBy) {
-  this.status = 'deleted';
-  this.deletedAt = new Date();
-  this.deletedBy = deletedBy;
-  this.isDefault = false;
-  
-  await this.save();
-  
-  // Ensure another method is set as default
-  const otherMethod = await this.constructor.findOne({
-    customerId: this.customerId,
-    status: 'active',
-    _id: { $ne: this._id }
-  }).sort({ createdAt: -1 });
-
-  if (otherMethod && !await this.constructor.exists({ customerId: this.customerId, isDefault: true, status: 'active' })) {
-    await otherMethod.setAsDefault();
-  }
-  
-  return this;
-};
-
-paymentMethodSchema.methods.recordUsage = async function() {
-  this.lastUsedAt = new Date();
-  this.usageCount += 1;
-  await this.save();
-  return this;
-};
-
-paymentMethodSchema.methods.assessRisk = async function(factors = []) {
-  const riskFactors = [];
-  let score = 0;
-
-  // Check card type risk
-  if (this.type === 'credit_card') {
-    if (this.card.funding === 'prepaid') {
-      score += 20;
-      riskFactors.push('prepaid_card');
-    }
-    if (!this.billingAddress?.postalCode) {
-      score += 10;
-      riskFactors.push('missing_postal_code');
-    }
-  }
-
-  // Check verification status
-  if (this.verification.status !== 'verified') {
-    score += 30;
-    riskFactors.push('unverified');
-  }
-
-  // Check usage patterns
-  if (this.usageCount === 0) {
-    score += 15;
-    riskFactors.push('never_used');
-  }
-
-  // Add external factors
-  factors.forEach(factor => {
-    score += factor.score || 10;
-    riskFactors.push(factor.name);
+  logger.warn('Payment method blocked', {
+    paymentMethodId: this._id,
+    organizationId: this.organizationId,
+    reason
   });
 
-  // Determine risk level
-  let level = 'low';
-  if (score >= 70) level = 'blocked';
-  else if (score >= 50) level = 'high';
-  else if (score >= 30) level = 'medium';
-
-  this.riskAssessment = {
-    score: Math.min(score, 100),
-    level,
-    factors: riskFactors,
-    assessedAt: new Date()
-  };
-
-  await this.save();
-  return this.riskAssessment;
-};
-
-paymentMethodSchema.methods.updateProviderDetails = async function(providerData) {
-  if (providerData.customerId) {
-    this.providerCustomerId = providerData.customerId;
-  }
-  
-  if (providerData.paymentMethodId) {
-    this.providerPaymentMethodId = providerData.paymentMethodId;
-  }
-
-  // Update card details if provided
-  if (providerData.card && (this.type === 'credit_card' || this.type === 'debit_card')) {
-    Object.assign(this.card, providerData.card);
-  }
-
-  // Update bank details if provided
-  if (providerData.bankAccount && this.type === 'bank_account') {
-    Object.assign(this.bankAccount, providerData.bankAccount);
-  }
-
-  await this.save();
   return this;
 };
 
-// Static methods
-paymentMethodSchema.statics.findByCustomer = async function(customerId, options = {}) {
-  const { includeDeleted = false, type, status = 'active' } = options;
+paymentMethodSchema.methods.unblock = async function(userId) {
+  if (!this.risk.blocked.isBlocked) {
+    throw new AppError('Payment method is not blocked', 400, 'NOT_BLOCKED');
+  }
 
-  const query = { customerId };
+  this.risk.blocked.isBlocked = false;
   
-  if (!includeDeleted) {
-    query.status = { $ne: 'deleted' };
-  } else if (status) {
-    query.status = status;
+  if (this.status === 'suspended' && !this.isExpired) {
+    this.status = 'active';
   }
 
-  if (type) {
-    query.type = type;
+  if (!this.compliance.audit) {
+    this.compliance.audit = [];
   }
-
-  return await this.find(query).sort({ isDefault: -1, createdAt: -1 });
-};
-
-paymentMethodSchema.statics.findDefault = async function(customerId) {
-  const defaultMethod = await this.findOne({
-    customerId,
-    isDefault: true,
-    status: 'active'
+  
+  this.compliance.audit.push({
+    action: 'unblock',
+    performedBy: userId,
+    performedAt: new Date()
   });
 
-  // If no default, find the most recent active method
-  if (!defaultMethod) {
-    const mostRecent = await this.findOne({
-      customerId,
-      status: 'active'
-    }).sort({ createdAt: -1 });
+  await this.save();
 
-    if (mostRecent) {
-      await mostRecent.setAsDefault();
-      return mostRecent;
-    }
-  }
+  logger.info('Payment method unblocked', {
+    paymentMethodId: this._id,
+    organizationId: this.organizationId
+  });
 
-  return defaultMethod;
+  return this;
 };
 
-paymentMethodSchema.statics.createFromProvider = async function(providerData, customerData) {
-  const { provider, type, details } = providerData;
-  const { customerId, customerType, organizationId } = customerData;
-
-  const paymentMethod = {
-    customerId,
-    customerType,
-    organizationId,
-    provider,
-    type,
-    providerCustomerId: details.customerId,
-    providerPaymentMethodId: details.paymentMethodId
-  };
-
-  // Map provider-specific details
-  switch (type) {
-    case 'credit_card':
-    case 'debit_card':
-      paymentMethod.card = {
-        brand: details.brand,
-        last4: details.last4,
-        expiryMonth: details.exp_month,
-        expiryYear: details.exp_year,
-        cardholderName: details.name,
-        country: details.country,
-        funding: details.funding,
-        fingerprint: details.fingerprint
-      };
-      break;
-      
-    case 'bank_account':
-      paymentMethod.bankAccount = {
-        bankName: details.bank_name,
-        accountType: details.account_type,
-        last4: details.last4,
-        accountHolderName: details.account_holder_name,
-        accountHolderType: details.account_holder_type,
-        country: details.country,
-        currency: details.currency
-      };
-      break;
-      
-    case 'paypal':
-      paymentMethod.wallet = {
-        walletType: 'paypal',
-        email: details.email
-      };
-      break;
+paymentMethodSchema.methods.recordUsage = async function(amount, success = true) {
+  this.usage.lastUsedAt = new Date();
+  this.usage.totalTransactions += 1;
+  
+  if (success) {
+    this.usage.successfulTransactions += 1;
+    this.usage.totalAmount += amount;
+  } else {
+    this.usage.failedTransactions += 1;
   }
 
-  // Add billing address if provided
-  if (details.billing_address) {
-    paymentMethod.billingAddress = {
-      line1: details.billing_address.line1,
-      line2: details.billing_address.line2,
-      city: details.billing_address.city,
-      state: details.billing_address.state,
-      postalCode: details.billing_address.postal_code,
-      country: details.billing_address.country
+  // Update daily usage
+  const now = new Date();
+  const todayReset = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  
+  if (!this.usage.currentUsage.daily.resetAt || this.usage.currentUsage.daily.resetAt < now) {
+    this.usage.currentUsage.daily = {
+      amount: 0,
+      transactions: 0,
+      resetAt: todayReset
     };
   }
-
-  return await this.create(paymentMethod);
-};
-
-paymentMethodSchema.statics.findDuplicates = async function(customerId, card) {
-  if (!card || !card.fingerprint) return [];
-
-  return await this.find({
-    customerId,
-    'card.fingerprint': card.fingerprint,
-    status: { $ne: 'deleted' }
-  });
-};
-
-paymentMethodSchema.statics.getExpiringCards = async function(daysBefore = 30) {
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + daysBefore);
   
-  const targetYear = targetDate.getFullYear();
-  const targetMonth = targetDate.getMonth() + 1;
+  this.usage.currentUsage.daily.transactions += 1;
+  if (success) {
+    this.usage.currentUsage.daily.amount += amount;
+  }
 
-  return await this.find({
-    type: { $in: ['credit_card', 'debit_card'] },
-    status: 'active',
-    $or: [
-      { 'card.expiryYear': { $lt: targetYear } },
-      {
-        'card.expiryYear': targetYear,
-        'card.expiryMonth': { $lte: targetMonth }
-      }
-    ]
-  }).populate('customerId', 'email profile.fullName');
+  // Update monthly usage
+  const monthReset = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  
+  if (!this.usage.currentUsage.monthly.resetAt || this.usage.currentUsage.monthly.resetAt < now) {
+    this.usage.currentUsage.monthly = {
+      amount: 0,
+      transactions: 0,
+      resetAt: monthReset
+    };
+  }
+  
+  this.usage.currentUsage.monthly.transactions += 1;
+  if (success) {
+    this.usage.currentUsage.monthly.amount += amount;
+  }
+
+  await this.save();
+
+  return this;
 };
 
-paymentMethodSchema.statics.performComplianceCheck = async function(paymentMethodId) {
+paymentMethodSchema.methods.checkLimits = function(amount) {
+  const limits = this.usage.limits;
+  const current = this.usage.currentUsage;
+  const errors = [];
+
+  // Check per transaction limits
+  if (limits.perTransaction) {
+    if (limits.perTransaction.min && amount < limits.perTransaction.min) {
+      errors.push(`Amount below minimum: ${limits.perTransaction.min}`);
+    }
+    if (limits.perTransaction.max && amount > limits.perTransaction.max) {
+      errors.push(`Amount exceeds maximum: ${limits.perTransaction.max}`);
+    }
+  }
+
+  // Check daily limits
+  if (limits.daily) {
+    if (limits.daily.amount && current.daily.amount + amount > limits.daily.amount) {
+      errors.push(`Daily amount limit exceeded: ${limits.daily.amount}`);
+    }
+    if (limits.daily.transactions && current.daily.transactions >= limits.daily.transactions) {
+      errors.push(`Daily transaction limit exceeded: ${limits.daily.transactions}`);
+    }
+  }
+
+  // Check monthly limits
+  if (limits.monthly) {
+    if (limits.monthly.amount && current.monthly.amount + amount > limits.monthly.amount) {
+      errors.push(`Monthly amount limit exceeded: ${limits.monthly.amount}`);
+    }
+    if (limits.monthly.transactions && current.monthly.transactions >= limits.monthly.transactions) {
+      errors.push(`Monthly transaction limit exceeded: ${limits.monthly.transactions}`);
+    }
+  }
+
+  return {
+    allowed: errors.length === 0,
+    errors
+  };
+};
+
+paymentMethodSchema.methods.attachToSubscription = async function(subscriptionId) {
+  if (!this.subscriptions) {
+    this.subscriptions = [];
+  }
+
+  const existingAttachment = this.subscriptions.find(
+    s => s.subscriptionId.toString() === subscriptionId.toString()
+  );
+
+  if (existingAttachment) {
+    existingAttachment.isActive = true;
+  } else {
+    this.subscriptions.push({
+      subscriptionId,
+      attachedAt: new Date(),
+      isActive: true
+    });
+  }
+
+  await this.save();
+
+  logger.info('Payment method attached to subscription', {
+    paymentMethodId: this._id,
+    subscriptionId
+  });
+
+  return this;
+};
+
+paymentMethodSchema.methods.detachFromSubscription = async function(subscriptionId) {
+  if (!this.subscriptions) return this;
+
+  const attachment = this.subscriptions.find(
+    s => s.subscriptionId.toString() === subscriptionId.toString()
+  );
+
+  if (attachment) {
+    attachment.isActive = false;
+  }
+
+  await this.save();
+
+  logger.info('Payment method detached from subscription', {
+    paymentMethodId: this._id,
+    subscriptionId
+  });
+
+  return this;
+};
+
+paymentMethodSchema.methods.sendExpirationReminder = async function() {
+  const daysUntilExpiry = this.expiresIn;
+  
+  if (!daysUntilExpiry || daysUntilExpiry > 30) {
+    throw new AppError('Too early to send expiration reminder', 400, 'TOO_EARLY');
+  }
+
+  if (!this.expiration.reminders) {
+    this.expiration.reminders = [];
+  }
+
+  this.expiration.reminders.push({
+    sentAt: new Date(),
+    daysBeforeExpiry: daysUntilExpiry,
+    method: 'email'
+  });
+
+  await this.save();
+
+  logger.info('Expiration reminder sent', {
+    paymentMethodId: this._id,
+    daysUntilExpiry
+  });
+
+  return this;
+};
+
+paymentMethodSchema.methods.softDelete = async function(userId) {
+  this.status = 'deleted';
+  
+  // Remove sensitive data
+  if (this.bankAccount.routingNumber) {
+    this.bankAccount.routingNumber = undefined;
+  }
+  
+  if (this.provider.metadata) {
+    this.provider.metadata = undefined;
+  }
+  
+  if (this.tokenization.token) {
+    this.tokenization.token = undefined;
+  }
+
+  // Set retention period
+  this.compliance.dataRetention = {
+    deleteAfter: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
+    retentionReason: 'soft_delete'
+  };
+
+  if (!this.compliance.audit) {
+    this.compliance.audit = [];
+  }
+  
+  this.compliance.audit.push({
+    action: 'delete',
+    performedBy: userId,
+    performedAt: new Date()
+  });
+
+  await this.save();
+
+  logger.info('Payment method soft deleted', {
+    paymentMethodId: this._id,
+    organizationId: this.organizationId
+  });
+
+  return this;
+};
+
+// ==================== Static Methods ====================
+paymentMethodSchema.statics.createPaymentMethod = async function(data) {
+  const {
+    organizationId,
+    type,
+    provider,
+    details,
+    billingAddress
+  } = data;
+
+  // Get organization
+  const Organization = mongoose.model('Organization');
+  const organization = await Organization.findById(organizationId);
+  
+  if (!organization) {
+    throw new AppError('Organization not found', 404, 'ORGANIZATION_NOT_FOUND');
+  }
+
+  const paymentMethod = new this({
+    organizationId,
+    tenantId: organization.tenancy?.tenantId,
+    type,
+    status: 'pending',
+    provider: {
+      name: provider
+    },
+    billingAddress: billingAddress || organization.address
+  });
+
+  // Set type-specific details
+  switch (type) {
+    case 'card':
+      paymentMethod.card = details;
+      break;
+    case 'bank_account':
+      paymentMethod.bankAccount = details;
+      break;
+    case 'paypal':
+    case 'apple_pay':
+    case 'google_pay':
+      paymentMethod.digitalWallet = {
+        walletType: type,
+        ...details
+      };
+      break;
+  }
+
+  await paymentMethod.save();
+
+  logger.info('Payment method created', {
+    paymentMethodId: paymentMethod._id,
+    organizationId,
+    type
+  });
+
+  return paymentMethod;
+};
+
+paymentMethodSchema.statics.findByOrganization = async function(organizationId, options = {}) {
+  const query = { 
+    organizationId,
+    status: { $ne: 'deleted' }
+  };
+  
+  if (options.activeOnly) {
+    query.status = 'active';
+    query['risk.blocked.isBlocked'] = false;
+  }
+  
+  if (options.type) {
+    query.type = options.type;
+  }
+
+  return await this.find(query)
+    .sort({ isDefault: -1, createdAt: -1 });
+};
+
+paymentMethodSchema.statics.findExpiringCards = async function(daysAhead = 30) {
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + daysAhead);
+
+  return await this.find({
+    type: 'card',
+    status: 'active',
+    'expiration.expiresAt': {
+      $gte: new Date(),
+      $lte: targetDate
+    }
+  }).populate('organizationId');
+};
+
+paymentMethodSchema.statics.findByFingerprint = async function(type, fingerprint) {
+  const query = { type };
+  
+  if (type === 'card') {
+    query['card.fingerprint'] = fingerprint;
+  } else if (type === 'bank_account') {
+    query['bankAccount.fingerprint'] = fingerprint;
+  }
+
+  return await this.find(query);
+};
+
+paymentMethodSchema.statics.getUsageStatistics = async function(paymentMethodId) {
   const paymentMethod = await this.findById(paymentMethodId);
   
   if (!paymentMethod) {
     throw new AppError('Payment method not found', 404, 'NOT_FOUND');
   }
 
-  // Perform compliance checks (integrate with external services)
-  const checks = {
-    pciCompliant: true, // Check PCI compliance
-    amlChecked: true,   // Anti-money laundering check
-    sanctionsChecked: true, // Sanctions list check
-    lastCheckedAt: new Date()
+  const Payment = mongoose.model('Payment');
+  
+  const stats = await Payment.aggregate([
+    {
+      $match: {
+        'relations.paymentMethodId': paymentMethod._id
+      }
+    },
+    {
+      $facet: {
+        summary: [
+          {
+            $group: {
+              _id: null,
+              totalVolume: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$status', 'succeeded'] },
+                    '$amount.value',
+                    0
+                  ]
+                }
+              },
+              successCount: {
+                $sum: { $cond: [{ $eq: ['$status', 'succeeded'] }, 1, 0] }
+              },
+              failedCount: {
+                $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+              },
+              avgAmount: {
+                $avg: {
+                  $cond: [
+                    { $eq: ['$status', 'succeeded'] },
+                    '$amount.value',
+                    null
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        monthlyVolume: [
+          {
+            $match: { status: 'succeeded' }
+          },
+          {
+            $group: {
+              _id: {
+                year: { $year: '$createdAt' },
+                month: { $month: '$createdAt' }
+              },
+              volume: { $sum: '$amount.value' },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { '_id.year': -1, '_id.month': -1 } },
+          { $limit: 12 }
+        ]
+      }
+    }
+  ]);
+
+  return {
+    usage: paymentMethod.usage,
+    payments: {
+      summary: stats[0].summary[0] || {
+        totalVolume: 0,
+        successCount: 0,
+        failedCount: 0,
+        avgAmount: 0
+      },
+      monthlyVolume: stats[0].monthlyVolume.reverse()
+    }
   };
-
-  paymentMethod.complianceChecks = checks;
-  await paymentMethod.save();
-
-  return paymentMethod;
 };
 
 // Create and export model

@@ -1,55 +1,52 @@
 'use strict';
 
 /**
- * @fileoverview Subscription model for managing recurring billing
+ * @fileoverview Subscription model for managing active subscriptions
  * @module shared/lib/database/models/billing/subscription-model
  * @requires mongoose
  * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/utils/validators/common-validators
  * @requires module:shared/lib/utils/helpers/date-helper
- * @requires module:shared/lib/utils/constants/status-codes
  */
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
 const AppError = require('../../../utils/app-error');
+const validators = require('../../../utils/validators/common-validators');
 const dateHelper = require('../../../utils/helpers/date-helper');
-const { SUBSCRIPTION_STATUS } = require('../../../utils/constants/status-codes');
 
 /**
  * Subscription schema definition
  */
 const subscriptionSchemaDefinition = {
-  // Subscription Identification
+  // ==================== Core Identity ====================
   subscriptionId: {
     type: String,
-    required: true,
     unique: true,
-    index: true
-  },
-
-  // Customer Information
-  customerId: {
-    type: mongoose.Schema.Types.ObjectId,
     required: true,
-    index: true
-  },
-
-  customerType: {
-    type: String,
-    required: true,
-    enum: ['user', 'organization', 'tenant']
+    index: true,
+    default: function() {
+      return `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
   },
 
   organizationId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Organization',
+    required: true,
     index: true
   },
 
-  // Plan Information
+  tenantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tenant',
+    required: true,
+    index: true
+  },
+
   planId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'SubscriptionPlan',
@@ -57,323 +54,363 @@ const subscriptionSchemaDefinition = {
     index: true
   },
 
-  planSnapshot: {
-    name: String,
-    code: String,
-    price: Number,
-    currency: String,
-    interval: String,
-    intervalCount: Number,
-    features: [String],
-    limits: mongoose.Schema.Types.Mixed
-  },
-
-  // Pricing
-  price: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-
-  currency: {
-    type: String,
-    required: true,
-    uppercase: true,
-    default: 'USD'
-  },
-
-  // Billing Cycle
-  billingInterval: {
-    type: String,
-    required: true,
-    enum: ['day', 'week', 'month', 'year'],
-    default: 'month'
-  },
-
-  billingIntervalCount: {
-    type: Number,
-    required: true,
-    default: 1,
-    min: 1
-  },
-
-  // Subscription Dates
-  startDate: {
-    type: Date,
-    required: true,
-    index: true
-  },
-
-  currentPeriodStart: {
-    type: Date,
-    required: true
-  },
-
-  currentPeriodEnd: {
-    type: Date,
-    required: true,
-    index: true
-  },
-
-  endDate: Date,
-  endedAt: Date,
-
-  // Trial Information
-  trialStart: Date,
-  trialEnd: {
-    type: Date,
-    index: true
-  },
-
-  trialDays: {
-    type: Number,
-    default: 0
-  },
-
-  // Status
-  status: {
-    type: String,
-    required: true,
-    enum: ['trialing', 'active', 'past_due', 'cancelled', 'expired', 'paused', 'pending'],
-    default: 'pending',
-    index: true
-  },
-
-  previousStatus: String,
-
-  // Cancellation
-  cancelAt: Date,
-  cancelAtPeriodEnd: {
-    type: Boolean,
-    default: false
-  },
-
-  cancelledAt: Date,
-  cancellationReason: String,
-  cancellationFeedback: String,
-  cancelledBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    userType: String
-  },
-
-  // Pause
-  pausedAt: Date,
-  pausedUntil: Date,
-  pauseReason: String,
-  pausedBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    userType: String
-  },
-
-  // Payment Information
-  paymentMethodId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'PaymentMethod'
-  },
-
-  defaultPaymentMethod: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'PaymentMethod'
-  },
-
-  lastPaymentStatus: String,
-  lastPaymentDate: Date,
-  lastPaymentAmount: Number,
-  
-  nextPaymentDate: {
-    type: Date,
-    index: true
-  },
-
-  nextPaymentAmount: Number,
-
-  // Payment Retry
-  paymentRetries: {
-    type: Number,
-    default: 0
-  },
-
-  maxPaymentRetries: {
-    type: Number,
-    default: 3
-  },
-
-  nextRetryDate: Date,
-
-  // Discounts and Promotions
-  discounts: [{
-    discountId: mongoose.Schema.Types.ObjectId,
-    type: {
-      type: String,
-      enum: ['percentage', 'fixed', 'trial_extension']
-    },
-    value: Number,
-    duration: {
-      type: String,
-      enum: ['once', 'repeating', 'forever']
-    },
-    durationInMonths: Number,
-    appliedAt: Date,
-    expiresAt: Date,
-    code: String
-  }],
-
-  currentDiscount: {
-    amount: Number,
-    percentage: Number,
-    expiresAt: Date
-  },
-
-  // Add-ons
-  addOns: [{
-    addOnId: mongoose.Schema.Types.ObjectId,
-    name: String,
-    quantity: Number,
-    price: Number,
-    addedAt: Date
-  }],
-
-  // Usage-based Billing
-  usageRecords: [{
-    recordId: mongoose.Schema.Types.ObjectId,
-    metric: String,
-    quantity: Number,
-    unitPrice: Number,
-    totalAmount: Number,
-    period: {
-      start: Date,
-      end: Date
-    }
-  }],
-
-  // Quantity
-  quantity: {
-    type: Number,
-    default: 1,
-    min: 1
-  },
-
-  seats: {
-    included: Number,
-    additional: Number,
-    pricePerSeat: Number
-  },
-
-  // Invoice Settings
-  invoiceSettings: {
-    autoAdvance: {
-      type: Boolean,
-      default: true
-    },
-    daysUntilDue: {
+  // ==================== Subscription Details ====================
+  billing: {
+    amount: {
       type: Number,
-      default: 7
+      required: true,
+      min: 0,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
     },
-    footer: String,
-    customFields: [{
-      name: String,
-      value: String
+
+    currency: {
+      type: String,
+      required: true,
+      default: 'USD',
+      uppercase: true,
+      validate: {
+        validator: function(value) {
+          return /^[A-Z]{3}$/.test(value);
+        },
+        message: 'Invalid currency code'
+      }
+    },
+
+    interval: {
+      type: String,
+      enum: ['monthly', 'quarterly', 'semi-annual', 'annual', 'biennial', 'custom'],
+      required: true
+    },
+
+    intervalCount: {
+      type: Number,
+      default: 1,
+      min: 1
+    },
+
+    discounts: [{
+      type: {
+        type: String,
+        enum: ['percentage', 'fixed', 'trial', 'promotional']
+      },
+      value: Number,
+      code: String,
+      description: String,
+      appliedAt: Date,
+      expiresAt: Date
+    }],
+
+    taxRate: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    },
+
+    taxAmount: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
+  },
+
+  // ==================== Status & Lifecycle ====================
+  status: {
+    state: {
+      type: String,
+      enum: ['trialing', 'active', 'past_due', 'cancelled', 'expired', 'paused', 'pending'],
+      required: true,
+      default: 'pending',
+      index: true
+    },
+
+    previousState: String,
+
+    stateHistory: [{
+      state: String,
+      changedAt: Date,
+      reason: String,
+      changedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    }],
+
+    trial: {
+      isTrialing: {
+        type: Boolean,
+        default: false
+      },
+      startDate: Date,
+      endDate: Date,
+      daysRemaining: Number,
+      convertedAt: Date
+    },
+
+    cancellation: {
+      requestedAt: Date,
+      effectiveDate: Date,
+      reason: String,
+      feedback: String,
+      preventable: Boolean,
+      offeredRetention: Boolean,
+      byUserId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    },
+
+    pause: {
+      pausedAt: Date,
+      resumeDate: Date,
+      reason: String,
+      byUserId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    }
+  },
+
+  // ==================== Billing Periods ====================
+  periods: {
+    current: {
+      startDate: {
+        type: Date,
+        required: true
+      },
+      endDate: {
+        type: Date,
+        required: true
+      },
+      billingDate: Date,
+      amount: Number,
+      paid: {
+        type: Boolean,
+        default: false
+      },
+      invoiceId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Invoice'
+      }
+    },
+
+    next: {
+      startDate: Date,
+      endDate: Date,
+      billingDate: Date,
+      amount: Number
+    },
+
+    history: [{
+      periodId: String,
+      startDate: Date,
+      endDate: Date,
+      billingDate: Date,
+      amount: Number,
+      paid: Boolean,
+      invoiceId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Invoice'
+      },
+      paymentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Payment'
+      }
     }]
   },
 
-  // Billing Details
-  billingDetails: {
-    name: String,
-    email: String,
-    phone: String,
-    address: {
-      line1: String,
-      line2: String,
-      city: String,
-      state: String,
-      postalCode: String,
-      country: String
+  // ==================== Payment Information ====================
+  payment: {
+    methodId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PaymentMethod'
     },
-    taxId: String,
-    companyName: String
-  },
 
-  // Tax Information
-  taxRates: [{
-    taxRateId: mongoose.Schema.Types.ObjectId,
-    percentage: Number,
-    inclusive: Boolean,
-    jurisdiction: String
-  }],
-
-  taxExempt: {
-    type: Boolean,
-    default: false
-  },
-
-  // Metadata
-  metadata: {
-    source: {
-      type: String,
-      enum: ['web', 'mobile', 'api', 'admin', 'migration', 'import']
+    lastPaymentDate: Date,
+    lastPaymentAmount: Number,
+    
+    failedAttempts: {
+      type: Number,
+      default: 0
     },
-    referrer: String,
-    campaignId: String,
-    affiliateId: String,
-    salesRepId: mongoose.Schema.Types.ObjectId,
-    customData: mongoose.Schema.Types.Mixed,
-    tags: [String]
-  },
 
-  // Webhooks and Notifications
-  webhookEvents: [{
-    event: String,
-    sentAt: Date,
-    response: mongoose.Schema.Types.Mixed
-  }],
+    lastFailureDate: Date,
+    lastFailureReason: String,
 
-  notifications: {
-    renewal: {
+    retrySchedule: [{
+      attemptNumber: Number,
+      scheduledDate: Date,
+      attempted: Boolean,
+      result: String
+    }],
+
+    autoRenew: {
       type: Boolean,
       default: true
     },
-    paymentFailed: {
+
+    requiresPaymentUpdate: {
       type: Boolean,
-      default: true
-    },
-    usageAlert: {
-      type: Boolean,
-      default: true
+      default: false
     }
   },
 
-  // Provider Information
-  provider: {
-    type: String,
-    enum: ['stripe', 'paypal', 'internal', 'manual']
+  // ==================== Features & Usage ====================
+  features: {
+    inherited: {
+      type: Boolean,
+      default: true
+    },
+
+    overrides: {
+      users: {
+        limit: Number
+      },
+      projects: {
+        limit: Number
+      },
+      storage: {
+        limit: Number
+      },
+      apiCalls: {
+        monthlyLimit: Number
+      },
+      customFeatures: {
+        type: Map,
+        of: mongoose.Schema.Types.Mixed
+      }
+    },
+
+    usage: {
+      users: {
+        current: {
+          type: Number,
+          default: 0
+        },
+        peak: Number,
+        lastUpdated: Date
+      },
+      projects: {
+        current: {
+          type: Number,
+          default: 0
+        },
+        peak: Number,
+        lastUpdated: Date
+      },
+      storage: {
+        current: {
+          type: Number,
+          default: 0
+        },
+        peak: Number,
+        lastUpdated: Date
+      },
+      apiCalls: {
+        current: {
+          type: Number,
+          default: 0
+        },
+        resetDate: Date
+      }
+    },
+
+    addons: [{
+      addonId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Addon'
+      },
+      name: String,
+      quantity: Number,
+      price: Number,
+      addedAt: Date,
+      expiresAt: Date
+    }]
   },
 
-  providerSubscriptionId: {
-    type: String,
-    index: true
+  // ==================== Renewal & Upgrade ====================
+  renewal: {
+    nextRenewalDate: {
+      type: Date,
+      index: true
+    },
+
+    remindersSent: [{
+      type: {
+        type: String,
+        enum: ['email', 'in-app', 'sms']
+      },
+      sentAt: Date,
+      daysBeforeRenewal: Number
+    }],
+
+    settings: {
+      autoRenew: {
+        type: Boolean,
+        default: true
+      },
+      reminderDays: {
+        type: [Number],
+        default: [7, 3, 1]
+      },
+      gracePeriodDays: {
+        type: Number,
+        default: 3
+      }
+    }
   },
 
-  providerCustomerId: String,
+  upgrade: {
+    history: [{
+      fromPlanId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'SubscriptionPlan'
+      },
+      toPlanId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'SubscriptionPlan'
+      },
+      upgradedAt: Date,
+      prorationAmount: Number,
+      reason: String,
+      byUserId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    }],
 
-  // History
-  statusHistory: [{
-    status: String,
-    changedAt: Date,
-    changedBy: mongoose.Schema.Types.ObjectId,
-    reason: String
-  }],
+    pendingUpgrade: {
+      toPlanId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'SubscriptionPlan'
+      },
+      effectiveDate: Date,
+      prorationAmount: Number
+    }
+  },
 
-  planHistory: [{
-    planId: mongoose.Schema.Types.ObjectId,
-    planName: String,
-    startDate: Date,
-    endDate: Date,
-    price: Number
-  }],
+  // ==================== Provider Integration ====================
+  providers: {
+    stripe: {
+      customerId: String,
+      subscriptionId: String,
+      priceId: String,
+      latestInvoiceId: String,
+      metadata: mongoose.Schema.Types.Mixed
+    },
+    paypal: {
+      subscriberId: String,
+      subscriptionId: String,
+      planId: String,
+      metadata: mongoose.Schema.Types.Mixed
+    },
+    custom: mongoose.Schema.Types.Mixed
+  },
 
-  // Metrics
-  metrics: {
-    totalRevenue: {
+  // ==================== Analytics & Metrics ====================
+  analytics: {
+    lifetimeValue: {
       type: Number,
       default: 0
     },
@@ -381,23 +418,87 @@ const subscriptionSchemaDefinition = {
       type: Number,
       default: 0
     },
-    averageRevenuePerPeriod: Number,
-    lifetimeValue: Number,
-    churnProbability: Number
-  },
-
-  // Audit
-  createdBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    userType: {
-      type: String,
-      enum: ['user', 'admin', 'system']
+    averagePaymentAmount: {
+      type: Number,
+      default: 0
+    },
+    paymentCount: {
+      type: Number,
+      default: 0
+    },
+    churnRisk: {
+      score: {
+        type: Number,
+        min: 0,
+        max: 100,
+        default: 0
+      },
+      factors: [{
+        factor: String,
+        weight: Number,
+        value: Number
+      }],
+      lastCalculated: Date
+    },
+    engagement: {
+      lastLoginDate: Date,
+      monthlyActiveUsers: Number,
+      featureAdoption: {
+        type: Map,
+        of: Number
+      }
     }
   },
 
-  lastModifiedBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    modifiedAt: Date
+  // ==================== Compliance & Audit ====================
+  compliance: {
+    dataRetention: {
+      retainUntil: Date,
+      reason: String
+    },
+    gdpr: {
+      consentDate: Date,
+      consentVersion: String,
+      dataExportRequests: [{
+        requestedAt: Date,
+        completedAt: Date,
+        exportUrl: String
+      }]
+    },
+    taxExempt: {
+      isExempt: {
+        type: Boolean,
+        default: false
+      },
+      exemptionId: String,
+      verifiedAt: Date
+    }
+  },
+
+  // ==================== Metadata ====================
+  metadata: {
+    source: {
+      channel: String,
+      campaign: String,
+      referrer: String
+    },
+    tags: [String],
+    customFields: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed
+    },
+    notes: [{
+      content: String,
+      addedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      addedAt: Date,
+      type: {
+        type: String,
+        enum: ['general', 'billing', 'support', 'retention']
+      }
+    }]
   }
 };
 
@@ -407,102 +508,91 @@ const subscriptionSchema = BaseModel.createSchema(subscriptionSchemaDefinition, 
   timestamps: true
 });
 
-// Indexes
-subscriptionSchema.index({ customerId: 1, status: 1 });
-subscriptionSchema.index({ organizationId: 1, status: 1 });
-subscriptionSchema.index({ nextPaymentDate: 1, status: 1 });
-subscriptionSchema.index({ currentPeriodEnd: 1, status: 1 });
-subscriptionSchema.index({ 'statusHistory.changedAt': -1 });
+// ==================== Indexes ====================
+subscriptionSchema.index({ organizationId: 1, 'status.state': 1 });
+subscriptionSchema.index({ tenantId: 1, 'status.state': 1 });
+subscriptionSchema.index({ planId: 1, 'status.state': 1 });
+subscriptionSchema.index({ 'status.state': 1, 'renewal.nextRenewalDate': 1 });
+subscriptionSchema.index({ 'payment.requiresPaymentUpdate': 1 });
+subscriptionSchema.index({ 'providers.stripe.subscriptionId': 1 });
+subscriptionSchema.index({ 'providers.stripe.customerId': 1 });
+subscriptionSchema.index({ createdAt: -1 });
 
-// Virtual fields
+// ==================== Virtual Fields ====================
 subscriptionSchema.virtual('isActive').get(function() {
-  return ['active', 'trialing'].includes(this.status);
+  return ['active', 'trialing'].includes(this.status.state);
 });
 
-subscriptionSchema.virtual('isInTrial').get(function() {
-  return this.status === 'trialing' && this.trialEnd > new Date();
+subscriptionSchema.virtual('isPastDue').get(function() {
+  return this.status.state === 'past_due';
+});
+
+subscriptionSchema.virtual('isCancelled').get(function() {
+  return this.status.state === 'cancelled';
 });
 
 subscriptionSchema.virtual('daysUntilRenewal').get(function() {
-  if (!this.isActive || !this.currentPeriodEnd) return null;
+  if (!this.renewal.nextRenewalDate) return null;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysRemaining = Math.ceil((this.renewal.nextRenewalDate - new Date()) / msPerDay);
+  return Math.max(0, daysRemaining);
+});
+
+subscriptionSchema.virtual('trialDaysRemaining').get(function() {
+  if (!this.status.trial.isTrialing || !this.status.trial.endDate) return 0;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysRemaining = Math.ceil((this.status.trial.endDate - new Date()) / msPerDay);
+  return Math.max(0, daysRemaining);
+});
+
+subscriptionSchema.virtual('currentPeriodProgress').get(function() {
+  if (!this.periods.current.startDate || !this.periods.current.endDate) return 0;
   
   const now = new Date();
-  const diffTime = this.currentPeriodEnd - now;
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-});
-
-subscriptionSchema.virtual('totalPrice').get(function() {
-  let total = this.price * this.quantity;
+  const start = this.periods.current.startDate;
+  const end = this.periods.current.endDate;
   
-  // Add add-ons
-  if (this.addOns && this.addOns.length > 0) {
-    total += this.addOns.reduce((sum, addon) => sum + (addon.price * addon.quantity), 0);
-  }
-
-  // Add seat overage
-  if (this.seats && this.seats.additional > 0) {
-    total += this.seats.additional * this.seats.pricePerSeat;
-  }
-
-  // Apply discount
-  if (this.currentDiscount) {
-    if (this.currentDiscount.percentage) {
-      total -= total * (this.currentDiscount.percentage / 100);
-    } else if (this.currentDiscount.amount) {
-      total -= this.currentDiscount.amount;
-    }
-  }
-
-  return Math.max(0, total);
+  if (now < start) return 0;
+  if (now > end) return 100;
+  
+  const total = end - start;
+  const elapsed = now - start;
+  
+  return Math.round((elapsed / total) * 100);
 });
 
-// Pre-save middleware
+// ==================== Pre-save Middleware ====================
 subscriptionSchema.pre('save', async function(next) {
   try {
-    // Generate subscription ID if not provided
-    if (!this.subscriptionId && this.isNew) {
-      this.subscriptionId = await this.constructor.generateSubscriptionId();
-    }
-
-    // Set trial dates if applicable
-    if (this.isNew && this.trialDays > 0) {
-      this.trialStart = this.startDate || new Date();
-      this.trialEnd = new Date(this.trialStart);
-      this.trialEnd.setDate(this.trialEnd.getDate() + this.trialDays);
-      this.status = 'trialing';
-    }
-
-    // Calculate billing periods
-    if (this.isModified('startDate') || this.isModified('currentPeriodEnd')) {
-      this.calculateNextPeriod();
-    }
-
-    // Update status history
-    if (this.isModified('status')) {
-      if (!this.statusHistory) {
-        this.statusHistory = [];
+    // Update state history
+    if (this.isModified('status.state')) {
+      if (!this.status.stateHistory) {
+        this.status.stateHistory = [];
       }
       
-      this.statusHistory.push({
-        status: this.status,
+      this.status.stateHistory.push({
+        state: this.status.state,
         changedAt: new Date(),
-        changedBy: this.lastModifiedBy?.userId,
-        reason: this.cancellationReason || this.pauseReason
+        previousState: this.status.previousState
       });
-
-      // Keep previous status
-      if (this.status !== this.previousStatus) {
-        this.previousStatus = this._original?.status;
-      }
+      
+      this.status.previousState = this.status.state;
     }
 
-    // Handle cancellation
-    if (this.cancelAtPeriodEnd && !this.cancelAt) {
-      this.cancelAt = this.currentPeriodEnd;
+    // Calculate next renewal date if not set
+    if (!this.renewal.nextRenewalDate && this.periods.current.endDate) {
+      this.renewal.nextRenewalDate = new Date(this.periods.current.endDate);
     }
 
-    // Calculate next payment amount
-    this.nextPaymentAmount = this.totalPrice;
+    // Update trial days remaining
+    if (this.status.trial.isTrialing && this.status.trial.endDate) {
+      this.status.trial.daysRemaining = this.trialDaysRemaining;
+    }
+
+    // Calculate churn risk
+    if (this.isModified('analytics') || this.isModified('payment') || this.isModified('status')) {
+      await this.calculateChurnRisk();
+    }
 
     next();
   } catch (error) {
@@ -510,585 +600,686 @@ subscriptionSchema.pre('save', async function(next) {
   }
 });
 
-// Instance methods
-subscriptionSchema.methods.calculateNextPeriod = function() {
-  if (!this.currentPeriodEnd) {
-    this.currentPeriodStart = this.startDate;
-    this.currentPeriodEnd = this.calculatePeriodEnd(this.currentPeriodStart);
-  }
-
-  // Calculate next payment date
-  if (this.isActive && !this.cancelAtPeriodEnd) {
-    this.nextPaymentDate = new Date(this.currentPeriodEnd);
-    this.nextPaymentDate.setDate(this.nextPaymentDate.getDate() + 1);
-  }
-};
-
-subscriptionSchema.methods.calculatePeriodEnd = function(periodStart) {
-  const start = new Date(periodStart);
-  
-  switch (this.billingInterval) {
-    case 'day':
-      start.setDate(start.getDate() + this.billingIntervalCount);
-      break;
-    case 'week':
-      start.setDate(start.getDate() + (7 * this.billingIntervalCount));
-      break;
-    case 'month':
-      start.setMonth(start.getMonth() + this.billingIntervalCount);
-      break;
-    case 'year':
-      start.setFullYear(start.getFullYear() + this.billingIntervalCount);
-      break;
-  }
-  
-  return start;
-};
-
+// ==================== Instance Methods ====================
 subscriptionSchema.methods.activate = async function() {
-  if (this.status === 'active') {
-    return this;
+  if (this.status.state === 'active') {
+    throw new AppError('Subscription is already active', 400, 'ALREADY_ACTIVE');
   }
 
-  this.status = 'active';
+  this.status.state = 'active';
   
-  if (this.status === 'trialing') {
-    this.trialEnd = new Date();
+  if (this.status.trial.isTrialing) {
+    this.status.trial.isTrialing = false;
+    this.status.trial.convertedAt = new Date();
   }
-
+  
   await this.save();
   
   logger.info('Subscription activated', {
-    subscriptionId: this.subscriptionId,
-    customerId: this.customerId
+    subscriptionId: this._id,
+    organizationId: this.organizationId
   });
   
   return this;
 };
 
-subscriptionSchema.methods.cancel = async function(options = {}) {
-  const { 
-    atPeriodEnd = true, 
-    reason, 
-    feedback, 
-    cancelledBy 
-  } = options;
-
-  if (['cancelled', 'expired'].includes(this.status)) {
+subscriptionSchema.methods.cancel = async function(reason, feedback, userId, immediate = false) {
+  if (this.status.state === 'cancelled') {
     throw new AppError('Subscription is already cancelled', 400, 'ALREADY_CANCELLED');
   }
 
-  if (atPeriodEnd) {
-    this.cancelAtPeriodEnd = true;
-    this.cancelAt = this.currentPeriodEnd;
-  } else {
-    this.status = 'cancelled';
-    this.cancelledAt = new Date();
-    this.endedAt = new Date();
-  }
-
-  this.cancellationReason = reason;
-  this.cancellationFeedback = feedback;
-  this.cancelledBy = cancelledBy;
-
+  this.status.state = 'cancelled';
+  this.status.cancellation = {
+    requestedAt: new Date(),
+    effectiveDate: immediate ? new Date() : this.periods.current.endDate,
+    reason,
+    feedback,
+    byUserId: userId
+  };
+  
+  // Disable auto-renewal
+  this.payment.autoRenew = false;
+  this.renewal.settings.autoRenew = false;
+  
   await this.save();
   
-  // Send cancellation webhook
-  await this.sendWebhook('subscription.cancelled');
+  logger.info('Subscription cancelled', {
+    subscriptionId: this._id,
+    organizationId: this.organizationId,
+    reason,
+    immediate
+  });
   
   return this;
 };
 
-subscriptionSchema.methods.reactivate = async function() {
-  if (!['cancelled', 'paused'].includes(this.status)) {
-    throw new AppError('Subscription cannot be reactivated', 400, 'INVALID_STATUS');
+subscriptionSchema.methods.pause = async function(resumeDate, reason, userId) {
+  if (this.status.state !== 'active') {
+    throw new AppError('Only active subscriptions can be paused', 400, 'INVALID_STATE');
   }
 
-  if (this.cancelAtPeriodEnd) {
-    this.cancelAtPeriodEnd = false;
-    this.cancelAt = null;
-  } else {
-    this.status = 'active';
-  }
-
-  this.cancellationReason = null;
-  this.cancellationFeedback = null;
-  this.pausedAt = null;
-  this.pausedUntil = null;
-
+  this.status.state = 'paused';
+  this.status.pause = {
+    pausedAt: new Date(),
+    resumeDate,
+    reason,
+    byUserId: userId
+  };
+  
   await this.save();
   
-  // Send reactivation webhook
-  await this.sendWebhook('subscription.reactivated');
-  
-  return this;
-};
-
-subscriptionSchema.methods.pause = async function(options = {}) {
-  const { until, reason, pausedBy } = options;
-
-  if (this.status !== 'active') {
-    throw new AppError('Only active subscriptions can be paused', 400, 'INVALID_STATUS');
-  }
-
-  this.previousStatus = this.status;
-  this.status = 'paused';
-  this.pausedAt = new Date();
-  this.pausedUntil = until;
-  this.pauseReason = reason;
-  this.pausedBy = pausedBy;
-
-  await this.save();
-  
-  // Send pause webhook
-  await this.sendWebhook('subscription.paused');
+  logger.info('Subscription paused', {
+    subscriptionId: this._id,
+    organizationId: this.organizationId,
+    resumeDate
+  });
   
   return this;
 };
 
 subscriptionSchema.methods.resume = async function() {
-  if (this.status !== 'paused') {
-    throw new AppError('Subscription is not paused', 400, 'NOT_PAUSED');
+  if (this.status.state !== 'paused') {
+    throw new AppError('Only paused subscriptions can be resumed', 400, 'NOT_PAUSED');
   }
 
-  this.status = this.previousStatus || 'active';
-  this.pausedAt = null;
-  this.pausedUntil = null;
-  this.pauseReason = null;
-
+  this.status.state = 'active';
+  this.status.pause = undefined;
+  
+  // Recalculate billing dates
+  await this.recalculateBillingPeriods();
+  
   await this.save();
   
-  // Send resume webhook
-  await this.sendWebhook('subscription.resumed');
+  logger.info('Subscription resumed', {
+    subscriptionId: this._id,
+    organizationId: this.organizationId
+  });
   
   return this;
 };
 
-subscriptionSchema.methods.changePlan = async function(newPlanId, options = {}) {
-  const { 
-    prorated = true, 
-    atPeriodEnd = false 
-  } = options;
-
+subscriptionSchema.methods.upgradePlan = async function(newPlanId, immediate = true) {
   const SubscriptionPlan = mongoose.model('SubscriptionPlan');
   const newPlan = await SubscriptionPlan.findById(newPlanId);
   
-  if (!newPlan) {
-    throw new AppError('Plan not found', 404, 'PLAN_NOT_FOUND');
-  }
-
-  // Record plan history
-  if (!this.planHistory) {
-    this.planHistory = [];
+  if (!newPlan || newPlan.status.state !== 'active') {
+    throw new AppError('Invalid or inactive plan', 400, 'INVALID_PLAN');
   }
   
-  this.planHistory.push({
-    planId: this.planId,
-    planName: this.planSnapshot.name,
-    startDate: this.currentPeriodStart,
-    endDate: new Date(),
-    price: this.price
-  });
-
-  if (atPeriodEnd) {
-    // Schedule plan change for next period
-    this.pendingPlanChange = {
-      planId: newPlanId,
-      scheduledFor: this.currentPeriodEnd
-    };
-  } else {
-    // Change plan immediately
+  const currentPlan = await SubscriptionPlan.findById(this.planId);
+  
+  // Calculate proration
+  const prorationAmount = this.calculateProration(currentPlan, newPlan);
+  
+  if (immediate) {
+    // Record upgrade history
+    if (!this.upgrade.history) this.upgrade.history = [];
+    this.upgrade.history.push({
+      fromPlanId: this.planId,
+      toPlanId: newPlanId,
+      upgradedAt: new Date(),
+      prorationAmount
+    });
+    
+    // Update plan
     this.planId = newPlanId;
-    this.planSnapshot = {
-      name: newPlan.name,
-      code: newPlan.code,
-      price: newPlan.price,
-      currency: newPlan.currency,
-      interval: newPlan.billingInterval,
-      intervalCount: newPlan.billingIntervalCount,
-      features: newPlan.features,
-      limits: newPlan.limits
-    };
-    this.price = newPlan.price;
-    this.billingInterval = newPlan.billingInterval;
-    this.billingIntervalCount = newPlan.billingIntervalCount;
-
-    if (prorated) {
-      // Calculate proration
-      await this.calculateProration();
+    this.billing.amount = newPlan.pricing.amount;
+    this.billing.interval = newPlan.pricing.interval;
+    
+    // Update features if inherited
+    if (this.features.inherited) {
+      this.features.overrides = {};
     }
+    
+    await this.save();
+    
+    logger.info('Subscription upgraded immediately', {
+      subscriptionId: this._id,
+      fromPlan: currentPlan.name,
+      toPlan: newPlan.name
+    });
+  } else {
+    // Schedule upgrade for next billing period
+    this.upgrade.pendingUpgrade = {
+      toPlanId: newPlanId,
+      effectiveDate: this.periods.current.endDate,
+      prorationAmount
+    };
+    
+    await this.save();
+    
+    logger.info('Subscription upgrade scheduled', {
+      subscriptionId: this._id,
+      effectiveDate: this.periods.current.endDate
+    });
   }
-
-  await this.save();
-  
-  // Send plan change webhook
-  await this.sendWebhook('subscription.plan_changed');
   
   return this;
 };
 
-subscriptionSchema.methods.calculateProration = async function() {
-  const now = new Date();
-  const periodStart = new Date(this.currentPeriodStart);
-  const periodEnd = new Date(this.currentPeriodEnd);
+subscriptionSchema.methods.calculateProration = function(currentPlan, newPlan) {
+  if (!this.periods.current.startDate || !this.periods.current.endDate) {
+    return 0;
+  }
   
+  const now = new Date();
+  const periodStart = this.periods.current.startDate;
+  const periodEnd = this.periods.current.endDate;
+  
+  // Calculate remaining days in current period
   const totalDays = Math.ceil((periodEnd - periodStart) / (1000 * 60 * 60 * 24));
   const remainingDays = Math.ceil((periodEnd - now) / (1000 * 60 * 60 * 24));
   
-  const unusedAmount = (this.price * remainingDays) / totalDays;
+  if (remainingDays <= 0) return 0;
   
-  // This would create a credit transaction
-  logger.info('Proration calculated', {
-    subscriptionId: this.subscriptionId,
-    unusedAmount,
-    remainingDays
+  // Calculate daily rates
+  const currentDailyRate = currentPlan.pricing.amount / totalDays;
+  const newDailyRate = newPlan.pricing.amount / totalDays;
+  
+  // Calculate proration (positive means customer owes money)
+  const proration = (newDailyRate - currentDailyRate) * remainingDays;
+  
+  return Math.round(proration * 100) / 100;
+};
+
+subscriptionSchema.methods.recordPayment = async function(paymentId, amount) {
+  // Update payment info
+  this.payment.lastPaymentDate = new Date();
+  this.payment.lastPaymentAmount = amount;
+  this.payment.failedAttempts = 0;
+  this.payment.requiresPaymentUpdate = false;
+  
+  // Update analytics
+  this.analytics.lifetimeValue += amount;
+  this.analytics.totalPayments += amount;
+  this.analytics.paymentCount += 1;
+  this.analytics.averagePaymentAmount = this.analytics.totalPayments / this.analytics.paymentCount;
+  
+  // Mark current period as paid
+  if (this.periods.current) {
+    this.periods.current.paid = true;
+    this.periods.current.paymentId = paymentId;
+  }
+  
+  // Update status if was past due
+  if (this.status.state === 'past_due') {
+    this.status.state = 'active';
+  }
+  
+  await this.save();
+  
+  logger.info('Payment recorded for subscription', {
+    subscriptionId: this._id,
+    amount,
+    paymentId
   });
   
-  return unusedAmount;
+  return this;
 };
 
-subscriptionSchema.methods.addDiscount = async function(discount) {
-  if (!this.discounts) {
-    this.discounts = [];
-  }
-
-  discount.appliedAt = new Date();
+subscriptionSchema.methods.recordFailedPayment = async function(reason) {
+  this.payment.failedAttempts += 1;
+  this.payment.lastFailureDate = new Date();
+  this.payment.lastFailureReason = reason;
   
-  if (discount.duration === 'repeating' && discount.durationInMonths) {
-    const expiryDate = new Date();
-    expiryDate.setMonth(expiryDate.getMonth() + discount.durationInMonths);
-    discount.expiresAt = expiryDate;
+  // Mark as past due after certain attempts
+  if (this.payment.failedAttempts >= 3 && this.status.state === 'active') {
+    this.status.state = 'past_due';
+    this.payment.requiresPaymentUpdate = true;
   }
-
-  this.discounts.push(discount);
   
-  // Update current discount
-  this.updateCurrentDiscount();
+  // Schedule retry
+  if (this.payment.failedAttempts < 5) {
+    const retryDelays = [1, 3, 5, 7, 10]; // Days
+    const delay = retryDelays[this.payment.failedAttempts - 1] || 10;
+    
+    if (!this.payment.retrySchedule) this.payment.retrySchedule = [];
+    
+    this.payment.retrySchedule.push({
+      attemptNumber: this.payment.failedAttempts,
+      scheduledDate: new Date(Date.now() + delay * 24 * 60 * 60 * 1000),
+      attempted: false
+    });
+  }
+  
+  await this.save();
+  
+  logger.warn('Failed payment recorded for subscription', {
+    subscriptionId: this._id,
+    reason,
+    attempts: this.payment.failedAttempts
+  });
+  
+  return this;
+};
+
+subscriptionSchema.methods.updateUsage = async function(metric, value) {
+  if (!this.features.usage[metric]) {
+    throw new AppError('Invalid usage metric', 400, 'INVALID_METRIC');
+  }
+  
+  this.features.usage[metric].current = value;
+  this.features.usage[metric].lastUpdated = new Date();
+  
+  // Update peak if necessary
+  if (!this.features.usage[metric].peak || value > this.features.usage[metric].peak) {
+    this.features.usage[metric].peak = value;
+  }
   
   await this.save();
   
   return this;
 };
 
-subscriptionSchema.methods.updateCurrentDiscount = function() {
+subscriptionSchema.methods.checkUsageLimits = async function() {
+  const SubscriptionPlan = mongoose.model('SubscriptionPlan');
+  const plan = await SubscriptionPlan.findById(this.planId);
+  
+  if (!plan) {
+    throw new AppError('Plan not found', 404, 'PLAN_NOT_FOUND');
+  }
+  
+  const limits = {};
+  const overages = {};
+  
+  ['users', 'projects', 'storage', 'apiCalls'].forEach(metric => {
+    const planLimit = plan.features[metric]?.limit || plan.features[metric]?.monthlyLimit;
+    const override = this.features.overrides?.[metric]?.limit;
+    const limit = override !== undefined ? override : planLimit;
+    
+    if (limit && limit !== -1) {
+      limits[metric] = limit;
+      const current = this.features.usage[metric]?.current || 0;
+      
+      if (current > limit) {
+        overages[metric] = {
+          limit,
+          current,
+          overage: current - limit,
+          percentage: Math.round((current / limit) * 100)
+        };
+      }
+    }
+  });
+  
+  return { limits, overages, hasOverages: Object.keys(overages).length > 0 };
+};
+
+subscriptionSchema.methods.addAddon = async function(addonId, quantity = 1) {
+  if (!this.features.addons) this.features.addons = [];
+  
+  const existingAddon = this.features.addons.find(
+    a => a.addonId.toString() === addonId.toString()
+  );
+  
+  if (existingAddon) {
+    existingAddon.quantity += quantity;
+  } else {
+    this.features.addons.push({
+      addonId,
+      quantity,
+      addedAt: new Date()
+    });
+  }
+  
+  await this.save();
+  
+  logger.info('Addon added to subscription', {
+    subscriptionId: this._id,
+    addonId,
+    quantity
+  });
+  
+  return this;
+};
+
+subscriptionSchema.methods.removeAddon = async function(addonId) {
+  if (!this.features.addons) return this;
+  
+  this.features.addons = this.features.addons.filter(
+    a => a.addonId.toString() !== addonId.toString()
+  );
+  
+  await this.save();
+  
+  logger.info('Addon removed from subscription', {
+    subscriptionId: this._id,
+    addonId
+  });
+  
+  return this;
+};
+
+subscriptionSchema.methods.calculateChurnRisk = async function() {
+  const factors = [];
+  let totalScore = 0;
+  
+  // Payment failures
+  if (this.payment.failedAttempts > 0) {
+    const failureScore = Math.min(this.payment.failedAttempts * 10, 30);
+    factors.push({ factor: 'payment_failures', weight: 0.3, value: failureScore });
+    totalScore += failureScore * 0.3;
+  }
+  
+  // Days since last login
+  if (this.analytics.engagement.lastLoginDate) {
+    const daysSinceLogin = Math.floor((Date.now() - this.analytics.engagement.lastLoginDate) / (1000 * 60 * 60 * 24));
+    const loginScore = Math.min(daysSinceLogin * 2, 40);
+    factors.push({ factor: 'inactive_days', weight: 0.2, value: loginScore });
+    totalScore += loginScore * 0.2;
+  }
+  
+  // Usage vs limits
+  const usageLimits = await this.checkUsageLimits();
+  if (usageLimits.hasOverages) {
+    factors.push({ factor: 'usage_overages', weight: 0.1, value: 20 });
+    totalScore += 20 * 0.1;
+  }
+  
+  // Support tickets (would need integration)
+  // Feature adoption
+  // Contract length remaining
+  
+  this.analytics.churnRisk = {
+    score: Math.min(Math.round(totalScore), 100),
+    factors,
+    lastCalculated: new Date()
+  };
+};
+
+subscriptionSchema.methods.recalculateBillingPeriods = async function() {
   const now = new Date();
   
-  // Find active discount
-  const activeDiscount = this.discounts?.find(d => 
-    !d.expiresAt || d.expiresAt > now
-  );
-
-  if (activeDiscount) {
-    this.currentDiscount = {
-      amount: activeDiscount.type === 'fixed' ? activeDiscount.value : null,
-      percentage: activeDiscount.type === 'percentage' ? activeDiscount.value : null,
-      expiresAt: activeDiscount.expiresAt
-    };
-  } else {
-    this.currentDiscount = null;
-  }
-};
-
-subscriptionSchema.methods.updateQuantity = async function(newQuantity) {
-  const oldQuantity = this.quantity;
-  this.quantity = newQuantity;
-
-  // Calculate proration if quantity increased mid-cycle
-  if (newQuantity > oldQuantity) {
-    await this.calculateProration();
-  }
-
-  await this.save();
-  
-  // Send quantity update webhook
-  await this.sendWebhook('subscription.quantity_updated');
-  
-  return this;
-};
-
-subscriptionSchema.methods.updatePaymentMethod = async function(paymentMethodId) {
-  const PaymentMethod = mongoose.model('PaymentMethod');
-  const paymentMethod = await PaymentMethod.findById(paymentMethodId);
-  
-  if (!paymentMethod) {
-    throw new AppError('Payment method not found', 404, 'PAYMENT_METHOD_NOT_FOUND');
-  }
-
-  if (paymentMethod.customerId.toString() !== this.customerId.toString()) {
-    throw new AppError('Payment method does not belong to customer', 403, 'INVALID_PAYMENT_METHOD');
-  }
-
-  this.paymentMethodId = paymentMethodId;
-  this.defaultPaymentMethod = paymentMethodId;
-  
-  await this.save();
-  
-  return this;
-};
-
-subscriptionSchema.methods.recordPayment = async function(payment) {
-  this.lastPaymentStatus = payment.status;
-  this.lastPaymentDate = payment.processedAt || new Date();
-  this.lastPaymentAmount = payment.amount;
-
-  if (payment.status === 'succeeded') {
-    this.paymentRetries = 0;
-    this.nextRetryDate = null;
-    
-    // Update metrics
-    this.metrics.totalRevenue += payment.amount;
-    this.metrics.totalPayments += 1;
-    
-    // Advance to next period
-    await this.advancePeriod();
-  } else {
-    this.paymentRetries += 1;
-    
-    if (this.paymentRetries >= this.maxPaymentRetries) {
-      this.status = 'past_due';
-    }
-    
-    // Schedule retry
-    const retryDelay = Math.pow(2, this.paymentRetries) * 24 * 60 * 60 * 1000;
-    this.nextRetryDate = new Date(Date.now() + retryDelay);
-  }
-
-  await this.save();
-  
-  return this;
-};
-
-subscriptionSchema.methods.advancePeriod = async function() {
-  this.currentPeriodStart = new Date(this.currentPeriodEnd);
-  this.currentPeriodStart.setDate(this.currentPeriodStart.getDate() + 1);
-  this.currentPeriodEnd = this.calculatePeriodEnd(this.currentPeriodStart);
-  
-  // Check if subscription should end
-  if (this.cancelAtPeriodEnd && this.cancelAt <= new Date()) {
-    this.status = 'cancelled';
-    this.cancelledAt = new Date();
-    this.endedAt = new Date();
-  } else {
-    this.calculateNextPeriod();
-  }
-
-  // Clear usage records for new period
-  this.usageRecords = [];
-  
-  await this.save();
-  
-  return this;
-};
-
-subscriptionSchema.methods.recordUsage = async function(metric, quantity, unitPrice) {
-  if (!this.usageRecords) {
-    this.usageRecords = [];
-  }
-
-  const usageRecord = {
-    metric,
-    quantity,
-    unitPrice,
-    totalAmount: quantity * unitPrice,
-    period: {
-      start: this.currentPeriodStart,
-      end: this.currentPeriodEnd
-    }
-  };
-
-  this.usageRecords.push(usageRecord);
-  
-  await this.save();
-  
-  return usageRecord;
-};
-
-subscriptionSchema.methods.sendWebhook = async function(event) {
-  if (!this.webhookEvents) {
-    this.webhookEvents = [];
-  }
-
-  const webhook = {
-    event,
-    sentAt: new Date()
-  };
-
-  try {
-    // Send webhook to configured endpoints
-    logger.info('Sending subscription webhook', {
-      subscriptionId: this.subscriptionId,
-      event
+  // If current period has ended, create new period
+  if (this.periods.current.endDate < now) {
+    // Move current to history
+    if (!this.periods.history) this.periods.history = [];
+    this.periods.history.push({
+      periodId: `period_${Date.now()}`,
+      ...this.periods.current.toObject()
     });
     
-    webhook.response = { status: 'success' };
-  } catch (error) {
-    webhook.response = { status: 'failed', error: error.message };
+    // Calculate new period based on interval
+    const intervalDays = {
+      monthly: 30,
+      quarterly: 90,
+      'semi-annual': 180,
+      annual: 365,
+      biennial: 730
+    };
+    
+    const days = intervalDays[this.billing.interval] || 30;
+    const startDate = new Date(this.periods.current.endDate);
+    const endDate = new Date(startDate.getTime() + days * 24 * 60 * 60 * 1000);
+    
+    this.periods.current = {
+      startDate,
+      endDate,
+      billingDate: startDate,
+      amount: this.billing.amount,
+      paid: false
+    };
+    
+    this.periods.next = {
+      startDate: endDate,
+      endDate: new Date(endDate.getTime() + days * 24 * 60 * 60 * 1000),
+      billingDate: endDate,
+      amount: this.billing.amount
+    };
+    
+    this.renewal.nextRenewalDate = endDate;
   }
-
-  this.webhookEvents.push(webhook);
-  await this.save();
 };
 
-// Static methods
-subscriptionSchema.statics.generateSubscriptionId = async function() {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 8);
-  return `sub_${timestamp}${random}`.toUpperCase();
+// ==================== Static Methods ====================
+subscriptionSchema.statics.createSubscription = async function(data) {
+  const { organizationId, planId, paymentMethodId, trialDays } = data;
+  
+  // Get plan details
+  const SubscriptionPlan = mongoose.model('SubscriptionPlan');
+  const plan = await SubscriptionPlan.findById(planId);
+  
+  if (!plan || plan.status.state !== 'active') {
+    throw new AppError('Invalid or inactive plan', 400, 'INVALID_PLAN');
+  }
+  
+  // Get organization
+  const Organization = mongoose.model('Organization');
+  const organization = await Organization.findById(organizationId);
+  
+  if (!organization) {
+    throw new AppError('Organization not found', 404, 'ORGANIZATION_NOT_FOUND');
+  }
+  
+  // Calculate billing periods
+  const now = new Date();
+  const isTrialing = trialDays > 0 || plan.pricing.trialDays > 0;
+  const trialLength = trialDays || plan.pricing.trialDays || 0;
+  
+  let startDate = now;
+  let endDate;
+  
+  if (isTrialing) {
+    endDate = new Date(now.getTime() + trialLength * 24 * 60 * 60 * 1000);
+  } else {
+    const intervalDays = {
+      monthly: 30,
+      quarterly: 90,
+      'semi-annual': 180,
+      annual: 365,
+      biennial: 730
+    };
+    
+    const days = intervalDays[plan.pricing.interval] || 30;
+    endDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  }
+  
+  const subscription = new this({
+    organizationId,
+    tenantId: organization.tenancy?.tenantId,
+    planId,
+    billing: {
+      amount: isTrialing ? 0 : plan.pricing.amount,
+      currency: plan.pricing.currency,
+      interval: plan.pricing.interval,
+      intervalCount: plan.pricing.intervalCount
+    },
+    status: {
+      state: isTrialing ? 'trialing' : 'active',
+      trial: isTrialing ? {
+        isTrialing: true,
+        startDate: now,
+        endDate,
+        daysRemaining: trialLength
+      } : {}
+    },
+    periods: {
+      current: {
+        startDate,
+        endDate,
+        billingDate: isTrialing ? endDate : now,
+        amount: isTrialing ? 0 : plan.pricing.amount,
+        paid: isTrialing
+      }
+    },
+    payment: {
+      methodId: paymentMethodId,
+      autoRenew: true
+    },
+    renewal: {
+      nextRenewalDate: endDate
+    }
+  });
+  
+  await subscription.save();
+  
+  // Update organization subscription info
+  organization.subscription = {
+    status: subscription.status.state,
+    tier: plan.tier,
+    planId: plan._id
+  };
+  
+  await organization.save();
+  
+  logger.info('Subscription created', {
+    subscriptionId: subscription._id,
+    organizationId,
+    planName: plan.name,
+    isTrialing
+  });
+  
+  return subscription;
 };
 
-subscriptionSchema.statics.findExpiringTrials = async function(daysBefore = 3) {
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + daysBefore);
+subscriptionSchema.statics.findByOrganization = async function(organizationId, options = {}) {
+  const query = { organizationId };
+  
+  if (options.activeOnly) {
+    query['status.state'] = { $in: ['active', 'trialing', 'past_due'] };
+  }
+  
+  return await this.find(query)
+    .sort({ createdAt: -1 })
+    .populate('planId');
+};
+
+subscriptionSchema.statics.findExpiringTrials = async function(daysAhead = 3) {
+  const targetDate = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
   
   return await this.find({
-    status: 'trialing',
-    trialEnd: {
+    'status.state': 'trialing',
+    'status.trial.endDate': {
       $gte: new Date(),
       $lte: targetDate
     }
-  }).populate('customerId', 'email profile.fullName');
+  }).populate('organizationId planId');
 };
 
-subscriptionSchema.statics.processScheduledChanges = async function() {
-  const now = new Date();
+subscriptionSchema.statics.findDueForRenewal = async function(daysAhead = 0) {
+  const targetDate = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
   
-  // Process scheduled plan changes
-  const subscriptionsWithPendingChanges = await this.find({
-    'pendingPlanChange.scheduledFor': { $lte: now }
-  });
-
-  for (const subscription of subscriptionsWithPendingChanges) {
-    await subscription.changePlan(subscription.pendingPlanChange.planId);
-    subscription.pendingPlanChange = undefined;
-    await subscription.save();
-  }
-
-  // Process paused subscriptions that should resume
-  const pausedSubscriptions = await this.find({
-    status: 'paused',
-    pausedUntil: { $lte: now }
-  });
-
-  for (const subscription of pausedSubscriptions) {
-    await subscription.resume();
-  }
-
-  return {
-    planChanges: subscriptionsWithPendingChanges.length,
-    resumed: pausedSubscriptions.length
-  };
-};
-
-subscriptionSchema.statics.getUpcomingRenewals = async function(days = 7) {
-  const startDate = new Date();
-  const endDate = new Date();
-  endDate.setDate(endDate.getDate() + days);
-
   return await this.find({
-    status: 'active',
-    cancelAtPeriodEnd: false,
-    currentPeriodEnd: {
-      $gte: startDate,
-      $lte: endDate
-    }
-  }).populate('customerId', 'email profile.fullName')
-    .populate('planId', 'name price');
+    'status.state': 'active',
+    'renewal.nextRenewalDate': {
+      $lte: targetDate
+    },
+    'payment.autoRenew': true
+  }).populate('organizationId planId payment.methodId');
 };
 
-subscriptionSchema.statics.getChurnStatistics = async function(organizationId, period) {
-  const { startDate, endDate } = period;
+subscriptionSchema.statics.findPastDue = async function(options = {}) {
+  const query = {
+    'status.state': 'past_due'
+  };
   
-  const matchQuery = {
-    status: 'cancelled',
-    cancelledAt: { $gte: startDate, $lte: endDate }
-  };
-
-  if (organizationId) {
-    matchQuery.organizationId = organizationId;
+  if (options.minDaysPastDue) {
+    const cutoffDate = new Date(Date.now() - options.minDaysPastDue * 24 * 60 * 60 * 1000);
+    query['payment.lastFailureDate'] = { $lte: cutoffDate };
   }
-
-  const stats = await this.aggregate([
-    { $match: matchQuery },
-    {
-      $group: {
-        _id: '$cancellationReason',
-        count: { $sum: 1 },
-        totalRevenueLost: { $sum: '$metrics.totalRevenue' },
-        avgLifetime: { $avg: '$metrics.totalPayments' }
-      }
-    },
-    {
-      $project: {
-        reason: '$_id',
-        count: 1,
-        totalRevenueLost: { $round: ['$totalRevenueLost', 2] },
-        avgLifetime: { $round: ['$avgLifetime', 0] },
-        percentage: { $round: [{ $multiply: [{ $divide: ['$count', { $sum: '$count' }] }, 100] }, 2] }
-      }
-    },
-    { $sort: { count: -1 } }
-  ]);
-
-  return stats;
+  
+  return await this.find(query)
+    .sort({ 'payment.lastFailureDate': 1 })
+    .populate('organizationId planId');
 };
 
-subscriptionSchema.statics.getMRR = async function(organizationId) {
-  const matchQuery = {
-    status: { $in: ['active', 'trialing'] }
-  };
-
-  if (organizationId) {
-    matchQuery.organizationId = organizationId;
+subscriptionSchema.statics.getSubscriptionMetrics = async function(filters = {}) {
+  const match = {};
+  
+  if (filters.tenantId) {
+    match.tenantId = filters.tenantId;
   }
-
-  const [result] = await this.aggregate([
-    { $match: matchQuery },
+  
+  if (filters.dateRange) {
+    match.createdAt = {
+      $gte: filters.dateRange.start,
+      $lte: filters.dateRange.end
+    };
+  }
+  
+  const metrics = await this.aggregate([
+    { $match: match },
     {
-      $group: {
-        _id: null,
-        monthlyRecurring: {
-          $sum: {
-            $cond: [
-              { $eq: ['$billingInterval', 'month'] },
-              '$totalPrice',
-              {
-                $cond: [
-                  { $eq: ['$billingInterval', 'year'] },
-                  { $divide: ['$totalPrice', 12] },
-                  0
-                ]
+      $facet: {
+        overview: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              active: {
+                $sum: { $cond: [{ $eq: ['$status.state', 'active'] }, 1, 0] }
+              },
+              trialing: {
+                $sum: { $cond: [{ $eq: ['$status.state', 'trialing'] }, 1, 0] }
+              },
+              pastDue: {
+                $sum: { $cond: [{ $eq: ['$status.state', 'past_due'] }, 1, 0] }
+              },
+              cancelled: {
+                $sum: { $cond: [{ $eq: ['$status.state', 'cancelled'] }, 1, 0] }
               }
-            ]
+            }
           }
-        },
-        yearlyRecurring: {
-          $sum: {
-            $cond: [
-              { $eq: ['$billingInterval', 'year'] },
-              '$totalPrice',
-              0
-            ]
+        ],
+        revenue: [
+          {
+            $match: { 'status.state': { $in: ['active', 'past_due'] } }
+          },
+          {
+            $group: {
+              _id: null,
+              mrr: { $sum: '$billing.amount' },
+              arr: { $sum: { $multiply: ['$billing.amount', 12] } },
+              avgRevenue: { $avg: '$billing.amount' }
+            }
           }
-        },
-        activeSubscriptions: { $sum: 1 }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        mrr: { $round: ['$monthlyRecurring', 2] },
-        arr: { $round: [{ $multiply: ['$monthlyRecurring', 12] }, 2] },
-        yearlyRevenue: { $round: ['$yearlyRecurring', 2] },
-        activeSubscriptions: 1
+        ],
+        churn: [
+          {
+            $match: {
+              'status.state': 'cancelled',
+              'status.cancellation.requestedAt': {
+                $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+              }
+            }
+          },
+          {
+            $group: {
+              _id: '$status.cancellation.reason',
+              count: { $sum: 1 }
+            }
+          }
+        ],
+        byPlan: [
+          {
+            $group: {
+              _id: '$planId',
+              count: { $sum: 1 },
+              revenue: { $sum: '$billing.amount' }
+            }
+          }
+        ]
       }
     }
   ]);
-
-  return result || {
-    mrr: 0,
-    arr: 0,
-    yearlyRevenue: 0,
-    activeSubscriptions: 0
+  
+  const result = metrics[0];
+  
+  return {
+    overview: result.overview[0] || {
+      total: 0,
+      active: 0,
+      trialing: 0,
+      pastDue: 0,
+      cancelled: 0
+    },
+    revenue: result.revenue[0] || {
+      mrr: 0,
+      arr: 0,
+      avgRevenue: 0
+    },
+    churnReasons: result.churn,
+    byPlan: result.byPlan
   };
 };
 

@@ -7,340 +7,515 @@
  * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/utils/validators/common-validators
+ * @requires module:shared/lib/utils/helpers/date-helper
  * @requires module:shared/lib/utils/helpers/string-helper
- * @requires module:shared/lib/utils/formatters/currency-formatter
  */
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
 const AppError = require('../../../utils/app-error');
+const validators = require('../../../utils/validators/common-validators');
+const dateHelper = require('../../../utils/helpers/date-helper');
 const stringHelper = require('../../../utils/helpers/string-helper');
-const currencyFormatter = require('../../../utils/formatters/currency-formatter');
 
 /**
  * Invoice schema definition
  */
 const invoiceSchemaDefinition = {
-  // Invoice Identification
+  // ==================== Core Identity ====================
   invoiceNumber: {
     type: String,
-    required: true,
     unique: true,
-    index: true
-  },
-
-  invoiceDate: {
-    type: Date,
-    required: true,
-    default: Date.now
-  },
-
-  dueDate: {
-    type: Date,
     required: true,
     index: true
-  },
-
-  // Billing Entities
-  customerId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    index: true
-  },
-
-  customerType: {
-    type: String,
-    required: true,
-    enum: ['user', 'organization', 'tenant']
   },
 
   organizationId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Organization',
+    required: true,
     index: true
   },
 
-  // Customer Details (Snapshot at invoice time)
-  billingDetails: {
-    name: {
-      type: String,
-      required: true
-    },
-    email: {
-      type: String,
-      required: true
-    },
-    phone: String,
-    address: {
-      line1: String,
-      line2: String,
-      city: String,
-      state: String,
-      postalCode: String,
-      country: String
-    },
-    taxId: String,
-    companyName: String
-  },
-
-  // Invoice Items
-  items: [{
-    productId: mongoose.Schema.Types.ObjectId,
-    productType: {
-      type: String,
-      enum: ['subscription', 'service', 'credit', 'usage', 'addon', 'one_time']
-    },
-    description: {
-      type: String,
-      required: true
-    },
-    quantity: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-    unitPrice: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-    amount: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-    discount: {
-      amount: {
-        type: Number,
-        default: 0
-      },
-      percentage: {
-        type: Number,
-        min: 0,
-        max: 100
-      },
-      reason: String
-    },
-    tax: {
-      rate: {
-        type: Number,
-        min: 0,
-        max: 100
-      },
-      amount: {
-        type: Number,
-        default: 0
-      }
-    },
-    metadata: mongoose.Schema.Types.Mixed,
-    periodStart: Date,
-    periodEnd: Date
-  }],
-
-  // Pricing
-  currency: {
-    type: String,
+  tenantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tenant',
     required: true,
-    uppercase: true,
-    default: 'USD',
-    enum: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CNY']
-  },
-
-  subtotal: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-
-  totalDiscount: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-
-  totalTax: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-
-  totalAmount: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-
-  // Payment Information
-  paymentStatus: {
-    type: String,
-    required: true,
-    enum: ['draft', 'pending', 'paid', 'partial', 'overdue', 'cancelled', 'refunded', 'written_off'],
-    default: 'draft',
     index: true
   },
 
-  amountPaid: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-
-  amountDue: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-
-  paymentMethod: {
-    type: String,
-    enum: ['credit_card', 'debit_card', 'bank_transfer', 'paypal', 'check', 'cash', 'credit', 'other']
-  },
-
-  paymentTerms: {
-    type: String,
-    enum: ['immediate', 'net_15', 'net_30', 'net_45', 'net_60', 'custom'],
-    default: 'net_30'
-  },
-
-  // Payment Tracking
-  payments: [{
-    paymentId: mongoose.Schema.Types.ObjectId,
-    amount: Number,
-    paymentDate: Date,
-    paymentMethod: String,
-    transactionId: String,
-    notes: String
-  }],
-
-  lastPaymentDate: Date,
-  paidAt: Date,
-
-  // Subscription Link
   subscriptionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Subscription',
     index: true
   },
 
-  billingPeriod: {
-    start: Date,
-    end: Date
+  // ==================== Invoice Details ====================
+  type: {
+    type: String,
+    enum: ['subscription', 'one-time', 'usage', 'credit', 'refund', 'adjustment'],
+    required: true,
+    index: true
   },
 
-  // Status and Workflow
   status: {
     type: String,
+    enum: ['draft', 'pending', 'sent', 'paid', 'partial', 'overdue', 'void', 'uncollectible', 'refunded'],
     required: true,
-    enum: ['draft', 'pending_approval', 'approved', 'sent', 'viewed', 'paid', 'cancelled', 'refunded'],
     default: 'draft',
     index: true
   },
 
-  sentAt: Date,
-  viewedAt: Date,
-  remindersSent: [{
-    sentAt: Date,
+  // ==================== Billing Information ====================
+  billing: {
+    fromDate: {
+      type: Date,
+      required: true
+    },
+    toDate: {
+      type: Date,
+      required: true
+    },
+    issueDate: {
+      type: Date,
+      required: true,
+      default: Date.now
+    },
+    dueDate: {
+      type: Date,
+      required: true,
+      index: true
+    },
+    terms: {
+      type: String,
+      enum: ['due_on_receipt', 'net_7', 'net_15', 'net_30', 'net_45', 'net_60', 'custom'],
+      default: 'net_30'
+    },
+    customTerms: String
+  },
+
+  // ==================== Customer Information ====================
+  customer: {
+    organizationName: {
+      type: String,
+      required: true
+    },
+    contactName: String,
+    email: {
+      type: String,
+      required: true,
+      validate: {
+        validator: validators.isEmail,
+        message: 'Invalid email address'
+      }
+    },
+    phone: String,
+    address: {
+      street1: String,
+      street2: String,
+      city: String,
+      state: String,
+      postalCode: String,
+      country: String
+    },
+    taxId: String,
+    vatId: String
+  },
+
+  // ==================== Line Items ====================
+  lineItems: [{
+    itemId: {
+      type: String,
+      default: function() {
+        return `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      }
+    },
     type: {
       type: String,
-      enum: ['email', 'sms', 'in_app']
+      enum: ['subscription', 'addon', 'usage', 'setup', 'discount', 'credit', 'tax', 'adjustment'],
+      required: true
     },
-    recipient: String
+    description: {
+      type: String,
+      required: true
+    },
+    metadata: {
+      planId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'SubscriptionPlan'
+      },
+      planName: String,
+      period: {
+        start: Date,
+        end: Date
+      },
+      usage: {
+        metric: String,
+        quantity: Number,
+        unit: String
+      }
+    },
+    quantity: {
+      type: Number,
+      required: true,
+      default: 1,
+      min: 0
+    },
+    unitPrice: {
+      type: Number,
+      required: true,
+      min: 0,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
+    },
+    amount: {
+      type: Number,
+      required: true,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
+    },
+    discount: {
+      type: {
+        type: String,
+        enum: ['percentage', 'fixed']
+      },
+      value: Number,
+      amount: Number,
+      code: String,
+      description: String
+    },
+    tax: {
+      rate: Number,
+      amount: Number,
+      taxable: {
+        type: Boolean,
+        default: true
+      }
+    },
+    accounting: {
+      revenueAccount: String,
+      recognitionStart: Date,
+      recognitionEnd: Date,
+      recognized: {
+        type: Boolean,
+        default: false
+      }
+    }
   }],
 
-  // Refunds
-  refunds: [{
-    refundId: mongoose.Schema.Types.ObjectId,
-    amount: Number,
-    refundDate: Date,
-    reason: String,
-    processedBy: mongoose.Schema.Types.ObjectId
-  }],
-
-  totalRefunded: {
-    type: Number,
-    default: 0,
-    min: 0
+  // ==================== Financial Summary ====================
+  financial: {
+    currency: {
+      type: String,
+      required: true,
+      default: 'USD',
+      uppercase: true,
+      validate: {
+        validator: function(value) {
+          return /^[A-Z]{3}$/.test(value);
+        },
+        message: 'Invalid currency code'
+      }
+    },
+    subtotal: {
+      type: Number,
+      required: true,
+      min: 0,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
+    },
+    discountTotal: {
+      type: Number,
+      default: 0,
+      min: 0,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
+    },
+    taxTotal: {
+      type: Number,
+      default: 0,
+      min: 0,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
+    },
+    total: {
+      type: Number,
+      required: true,
+      min: 0,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
+    },
+    amountDue: {
+      type: Number,
+      required: true,
+      min: 0,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
+    },
+    amountPaid: {
+      type: Number,
+      default: 0,
+      min: 0,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
+    },
+    credits: {
+      applied: {
+        type: Number,
+        default: 0,
+        min: 0
+      },
+      remaining: {
+        type: Number,
+        default: 0,
+        min: 0
+      },
+      transactions: [{
+        creditTransactionId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'CreditTransaction'
+        },
+        amount: Number,
+        appliedAt: Date
+      }]
+    }
   },
 
-  // Notes and Metadata
-  notes: {
-    type: String,
-    maxlength: 2000
+  // ==================== Tax Information ====================
+  tax: {
+    rates: [{
+      name: String,
+      rate: Number,
+      amount: Number,
+      jurisdiction: String,
+      type: {
+        type: String,
+        enum: ['sales', 'vat', 'gst', 'pst', 'hst', 'service', 'other']
+      }
+    }],
+    exempt: {
+      type: Boolean,
+      default: false
+    },
+    exemptionId: String,
+    location: {
+      country: String,
+      state: String,
+      city: String,
+      postalCode: String
+    }
   },
 
-  internalNotes: {
-    type: String,
-    maxlength: 2000,
-    select: false
+  // ==================== Payment Information ====================
+  payment: {
+    methodId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PaymentMethod'
+    },
+    transactions: [{
+      paymentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Payment'
+      },
+      amount: Number,
+      currency: String,
+      paidAt: Date,
+      method: String,
+      reference: String,
+      status: {
+        type: String,
+        enum: ['pending', 'succeeded', 'failed', 'refunded']
+      }
+    }],
+    lastAttemptAt: Date,
+    nextAttemptAt: Date,
+    attemptCount: {
+      type: Number,
+      default: 0
+    },
+    autoCollection: {
+      enabled: {
+        type: Boolean,
+        default: true
+      },
+      maxAttempts: {
+        type: Number,
+        default: 3
+      }
+    }
   },
 
+  // ==================== Provider Integration ====================
+  providers: {
+    stripe: {
+      invoiceId: String,
+      customerId: String,
+      chargeId: String,
+      paymentIntentId: String,
+      hostedUrl: String,
+      pdfUrl: String,
+      metadata: mongoose.Schema.Types.Mixed
+    },
+    paypal: {
+      invoiceId: String,
+      invoiceNumber: String,
+      metadata: mongoose.Schema.Types.Mixed
+    },
+    custom: mongoose.Schema.Types.Mixed
+  },
+
+  // ==================== Document Management ====================
+  documents: {
+    pdf: {
+      url: String,
+      generatedAt: Date,
+      size: Number,
+      version: Number
+    },
+    attachments: [{
+      name: String,
+      url: String,
+      type: String,
+      size: Number,
+      uploadedAt: Date
+    }],
+    template: {
+      id: String,
+      name: String,
+      version: String
+    }
+  },
+
+  // ==================== Communication ====================
+  communication: {
+    sent: {
+      count: {
+        type: Number,
+        default: 0
+      },
+      lastSentAt: Date,
+      history: [{
+        sentAt: Date,
+        to: [String],
+        cc: [String],
+        method: {
+          type: String,
+          enum: ['email', 'api', 'manual']
+        },
+        template: String,
+        status: String
+      }]
+    },
+    reminders: {
+      enabled: {
+        type: Boolean,
+        default: true
+      },
+      schedule: {
+        type: [Number],
+        default: [-7, -3, 0, 3, 7] // Days relative to due date
+      },
+      sent: [{
+        sentAt: Date,
+        dayOffset: Number,
+        method: String
+      }]
+    },
+    language: {
+      type: String,
+      default: 'en'
+    },
+    customMessage: String
+  },
+
+  // ==================== Accounting Integration ====================
+  accounting: {
+    exported: {
+      type: Boolean,
+      default: false
+    },
+    exportedAt: Date,
+    system: {
+      type: String,
+      enum: ['quickbooks', 'xero', 'sage', 'netsuite', 'custom']
+    },
+    reference: String,
+    journal: {
+      entries: [{
+        account: String,
+        debit: Number,
+        credit: Number,
+        description: String
+      }],
+      postedAt: Date
+    },
+    recognitionSchedule: [{
+      period: String,
+      amount: Number,
+      recognized: Boolean,
+      recognizedAt: Date
+    }]
+  },
+
+  // ==================== Metadata & Notes ====================
   metadata: {
     source: {
       type: String,
-      enum: ['manual', 'subscription', 'api', 'import', 'recurring']
+      enum: ['subscription', 'api', 'manual', 'import', 'migration'],
+      default: 'subscription'
     },
-    ipAddress: String,
-    userAgent: String,
     tags: [String],
-    customFields: mongoose.Schema.Types.Mixed
-  },
-
-  // Accounting
-  accountingPeriod: {
-    month: Number,
-    year: Number,
-    quarter: Number
-  },
-
-  glCode: String,
-  costCenter: String,
-
-  // Document Management
-  attachments: [{
-    filename: String,
-    url: String,
-    mimeType: String,
-    size: Number,
-    uploadedAt: Date
-  }],
-
-  pdfUrl: String,
-  publicUrl: String,
-
-  // Audit Trail
-  approvedBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    name: String,
-    approvedAt: Date
-  },
-
-  cancelledBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    name: String,
-    cancelledAt: Date,
-    reason: String
-  },
-
-  createdBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    userType: {
-      type: String,
-      enum: ['user', 'admin', 'system']
+    customFields: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed
     },
-    name: String
+    notes: [{
+      content: String,
+      internal: {
+        type: Boolean,
+        default: true
+      },
+      addedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      addedAt: Date
+    }],
+    references: {
+      orderId: String,
+      purchaseOrder: String,
+      contractId: String,
+      projectId: String
+    }
   },
 
-  // Dispute Management
-  dispute: {
-    status: {
-      type: String,
-      enum: ['none', 'pending', 'resolved', 'escalated']
+  // ==================== Compliance & Audit ====================
+  compliance: {
+    retention: {
+      retainUntil: Date,
+      locked: {
+        type: Boolean,
+        default: false
+      }
     },
-    reason: String,
-    createdAt: Date,
-    resolvedAt: Date,
-    resolution: String
+    audit: [{
+      action: String,
+      performedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      performedAt: Date,
+      changes: mongoose.Schema.Types.Mixed,
+      ipAddress: String
+    }],
+    regulations: {
+      requiresSignature: Boolean,
+      signedAt: Date,
+      signedBy: String,
+      signatureData: String
+    }
   }
 };
 
@@ -350,109 +525,83 @@ const invoiceSchema = BaseModel.createSchema(invoiceSchemaDefinition, {
   timestamps: true
 });
 
-// Indexes
-invoiceSchema.index({ customerId: 1, invoiceDate: -1 });
-invoiceSchema.index({ organizationId: 1, status: 1, paymentStatus: 1 });
-invoiceSchema.index({ dueDate: 1, paymentStatus: 1 });
-invoiceSchema.index({ 'accountingPeriod.year': 1, 'accountingPeriod.month': 1 });
+// ==================== Indexes ====================
+invoiceSchema.index({ organizationId: 1, status: 1 });
+invoiceSchema.index({ tenantId: 1, status: 1 });
+invoiceSchema.index({ 'billing.dueDate': 1, status: 1 });
+invoiceSchema.index({ 'billing.issueDate': -1 });
+invoiceSchema.index({ 'financial.amountDue': 1 });
+invoiceSchema.index({ 'providers.stripe.invoiceId': 1 });
+invoiceSchema.index({ invoiceNumber: 1 });
+invoiceSchema.index({ type: 1, status: 1 });
 
-// Virtual fields
-invoiceSchema.virtual('isOverdue').get(function() {
-  return this.paymentStatus === 'pending' && 
-         this.dueDate < new Date() && 
-         this.amountDue > 0;
+// Text search index
+invoiceSchema.index({
+  invoiceNumber: 'text',
+  'customer.organizationName': 'text',
+  'customer.email': 'text'
 });
 
-invoiceSchema.virtual('daysPastDue').get(function() {
-  if (!this.isOverdue) return 0;
-  const now = new Date();
-  const diffTime = Math.abs(now - this.dueDate);
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-});
-
+// ==================== Virtual Fields ====================
 invoiceSchema.virtual('isPaid').get(function() {
-  return this.paymentStatus === 'paid' && this.amountDue === 0;
+  return this.status === 'paid' || this.financial.amountDue === 0;
 });
 
-invoiceSchema.virtual('formattedInvoiceNumber').get(function() {
-  return `INV-${this.invoiceNumber}`;
+invoiceSchema.virtual('isOverdue').get(function() {
+  return this.status !== 'paid' && 
+         this.status !== 'void' && 
+         this.billing.dueDate < new Date();
 });
 
-// Pre-save middleware
+invoiceSchema.virtual('daysOverdue').get(function() {
+  if (!this.isOverdue) return 0;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.floor((new Date() - this.billing.dueDate) / msPerDay);
+});
+
+invoiceSchema.virtual('daysToDue').get(function() {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const days = Math.ceil((this.billing.dueDate - new Date()) / msPerDay);
+  return days;
+});
+
+invoiceSchema.virtual('hasPartialPayment').get(function() {
+  return this.financial.amountPaid > 0 && 
+         this.financial.amountPaid < this.financial.total;
+});
+
+invoiceSchema.virtual('formattedNumber').get(function() {
+  return this.invoiceNumber;
+});
+
+// ==================== Pre-save Middleware ====================
 invoiceSchema.pre('save', async function(next) {
   try {
     // Generate invoice number if not provided
     if (!this.invoiceNumber && this.isNew) {
-      this.invoiceNumber = await this.constructor.generateInvoiceNumber();
+      this.invoiceNumber = await this.constructor.generateInvoiceNumber(this.tenantId);
     }
 
-    // Calculate amounts
-    if (this.isModified('items')) {
-      this.subtotal = 0;
-      this.totalDiscount = 0;
-      this.totalTax = 0;
-
-      for (const item of this.items) {
-        // Calculate item amount
-        item.amount = item.unitPrice * item.quantity;
-        
-        // Apply discount
-        if (item.discount) {
-          if (item.discount.percentage) {
-            item.discount.amount = item.amount * (item.discount.percentage / 100);
-          }
-          item.amount -= item.discount.amount || 0;
-          this.totalDiscount += item.discount.amount || 0;
-        }
-
-        // Calculate tax
-        if (item.tax && item.tax.rate) {
-          item.tax.amount = item.amount * (item.tax.rate / 100);
-          this.totalTax += item.tax.amount;
-        }
-
-        this.subtotal += item.amount;
-      }
-
-      this.totalAmount = this.subtotal + this.totalTax;
-      this.amountDue = this.totalAmount - this.amountPaid;
+    // Calculate financial totals
+    if (this.isModified('lineItems')) {
+      this.calculateTotals();
     }
 
-    // Update payment status based on amounts
-    if (this.isModified('amountPaid') || this.isModified('totalAmount')) {
-      if (this.amountPaid >= this.totalAmount) {
-        this.paymentStatus = 'paid';
-        this.amountDue = 0;
-        if (!this.paidAt) {
-          this.paidAt = new Date();
-        }
-      } else if (this.amountPaid > 0) {
-        this.paymentStatus = 'partial';
-        this.amountDue = this.totalAmount - this.amountPaid;
-      } else if (this.status === 'sent' && this.dueDate < new Date()) {
-        this.paymentStatus = 'overdue';
-      }
+    // Update amount due
+    this.financial.amountDue = Math.max(0, this.financial.total - this.financial.amountPaid);
+
+    // Update status based on payment
+    if (this.financial.amountDue === 0 && this.status !== 'void' && this.status !== 'refunded') {
+      this.status = 'paid';
+    } else if (this.financial.amountPaid > 0 && this.financial.amountPaid < this.financial.total) {
+      this.status = 'partial';
+    } else if (this.isOverdue && this.status === 'sent') {
+      this.status = 'overdue';
     }
 
-    // Set accounting period
-    if (!this.accountingPeriod && this.invoiceDate) {
-      const date = new Date(this.invoiceDate);
-      this.accountingPeriod = {
-        month: date.getMonth() + 1,
-        year: date.getFullYear(),
-        quarter: Math.floor(date.getMonth() / 3) + 1
-      };
-    }
-
-    // Calculate due date if not set
-    if (!this.dueDate && this.invoiceDate) {
-      const daysToAdd = this.paymentTerms === 'immediate' ? 0 :
-                       this.paymentTerms === 'net_15' ? 15 :
-                       this.paymentTerms === 'net_45' ? 45 :
-                       this.paymentTerms === 'net_60' ? 60 : 30;
-      
-      this.dueDate = new Date(this.invoiceDate);
-      this.dueDate.setDate(this.dueDate.getDate() + daysToAdd);
+    // Set due date based on terms if not set
+    if (!this.billing.dueDate && this.billing.terms) {
+      this.billing.dueDate = this.calculateDueDate();
     }
 
     next();
@@ -461,372 +610,635 @@ invoiceSchema.pre('save', async function(next) {
   }
 });
 
-// Instance methods
-invoiceSchema.methods.send = async function(recipientEmail) {
-  if (this.status === 'draft') {
-    throw new AppError('Cannot send draft invoice', 400, 'INVALID_STATUS');
+// ==================== Instance Methods ====================
+invoiceSchema.methods.calculateTotals = function() {
+  let subtotal = 0;
+  let discountTotal = 0;
+  let taxTotal = 0;
+
+  // Calculate line items
+  this.lineItems.forEach(item => {
+    // Calculate item amount
+    item.amount = item.quantity * item.unitPrice;
+    
+    // Apply discount if any
+    if (item.discount && item.discount.value) {
+      if (item.discount.type === 'percentage') {
+        item.discount.amount = item.amount * (item.discount.value / 100);
+      } else {
+        item.discount.amount = item.discount.value;
+      }
+      item.amount -= item.discount.amount;
+      discountTotal += item.discount.amount;
+    }
+    
+    // Add to subtotal (before tax)
+    if (item.type !== 'tax') {
+      subtotal += item.amount;
+    }
+    
+    // Calculate tax if applicable
+    if (item.tax && item.tax.rate && item.tax.taxable && item.type !== 'tax') {
+      item.tax.amount = item.amount * (item.tax.rate / 100);
+      taxTotal += item.tax.amount;
+    }
+  });
+
+  // Add explicit tax line items
+  this.lineItems
+    .filter(item => item.type === 'tax')
+    .forEach(item => {
+      taxTotal += item.amount;
+    });
+
+  // Update financial summary
+  this.financial.subtotal = Math.round(subtotal * 100) / 100;
+  this.financial.discountTotal = Math.round(discountTotal * 100) / 100;
+  this.financial.taxTotal = Math.round(taxTotal * 100) / 100;
+  this.financial.total = Math.round((subtotal + taxTotal) * 100) / 100;
+};
+
+invoiceSchema.methods.calculateDueDate = function() {
+  const issueDate = this.billing.issueDate || new Date();
+  
+  const termDays = {
+    'due_on_receipt': 0,
+    'net_7': 7,
+    'net_15': 15,
+    'net_30': 30,
+    'net_45': 45,
+    'net_60': 60
+  };
+  
+  const days = termDays[this.billing.terms] || 30;
+  return new Date(issueDate.getTime() + days * 24 * 60 * 60 * 1000);
+};
+
+invoiceSchema.methods.markAsSent = async function() {
+  if (this.status === 'paid' || this.status === 'void') {
+    throw new AppError('Cannot send paid or void invoice', 400, 'INVALID_STATUS');
   }
 
   this.status = 'sent';
-  this.sentAt = new Date();
   
-  if (!this.remindersSent) {
-    this.remindersSent = [];
+  if (!this.communication.sent.lastSentAt) {
+    this.communication.sent.lastSentAt = new Date();
   }
   
-  this.remindersSent.push({
+  this.communication.sent.count += 1;
+  
+  if (!this.communication.sent.history) {
+    this.communication.sent.history = [];
+  }
+  
+  this.communication.sent.history.push({
     sentAt: new Date(),
-    type: 'email',
-    recipient: recipientEmail || this.billingDetails.email
+    to: [this.customer.email],
+    method: 'manual',
+    status: 'sent'
   });
-
+  
   await this.save();
   
-  // TODO: Integrate with email service
-  logger.info('Invoice sent', { 
-    invoiceNumber: this.invoiceNumber, 
-    recipient: recipientEmail 
+  logger.info('Invoice marked as sent', {
+    invoiceId: this._id,
+    invoiceNumber: this.invoiceNumber
   });
-
-  return this;
-};
-
-invoiceSchema.methods.markAsViewed = async function() {
-  if (!this.viewedAt) {
-    this.viewedAt = new Date();
-    this.status = 'viewed';
-    await this.save();
-  }
+  
   return this;
 };
 
 invoiceSchema.methods.recordPayment = async function(paymentData) {
-  const { amount, paymentMethod, transactionId, notes } = paymentData;
-
-  if (amount > this.amountDue) {
-    throw new AppError('Payment amount exceeds amount due', 400, 'EXCESS_PAYMENT');
-  }
-
-  if (!this.payments) {
-    this.payments = [];
-  }
-
-  this.payments.push({
-    amount,
-    paymentDate: new Date(),
-    paymentMethod,
-    transactionId,
-    notes
-  });
-
-  this.amountPaid += amount;
-  this.lastPaymentDate = new Date();
-
-  await this.save();
-  return this;
-};
-
-invoiceSchema.methods.applyRefund = async function(refundData) {
-  const { amount, reason, processedBy } = refundData;
-
-  if (amount > this.amountPaid) {
-    throw new AppError('Refund amount exceeds paid amount', 400, 'EXCESS_REFUND');
-  }
-
-  if (!this.refunds) {
-    this.refunds = [];
-  }
-
-  this.refunds.push({
-    amount,
-    refundDate: new Date(),
-    reason,
-    processedBy
-  });
-
-  this.totalRefunded += amount;
-  this.amountPaid -= amount;
-
-  if (this.totalRefunded >= this.totalAmount) {
-    this.paymentStatus = 'refunded';
-  }
-
-  await this.save();
-  return this;
-};
-
-invoiceSchema.methods.cancel = async function(reason, cancelledBy) {
-  if (['paid', 'refunded'].includes(this.paymentStatus)) {
-    throw new AppError('Cannot cancel paid or refunded invoice', 400, 'INVALID_STATUS');
-  }
-
-  this.status = 'cancelled';
-  this.paymentStatus = 'cancelled';
-  this.cancelledBy = {
-    userId: cancelledBy.userId,
-    name: cancelledBy.name,
-    cancelledAt: new Date(),
-    reason
-  };
-
-  await this.save();
-  return this;
-};
-
-invoiceSchema.methods.approve = async function(approvedBy) {
-  if (this.status !== 'pending_approval') {
-    throw new AppError('Invoice is not pending approval', 400, 'INVALID_STATUS');
-  }
-
-  this.status = 'approved';
-  this.approvedBy = {
-    userId: approvedBy.userId,
-    name: approvedBy.name,
-    approvedAt: new Date()
-  };
-
-  await this.save();
-  return this;
-};
-
-invoiceSchema.methods.generatePDF = async function() {
-  // TODO: Integrate with PDF generation service
-  const pdfUrl = `https://invoices.example.com/${this.invoiceNumber}.pdf`;
-  this.pdfUrl = pdfUrl;
-  await this.save();
-  return pdfUrl;
-};
-
-invoiceSchema.methods.createDispute = async function(reason) {
-  this.dispute = {
-    status: 'pending',
-    reason,
-    createdAt: new Date()
-  };
-
-  await this.save();
-  return this;
-};
-
-invoiceSchema.methods.resolveDispute = async function(resolution) {
-  if (!this.dispute || this.dispute.status !== 'pending') {
-    throw new AppError('No pending dispute found', 400, 'NO_DISPUTE');
-  }
-
-  this.dispute.status = 'resolved';
-  this.dispute.resolution = resolution;
-  this.dispute.resolvedAt = new Date();
-
-  await this.save();
-  return this;
-};
-
-// Static methods
-invoiceSchema.statics.generateInvoiceNumber = async function() {
-  const date = new Date();
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const { amount, paymentId, method, reference } = paymentData;
   
-  // Find the latest invoice for this month
-  const latestInvoice = await this.findOne({
-    invoiceNumber: new RegExp(`^${year}${month}`)
-  }).sort({ invoiceNumber: -1 });
+  if (amount <= 0) {
+    throw new AppError('Payment amount must be positive', 400, 'INVALID_AMOUNT');
+  }
+  
+  if (amount > this.financial.amountDue) {
+    throw new AppError('Payment exceeds amount due', 400, 'EXCESS_PAYMENT');
+  }
+  
+  // Record payment transaction
+  if (!this.payment.transactions) {
+    this.payment.transactions = [];
+  }
+  
+  this.payment.transactions.push({
+    paymentId,
+    amount,
+    currency: this.financial.currency,
+    paidAt: new Date(),
+    method,
+    reference,
+    status: 'succeeded'
+  });
+  
+  // Update financial
+  this.financial.amountPaid += amount;
+  this.financial.amountDue = Math.max(0, this.financial.total - this.financial.amountPaid);
+  
+  // Update status
+  if (this.financial.amountDue === 0) {
+    this.status = 'paid';
+  } else {
+    this.status = 'partial';
+  }
+  
+  // Update payment info
+  this.payment.lastAttemptAt = new Date();
+  
+  await this.save();
+  
+  logger.info('Payment recorded for invoice', {
+    invoiceId: this._id,
+    invoiceNumber: this.invoiceNumber,
+    amount,
+    remaining: this.financial.amountDue
+  });
+  
+  return this;
+};
 
+invoiceSchema.methods.applyCredit = async function(creditAmount, creditTransactionId) {
+  if (creditAmount <= 0) {
+    throw new AppError('Credit amount must be positive', 400, 'INVALID_AMOUNT');
+  }
+  
+  const applicableAmount = Math.min(creditAmount, this.financial.amountDue);
+  
+  if (applicableAmount === 0) {
+    throw new AppError('Invoice already paid', 400, 'ALREADY_PAID');
+  }
+  
+  // Record credit application
+  if (!this.financial.credits.transactions) {
+    this.financial.credits.transactions = [];
+  }
+  
+  this.financial.credits.transactions.push({
+    creditTransactionId,
+    amount: applicableAmount,
+    appliedAt: new Date()
+  });
+  
+  // Update financial
+  this.financial.credits.applied += applicableAmount;
+  this.financial.amountPaid += applicableAmount;
+  this.financial.amountDue = Math.max(0, this.financial.total - this.financial.amountPaid);
+  
+  // Update status
+  if (this.financial.amountDue === 0) {
+    this.status = 'paid';
+  } else {
+    this.status = 'partial';
+  }
+  
+  await this.save();
+  
+  logger.info('Credit applied to invoice', {
+    invoiceId: this._id,
+    invoiceNumber: this.invoiceNumber,
+    creditAmount: applicableAmount,
+    remaining: this.financial.amountDue
+  });
+  
+  return { applied: applicableAmount, remaining: creditAmount - applicableAmount };
+};
+
+invoiceSchema.methods.voidInvoice = async function(reason, userId) {
+  if (this.status === 'void') {
+    throw new AppError('Invoice is already void', 400, 'ALREADY_VOID');
+  }
+  
+  if (this.financial.amountPaid > 0) {
+    throw new AppError('Cannot void invoice with payments', 400, 'HAS_PAYMENTS');
+  }
+  
+  this.status = 'void';
+  
+  // Add audit entry
+  if (!this.compliance.audit) {
+    this.compliance.audit = [];
+  }
+  
+  this.compliance.audit.push({
+    action: 'void',
+    performedBy: userId,
+    performedAt: new Date(),
+    changes: { reason }
+  });
+  
+  await this.save();
+  
+  logger.warn('Invoice voided', {
+    invoiceId: this._id,
+    invoiceNumber: this.invoiceNumber,
+    reason
+  });
+  
+  return this;
+};
+
+invoiceSchema.methods.refund = async function(amount, reason, userId) {
+  if (amount > this.financial.amountPaid) {
+    throw new AppError('Refund exceeds paid amount', 400, 'EXCESS_REFUND');
+  }
+  
+  // Create refund line item
+  this.lineItems.push({
+    type: 'credit',
+    description: `Refund: ${reason}`,
+    quantity: 1,
+    unitPrice: -amount,
+    amount: -amount
+  });
+  
+  // Update financial
+  this.financial.amountPaid -= amount;
+  this.financial.amountDue = Math.max(0, this.financial.total - this.financial.amountPaid);
+  
+  // Update status
+  if (this.financial.amountPaid === 0) {
+    this.status = 'refunded';
+  } else {
+    this.status = 'partial';
+  }
+  
+  // Add audit entry
+  if (!this.compliance.audit) {
+    this.compliance.audit = [];
+  }
+  
+  this.compliance.audit.push({
+    action: 'refund',
+    performedBy: userId,
+    performedAt: new Date(),
+    changes: { amount, reason }
+  });
+  
+  await this.save();
+  
+  logger.info('Invoice refunded', {
+    invoiceId: this._id,
+    invoiceNumber: this.invoiceNumber,
+    amount,
+    reason
+  });
+  
+  return this;
+};
+
+invoiceSchema.methods.addLineItem = async function(lineItem) {
+  this.lineItems.push(lineItem);
+  this.calculateTotals();
+  
+  await this.save();
+  
+  return this;
+};
+
+invoiceSchema.methods.removeLineItem = async function(itemId) {
+  this.lineItems = this.lineItems.filter(item => item.itemId !== itemId);
+  this.calculateTotals();
+  
+  await this.save();
+  
+  return this;
+};
+
+invoiceSchema.methods.sendReminder = async function(options = {}) {
+  const { method = 'email', template = 'reminder' } = options;
+  
+  if (!this.communication.reminders.enabled) {
+    throw new AppError('Reminders are disabled for this invoice', 400, 'REMINDERS_DISABLED');
+  }
+  
+  if (this.isPaid) {
+    throw new AppError('Cannot send reminder for paid invoice', 400, 'ALREADY_PAID');
+  }
+  
+  // Record reminder
+  if (!this.communication.reminders.sent) {
+    this.communication.reminders.sent = [];
+  }
+  
+  this.communication.reminders.sent.push({
+    sentAt: new Date(),
+    dayOffset: this.daysToDue,
+    method
+  });
+  
+  // Update sent history
+  this.communication.sent.count += 1;
+  this.communication.sent.lastSentAt = new Date();
+  
+  if (!this.communication.sent.history) {
+    this.communication.sent.history = [];
+  }
+  
+  this.communication.sent.history.push({
+    sentAt: new Date(),
+    to: [this.customer.email],
+    method,
+    template,
+    status: 'sent'
+  });
+  
+  await this.save();
+  
+  logger.info('Invoice reminder sent', {
+    invoiceId: this._id,
+    invoiceNumber: this.invoiceNumber,
+    daysOverdue: this.daysOverdue
+  });
+  
+  return this;
+};
+
+invoiceSchema.methods.exportToAccounting = async function(system, reference) {
+  if (this.accounting.exported) {
+    throw new AppError('Invoice already exported', 400, 'ALREADY_EXPORTED');
+  }
+  
+  this.accounting.exported = true;
+  this.accounting.exportedAt = new Date();
+  this.accounting.system = system;
+  this.accounting.reference = reference;
+  
+  // Generate journal entries
+  this.accounting.journal = {
+    entries: [
+      {
+        account: 'accounts_receivable',
+        debit: this.financial.total,
+        credit: 0,
+        description: `Invoice ${this.invoiceNumber}`
+      },
+      {
+        account: 'revenue',
+        debit: 0,
+        credit: this.financial.subtotal,
+        description: `Revenue for Invoice ${this.invoiceNumber}`
+      }
+    ],
+    postedAt: new Date()
+  };
+  
+  if (this.financial.taxTotal > 0) {
+    this.accounting.journal.entries.push({
+      account: 'sales_tax_payable',
+      debit: 0,
+      credit: this.financial.taxTotal,
+      description: `Sales tax for Invoice ${this.invoiceNumber}`
+    });
+  }
+  
+  await this.save();
+  
+  logger.info('Invoice exported to accounting', {
+    invoiceId: this._id,
+    invoiceNumber: this.invoiceNumber,
+    system,
+    reference
+  });
+  
+  return this;
+};
+
+// ==================== Static Methods ====================
+invoiceSchema.statics.generateInvoiceNumber = async function(tenantId) {
+  const prefix = process.env.INVOICE_PREFIX || 'INV';
+  const separator = '-';
+  
+  // Get current year and month
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  
+  // Find the last invoice for this tenant this month
+  const lastInvoice = await this.findOne({
+    tenantId,
+    invoiceNumber: new RegExp(`^${prefix}${separator}${year}${month}`),
+    createdAt: {
+      $gte: new Date(year, now.getMonth(), 1),
+      $lt: new Date(year, now.getMonth() + 1, 1)
+    }
+  })
+  .sort({ invoiceNumber: -1 })
+  .select('invoiceNumber');
+  
   let sequence = 1;
-  if (latestInvoice) {
-    const lastSequence = parseInt(latestInvoice.invoiceNumber.slice(-4));
+  
+  if (lastInvoice) {
+    const lastNumber = lastInvoice.invoiceNumber;
+    const lastSequence = parseInt(lastNumber.split(separator).pop()) || 0;
     sequence = lastSequence + 1;
   }
-
-  return `${year}${month}${String(sequence).padStart(4, '0')}`;
+  
+  const invoiceNumber = `${prefix}${separator}${year}${month}${separator}${String(sequence).padStart(4, '0')}`;
+  
+  return invoiceNumber;
 };
 
-invoiceSchema.statics.createFromSubscription = async function(subscription, billingPeriod) {
-  const items = [{
-    productId: subscription.planId,
-    productType: 'subscription',
-    description: `${subscription.planName} - ${billingPeriod.start.toLocaleDateString()} to ${billingPeriod.end.toLocaleDateString()}`,
-    quantity: 1,
-    unitPrice: subscription.amount,
-    amount: subscription.amount,
-    periodStart: billingPeriod.start,
-    periodEnd: billingPeriod.end
-  }];
-
-  // Add any usage-based charges
-  if (subscription.usageCharges && subscription.usageCharges.length > 0) {
-    for (const charge of subscription.usageCharges) {
-      items.push({
-        productType: 'usage',
-        description: charge.description,
-        quantity: charge.quantity,
-        unitPrice: charge.unitPrice,
-        amount: charge.totalAmount
-      });
-    }
+invoiceSchema.statics.createInvoice = async function(data) {
+  const {
+    organizationId,
+    subscriptionId,
+    type = 'subscription',
+    lineItems,
+    billing
+  } = data;
+  
+  // Get organization details
+  const Organization = mongoose.model('Organization');
+  const organization = await Organization.findById(organizationId);
+  
+  if (!organization) {
+    throw new AppError('Organization not found', 404, 'ORGANIZATION_NOT_FOUND');
   }
-
-  const invoice = await this.create({
-    customerId: subscription.customerId,
-    customerType: subscription.customerType,
-    organizationId: subscription.organizationId,
-    subscriptionId: subscription._id,
-    billingPeriod,
-    items,
-    currency: subscription.currency,
-    paymentTerms: subscription.paymentTerms || 'net_30',
-    billingDetails: subscription.billingDetails,
-    metadata: {
-      source: 'subscription'
+  
+  // Create invoice
+  const invoice = new this({
+    organizationId,
+    tenantId: organization.tenancy?.tenantId,
+    subscriptionId,
+    type,
+    status: 'draft',
+    billing: {
+      ...billing,
+      issueDate: new Date()
+    },
+    customer: {
+      organizationName: organization.displayName || organization.name,
+      email: organization.contact.email,
+      phone: organization.contact.phone,
+      address: organization.address,
+      taxId: organization.billing?.taxInfo?.taxId,
+      vatId: organization.billing?.taxInfo?.vatId
+    },
+    lineItems: lineItems || [],
+    financial: {
+      currency: organization.billing?.credits?.currency || 'USD'
     }
   });
-
+  
+  // Calculate totals
+  invoice.calculateTotals();
+  
+  await invoice.save();
+  
+  logger.info('Invoice created', {
+    invoiceId: invoice._id,
+    invoiceNumber: invoice.invoiceNumber,
+    organizationId,
+    type
+  });
+  
   return invoice;
 };
 
-invoiceSchema.statics.getOverdueInvoices = async function(options = {}) {
-  const { organizationId, daysOverdue = 0, limit = 100 } = options;
-  
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - daysOverdue);
-
+invoiceSchema.statics.findOverdueInvoices = async function(options = {}) {
   const query = {
-    paymentStatus: { $in: ['pending', 'partial'] },
-    dueDate: { $lt: cutoffDate },
-    status: { $ne: 'cancelled' }
+    status: { $nin: ['paid', 'void', 'refunded'] },
+    'billing.dueDate': { $lt: new Date() }
   };
-
-  if (organizationId) {
-    query.organizationId = organizationId;
+  
+  if (options.tenantId) {
+    query.tenantId = options.tenantId;
   }
-
+  
+  if (options.minDaysOverdue) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - options.minDaysOverdue);
+    query['billing.dueDate'] = { $lt: cutoffDate };
+  }
+  
   return await this.find(query)
-    .sort({ dueDate: 1 })
-    .limit(limit)
-    .populate('customerId', 'email profile.fullName');
+    .sort({ 'billing.dueDate': 1 })
+    .populate('organizationId subscriptionId');
 };
 
-invoiceSchema.statics.getRevenueStatistics = async function(organizationId, period) {
-  const { startDate, endDate } = period;
+invoiceSchema.statics.findByOrganization = async function(organizationId, options = {}) {
+  const query = { organizationId };
   
-  const matchQuery = {
-    paymentStatus: { $in: ['paid', 'partial'] },
-    invoiceDate: { $gte: startDate, $lte: endDate }
-  };
-
-  if (organizationId) {
-    matchQuery.organizationId = organizationId;
+  if (options.status) {
+    query.status = options.status;
   }
+  
+  if (options.type) {
+    query.type = options.type;
+  }
+  
+  if (options.dateRange) {
+    query['billing.issueDate'] = {
+      $gte: options.dateRange.start,
+      $lte: options.dateRange.end
+    };
+  }
+  
+  const invoices = await this.find(query)
+    .sort({ 'billing.issueDate': -1 })
+    .limit(options.limit || 50)
+    .skip(options.skip || 0);
+  
+  const total = await this.countDocuments(query);
+  
+  return {
+    invoices,
+    total,
+    hasMore: total > (options.skip || 0) + invoices.length
+  };
+};
 
-  const stats = await this.aggregate([
-    { $match: matchQuery },
+invoiceSchema.statics.getRevenueMetrics = async function(filters = {}) {
+  const match = {
+    status: { $in: ['paid', 'partial'] }
+  };
+  
+  if (filters.tenantId) {
+    match.tenantId = filters.tenantId;
+  }
+  
+  if (filters.dateRange) {
+    match['billing.issueDate'] = {
+      $gte: filters.dateRange.start,
+      $lte: filters.dateRange.end
+    };
+  }
+  
+  const metrics = await this.aggregate([
+    { $match: match },
     {
-      $group: {
-        _id: null,
-        totalRevenue: { $sum: '$amountPaid' },
-        totalInvoiced: { $sum: '$totalAmount' },
-        totalOutstanding: { $sum: '$amountDue' },
-        invoiceCount: { $sum: 1 },
-        paidCount: {
-          $sum: { $cond: [{ $eq: ['$paymentStatus', 'paid'] }, 1, 0] }
-        },
-        averageInvoiceAmount: { $avg: '$totalAmount' },
-        averageDaysToPay: {
-          $avg: {
-            $cond: [
-              { $ne: ['$paidAt', null] },
-              {
-                $divide: [
-                  { $subtract: ['$paidAt', '$invoiceDate'] },
-                  1000 * 60 * 60 * 24
-                ]
-              },
-              null
-            ]
+      $facet: {
+        summary: [
+          {
+            $group: {
+              _id: null,
+              totalRevenue: { $sum: '$financial.amountPaid' },
+              averageInvoice: { $avg: '$financial.total' },
+              invoiceCount: { $sum: 1 },
+              paidCount: {
+                $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] }
+              }
+            }
           }
-        }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        totalRevenue: { $round: ['$totalRevenue', 2] },
-        totalInvoiced: { $round: ['$totalInvoiced', 2] },
-        totalOutstanding: { $round: ['$totalOutstanding', 2] },
-        invoiceCount: 1,
-        paidCount: 1,
-        paymentRate: {
-          $multiply: [
-            { $divide: ['$paidCount', '$invoiceCount'] },
-            100
-          ]
-        },
-        averageInvoiceAmount: { $round: ['$averageInvoiceAmount', 2] },
-        averageDaysToPay: { $round: ['$averageDaysToPay', 0] }
+        ],
+        byMonth: [
+          {
+            $group: {
+              _id: {
+                year: { $year: '$billing.issueDate' },
+                month: { $month: '$billing.issueDate' }
+              },
+              revenue: { $sum: '$financial.amountPaid' },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { '_id.year': -1, '_id.month': -1 } },
+          { $limit: 12 }
+        ],
+        byType: [
+          {
+            $group: {
+              _id: '$type',
+              revenue: { $sum: '$financial.amountPaid' },
+              count: { $sum: 1 }
+            }
+          }
+        ],
+        outstanding: [
+          {
+            $match: { 'financial.amountDue': { $gt: 0 } }
+          },
+          {
+            $group: {
+              _id: null,
+              totalOutstanding: { $sum: '$financial.amountDue' },
+              count: { $sum: 1 }
+            }
+          }
+        ]
       }
     }
   ]);
-
-  return stats[0] || {
-    totalRevenue: 0,
-    totalInvoiced: 0,
-    totalOutstanding: 0,
-    invoiceCount: 0,
-    paidCount: 0,
-    paymentRate: 0,
-    averageInvoiceAmount: 0,
-    averageDaysToPay: 0
-  };
-};
-
-invoiceSchema.statics.sendReminders = async function() {
-  const reminderDays = [7, 3, 1, -1, -7]; // Days before/after due date
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const remindersToSend = [];
-
-  for (const days of reminderDays) {
-    const targetDate = new Date(today);
-    targetDate.setDate(targetDate.getDate() + days);
-    
-    const invoices = await this.find({
-      paymentStatus: { $in: ['pending', 'partial'] },
-      status: 'sent',
-      dueDate: {
-        $gte: targetDate,
-        $lt: new Date(targetDate.getTime() + 24 * 60 * 60 * 1000)
-      }
-    }).populate('customerId', 'email profile.fullName');
-
-    for (const invoice of invoices) {
-      // Check if reminder was already sent recently
-      const recentReminder = invoice.remindersSent?.find(r => {
-        const daysSinceReminder = Math.floor((today - r.sentAt) / (1000 * 60 * 60 * 24));
-        return daysSinceReminder < 1;
-      });
-
-      if (!recentReminder) {
-        remindersToSend.push({
-          invoice,
-          type: days > 0 ? 'upcoming' : days === 0 ? 'due_today' : 'overdue',
-          daysUntilDue: days
-        });
-      }
+  
+  const result = metrics[0];
+  
+  return {
+    summary: result.summary[0] || {
+      totalRevenue: 0,
+      averageInvoice: 0,
+      invoiceCount: 0,
+      paidCount: 0
+    },
+    monthlyRevenue: result.byMonth.reverse(),
+    revenueByType: result.byType,
+    outstanding: result.outstanding[0] || {
+      totalOutstanding: 0,
+      count: 0
     }
-  }
-
-  // Send reminders
-  for (const reminder of remindersToSend) {
-    await reminder.invoice.send();
-    logger.info('Invoice reminder sent', {
-      invoiceNumber: reminder.invoice.invoiceNumber,
-      type: reminder.type,
-      daysUntilDue: reminder.daysUntilDue
-    });
-  }
-
-  return remindersToSend.length;
+  };
 };
 
 // Create and export model

@@ -1,328 +1,437 @@
 'use strict';
 
 /**
- * @fileoverview Payment model for processing and tracking payments
+ * @fileoverview Payment model for transaction processing and tracking
  * @module shared/lib/database/models/billing/payment-model
  * @requires mongoose
  * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
- * @requires module:shared/lib/utils/helpers/string-helper
- * @requires module:shared/lib/utils/constants/status-codes
+ * @requires module:shared/lib/utils/validators/common-validators
+ * @requires module:shared/lib/security/encryption/encryption-service
  */
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
 const AppError = require('../../../utils/app-error');
-const stringHelper = require('../../../utils/helpers/string-helper');
-const { PAYMENT_STATUS, PAYMENT_METHODS } = require('../../../utils/constants/status-codes');
+const validators = require('../../../utils/validators/common-validators');
+const encryptionService = require('../../../security/encryption/encryption-service');
 
 /**
  * Payment schema definition
  */
 const paymentSchemaDefinition = {
-  // Payment Identification
+  // ==================== Core Identity ====================
   paymentId: {
     type: String,
-    required: true,
     unique: true,
-    index: true
-  },
-
-  // Customer Information
-  customerId: {
-    type: mongoose.Schema.Types.ObjectId,
     required: true,
-    index: true
-  },
-
-  customerType: {
-    type: String,
-    required: true,
-    enum: ['user', 'organization', 'tenant']
+    index: true,
+    default: function() {
+      return `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
   },
 
   organizationId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Organization',
+    required: true,
     index: true
   },
 
-  // Amount Details
-  amount: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-
-  currency: {
-    type: String,
-    required: true,
-    uppercase: true,
-    default: 'USD',
-    enum: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CNY']
-  },
-
-  exchangeRate: {
-    type: Number,
-    default: 1
-  },
-
-  amountInBaseCurrency: {
-    type: Number,
-    required: true
-  },
-
-  // Payment Method
-  paymentMethodId: {
+  tenantId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'PaymentMethod',
+    ref: 'Tenant',
+    required: true,
     index: true
   },
 
-  paymentMethodType: {
-    type: String,
-    required: true,
-    enum: ['credit_card', 'debit_card', 'bank_account', 'paypal', 'stripe', 'check', 'cash', 'credit_balance', 'other']
-  },
-
-  paymentMethodDetails: {
-    brand: String,
-    last4: String,
-    bankName: String,
-    checkNumber: String
-  },
-
-  // Transaction Information
+  // ==================== Payment Details ====================
   type: {
     type: String,
+    enum: ['charge', 'refund', 'partial_refund', 'chargeback', 'adjustment', 'payout'],
     required: true,
-    enum: ['charge', 'refund', 'partial_refund', 'chargeback', 'adjustment'],
-    default: 'charge'
+    default: 'charge',
+    index: true
   },
 
   status: {
     type: String,
+    enum: ['pending', 'processing', 'succeeded', 'failed', 'cancelled', 'refunded', 'disputed'],
     required: true,
-    enum: ['pending', 'processing', 'succeeded', 'failed', 'cancelled', 'refunded', 'partially_refunded', 'disputed'],
     default: 'pending',
     index: true
   },
 
-  // Related Entities
-  invoiceId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Invoice',
-    index: true
+  amount: {
+    value: {
+      type: Number,
+      required: true,
+      min: 0,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
+    },
+    currency: {
+      type: String,
+      required: true,
+      default: 'USD',
+      uppercase: true,
+      validate: {
+        validator: function(value) {
+          return /^[A-Z]{3}$/.test(value);
+        },
+        message: 'Invalid currency code'
+      }
+    },
+    exchangeRate: {
+      type: Number,
+      default: 1
+    },
+    originalAmount: {
+      value: Number,
+      currency: String
+    }
   },
 
-  subscriptionId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Subscription',
-    index: true
+  // ==================== Related Entities ====================
+  relations: {
+    invoiceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Invoice',
+      index: true
+    },
+    subscriptionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subscription',
+      index: true
+    },
+    paymentMethodId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PaymentMethod',
+      index: true
+    },
+    parentPaymentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Payment'
+    },
+    refunds: [{
+      paymentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Payment'
+      },
+      amount: Number,
+      refundedAt: Date
+    }]
   },
 
-  orderId: {
-    type: mongoose.Schema.Types.ObjectId,
-    index: true
+  // ==================== Payment Method Details ====================
+  method: {
+    type: {
+      type: String,
+      enum: ['card', 'bank_account', 'paypal', 'wire_transfer', 'check', 'cash', 'crypto', 'other'],
+      required: true
+    },
+    brand: String,
+    last4: String,
+    expiryMonth: Number,
+    expiryYear: Number,
+    bankName: String,
+    accountType: String,
+    walletType: String,
+    metadata: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed
+    }
   },
 
-  // Provider Information
+  // ==================== Provider Information ====================
   provider: {
-    type: String,
-    enum: ['stripe', 'paypal', 'square', 'braintree', 'authorize_net', 'manual', 'internal']
-  },
-
-  providerPaymentId: {
-    type: String,
-    index: true
-  },
-
-  providerResponse: {
-    type: mongoose.Schema.Types.Mixed,
-    select: false
-  },
-
-  // Processing Details
-  processedAt: Date,
-  processingStartedAt: Date,
-  attempts: {
-    type: Number,
-    default: 0
-  },
-
-  lastAttemptAt: Date,
-  nextRetryAt: Date,
-
-  // Failure Information
-  failureCode: String,
-  failureMessage: String,
-  declineCode: String,
-
-  // Fee Information
-  processingFee: {
-    type: Number,
-    default: 0
-  },
-
-  applicationFee: {
-    type: Number,
-    default: 0
-  },
-
-  netAmount: {
-    type: Number,
-    required: true
-  },
-
-  // Refund Information
-  refundedAmount: {
-    type: Number,
-    default: 0
-  },
-
-  refunds: [{
-    refundId: String,
-    amount: Number,
-    reason: String,
-    status: String,
-    createdAt: Date,
-    processedAt: Date
-  }],
-
-  refundable: {
-    type: Boolean,
-    default: true
-  },
-
-  // Dispute Information
-  dispute: {
-    status: {
+    name: {
       type: String,
-      enum: ['warning', 'needs_response', 'under_review', 'won', 'lost']
+      enum: ['stripe', 'paypal', 'square', 'authorize_net', 'manual', 'other'],
+      required: true,
+      index: true
     },
-    reason: String,
-    amount: Number,
-    currency: String,
-    evidence: mongoose.Schema.Types.Mixed,
-    dueBy: Date,
-    createdAt: Date,
-    resolvedAt: Date
-  },
-
-  // Settlement
-  settlementStatus: {
-    type: String,
-    enum: ['pending', 'in_transit', 'settled', 'failed'],
-    default: 'pending'
-  },
-
-  settlementDate: Date,
-  settlementAmount: Number,
-
-  // Risk Assessment
-  riskLevel: {
-    type: String,
-    enum: ['low', 'medium', 'high', 'blocked']
-  },
-
-  riskScore: {
-    type: Number,
-    min: 0,
-    max: 100
-  },
-
-  fraudCheck: {
-    checked: {
-      type: Boolean,
-      default: false
-    },
-    score: Number,
-    outcome: String,
-    flaggedReasons: [String]
-  },
-
-  // Metadata
-  description: String,
-  statementDescriptor: String,
-  receiptEmail: String,
-  receiptUrl: String,
-
-  metadata: {
-    source: {
+    transactionId: {
       type: String,
-      enum: ['web', 'mobile', 'api', 'recurring', 'manual', 'admin']
+      index: true
+    },
+    chargeId: String,
+    paymentIntentId: String,
+    customerId: String,
+    paymentMethodId: String,
+    response: {
+      type: mongoose.Schema.Types.Mixed,
+      select: false
+    },
+    metadata: mongoose.Schema.Types.Mixed
+  },
+
+  // ==================== Transaction Details ====================
+  transaction: {
+    processedAt: Date,
+    settledAt: Date,
+    capturedAt: Date,
+    description: String,
+    statementDescriptor: String,
+    receiptUrl: String,
+    receiptNumber: String,
+    authorizationCode: String,
+    networkTransactionId: String,
+    processingFees: {
+      amount: {
+        type: Number,
+        default: 0
+      },
+      currency: String,
+      percentage: Number,
+      fixed: Number
+    },
+    net: {
+      amount: Number,
+      currency: String
+    }
+  },
+
+  // ==================== Risk & Fraud ====================
+  risk: {
+    level: {
+      type: String,
+      enum: ['low', 'medium', 'high', 'blocked'],
+      default: 'low'
+    },
+    score: {
+      type: Number,
+      min: 0,
+      max: 100
+    },
+    factors: [{
+      factor: String,
+      risk: String,
+      details: String
+    }],
+    checks: {
+      addressLine: String,
+      addressPostalCode: String,
+      cvcCheck: String,
+      avsCheck: String,
+      fraudCheck: String
+    },
+    outcome: {
+      decision: String,
+      reason: String,
+      riskLevel: String,
+      rule: String
     },
     ipAddress: String,
+    ipCountry: String,
     userAgent: String,
-    sessionId: String,
-    deviceId: String,
-    referrer: String,
-    campaignId: String,
-    customData: mongoose.Schema.Types.Mixed,
-    tags: [String]
+    deviceFingerprint: String
   },
 
-  // Billing Address
-  billingAddress: {
-    line1: String,
-    line2: String,
-    city: String,
-    state: String,
-    postalCode: String,
-    country: String
-  },
-
-  // Shipping Information (if applicable)
-  shipping: {
+  // ==================== Customer Information ====================
+  customer: {
     name: String,
-    address: {
-      line1: String,
-      line2: String,
+    email: {
+      type: String,
+      validate: {
+        validator: function(value) {
+          if (!value) return true;
+          return validators.isEmail(value);
+        },
+        message: 'Invalid email address'
+      }
+    },
+    phone: String,
+    billingAddress: {
+      street1: String,
+      street2: String,
       city: String,
       state: String,
       postalCode: String,
       country: String
     },
-    carrier: String,
-    trackingNumber: String
+    shippingAddress: {
+      street1: String,
+      street2: String,
+      city: String,
+      state: String,
+      postalCode: String,
+      country: String
+    },
+    customerId: String
   },
 
-  // 3D Secure
-  threeDSecure: {
-    required: Boolean,
-    succeeded: Boolean,
-    version: String,
-    challengeRequired: Boolean
-  },
-
-  // Webhooks
-  webhooks: [{
-    event: String,
-    sentAt: Date,
-    response: mongoose.Schema.Types.Mixed,
-    attempts: Number
-  }],
-
-  // Audit
-  createdBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    userType: {
+  // ==================== Refund Information ====================
+  refund: {
+    reason: {
       type: String,
-      enum: ['user', 'admin', 'system']
+      enum: ['duplicate', 'fraudulent', 'requested_by_customer', 'not_received', 'defective', 'other']
+    },
+    description: String,
+    amount: Number,
+    refundedAt: Date,
+    receiptNumber: String,
+    processedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
     }
   },
 
-  capturedBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    capturedAt: Date
+  // ==================== Dispute Information ====================
+  dispute: {
+    status: {
+      type: String,
+      enum: ['warning_needs_response', 'warning_under_review', 'warning_closed', 'needs_response', 'under_review', 'charge_refunded', 'won', 'lost']
+    },
+    reason: {
+      type: String,
+      enum: ['duplicate', 'fraudulent', 'subscription_canceled', 'product_unacceptable', 'product_not_received', 'unrecognized', 'credit_not_processed', 'general', 'incorrect_account_details', 'insufficient_funds', 'bank_cannot_process', 'debit_not_authorized', 'customer_initiated']
+    },
+    amount: Number,
+    currency: String,
+    evidence: {
+      submitted: Boolean,
+      submittedAt: Date,
+      dueBy: Date,
+      documents: [{
+        type: String,
+        url: String,
+        uploadedAt: Date
+      }]
+    },
+    outcome: {
+      status: String,
+      reason: String,
+      decidedAt: Date
+    }
   },
 
-  voidedBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    voidedAt: Date,
-    reason: String
+  // ==================== Reconciliation ====================
+  reconciliation: {
+    status: {
+      type: String,
+      enum: ['pending', 'matched', 'unmatched', 'disputed', 'resolved'],
+      default: 'pending'
+    },
+    matchedAt: Date,
+    matchedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    bankReference: String,
+    bankStatementDate: Date,
+    notes: String,
+    discrepancy: {
+      amount: Number,
+      reason: String,
+      resolvedAt: Date
+    }
+  },
+
+  // ==================== Notifications ====================
+  notifications: {
+    webhooks: [{
+      event: String,
+      sentAt: Date,
+      success: Boolean,
+      response: String
+    }],
+    emails: [{
+      type: String,
+      sentTo: [String],
+      sentAt: Date,
+      template: String
+    }],
+    retries: [{
+      attemptNumber: Number,
+      attemptedAt: Date,
+      success: Boolean,
+      error: String
+    }]
+  },
+
+  // ==================== Metadata ====================
+  metadata: {
+    source: {
+      type: String,
+      enum: ['web', 'api', 'mobile', 'recurring', 'manual', 'import'],
+      default: 'web'
+    },
+    channel: String,
+    campaign: String,
+    referrer: String,
+    tags: [String],
+    customFields: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed
+    },
+    notes: [{
+      content: String,
+      addedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      addedAt: Date,
+      internal: {
+        type: Boolean,
+        default: true
+      }
+    }]
+  },
+
+  // ==================== Compliance & Audit ====================
+  compliance: {
+    pciCompliant: {
+      type: Boolean,
+      default: true
+    },
+    dataRetention: {
+      retainUntil: Date,
+      reason: String
+    },
+    regulations: {
+      gdpr: {
+        consented: Boolean,
+        consentDate: Date
+      },
+      psd2: {
+        strongAuthentication: Boolean,
+        exemption: String
+      }
+    },
+    audit: [{
+      action: String,
+      performedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      performedAt: Date,
+      details: mongoose.Schema.Types.Mixed,
+      ipAddress: String
+    }]
+  },
+
+  // ==================== Error Handling ====================
+  error: {
+    code: String,
+    message: String,
+    type: {
+      type: String,
+      enum: ['card_error', 'invalid_request', 'api_error', 'authentication_error', 'rate_limit', 'payment_method_error', 'network_error']
+    },
+    declineCode: String,
+    param: String,
+    raw: {
+      type: mongoose.Schema.Types.Mixed,
+      select: false
+    },
+    attempts: [{
+      attemptedAt: Date,
+      errorCode: String,
+      errorMessage: String
+    }]
   }
 };
 
@@ -332,70 +441,86 @@ const paymentSchema = BaseModel.createSchema(paymentSchemaDefinition, {
   timestamps: true
 });
 
-// Indexes
-paymentSchema.index({ customerId: 1, createdAt: -1 });
+// ==================== Indexes ====================
 paymentSchema.index({ organizationId: 1, status: 1 });
-paymentSchema.index({ invoiceId: 1, status: 1 });
-paymentSchema.index({ processedAt: -1 });
-paymentSchema.index({ settlementDate: 1, settlementStatus: 1 });
+paymentSchema.index({ tenantId: 1, status: 1 });
+paymentSchema.index({ 'provider.name': 1, 'provider.transactionId': 1 });
+paymentSchema.index({ status: 1, createdAt: -1 });
+paymentSchema.index({ 'relations.invoiceId': 1 });
+paymentSchema.index({ 'relations.subscriptionId': 1 });
+paymentSchema.index({ 'transaction.processedAt': -1 });
+paymentSchema.index({ 'reconciliation.status': 1 });
 
-// Virtual fields
+// ==================== Virtual Fields ====================
 paymentSchema.virtual('isSuccessful').get(function() {
   return this.status === 'succeeded';
 });
 
-paymentSchema.virtual('isPending').get(function() {
-  return ['pending', 'processing'].includes(this.status);
+paymentSchema.virtual('isFailed').get(function() {
+  return ['failed', 'cancelled'].includes(this.status);
 });
 
-paymentSchema.virtual('canBeRefunded').get(function() {
+paymentSchema.virtual('isRefunded').get(function() {
+  return this.status === 'refunded' || 
+         (this.relations.refunds && this.relations.refunds.length > 0);
+});
+
+paymentSchema.virtual('refundedAmount').get(function() {
+  if (!this.relations.refunds || this.relations.refunds.length === 0) return 0;
+  return this.relations.refunds.reduce((sum, refund) => sum + refund.amount, 0);
+});
+
+paymentSchema.virtual('netAmount').get(function() {
+  const refunded = this.refundedAmount;
+  const fees = this.transaction.processingFees?.amount || 0;
+  return this.amount.value - refunded - fees;
+});
+
+paymentSchema.virtual('canRefund').get(function() {
   return this.status === 'succeeded' && 
-         this.refundable && 
-         this.refundedAmount < this.amount;
+         this.refundedAmount < this.amount.value &&
+         this.type === 'charge';
 });
 
-paymentSchema.virtual('remainingRefundableAmount').get(function() {
-  return Math.max(0, this.amount - this.refundedAmount);
-});
-
-// Pre-save middleware
+// ==================== Pre-save Middleware ====================
 paymentSchema.pre('save', async function(next) {
   try {
-    // Generate payment ID if not provided
-    if (!this.paymentId && this.isNew) {
-      this.paymentId = await this.constructor.generatePaymentId();
+    // Encrypt sensitive data
+    if (this.isModified('provider.response') && this.provider.response) {
+      this.provider.response = await encryptionService.encrypt(
+        JSON.stringify(this.provider.response)
+      );
     }
 
     // Calculate net amount
-    if (this.isModified('amount') || this.isModified('processingFee') || this.isModified('applicationFee')) {
-      this.netAmount = this.amount - this.processingFee - this.applicationFee;
+    if (this.isModified('amount') || this.isModified('transaction.processingFees')) {
+      const fees = this.transaction.processingFees?.amount || 0;
+      this.transaction.net = {
+        amount: this.amount.value - fees,
+        currency: this.amount.currency
+      };
     }
 
-    // Convert to base currency
-    if (this.isModified('amount') || this.isModified('exchangeRate')) {
-      this.amountInBaseCurrency = this.amount * (this.exchangeRate || 1);
-    }
-
-    // Update refunded amount
-    if (this.isModified('refunds')) {
-      this.refundedAmount = this.refunds.reduce((total, refund) => {
-        return total + (refund.status === 'succeeded' ? refund.amount : 0);
-      }, 0);
-
-      if (this.refundedAmount >= this.amount) {
-        this.status = 'refunded';
-      } else if (this.refundedAmount > 0) {
-        this.status = 'partially_refunded';
-      }
-    }
-
-    // Set processing timestamps
+    // Update processed timestamp
     if (this.isModified('status')) {
-      if (this.status === 'processing' && !this.processingStartedAt) {
-        this.processingStartedAt = new Date();
-      } else if (this.status === 'succeeded' && !this.processedAt) {
-        this.processedAt = new Date();
+      if (this.status === 'succeeded' && !this.transaction.processedAt) {
+        this.transaction.processedAt = new Date();
       }
+    }
+
+    // Add to audit log
+    if (!this.isNew && this.isModified()) {
+      if (!this.compliance.audit) {
+        this.compliance.audit = [];
+      }
+      
+      this.compliance.audit.push({
+        action: 'update',
+        performedAt: new Date(),
+        details: {
+          modifiedFields: this.modifiedPaths()
+        }
+      });
     }
 
     next();
@@ -404,468 +529,530 @@ paymentSchema.pre('save', async function(next) {
   }
 });
 
-// Post-save middleware
-paymentSchema.post('save', async function() {
-  try {
-    // Update invoice if linked
-    if (this.invoiceId && this.status === 'succeeded') {
-      const Invoice = mongoose.model('Invoice');
-      await Invoice.findByIdAndUpdate(this.invoiceId, {
-        $push: {
-          payments: {
-            paymentId: this._id,
-            amount: this.amount,
-            paymentDate: this.processedAt,
-            paymentMethod: this.paymentMethodType,
-            transactionId: this.providerPaymentId
-          }
-        },
-        $inc: { amountPaid: this.amount }
-      });
-    }
-  } catch (error) {
-    logger.error('Error in payment post-save', error);
-  }
-});
-
-// Instance methods
+// ==================== Instance Methods ====================
 paymentSchema.methods.process = async function() {
-  if (!this.isPending) {
+  if (this.status !== 'pending') {
     throw new AppError('Payment is not in pending status', 400, 'INVALID_STATUS');
   }
 
   this.status = 'processing';
-  this.attempts += 1;
-  this.lastAttemptAt = new Date();
-  
   await this.save();
 
   try {
-    // Process with payment provider
-    const result = await this.processWithProvider();
+    // Process with provider (would integrate with actual payment provider)
+    // This is a placeholder for actual payment processing logic
     
-    if (result.success) {
-      await this.markAsSucceeded(result);
-    } else {
-      await this.markAsFailed(result);
-    }
-  } catch (error) {
-    await this.markAsFailed({
-      code: 'processing_error',
-      message: error.message
+    this.status = 'succeeded';
+    this.transaction.processedAt = new Date();
+    
+    // Generate receipt number
+    this.transaction.receiptNumber = await this.constructor.generateReceiptNumber();
+    
+    await this.save();
+    
+    logger.info('Payment processed successfully', {
+      paymentId: this._id,
+      amount: this.amount.value,
+      provider: this.provider.name
     });
-    throw error;
-  }
-
-  return this;
-};
-
-paymentSchema.methods.processWithProvider = async function() {
-  // This would integrate with actual payment providers
-  // Placeholder implementation
-  logger.info('Processing payment with provider', {
-    paymentId: this.paymentId,
-    provider: this.provider,
-    amount: this.amount
-  });
-
-  // Simulate processing
-  return {
-    success: true,
-    transactionId: `txn_${Date.now()}`,
-    fee: this.amount * 0.029 + 0.30 // Typical credit card fee
-  };
-};
-
-paymentSchema.methods.markAsSucceeded = async function(result) {
-  this.status = 'succeeded';
-  this.processedAt = new Date();
-  this.providerPaymentId = result.transactionId;
-  this.processingFee = result.fee || 0;
-  this.settlementStatus = 'pending';
-  
-  if (result.response) {
-    this.providerResponse = result.response;
-  }
-
-  await this.save();
-  
-  // Send success webhook
-  await this.sendWebhook('payment.succeeded');
-  
-  return this;
-};
-
-paymentSchema.methods.markAsFailed = async function(result) {
-  this.status = 'failed';
-  this.failureCode = result.code;
-  this.failureMessage = result.message;
-  this.declineCode = result.declineCode;
-
-  // Schedule retry if applicable
-  if (this.attempts < 3 && this.shouldRetry(result.code)) {
-    const retryDelay = Math.pow(2, this.attempts) * 3600000; // Exponential backoff
-    this.nextRetryAt = new Date(Date.now() + retryDelay);
-    this.status = 'pending';
-  }
-
-  await this.save();
-  
-  // Send failure webhook
-  await this.sendWebhook('payment.failed');
-  
-  return this;
-};
-
-paymentSchema.methods.shouldRetry = function(failureCode) {
-  const retryableCodes = [
-    'network_error',
-    'timeout',
-    'provider_error',
-    'processing_error'
-  ];
-  
-  return retryableCodes.includes(failureCode);
-};
-
-paymentSchema.methods.refund = async function(amount, reason) {
-  if (!this.canBeRefunded) {
-    throw new AppError('Payment cannot be refunded', 400, 'NOT_REFUNDABLE');
-  }
-
-  if (amount > this.remainingRefundableAmount) {
-    throw new AppError('Refund amount exceeds remaining refundable amount', 400, 'EXCESSIVE_REFUND');
-  }
-
-  const refundId = `ref_${Date.now()}`;
-  
-  if (!this.refunds) {
-    this.refunds = [];
-  }
-
-  this.refunds.push({
-    refundId,
-    amount,
-    reason,
-    status: 'pending',
-    createdAt: new Date()
-  });
-
-  await this.save();
-
-  // Process refund with provider
-  try {
-    const result = await this.processRefundWithProvider(refundId, amount);
     
-    const refund = this.refunds.find(r => r.refundId === refundId);
-    refund.status = 'succeeded';
-    refund.processedAt = new Date();
+    // Update related invoice if exists
+    if (this.relations.invoiceId) {
+      const Invoice = mongoose.model('Invoice');
+      const invoice = await Invoice.findById(this.relations.invoiceId);
+      if (invoice) {
+        await invoice.recordPayment({
+          amount: this.amount.value,
+          paymentId: this._id,
+          method: this.method.type,
+          reference: this.provider.transactionId
+        });
+      }
+    }
     
-    await this.save();
-    
-    // Send refund webhook
-    await this.sendWebhook('payment.refunded');
+    // Update subscription if exists
+    if (this.relations.subscriptionId) {
+      const Subscription = mongoose.model('Subscription');
+      const subscription = await Subscription.findById(this.relations.subscriptionId);
+      if (subscription) {
+        await subscription.recordPayment(this._id, this.amount.value);
+      }
+    }
     
   } catch (error) {
-    const refund = this.refunds.find(r => r.refundId === refundId);
-    refund.status = 'failed';
+    this.status = 'failed';
+    this.error = {
+      code: error.code || 'processing_error',
+      message: error.message,
+      type: 'api_error'
+    };
+    
     await this.save();
+    
+    logger.error('Payment processing failed', {
+      paymentId: this._id,
+      error: error.message
+    });
+    
     throw error;
   }
-
+  
   return this;
 };
 
-paymentSchema.methods.processRefundWithProvider = async function(refundId, amount) {
-  // This would integrate with actual payment providers
-  logger.info('Processing refund with provider', {
-    paymentId: this.paymentId,
-    refundId,
-    amount
-  });
-
-  return { success: true };
-};
-
-paymentSchema.methods.void = async function(reason, voidedBy) {
-  if (this.status !== 'pending') {
-    throw new AppError('Only pending payments can be voided', 400, 'INVALID_STATUS');
+paymentSchema.methods.refund = async function(amount, reason, userId) {
+  if (!this.canRefund) {
+    throw new AppError('Payment cannot be refunded', 400, 'CANNOT_REFUND');
   }
 
-  this.status = 'cancelled';
-  this.voidedBy = {
-    userId: voidedBy,
-    voidedAt: new Date(),
+  const refundAmount = amount || this.amount.value - this.refundedAmount;
+  
+  if (refundAmount > this.amount.value - this.refundedAmount) {
+    throw new AppError('Refund amount exceeds available amount', 400, 'EXCESS_REFUND');
+  }
+
+  // Create refund payment
+  const refundPayment = new this.constructor({
+    organizationId: this.organizationId,
+    tenantId: this.tenantId,
+    type: amount < this.amount.value ? 'partial_refund' : 'refund',
+    status: 'pending',
+    amount: {
+      value: refundAmount,
+      currency: this.amount.currency
+    },
+    relations: {
+      parentPaymentId: this._id,
+      invoiceId: this.relations.invoiceId,
+      subscriptionId: this.relations.subscriptionId,
+      paymentMethodId: this.relations.paymentMethodId
+    },
+    method: this.method,
+    provider: {
+      name: this.provider.name,
+      customerId: this.provider.customerId
+    },
+    refund: {
+      reason,
+      description: `Refund for payment ${this.paymentId}`,
+      processedBy: userId,
+      refundedAt: new Date()
+    },
+    customer: this.customer
+  });
+
+  await refundPayment.save();
+
+  // Update original payment
+  if (!this.relations.refunds) {
+    this.relations.refunds = [];
+  }
+  
+  this.relations.refunds.push({
+    paymentId: refundPayment._id,
+    amount: refundAmount,
+    refundedAt: new Date()
+  });
+
+  if (this.refundedAmount >= this.amount.value) {
+    this.status = 'refunded';
+  }
+
+  await this.save();
+
+  // Process the refund
+  await refundPayment.process();
+
+  logger.info('Payment refunded', {
+    originalPaymentId: this._id,
+    refundPaymentId: refundPayment._id,
+    amount: refundAmount,
     reason
-  };
-
-  await this.save();
-  
-  // Send cancellation webhook
-  await this.sendWebhook('payment.cancelled');
-  
-  return this;
-};
-
-paymentSchema.methods.capture = async function(amount, capturedBy) {
-  if (this.status !== 'authorized') {
-    throw new AppError('Payment is not authorized', 400, 'NOT_AUTHORIZED');
-  }
-
-  const captureAmount = amount || this.amount;
-  
-  if (captureAmount > this.amount) {
-    throw new AppError('Capture amount exceeds authorized amount', 400, 'EXCESSIVE_CAPTURE');
-  }
-
-  // Process capture with provider
-  const result = await this.processCaptureWithProvider(captureAmount);
-  
-  this.status = 'succeeded';
-  this.amount = captureAmount;
-  this.processedAt = new Date();
-  this.capturedBy = {
-    userId: capturedBy,
-    capturedAt: new Date()
-  };
-
-  await this.save();
-  
-  return this;
-};
-
-paymentSchema.methods.processCaptureWithProvider = async function(amount) {
-  // This would integrate with actual payment providers
-  logger.info('Capturing payment with provider', {
-    paymentId: this.paymentId,
-    amount
   });
 
-  return { success: true };
+  return refundPayment;
 };
 
-paymentSchema.methods.createDispute = async function(disputeData) {
+paymentSchema.methods.dispute = async function(disputeData) {
+  if (this.status !== 'succeeded') {
+    throw new AppError('Only successful payments can be disputed', 400, 'INVALID_STATUS');
+  }
+
   this.status = 'disputed';
   this.dispute = {
     ...disputeData,
-    status: 'needs_response',
-    createdAt: new Date()
+    status: 'needs_response'
   };
 
   await this.save();
-  
-  // Send dispute webhook
-  await this.sendWebhook('payment.disputed');
-  
+
+  logger.warn('Payment disputed', {
+    paymentId: this._id,
+    reason: disputeData.reason
+  });
+
   return this;
 };
 
-paymentSchema.methods.submitDisputeEvidence = async function(evidence) {
-  if (!this.dispute) {
-    throw new AppError('No dispute found', 400, 'NO_DISPUTE');
+paymentSchema.methods.submitEvidence = async function(evidence) {
+  if (this.status !== 'disputed') {
+    throw new AppError('Payment is not disputed', 400, 'NOT_DISPUTED');
   }
 
-  this.dispute.evidence = evidence;
+  if (!this.dispute.evidence) {
+    this.dispute.evidence = {
+      documents: []
+    };
+  }
+
+  this.dispute.evidence.documents.push(...evidence.documents);
+  this.dispute.evidence.submitted = true;
+  this.dispute.evidence.submittedAt = new Date();
   this.dispute.status = 'under_review';
 
   await this.save();
-  
+
+  logger.info('Dispute evidence submitted', {
+    paymentId: this._id,
+    documentsCount: evidence.documents.length
+  });
+
   return this;
 };
 
-paymentSchema.methods.resolveDispute = async function(outcome) {
-  if (!this.dispute) {
-    throw new AppError('No dispute found', 400, 'NO_DISPUTE');
-  }
-
-  this.dispute.status = outcome; // 'won' or 'lost'
-  this.dispute.resolvedAt = new Date();
-
-  if (outcome === 'lost') {
-    this.status = 'refunded';
-  } else {
-    this.status = 'succeeded';
-  }
+paymentSchema.methods.reconcile = async function(bankReference, userId) {
+  this.reconciliation.status = 'matched';
+  this.reconciliation.matchedAt = new Date();
+  this.reconciliation.matchedBy = userId;
+  this.reconciliation.bankReference = bankReference;
 
   await this.save();
-  
-  // Send dispute resolution webhook
-  await this.sendWebhook('payment.dispute_resolved');
-  
+
+  logger.info('Payment reconciled', {
+    paymentId: this._id,
+    bankReference
+  });
+
   return this;
 };
 
-paymentSchema.methods.performFraudCheck = async function() {
-  // Integrate with fraud detection service
-  const fraudScore = Math.random() * 100; // Placeholder
-  
-  this.fraudCheck = {
-    checked: true,
-    score: fraudScore,
-    outcome: fraudScore > 80 ? 'high_risk' : fraudScore > 50 ? 'medium_risk' : 'low_risk',
-    flaggedReasons: []
-  };
-
-  if (fraudScore > 80) {
-    this.fraudCheck.flaggedReasons.push('high_risk_score');
-    this.riskLevel = 'high';
+paymentSchema.methods.addNote = async function(content, userId, internal = true) {
+  if (!this.metadata.notes) {
+    this.metadata.notes = [];
   }
 
-  this.riskScore = fraudScore;
-  
+  this.metadata.notes.push({
+    content,
+    addedBy: userId,
+    addedAt: new Date(),
+    internal
+  });
+
   await this.save();
-  
-  return this.fraudCheck;
+
+  return this;
 };
 
-paymentSchema.methods.sendWebhook = async function(event) {
-  if (!this.webhooks) {
-    this.webhooks = [];
+paymentSchema.methods.retry = async function() {
+  if (!['failed', 'cancelled'].includes(this.status)) {
+    throw new AppError('Only failed payments can be retried', 400, 'INVALID_STATUS');
   }
 
-  const webhook = {
-    event,
-    sentAt: new Date(),
-    attempts: 1
-  };
-
-  try {
-    // Send webhook to configured endpoints
-    logger.info('Sending payment webhook', {
-      paymentId: this.paymentId,
-      event
-    });
-    
-    webhook.response = { status: 'success' };
-  } catch (error) {
-    webhook.response = { status: 'failed', error: error.message };
+  // Record retry attempt
+  if (!this.error.attempts) {
+    this.error.attempts = [];
   }
 
-  this.webhooks.push(webhook);
+  this.error.attempts.push({
+    attemptedAt: new Date(),
+    errorCode: this.error.code,
+    errorMessage: this.error.message
+  });
+
+  // Reset status and try again
+  this.status = 'pending';
+  this.error = {};
+
   await this.save();
+
+  // Process the payment
+  return await this.process();
 };
 
-// Static methods
-paymentSchema.statics.generatePaymentId = async function() {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 8);
-  return `pay_${timestamp}${random}`.toUpperCase();
-};
-
-paymentSchema.statics.processScheduledPayments = async function() {
-  const now = new Date();
+// ==================== Static Methods ====================
+paymentSchema.statics.generateReceiptNumber = async function() {
+  const prefix = 'RCP';
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const random = Math.random().toString(36).substr(2, 6).toUpperCase();
   
-  const scheduledPayments = await this.find({
+  return `${prefix}-${year}${month}-${random}`;
+};
+
+paymentSchema.statics.createPayment = async function(data) {
+  const {
+    organizationId,
+    amount,
+    currency = 'USD',
+    paymentMethodId,
+    invoiceId,
+    subscriptionId,
+    description
+  } = data;
+
+  // Get organization
+  const Organization = mongoose.model('Organization');
+  const organization = await Organization.findById(organizationId);
+  
+  if (!organization) {
+    throw new AppError('Organization not found', 404, 'ORGANIZATION_NOT_FOUND');
+  }
+
+  // Get payment method
+  const PaymentMethod = mongoose.model('PaymentMethod');
+  const paymentMethod = await PaymentMethod.findById(paymentMethodId);
+  
+  if (!paymentMethod || paymentMethod.organizationId.toString() !== organizationId.toString()) {
+    throw new AppError('Invalid payment method', 400, 'INVALID_PAYMENT_METHOD');
+  }
+
+  const payment = new this({
+    organizationId,
+    tenantId: organization.tenancy?.tenantId,
+    type: 'charge',
     status: 'pending',
-    nextRetryAt: { $lte: now }
-  }).limit(100);
-
-  let processed = 0;
-  
-  for (const payment of scheduledPayments) {
-    try {
-      await payment.process();
-      processed++;
-    } catch (error) {
-      logger.error('Failed to process scheduled payment', {
-        paymentId: payment.paymentId,
-        error: error.message
-      });
+    amount: {
+      value: amount,
+      currency
+    },
+    relations: {
+      paymentMethodId,
+      invoiceId,
+      subscriptionId
+    },
+    method: {
+      type: paymentMethod.type,
+      brand: paymentMethod.details.brand,
+      last4: paymentMethod.details.last4
+    },
+    provider: {
+      name: paymentMethod.provider,
+      customerId: paymentMethod.providerCustomerId
+    },
+    transaction: {
+      description: description || `Payment from ${organization.name}`
+    },
+    customer: {
+      name: organization.contact.name || organization.name,
+      email: organization.contact.email,
+      billingAddress: organization.address
     }
-  }
+  });
 
-  return processed;
+  await payment.save();
+
+  logger.info('Payment created', {
+    paymentId: payment._id,
+    organizationId,
+    amount,
+    currency
+  });
+
+  return payment;
 };
 
-paymentSchema.statics.getPaymentStatistics = async function(customerId, period) {
-  const { startDate, endDate } = period;
+paymentSchema.statics.findByOrganization = async function(organizationId, options = {}) {
+  const query = { organizationId };
   
-  const matchQuery = {
-    customerId,
-    createdAt: { $gte: startDate, $lte: endDate }
-  };
+  if (options.status) {
+    query.status = options.status;
+  }
+  
+  if (options.type) {
+    query.type = options.type;
+  }
+  
+  if (options.dateRange) {
+    query.createdAt = {
+      $gte: options.dateRange.start,
+      $lte: options.dateRange.end
+    };
+  }
 
-  const stats = await this.aggregate([
-    { $match: matchQuery },
+  const payments = await this.find(query)
+    .sort({ createdAt: -1 })
+    .limit(options.limit || 50)
+    .skip(options.skip || 0)
+    .populate('relations.invoiceId relations.subscriptionId');
+
+  const total = await this.countDocuments(query);
+
+  return {
+    payments,
+    total,
+    hasMore: total > (options.skip || 0) + payments.length
+  };
+};
+
+paymentSchema.statics.findFailedPayments = async function(options = {}) {
+  const query = {
+    status: 'failed',
+    type: 'charge'
+  };
+  
+  if (options.tenantId) {
+    query.tenantId = options.tenantId;
+  }
+  
+  if (options.retriable) {
+    query['error.type'] = { $ne: 'card_error' };
+    query['error.attempts'] = { $size: { $lt: 3 } };
+  }
+
+  return await this.find(query)
+    .sort({ createdAt: -1 })
+    .populate('organizationId relations.invoiceId');
+};
+
+paymentSchema.statics.getPaymentMetrics = async function(filters = {}) {
+  const match = {};
+  
+  if (filters.tenantId) {
+    match.tenantId = filters.tenantId;
+  }
+  
+  if (filters.dateRange) {
+    match.createdAt = {
+      $gte: filters.dateRange.start,
+      $lte: filters.dateRange.end
+    };
+  }
+
+  const metrics = await this.aggregate([
+    { $match: match },
     {
-      $group: {
-        _id: null,
-        totalPayments: { $sum: 1 },
-        totalAmount: { $sum: '$amount' },
-        successfulPayments: {
-          $sum: { $cond: [{ $eq: ['$status', 'succeeded'] }, 1, 0] }
-        },
-        successfulAmount: {
-          $sum: { $cond: [{ $eq: ['$status', 'succeeded'] }, '$amount', 0] }
-        },
-        failedPayments: {
-          $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
-        },
-        refundedAmount: { $sum: '$refundedAmount' },
-        processingFees: { $sum: '$processingFee' },
-        averagePaymentAmount: { $avg: '$amount' },
-        largestPayment: { $max: '$amount' }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        totalPayments: 1,
-        totalAmount: { $round: ['$totalAmount', 2] },
-        successfulPayments: 1,
-        successfulAmount: { $round: ['$successfulAmount', 2] },
-        failedPayments: 1,
-        successRate: {
-          $multiply: [
-            { $divide: ['$successfulPayments', '$totalPayments'] },
-            100
-          ]
-        },
-        refundedAmount: { $round: ['$refundedAmount', 2] },
-        processingFees: { $round: ['$processingFees', 2] },
-        averagePaymentAmount: { $round: ['$averagePaymentAmount', 2] },
-        largestPayment: { $round: ['$largestPayment', 2] }
+      $facet: {
+        overview: [
+          {
+            $group: {
+              _id: null,
+              totalVolume: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$status', 'succeeded'] },
+                    '$amount.value',
+                    0
+                  ]
+                }
+              },
+              successCount: {
+                $sum: { $cond: [{ $eq: ['$status', 'succeeded'] }, 1, 0] }
+              },
+              failedCount: {
+                $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+              },
+              refundedVolume: {
+                $sum: {
+                  $cond: [
+                    { $in: ['$type', ['refund', 'partial_refund']] },
+                    '$amount.value',
+                    0
+                  ]
+                }
+              },
+              averageAmount: {
+                $avg: {
+                  $cond: [
+                    { $eq: ['$status', 'succeeded'] },
+                    '$amount.value',
+                    null
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        byMethod: [
+          {
+            $match: { status: 'succeeded' }
+          },
+          {
+            $group: {
+              _id: '$method.type',
+              volume: { $sum: '$amount.value' },
+              count: { $sum: 1 }
+            }
+          }
+        ],
+        byProvider: [
+          {
+            $group: {
+              _id: '$provider.name',
+              volume: { $sum: '$amount.value' },
+              count: { $sum: 1 },
+              successRate: {
+                $avg: {
+                  $cond: [{ $eq: ['$status', 'succeeded'] }, 1, 0]
+                }
+              }
+            }
+          }
+        ],
+        hourlyVolume: [
+          {
+            $match: {
+              status: 'succeeded',
+              createdAt: {
+                $gte: new Date(Date.now() - 24 * 60 * 60 * 1000)
+              }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                hour: { $hour: '$createdAt' }
+              },
+              volume: { $sum: '$amount.value' },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { '_id.hour': 1 } }
+        ],
+        failureReasons: [
+          {
+            $match: { status: 'failed' }
+          },
+          {
+            $group: {
+              _id: '$error.code',
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { count: -1 } },
+          { $limit: 10 }
+        ]
       }
     }
   ]);
 
-  return stats[0] || {
-    totalPayments: 0,
-    totalAmount: 0,
-    successfulPayments: 0,
-    successfulAmount: 0,
-    failedPayments: 0,
-    successRate: 0,
-    refundedAmount: 0,
-    processingFees: 0,
-    averagePaymentAmount: 0,
-    largestPayment: 0
+  const result = metrics[0];
+
+  return {
+    overview: result.overview[0] || {
+      totalVolume: 0,
+      successCount: 0,
+      failedCount: 0,
+      refundedVolume: 0,
+      averageAmount: 0
+    },
+    successRate: result.overview[0] ? 
+      (result.overview[0].successCount / (result.overview[0].successCount + result.overview[0].failedCount) * 100).toFixed(2) : 0,
+    byMethod: result.byMethod,
+    byProvider: result.byProvider,
+    hourlyVolume: result.hourlyVolume,
+    failureReasons: result.failureReasons
   };
-};
-
-paymentSchema.statics.getSettlementBatch = async function(settlementDate) {
-  const startOfDay = new Date(settlementDate);
-  startOfDay.setHours(0, 0, 0, 0);
-  
-  const endOfDay = new Date(settlementDate);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  return await this.find({
-    status: 'succeeded',
-    settlementStatus: 'pending',
-    processedAt: { $gte: startOfDay, $lte: endOfDay }
-  });
-};
-
-paymentSchema.statics.updateSettlementStatus = async function(paymentIds, status, settlementAmount) {
-  return await this.updateMany(
-    { _id: { $in: paymentIds } },
-    {
-      settlementStatus: status,
-      settlementDate: new Date(),
-      settlementAmount
-    }
-  );
 };
 
 // Create and export model

@@ -1,337 +1,490 @@
 'use strict';
 
 /**
- * @fileoverview Subscription plan model for defining pricing and features
- * @module shared/lib/database/models/organizations/subscription-plan-model
+ * @fileoverview Subscription plan model for defining available billing plans
+ * @module shared/lib/database/models/billing/subscription-plan-model
  * @requires mongoose
  * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
- * @requires module:shared/lib/utils/helpers/string-helper
+ * @requires module:shared/lib/utils/validators/common-validators
+ * @requires module:shared/lib/utils/helpers/slug-helper
  */
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
 const AppError = require('../../../utils/app-error');
-const stringHelper = require('../../../utils/helpers/string-helper');
+const validators = require('../../../utils/validators/common-validators');
+const slugHelper = require('../../../utils/helpers/slug-helper');
 
 /**
  * Subscription plan schema definition
  */
 const subscriptionPlanSchemaDefinition = {
-  // Plan Identification
+  // ==================== Core Identity ====================
   name: {
     type: String,
     required: true,
     trim: true,
+    minlength: 2,
     maxlength: 100,
     index: true
   },
 
-  code: {
+  slug: {
+    type: String,
+    unique: true,
+    lowercase: true,
+    trim: true,
+    index: true,
+    match: /^[a-z0-9-]+$/
+  },
+
+  displayName: {
     type: String,
     required: true,
-    unique: true,
-    uppercase: true,
     trim: true,
-    match: /^[A-Z0-9_-]+$/,
-    index: true
+    maxlength: 200
   },
 
   description: {
     type: String,
-    maxlength: 500
+    maxlength: 1000
   },
 
-  // Plan Type
-  type: {
+  tier: {
     type: String,
+    enum: ['free', 'starter', 'basic', 'professional', 'enterprise', 'custom'],
     required: true,
-    enum: ['free', 'starter', 'professional', 'enterprise', 'custom'],
     index: true
   },
 
-  category: {
-    type: String,
-    enum: ['basic', 'standard', 'premium', 'addon', 'special'],
-    default: 'standard'
-  },
-
-  // Pricing
+  // ==================== Pricing Configuration ====================
   pricing: {
-    amount: {
-      type: Number,
-      required: true,
-      min: 0
-    },
     currency: {
       type: String,
       required: true,
-      uppercase: true,
       default: 'USD',
-      enum: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CNY']
+      uppercase: true,
+      validate: {
+        validator: function(value) {
+          return /^[A-Z]{3}$/.test(value);
+        },
+        message: 'Invalid currency code'
+      }
     },
-    billingInterval: {
-      type: String,
-      required: true,
-      enum: ['day', 'week', 'month', 'year', 'lifetime'],
-      default: 'month'
-    },
-    billingIntervalCount: {
+
+    amount: {
       type: Number,
       required: true,
+      min: 0,
+      get: v => Math.round(v * 100) / 100,
+      set: v => Math.round(v * 100) / 100
+    },
+
+    interval: {
+      type: String,
+      enum: ['monthly', 'quarterly', 'semi-annual', 'annual', 'biennial', 'custom'],
+      required: true,
+      default: 'monthly'
+    },
+
+    intervalCount: {
+      type: Number,
       default: 1,
       min: 1
     },
+
     trialDays: {
+      type: Number,
+      default: 14,
+      min: 0,
+      max: 365
+    },
+
+    setupFee: {
       type: Number,
       default: 0,
       min: 0
+    },
+
+    discounts: [{
+      type: {
+        type: String,
+        enum: ['percentage', 'fixed']
+      },
+      value: Number,
+      description: String,
+      conditions: {
+        minQuantity: Number,
+        minCommitment: Number,
+        promoCode: String
+      }
+    }],
+
+    overageRates: {
+      users: {
+        rate: Number,
+        unit: String
+      },
+      storage: {
+        rate: Number,
+        unit: String
+      },
+      apiCalls: {
+        rate: Number,
+        unit: String
+      }
     }
   },
 
-  // Tiered Pricing
-  tiers: [{
-    minQuantity: {
-      type: Number,
-      required: true,
-      min: 1
-    },
-    maxQuantity: Number,
-    unitPrice: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-    flatPrice: Number
-  }],
-
-  // Usage-based Pricing
-  usagePricing: [{
-    metric: {
-      type: String,
-      required: true
-    },
-    unit: String,
-    pricePerUnit: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-    includedUnits: {
-      type: Number,
-      default: 0
-    },
-    overage: {
-      enabled: {
-        type: Boolean,
-        default: true
-      },
-      pricePerUnit: Number
-    }
-  }],
-
-  // Features
-  features: [{
-    name: {
-      type: String,
-      required: true
-    },
-    code: String,
-    description: String,
-    value: mongoose.Schema.Types.Mixed,
-    displayValue: String,
-    category: String,
-    highlighted: {
-      type: Boolean,
-      default: false
-    }
-  }],
-
-  // Limits
-  limits: {
+  // ==================== Features & Limits ====================
+  features: {
     users: {
-      min: Number,
-      max: Number,
-      included: Number,
-      pricePerAdditional: Number
+      limit: {
+        type: Number,
+        required: true,
+        default: 5
+      },
+      description: String
     },
+
     projects: {
-      max: Number,
-      unlimited: Boolean
+      limit: {
+        type: Number,
+        required: true,
+        default: 3
+      },
+      description: String
     },
+
     storage: {
-      amount: Number,
+      limit: {
+        type: Number,
+        required: true,
+        default: 1073741824 // 1GB in bytes
+      },
       unit: {
         type: String,
-        enum: ['MB', 'GB', 'TB'],
-        default: 'GB'
+        default: 'bytes'
       },
-      pricePerAdditionalGB: Number
+      description: String
     },
+
     apiCalls: {
-      perMonth: Number,
-      perDay: Number,
-      perHour: Number
+      monthlyLimit: {
+        type: Number,
+        required: true,
+        default: 10000
+      },
+      rateLimit: {
+        requestsPerMinute: Number,
+        requestsPerHour: Number,
+        requestsPerDay: Number
+      },
+      description: String
     },
-    customFields: Number,
-    integrations: Number,
-    emailsPerMonth: Number,
-    supportLevel: {
-      type: String,
-      enum: ['none', 'email', 'priority', '24x7', 'dedicated']
-    }
-  },
 
-  // Add-ons
-  availableAddons: [{
-    addonId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'SubscriptionPlan'
+    customDomain: {
+      enabled: {
+        type: Boolean,
+        default: false
+      },
+      limit: Number,
+      description: String
     },
-    required: Boolean,
-    maxQuantity: Number
-  }],
 
-  isAddon: {
-    type: Boolean,
-    default: false
-  },
-
-  compatiblePlans: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'SubscriptionPlan'
-  }],
-
-  // Discounts
-  discounts: [{
-    name: String,
-    type: {
-      type: String,
-      enum: ['percentage', 'fixed']
+    whiteLabel: {
+      enabled: {
+        type: Boolean,
+        default: false
+      },
+      description: String
     },
-    value: Number,
-    conditions: {
-      minQuantity: Number,
-      minCommitmentMonths: Number,
-      validFrom: Date,
-      validUntil: Date
-    }
-  }],
 
-  // Display Settings
-  displayOrder: {
-    type: Number,
-    default: 0
-  },
+    advancedAnalytics: {
+      enabled: {
+        type: Boolean,
+        default: false
+      },
+      retentionDays: Number,
+      description: String
+    },
 
-  highlighted: {
-    type: Boolean,
-    default: false
-  },
-
-  badge: {
-    text: String,
-    color: String
-  },
-
-  visibility: {
-    type: String,
-    enum: ['public', 'private', 'hidden'],
-    default: 'public'
-  },
-
-  // Target Audience
-  targetAudience: {
-    customerTypes: [{
-      type: String,
-      enum: ['individual', 'team', 'business', 'enterprise']
+    integrations: [{
+      name: String,
+      enabled: Boolean,
+      limit: Number,
+      description: String
     }],
-    industries: [String],
-    companySize: [{
-      type: String,
-      enum: ['1-10', '11-50', '51-200', '201-500', '501-1000', '1001-5000', '5000+']
+
+    support: {
+      level: {
+        type: String,
+        enum: ['community', 'email', 'priority', 'dedicated', 'white-glove'],
+        default: 'community'
+      },
+      slaHours: Number,
+      channels: [String],
+      description: String
+    },
+
+    security: {
+      mfaRequired: Boolean,
+      ssoEnabled: Boolean,
+      auditLogDays: Number,
+      ipWhitelisting: Boolean,
+      encryptionAtRest: Boolean,
+      complianceCertifications: [String]
+    },
+
+    customFeatures: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed
+    }
+  },
+
+  // ==================== Multi-Tenant Configuration ====================
+  tenancy: {
+    global: {
+      type: Boolean,
+      default: true
+    },
+    
+    allowedTenants: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Tenant'
+    }],
+
+    excludedTenants: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Tenant'
+    }],
+
+    customPricingByTenant: [{
+      tenantId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Tenant'
+      },
+      pricing: {
+        amount: Number,
+        currency: String,
+        discounts: [mongoose.Schema.Types.Mixed]
+      }
     }]
   },
 
-  // Status
-  status: {
-    type: String,
-    required: true,
-    enum: ['active', 'inactive', 'deprecated', 'beta'],
-    default: 'active',
-    index: true
-  },
-
-  // Lifecycle
-  availableFrom: Date,
-  availableUntil: Date,
-  deprecatedAt: Date,
-  replacedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'SubscriptionPlan'
-  },
-
-  // Provider Integration
-  providers: [{
-    name: {
-      type: String,
-      enum: ['stripe', 'paypal', 'internal']
+  // ==================== Billing Provider Integration ====================
+  providers: {
+    stripe: {
+      productId: String,
+      priceId: String,
+      testPriceId: String,
+      metadata: mongoose.Schema.Types.Mixed
     },
-    externalId: String,
-    productId: String,
-    priceId: String,
-    syncedAt: Date
-  }],
-
-  // Metadata
-  metadata: {
-    tags: [String],
-    customAttributes: mongoose.Schema.Types.Mixed,
-    internalNotes: String
+    paypal: {
+      planId: String,
+      testPlanId: String,
+      metadata: mongoose.Schema.Types.Mixed
+    },
+    custom: mongoose.Schema.Types.Mixed
   },
 
-  // Terms and Conditions
+  // ==================== Visibility & Availability ====================
+  visibility: {
+    public: {
+      type: Boolean,
+      default: true
+    },
+
+    availableForSignup: {
+      type: Boolean,
+      default: true
+    },
+
+    requiresApproval: {
+      type: Boolean,
+      default: false
+    },
+
+    targetAudience: {
+      type: String,
+      enum: ['individual', 'small_business', 'enterprise', 'nonprofit', 'educational', 'all'],
+      default: 'all'
+    },
+
+    regions: [{
+      code: String,
+      name: String,
+      available: Boolean
+    }],
+
+    startDate: Date,
+    endDate: Date,
+
+    maxSubscriptions: Number,
+    currentSubscriptions: {
+      type: Number,
+      default: 0
+    }
+  },
+
+  // ==================== Marketing & Display ====================
+  marketing: {
+    badge: {
+      text: String,
+      color: String,
+      icon: String
+    },
+
+    highlights: [String],
+
+    popularityScore: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    },
+
+    recommended: {
+      type: Boolean,
+      default: false
+    },
+
+    sortOrder: {
+      type: Number,
+      default: 0
+    },
+
+    comparisons: [{
+      competitorPlan: String,
+      advantages: [String],
+      priceComparison: String
+    }],
+
+    testimonials: [{
+      author: String,
+      company: String,
+      content: String,
+      rating: Number
+    }]
+  },
+
+  // ==================== Terms & Conditions ====================
   terms: {
-    minimumCommitment: {
-      duration: Number,
+    contractLength: {
+      minimum: Number,
+      maximum: Number,
       unit: {
         type: String,
         enum: ['days', 'months', 'years']
       }
     },
-    autoRenewal: {
-      type: Boolean,
-      default: true
+
+    cancellation: {
+      allowed: {
+        type: Boolean,
+        default: true
+      },
+      noticePeriodDays: {
+        type: Number,
+        default: 0
+      },
+      refundPolicy: {
+        type: String,
+        enum: ['none', 'prorated', 'full', 'custom'],
+        default: 'prorated'
+      },
+      earlyTerminationFee: Number
     },
-    cancellationPolicy: {
-      type: String,
-      enum: ['immediate', 'end_of_period', 'with_notice'],
-      default: 'end_of_period'
+
+    renewal: {
+      automatic: {
+        type: Boolean,
+        default: true
+      },
+      reminderDays: {
+        type: Number,
+        default: 7
+      },
+      gracePeriodDays: {
+        type: Number,
+        default: 3
+      }
     },
-    refundPolicy: {
-      type: String,
-      enum: ['none', 'prorated', 'full_30_days', 'custom']
+
+    upgrade: {
+      allowed: {
+        type: Boolean,
+        default: true
+      },
+      immediate: {
+        type: Boolean,
+        default: true
+      },
+      proration: {
+        type: Boolean,
+        default: true
+      }
     },
-    customTerms: String
+
+    downgrade: {
+      allowed: {
+        type: Boolean,
+        default: true
+      },
+      effectiveTiming: {
+        type: String,
+        enum: ['immediate', 'end_of_period'],
+        default: 'end_of_period'
+      }
+    }
   },
 
-  // Upgrade/Downgrade Rules
-  migrationRules: {
-    canUpgradeTo: [{
-      planId: mongoose.Schema.Types.ObjectId,
-      allowMidCycle: Boolean,
-      prorationEnabled: Boolean
+  // ==================== Metadata & Status ====================
+  metadata: {
+    tags: [String],
+    category: String,
+    version: {
+      type: String,
+      default: '1.0.0'
+    },
+    previousVersions: [{
+      version: String,
+      deprecatedAt: Date,
+      migrationPath: String
     }],
-    canDowngradeTo: [{
-      planId: mongoose.Schema.Types.ObjectId,
-      allowMidCycle: Boolean,
-      restrictions: String
-    }]
+    customFields: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed
+    }
   },
 
-  // Analytics
+  status: {
+    state: {
+      type: String,
+      enum: ['draft', 'active', 'deprecated', 'archived', 'deleted'],
+      default: 'draft',
+      index: true
+    },
+
+    activatedAt: Date,
+    deprecatedAt: Date,
+    archivedAt: Date,
+
+    deprecationReason: String,
+    migrationPlan: {
+      targetPlanId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'SubscriptionPlan'
+      },
+      instructions: String,
+      automatedMigration: Boolean
+    }
+  },
+
+  // ==================== Analytics & Metrics ====================
   analytics: {
     totalSubscriptions: {
       type: Number,
@@ -341,43 +494,19 @@ const subscriptionPlanSchemaDefinition = {
       type: Number,
       default: 0
     },
-    monthlyRevenue: {
+    churnRate: {
       type: Number,
       default: 0
     },
-    averageLifetimeValue: Number,
-    churnRate: Number,
-    conversionRate: Number
-  },
-
-  // Localization
-  localization: [{
-    locale: {
-      type: String,
-      required: true
+    averageLifetimeValue: {
+      type: Number,
+      default: 0
     },
-    name: String,
-    description: String,
-    features: [{
-      name: String,
-      description: String
-    }],
-    currency: String,
-    amount: Number
-  }],
-
-  // Audit
-  createdBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    userType: {
-      type: String,
-      enum: ['admin', 'system']
-    }
-  },
-
-  lastModifiedBy: {
-    userId: mongoose.Schema.Types.ObjectId,
-    modifiedAt: Date
+    conversionRate: {
+      type: Number,
+      default: 0
+    },
+    lastCalculated: Date
   }
 };
 
@@ -387,74 +516,89 @@ const subscriptionPlanSchema = BaseModel.createSchema(subscriptionPlanSchemaDefi
   timestamps: true
 });
 
-// Indexes
-subscriptionPlanSchema.index({ type: 1, status: 1 });
-subscriptionPlanSchema.index({ 'pricing.amount': 1, 'pricing.billingInterval': 1 });
-subscriptionPlanSchema.index({ visibility: 1, status: 1, displayOrder: 1 });
-subscriptionPlanSchema.index({ isAddon: 1, status: 1 });
+// ==================== Indexes ====================
+subscriptionPlanSchema.index({ name: 1, 'status.state': 1 });
+subscriptionPlanSchema.index({ tier: 1, 'status.state': 1 });
+subscriptionPlanSchema.index({ 'pricing.amount': 1, 'pricing.interval': 1 });
+subscriptionPlanSchema.index({ 'visibility.public': 1, 'visibility.availableForSignup': 1 });
+subscriptionPlanSchema.index({ 'providers.stripe.priceId': 1 });
+subscriptionPlanSchema.index({ 'marketing.sortOrder': 1 });
 
-// Virtual fields
+// ==================== Virtual Fields ====================
+subscriptionPlanSchema.virtual('isActive').get(function() {
+  return this.status.state === 'active';
+});
+
 subscriptionPlanSchema.virtual('isAvailable').get(function() {
   const now = new Date();
-  return this.status === 'active' &&
-         (!this.availableFrom || this.availableFrom <= now) &&
-         (!this.availableUntil || this.availableUntil > now);
+  return this.status.state === 'active' &&
+         this.visibility.availableForSignup &&
+         (!this.visibility.startDate || this.visibility.startDate <= now) &&
+         (!this.visibility.endDate || this.visibility.endDate >= now) &&
+         (!this.visibility.maxSubscriptions || this.visibility.currentSubscriptions < this.visibility.maxSubscriptions);
 });
 
 subscriptionPlanSchema.virtual('monthlyPrice').get(function() {
-  const { amount, billingInterval, billingIntervalCount } = this.pricing;
+  const intervals = {
+    monthly: 1,
+    quarterly: 3,
+    'semi-annual': 6,
+    annual: 12,
+    biennial: 24
+  };
   
-  switch (billingInterval) {
-    case 'month':
-      return amount / billingIntervalCount;
-    case 'year':
-      return amount / (billingIntervalCount * 12);
-    case 'week':
-      return (amount * 52) / (billingIntervalCount * 12);
-    case 'day':
-      return (amount * 365) / (billingIntervalCount * 12);
-    default:
-      return amount;
-  }
+  const months = intervals[this.pricing.interval] || 1;
+  return Math.round((this.pricing.amount / months) * 100) / 100;
 });
 
 subscriptionPlanSchema.virtual('yearlyPrice').get(function() {
-  return this.monthlyPrice * 12;
+  const intervals = {
+    monthly: 12,
+    quarterly: 4,
+    'semi-annual': 2,
+    annual: 1,
+    biennial: 0.5
+  };
+  
+  const multiplier = intervals[this.pricing.interval] || 12;
+  return Math.round(this.pricing.amount * multiplier * 100) / 100;
 });
 
-subscriptionPlanSchema.virtual('hasFreeTrial').get(function() {
-  return this.pricing.trialDays > 0;
+subscriptionPlanSchema.virtual('formattedPrice').get(function() {
+  const formatter = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: this.pricing.currency
+  });
+  
+  return formatter.format(this.pricing.amount);
 });
 
-subscriptionPlanSchema.virtual('isFree').get(function() {
-  return this.pricing.amount === 0 || this.type === 'free';
-});
-
-// Pre-save middleware
+// ==================== Pre-save Middleware ====================
 subscriptionPlanSchema.pre('save', async function(next) {
   try {
-    // Generate code from name if not provided
-    if (!this.code && this.name) {
-      this.code = stringHelper.slugify(this.name).toUpperCase().replace(/-/g, '_');
-      
-      // Ensure uniqueness
-      let counter = 1;
-      let code = this.code;
-      while (await this.constructor.exists({ code, _id: { $ne: this._id } })) {
-        code = `${this.code}_${counter}`;
-        counter++;
-      }
-      this.code = code;
+    // Generate slug if not provided
+    if (!this.slug && this.name) {
+      this.slug = await this.constructor.generateUniqueSlug(this.name);
     }
 
-    // Sort tiers by minQuantity
-    if (this.tiers && this.tiers.length > 0) {
-      this.tiers.sort((a, b) => a.minQuantity - b.minQuantity);
+    // Set activation date when moving to active
+    if (this.isModified('status.state') && this.status.state === 'active' && !this.status.activatedAt) {
+      this.status.activatedAt = new Date();
     }
 
-    // Update analytics if status changed
-    if (this.isModified('status') && this.status === 'deprecated') {
-      this.deprecatedAt = new Date();
+    // Set deprecation date
+    if (this.isModified('status.state') && this.status.state === 'deprecated' && !this.status.deprecatedAt) {
+      this.status.deprecatedAt = new Date();
+    }
+
+    // Validate pricing
+    if (this.pricing.amount < 0) {
+      throw new AppError('Plan amount cannot be negative', 400, 'INVALID_AMOUNT');
+    }
+
+    // Validate features
+    if (this.features.users.limit < 1) {
+      throw new AppError('User limit must be at least 1', 400, 'INVALID_USER_LIMIT');
     }
 
     next();
@@ -463,308 +607,410 @@ subscriptionPlanSchema.pre('save', async function(next) {
   }
 });
 
-// Instance methods
-subscriptionPlanSchema.methods.addFeature = async function(feature) {
-  const existingFeature = this.features.find(f => f.code === feature.code);
-  
-  if (existingFeature) {
-    Object.assign(existingFeature, feature);
-  } else {
-    this.features.push(feature);
+// ==================== Instance Methods ====================
+subscriptionPlanSchema.methods.activate = async function() {
+  if (this.status.state === 'active') {
+    throw new AppError('Plan is already active', 400, 'ALREADY_ACTIVE');
   }
+
+  this.status.state = 'active';
+  this.status.activatedAt = new Date();
   
   await this.save();
+  
+  logger.info('Subscription plan activated', {
+    planId: this._id,
+    name: this.name
+  });
+  
   return this;
 };
 
-subscriptionPlanSchema.methods.removeFeature = async function(featureCode) {
-  this.features = this.features.filter(f => f.code !== featureCode);
+subscriptionPlanSchema.methods.deprecate = async function(reason, targetPlanId = null) {
+  if (this.status.state === 'deprecated') {
+    throw new AppError('Plan is already deprecated', 400, 'ALREADY_DEPRECATED');
+  }
+
+  this.status.state = 'deprecated';
+  this.status.deprecatedAt = new Date();
+  this.status.deprecationReason = reason;
+  
+  if (targetPlanId) {
+    this.status.migrationPlan = {
+      targetPlanId,
+      automatedMigration: false
+    };
+  }
+  
+  this.visibility.availableForSignup = false;
+  
   await this.save();
+  
+  logger.warn('Subscription plan deprecated', {
+    planId: this._id,
+    name: this.name,
+    reason
+  });
+  
   return this;
 };
 
 subscriptionPlanSchema.methods.updatePricing = async function(newPricing) {
+  const previousPricing = { ...this.pricing.toObject() };
+  
   Object.assign(this.pricing, newPricing);
   
-  await this.save();
-
-  logger.info('Plan pricing updated', {
-    planId: this._id,
-    code: this.code,
-    newPricing
+  if (!this.metadata.previousVersions) {
+    this.metadata.previousVersions = [];
+  }
+  
+  this.metadata.previousVersions.push({
+    version: this.metadata.version,
+    deprecatedAt: new Date(),
+    migrationPath: 'pricing_update'
   });
-
-  return this;
-};
-
-subscriptionPlanSchema.methods.addTier = async function(tier) {
-  if (!this.tiers) {
-    this.tiers = [];
-  }
   
-  this.tiers.push(tier);
-  this.tiers.sort((a, b) => a.minQuantity - b.minQuantity);
+  // Increment version
+  const versionParts = this.metadata.version.split('.');
+  versionParts[1] = (parseInt(versionParts[1]) + 1).toString();
+  this.metadata.version = versionParts.join('.');
   
   await this.save();
-  return this;
-};
-
-subscriptionPlanSchema.methods.deprecate = async function(replacementPlanId) {
-  this.status = 'deprecated';
-  this.deprecatedAt = new Date();
   
-  if (replacementPlanId) {
-    this.replacedBy = replacementPlanId;
-  }
-  
-  await this.save();
-
-  logger.warn('Subscription plan deprecated', {
+  logger.info('Subscription plan pricing updated', {
     planId: this._id,
-    code: this.code,
-    replacedBy: replacementPlanId
+    name: this.name,
+    previousPricing,
+    newPricing: this.pricing
   });
-
+  
   return this;
 };
 
-subscriptionPlanSchema.methods.activate = async function() {
-  if (this.status === 'active') {
-    return this;
-  }
-
-  this.status = 'active';
+subscriptionPlanSchema.methods.updateFeatures = async function(featureUpdates) {
+  Object.keys(featureUpdates).forEach(key => {
+    if (this.features[key] !== undefined) {
+      if (typeof this.features[key] === 'object' && !Array.isArray(this.features[key])) {
+        Object.assign(this.features[key], featureUpdates[key]);
+      } else {
+        this.features[key] = featureUpdates[key];
+      }
+    }
+  });
+  
   await this.save();
+  
+  logger.info('Subscription plan features updated', {
+    planId: this._id,
+    name: this.name,
+    updates: featureUpdates
+  });
+  
+  return this;
+};
 
+subscriptionPlanSchema.methods.addDiscount = async function(discount) {
+  if (!this.pricing.discounts) {
+    this.pricing.discounts = [];
+  }
+  
+  this.pricing.discounts.push(discount);
+  
+  await this.save();
+  
+  logger.info('Discount added to subscription plan', {
+    planId: this._id,
+    discount
+  });
+  
+  return this;
+};
+
+subscriptionPlanSchema.methods.setProviderIds = async function(provider, ids) {
+  if (!this.providers[provider]) {
+    this.providers[provider] = {};
+  }
+  
+  Object.assign(this.providers[provider], ids);
+  
+  await this.save();
+  
+  logger.info('Provider IDs set for subscription plan', {
+    planId: this._id,
+    provider,
+    ids
+  });
+  
   return this;
 };
 
 subscriptionPlanSchema.methods.calculatePrice = function(options = {}) {
-  const { quantity = 1, billingPeriods = 1, includeTax = false } = options;
+  let price = this.pricing.amount;
   
-  let basePrice = this.pricing.amount;
-
-  // Apply tiered pricing if applicable
-  if (this.tiers && this.tiers.length > 0) {
-    for (const tier of this.tiers) {
-      if (quantity >= tier.minQuantity && (!tier.maxQuantity || quantity <= tier.maxQuantity)) {
-        basePrice = tier.flatPrice || (tier.unitPrice * quantity);
-        break;
+  // Apply setup fee if new subscription
+  if (options.isNew && this.pricing.setupFee) {
+    price += this.pricing.setupFee;
+  }
+  
+  // Apply discounts
+  if (this.pricing.discounts && this.pricing.discounts.length > 0) {
+    for (const discount of this.pricing.discounts) {
+      if (this.isDiscountApplicable(discount, options)) {
+        if (discount.type === 'percentage') {
+          price *= (1 - discount.value / 100);
+        } else {
+          price -= discount.value;
+        }
       }
     }
-  } else {
-    basePrice = basePrice * quantity;
-  }
-
-  // Apply billing periods
-  const totalPrice = basePrice * billingPeriods;
-
-  // Apply tax if requested (placeholder - implement actual tax calculation)
-  const finalPrice = includeTax ? totalPrice * 1.1 : totalPrice;
-
-  return {
-    basePrice,
-    totalPrice,
-    finalPrice,
-    quantity,
-    billingPeriods,
-    currency: this.pricing.currency
-  };
-};
-
-subscriptionPlanSchema.methods.canUpgradeTo = function(targetPlanId) {
-  return this.migrationRules?.canUpgradeTo?.some(
-    rule => rule.planId.toString() === targetPlanId.toString()
-  );
-};
-
-subscriptionPlanSchema.methods.canDowngradeTo = function(targetPlanId) {
-  return this.migrationRules?.canDowngradeTo?.some(
-    rule => rule.planId.toString() === targetPlanId.toString()
-  );
-};
-
-subscriptionPlanSchema.methods.syncWithProvider = async function(provider, externalData) {
-  const providerConfig = this.providers.find(p => p.name === provider);
-  
-  if (providerConfig) {
-    Object.assign(providerConfig, externalData);
-    providerConfig.syncedAt = new Date();
-  } else {
-    this.providers.push({
-      name: provider,
-      ...externalData,
-      syncedAt: new Date()
-    });
   }
   
-  await this.save();
-  return this;
-};
-
-subscriptionPlanSchema.methods.updateAnalytics = async function(metrics) {
-  Object.assign(this.analytics, metrics);
-  await this.save();
-  return this;
-};
-
-subscriptionPlanSchema.methods.getLocalized = function(locale) {
-  const localized = this.localization?.find(l => l.locale === locale);
-  
-  if (!localized) {
-    return {
-      name: this.name,
-      description: this.description,
-      features: this.features,
-      pricing: this.pricing
-    };
-  }
-
-  return {
-    name: localized.name || this.name,
-    description: localized.description || this.description,
-    features: localized.features || this.features,
-    pricing: {
-      ...this.pricing,
-      currency: localized.currency || this.pricing.currency,
-      amount: localized.amount || this.pricing.amount
+  // Apply tenant-specific pricing
+  if (options.tenantId && this.tenancy.customPricingByTenant) {
+    const tenantPricing = this.tenancy.customPricingByTenant.find(
+      tp => tp.tenantId.toString() === options.tenantId.toString()
+    );
+    
+    if (tenantPricing) {
+      price = tenantPricing.pricing.amount;
     }
-  };
+  }
+  
+  return Math.max(0, Math.round(price * 100) / 100);
 };
 
-// Static methods
-subscriptionPlanSchema.statics.findActive = async function(options = {}) {
-  const { 
-    type, 
-    visibility = 'public',
-    includeAddons = false,
-    locale
-  } = options;
+subscriptionPlanSchema.methods.isDiscountApplicable = function(discount, options = {}) {
+  if (!discount.conditions) return true;
+  
+  const { conditions } = discount;
+  
+  if (conditions.minQuantity && options.quantity < conditions.minQuantity) {
+    return false;
+  }
+  
+  if (conditions.minCommitment && options.commitmentMonths < conditions.minCommitment) {
+    return false;
+  }
+  
+  if (conditions.promoCode && options.promoCode !== conditions.promoCode) {
+    return false;
+  }
+  
+  return true;
+};
 
+subscriptionPlanSchema.methods.isAvailableForTenant = function(tenantId) {
+  if (this.tenancy.global) return true;
+  
+  if (this.tenancy.excludedTenants && this.tenancy.excludedTenants.length > 0) {
+    if (this.tenancy.excludedTenants.some(id => id.toString() === tenantId.toString())) {
+      return false;
+    }
+  }
+  
+  if (this.tenancy.allowedTenants && this.tenancy.allowedTenants.length > 0) {
+    return this.tenancy.allowedTenants.some(id => id.toString() === tenantId.toString());
+  }
+  
+  return true;
+};
+
+subscriptionPlanSchema.methods.updateAnalytics = async function() {
+  // This would be called by a scheduled job to update plan analytics
+  const SubscriptionModel = mongoose.model('Subscription');
+  
+  const stats = await SubscriptionModel.aggregate([
+    {
+      $match: {
+        planId: this._id,
+        'status.state': { $in: ['active', 'past_due', 'cancelled'] }
+      }
+    },
+    {
+      $facet: {
+        totals: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              active: {
+                $sum: { $cond: [{ $eq: ['$status.state', 'active'] }, 1, 0] }
+              }
+            }
+          }
+        ],
+        revenue: [
+          {
+            $match: { 'status.state': 'active' }
+          },
+          {
+            $group: {
+              _id: null,
+              totalMrr: { $sum: '$billing.amount' },
+              avgLifetimeValue: { $avg: '$analytics.lifetimeValue' }
+            }
+          }
+        ]
+      }
+    }
+  ]);
+  
+  const totals = stats[0].totals[0] || { total: 0, active: 0 };
+  const revenue = stats[0].revenue[0] || { totalMrr: 0, avgLifetimeValue: 0 };
+  
+  this.analytics.totalSubscriptions = totals.total;
+  this.analytics.activeSubscriptions = totals.active;
+  this.analytics.averageLifetimeValue = revenue.avgLifetimeValue;
+  this.analytics.lastCalculated = new Date();
+  
+  // Calculate churn rate (simplified)
+  if (totals.total > 0) {
+    this.analytics.churnRate = ((totals.total - totals.active) / totals.total) * 100;
+  }
+  
+  await this.save();
+  
+  return this.analytics;
+};
+
+// ==================== Static Methods ====================
+subscriptionPlanSchema.statics.generateUniqueSlug = async function(baseName) {
+  let slug = slugHelper.createSlug(baseName);
+  let counter = 0;
+  let uniqueSlug = slug;
+  
+  while (await this.exists({ slug: uniqueSlug })) {
+    counter++;
+    uniqueSlug = `${slug}-${counter}`;
+  }
+  
+  return uniqueSlug;
+};
+
+subscriptionPlanSchema.statics.findActivePlans = async function(options = {}) {
   const query = {
-    status: 'active',
-    visibility
+    'status.state': 'active',
+    'visibility.public': true
   };
-
-  if (type) {
-    query.type = type;
+  
+  if (options.tier) {
+    query.tier = options.tier;
   }
-
-  if (!includeAddons) {
-    query.isAddon = false;
+  
+  if (options.availableForSignup) {
+    query['visibility.availableForSignup'] = true;
   }
-
-  const plans = await this.find(query).sort({ displayOrder: 1, 'pricing.amount': 1 });
-
-  // Apply localization if requested
-  if (locale) {
-    return plans.map(plan => ({
-      ...plan.toObject(),
-      ...plan.getLocalized(locale)
-    }));
+  
+  if (options.tenantId) {
+    query.$or = [
+      { 'tenancy.global': true },
+      { 'tenancy.allowedTenants': options.tenantId }
+    ];
+    query['tenancy.excludedTenants'] = { $ne: options.tenantId };
   }
-
-  return plans;
-};
-
-subscriptionPlanSchema.statics.findByCode = async function(code) {
-  return await this.findOne({ 
-    code: code.toUpperCase(),
-    status: { $ne: 'deprecated' }
+  
+  const plans = await this.find(query)
+    .sort({ 'marketing.sortOrder': 1, 'pricing.amount': 1 });
+  
+  // Filter by availability dates
+  const now = new Date();
+  return plans.filter(plan => {
+    if (plan.visibility.startDate && plan.visibility.startDate > now) return false;
+    if (plan.visibility.endDate && plan.visibility.endDate < now) return false;
+    return true;
   });
 };
 
-subscriptionPlanSchema.statics.findAddonsForPlan = async function(planId) {
-  const plan = await this.findById(planId);
-  
-  if (!plan || !plan.availableAddons) {
-    return [];
-  }
-
-  const addonIds = plan.availableAddons.map(a => a.addonId);
-  
-  return await this.find({
-    _id: { $in: addonIds },
-    status: 'active',
-    isAddon: true
+subscriptionPlanSchema.statics.findPlanBySlug = async function(slug) {
+  return await this.findOne({
+    slug: slug.toLowerCase(),
+    'status.state': { $ne: 'deleted' }
   });
 };
 
-subscriptionPlanSchema.statics.findUpgradeOptions = async function(currentPlanId) {
-  const currentPlan = await this.findById(currentPlanId);
-  
-  if (!currentPlan) {
-    return [];
-  }
-
-  const upgradeableIds = currentPlan.migrationRules?.canUpgradeTo?.map(r => r.planId) || [];
-  
-  // Also find plans with higher price in same category
-  const higherPricePlans = await this.find({
-    type: { $ne: 'free' },
-    status: 'active',
-    visibility: 'public',
-    'pricing.amount': { $gt: currentPlan.pricing.amount },
-    'pricing.billingInterval': currentPlan.pricing.billingInterval
+subscriptionPlanSchema.statics.findPlanByStripeId = async function(priceId) {
+  return await this.findOne({
+    $or: [
+      { 'providers.stripe.priceId': priceId },
+      { 'providers.stripe.testPriceId': priceId }
+    ],
+    'status.state': 'active'
   });
-
-  const allUpgradeIds = [...new Set([
-    ...upgradeableIds.map(id => id.toString()),
-    ...higherPricePlans.map(p => p._id.toString())
-  ])];
-
-  return await this.find({
-    _id: { $in: allUpgradeIds }
-  }).sort({ 'pricing.amount': 1 });
 };
 
-subscriptionPlanSchema.statics.compareFeatures = async function(planIds) {
+subscriptionPlanSchema.statics.getRecommendedPlan = async function(criteria = {}) {
+  const query = {
+    'status.state': 'active',
+    'visibility.public': true,
+    'visibility.availableForSignup': true
+  };
+  
+  // Add criteria-based filtering
+  if (criteria.targetAudience) {
+    query['visibility.targetAudience'] = { $in: [criteria.targetAudience, 'all'] };
+  }
+  
+  if (criteria.maxPrice) {
+    query['pricing.amount'] = { $lte: criteria.maxPrice };
+  }
+  
+  if (criteria.minUsers) {
+    query['features.users.limit'] = { $gte: criteria.minUsers };
+  }
+  
+  // Find plans sorted by recommendation and popularity
+  const plans = await this.find(query)
+    .sort({
+      'marketing.recommended': -1,
+      'marketing.popularityScore': -1,
+      'marketing.sortOrder': 1
+    })
+    .limit(3);
+  
+  return plans[0] || null;
+};
+
+subscriptionPlanSchema.statics.comparePlans = async function(planIds) {
   const plans = await this.find({
     _id: { $in: planIds },
-    status: 'active'
-  }).sort({ 'pricing.amount': 1 });
-
-  // Extract all unique features
-  const allFeatures = new Set();
-  plans.forEach(plan => {
-    plan.features.forEach(feature => {
-      allFeatures.add(feature.code || feature.name);
-    });
+    'status.state': 'active'
   });
-
-  // Build comparison matrix
+  
+  if (plans.length !== planIds.length) {
+    throw new AppError('One or more plans not found', 404, 'PLANS_NOT_FOUND');
+  }
+  
+  // Create comparison matrix
   const comparison = {
     plans: plans.map(plan => ({
       id: plan._id,
-      name: plan.name,
-      price: plan.pricing.amount,
-      interval: plan.pricing.billingInterval
+      name: plan.displayName,
+      tier: plan.tier,
+      pricing: plan.pricing,
+      monthlyPrice: plan.monthlyPrice
     })),
-    features: Array.from(allFeatures).map(featureKey => {
-      const row = { feature: featureKey };
-      
-      plans.forEach(plan => {
-        const feature = plan.features.find(f => 
-          (f.code || f.name) === featureKey
-        );
-        row[plan._id] = feature ? (feature.value || true) : false;
-      });
-      
-      return row;
-    })
+    features: {}
   };
-
+  
+  // Compare common features
+  const featureKeys = ['users', 'projects', 'storage', 'apiCalls', 'customDomain', 
+                       'whiteLabel', 'advancedAnalytics', 'support'];
+  
+  featureKeys.forEach(key => {
+    comparison.features[key] = plans.map(plan => {
+      const feature = plan.features[key];
+      if (typeof feature === 'object' && feature.limit !== undefined) {
+        return feature.limit;
+      } else if (typeof feature === 'object' && feature.enabled !== undefined) {
+        return feature.enabled;
+      } else if (typeof feature === 'object' && feature.level !== undefined) {
+        return feature.level;
+      }
+      return feature;
+    });
+  });
+  
   return comparison;
-};
-
-subscriptionPlanSchema.statics.getMostPopular = async function(limit = 3) {
-  return await this.find({
-    status: 'active',
-    visibility: 'public',
-    isAddon: false
-  })
-  .sort({ 'analytics.activeSubscriptions': -1 })
-  .limit(limit);
 };
 
 // Create and export model
