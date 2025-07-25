@@ -1,121 +1,191 @@
 'use strict';
 
 /**
- * @fileoverview Audit log model for compliance and activity tracking
- * @module shared/lib/database/models/audit-log-model
+ * @fileoverview Core audit log model for tracking all system operations and changes
+ * @module shared/lib/database/models/security/audit-log-model
  * @requires mongoose
  * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/utils/constants/audit-events
+ * @requires module:shared/lib/security/encryption/encryption-service
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('./base-model');
+const BaseModel = require('../base-model');
 const logger = require('../../utils/logger');
 const AppError = require('../../utils/app-error');
+const { AUDIT_EVENTS, AUDIT_CATEGORIES } = require('../../utils/constants/audit-events');
+const encryptionService = require('../../security/encryption/encryption-service');
 
 /**
- * Audit log schema definition
+ * Audit log schema definition for comprehensive activity tracking
  */
 const auditLogSchemaDefinition = {
-  // Event Information
-  eventId: {
-    type: String,
+  // ==================== Multi-Tenant Context ====================
+  tenantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tenant',
     required: true,
-    unique: true,
     index: true
   },
 
-  action: {
-    type: String,
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
     required: true,
-    index: true,
-    uppercase: true
-  },
-
-  category: {
-    type: String,
-    required: true,
-    enum: [
-      'AUTH', 'USER', 'ORGANIZATION', 'TENANT', 'DATA', 'SYSTEM',
-      'SECURITY', 'BILLING', 'API', 'INTEGRATION', 'COMPLIANCE',
-      'ADMIN', 'CONFIGURATION', 'TRANSACTION', 'DATABASE'
-    ],
     index: true
   },
 
-  subcategory: {
-    type: String,
-    index: true
+  // ==================== Event Information ====================
+  event: {
+    type: {
+      type: String,
+      required: true,
+      enum: Object.values(AUDIT_EVENTS),
+      index: true
+    },
+    category: {
+      type: String,
+      required: true,
+      enum: Object.values(AUDIT_CATEGORIES),
+      index: true
+    },
+    subCategory: String,
+    action: {
+      type: String,
+      required: true
+    },
+    description: {
+      type: String,
+      required: true
+    },
+    severity: {
+      type: String,
+      enum: ['critical', 'high', 'medium', 'low', 'info'],
+      default: 'info',
+      index: true
+    },
+    risk: {
+      score: {
+        type: Number,
+        min: 0,
+        max: 100,
+        default: 0
+      },
+      factors: [String]
+    }
   },
 
-  severity: {
-    type: String,
-    enum: ['low', 'medium', 'high', 'critical'],
-    default: 'low',
-    index: true
-  },
-
-  // Actor Information
+  // ==================== Actor Information ====================
   actor: {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       index: true
     },
-    username: String,
-    email: String,
-    type: {
+    userType: {
       type: String,
-      enum: ['user', 'system', 'api', 'service', 'admin'],
+      enum: ['user', 'admin', 'system', 'api', 'service', 'anonymous'],
       default: 'user'
     },
-    ip: String,
-    userAgent: String,
-    sessionId: String
-  },
-
-  // Target Information
-  target: {
-    type: {
-      type: String,
-      enum: [
-        'user', 'organization', 'tenant', 'document', 'file',
-        'setting', 'permission', 'role', 'api_key', 'session',
-        'integration', 'webhook', 'notification', 'other'
-      ]
-    },
-    id: String,
+    email: String,
     name: String,
-    entityType: String,
-    entityId: mongoose.Schema.Types.ObjectId,
-    previousState: {
-      type: mongoose.Schema.Types.Mixed,
-      select: false
-    },
-    currentState: {
-      type: mongoose.Schema.Types.Mixed,
-      select: false
+    roles: [String],
+    apiKeyId: String,
+    serviceAccount: String,
+    impersonatedBy: {
+      userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      reason: String
     }
   },
 
-  // Event Details
-  details: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  },
-
-  changes: [{
-    field: String,
-    oldValue: mongoose.Schema.Types.Mixed,
-    newValue: mongoose.Schema.Types.Mixed,
+  // ==================== Resource Information ====================
+  resource: {
     type: {
       type: String,
-      enum: ['create', 'update', 'delete']
-    }
-  }],
+      required: true,
+      index: true
+    },
+    id: {
+      type: String,
+      index: true
+    },
+    name: String,
+    collection: String,
+    path: String,
+    parentType: String,
+    parentId: String,
+    metadata: mongoose.Schema.Types.Mixed
+  },
 
-  // Result
+  // ==================== Request Context ====================
+  request: {
+    id: {
+      type: String,
+      index: true
+    },
+    method: String,
+    path: String,
+    query: mongoose.Schema.Types.Mixed,
+    headers: {
+      userAgent: String,
+      referer: String,
+      acceptLanguage: String
+    },
+    ip: {
+      address: {
+        type: String,
+        index: true
+      },
+      encryptedAddress: String,
+      country: String,
+      region: String,
+      city: String,
+      isp: String,
+      isVpn: Boolean,
+      isTor: Boolean,
+      threatLevel: String
+    },
+    device: {
+      type: String,
+      browser: String,
+      browserVersion: String,
+      os: String,
+      osVersion: String,
+      isMobile: Boolean
+    },
+    session: {
+      sessionId: String,
+      isNewSession: Boolean,
+      duration: Number
+    }
+  },
+
+  // ==================== Change Details ====================
+  changes: {
+    operation: {
+      type: String,
+      enum: ['create', 'read', 'update', 'delete', 'execute', 'login', 'logout', 'export', 'import'],
+      index: true
+    },
+    fields: [{
+      name: String,
+      path: String,
+      oldValue: mongoose.Schema.Types.Mixed,
+      newValue: mongoose.Schema.Types.Mixed,
+      encrypted: Boolean,
+      sensitive: Boolean
+    }],
+    summary: String,
+    affectedRecords: Number,
+    dataSize: Number
+  },
+
+  // ==================== Result & Impact ====================
   result: {
     status: {
       type: String,
@@ -123,191 +193,211 @@ const auditLogSchemaDefinition = {
       default: 'success',
       index: true
     },
-    message: String,
+    statusCode: Number,
     error: {
       code: String,
       message: String,
-      stack: {
-        type: String,
-        select: false
-      }
+      stack: String,
+      type: String
     },
-    duration: Number // in milliseconds
+    duration: Number,
+    performanceMetrics: {
+      dbQueries: Number,
+      cacheHits: Number,
+      cacheMisses: Number,
+      externalApiCalls: Number
+    }
   },
 
-  // Context
-  context: {
-    organizationId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Organization',
-      index: true
-    },
-    tenantId: {
-      type: String,
-      index: true
-    },
-    environment: {
-      type: String,
-      enum: ['development', 'staging', 'production'],
-      default: 'production'
-    },
-    service: String,
-    version: String,
-    requestId: String,
-    correlationId: String,
-    parentEventId: String
-  },
-
-  // Compliance
+  // ==================== Compliance & Security ====================
   compliance: {
-    required: {
-      type: Boolean,
-      default: false
-    },
     frameworks: [{
       type: String,
-      enum: ['GDPR', 'HIPAA', 'SOC2', 'PCI-DSS', 'ISO27001', 'SOX']
+      enum: ['gdpr', 'hipaa', 'sox', 'pci-dss', 'iso27001', 'ccpa']
     }],
     dataClassification: {
       type: String,
-      enum: ['public', 'internal', 'confidential', 'restricted'],
-      default: 'internal'
+      enum: ['public', 'internal', 'confidential', 'restricted']
     },
-    retentionDays: {
-      type: Number,
-      default: 2555 // 7 years default
-    },
-    regulations: [String],
-    tags: [String]
+    retentionRequired: Boolean,
+    retentionDays: Number,
+    legalHold: Boolean,
+    regulatoryFlags: [String]
   },
 
-  // Security
   security: {
-    riskScore: {
-      type: Number,
-      min: 0,
-      max: 100,
-      default: 0
-    },
-    threatLevel: {
+    threatIndicators: [{
       type: String,
-      enum: ['none', 'low', 'medium', 'high', 'critical'],
-      default: 'none'
-    },
-    anomalous: {
+      score: Number,
+      details: String
+    }],
+    anomalyDetected: Boolean,
+    anomalyScore: Number,
+    securityAlerts: [{
+      alertId: mongoose.Schema.Types.ObjectId,
+      type: String,
+      severity: String
+    }],
+    authentication: {
+      method: String,
+      mfaUsed: Boolean,
+      ssoProvider: String,
+      tokenType: String
+    }
+  },
+
+  // ==================== Data Integrity ====================
+  integrity: {
+    hash: String,
+    signature: String,
+    verified: {
       type: Boolean,
       default: false
     },
-    indicators: [String],
-    mitigationApplied: Boolean,
-    blocked: Boolean
+    tamperDetected: Boolean,
+    verificationErrors: [String]
   },
 
-  // Location
-  location: {
-    country: String,
-    region: String,
-    city: String,
-    latitude: Number,
-    longitude: Number,
-    accuracy: Number
+  // ==================== Related Records ====================
+  relationships: {
+    parentAuditId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AuditLog'
+    },
+    correlationId: {
+      type: String,
+      index: true
+    },
+    traceId: String,
+    spanId: String,
+    relatedIncidents: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'SecurityIncident'
+    }],
+    triggeredAlerts: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AuditAlert'
+    }]
   },
 
-  // Timestamps
-  timestamp: {
-    type: Date,
-    required: true,
-    default: Date.now,
-    index: true
+  // ==================== Export & Archive Status ====================
+  lifecycle: {
+    exported: {
+      type: Boolean,
+      default: false
+    },
+    exportedAt: Date,
+    exportId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AuditExport'
+    },
+    archived: {
+      type: Boolean,
+      default: false
+    },
+    archivedAt: Date,
+    archiveLocation: String,
+    willExpireAt: Date,
+    expirationProcessed: Boolean
   },
 
-  // Archival
-  archived: {
-    type: Boolean,
-    default: false,
-    index: true
-  },
-
-  archivedAt: Date,
-
-  // Signatures
-  signature: {
-    hash: String,
-    algorithm: String,
-    timestamp: Date
-  },
-
-  // Export tracking
-  exported: {
-    type: Boolean,
-    default: false
-  },
-
-  exportedAt: Date,
-  exportedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+  // ==================== Metadata ====================
+  metadata: {
+    tags: [String],
+    customFields: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed
+    },
+    source: {
+      type: String,
+      enum: ['web', 'api', 'mobile', 'cli', 'system', 'integration', 'import'],
+      default: 'web'
+    },
+    environment: {
+      type: String,
+      enum: ['production', 'staging', 'development', 'test'],
+      default: 'production'
+    },
+    version: String,
+    clientVersion: String
   }
 };
 
-// Create schema without default timestamps (we manage manually)
+// Create schema
 const auditLogSchema = BaseModel.createSchema(auditLogSchemaDefinition, {
   collection: 'audit_logs',
-  timestamps: false,
-  strict: true
+  timestamps: true,
+  strict: true,
+  minimize: false
 });
 
+// ==================== Indexes ====================
 // Compound indexes for common queries
-auditLogSchema.index({ 'actor.userId': 1, timestamp: -1 });
-auditLogSchema.index({ 'context.organizationId': 1, timestamp: -1 });
-auditLogSchema.index({ 'context.tenantId': 1, timestamp: -1 });
-auditLogSchema.index({ category: 1, action: 1, timestamp: -1 });
-auditLogSchema.index({ 'result.status': 1, timestamp: -1 });
-auditLogSchema.index({ 'security.anomalous': 1, 'security.threatLevel': 1 });
-auditLogSchema.index({ 'compliance.frameworks': 1 });
-auditLogSchema.index({ timestamp: -1, archived: 1 });
+auditLogSchema.index({ tenantId: 1, createdAt: -1 });
+auditLogSchema.index({ organizationId: 1, 'event.type': 1, createdAt: -1 });
+auditLogSchema.index({ 'actor.userId': 1, createdAt: -1 });
+auditLogSchema.index({ 'resource.type': 1, 'resource.id': 1, createdAt: -1 });
+auditLogSchema.index({ 'event.severity': 1, 'security.anomalyDetected': 1 });
+auditLogSchema.index({ 'compliance.frameworks': 1, 'compliance.retentionRequired': 1 });
+auditLogSchema.index({ 'lifecycle.willExpireAt': 1, 'lifecycle.expirationProcessed': 1 });
 
-// Virtual fields
-auditLogSchema.virtual('isCompliant').get(function() {
-  return this.compliance.required && this.result.status === 'success';
+// Text search index
+auditLogSchema.index({
+  'event.description': 'text',
+  'changes.summary': 'text',
+  'resource.name': 'text'
 });
 
+// ==================== Virtual Fields ====================
 auditLogSchema.virtual('isHighRisk').get(function() {
-  return this.security.riskScore > 70 || 
-         this.security.threatLevel === 'high' || 
-         this.security.threatLevel === 'critical';
+  return this.event.severity === 'critical' || 
+         this.event.severity === 'high' ||
+         this.security.anomalyDetected ||
+         this.event.risk.score > 70;
 });
 
-auditLogSchema.virtual('age').get(function() {
-  return Date.now() - this.timestamp;
+auditLogSchema.virtual('requiresReview').get(function() {
+  return this.result.status === 'failure' &&
+         ['critical', 'high'].includes(this.event.severity);
 });
 
-auditLogSchema.virtual('retentionExpiry').get(function() {
-  const retentionMs = this.compliance.retentionDays * 24 * 60 * 60 * 1000;
-  return new Date(this.timestamp.getTime() + retentionMs);
+auditLogSchema.virtual('isCompliant').get(function() {
+  return !this.security.threatIndicators?.length &&
+         !this.integrity.tamperDetected &&
+         this.integrity.verified;
 });
 
-// Pre-save middleware
+// ==================== Pre-save Middleware ====================
 auditLogSchema.pre('save', async function(next) {
   try {
-    // Generate event ID if not provided
-    if (!this.eventId && this.isNew) {
-      this.eventId = this.constructor.generateEventId();
-    }
-
-    // Set severity based on action and result
-    if (!this.severity) {
-      this.severity = this.constructor.determineSeverity(this);
+    // Encrypt sensitive IP address
+    if (this.request?.ip?.address && !this.request.ip.encryptedAddress) {
+      this.request.ip.encryptedAddress = await encryptionService.encryptField(
+        this.request.ip.address,
+        'audit-ip'
+      );
     }
 
     // Calculate risk score if not set
-    if (!this.security.riskScore) {
-      this.security.riskScore = this.constructor.calculateRiskScore(this);
+    if (!this.event.risk.score) {
+      this.event.risk.score = this.calculateRiskScore();
     }
 
-    // Generate signature for tamper detection
-    if (!this.signature.hash) {
-      this.signature = await this.constructor.generateSignature(this);
+    // Set retention based on compliance requirements
+    if (!this.compliance.retentionDays) {
+      this.compliance.retentionDays = this.calculateRetentionDays();
+    }
+
+    // Calculate expiration date
+    if (this.compliance.retentionDays && !this.lifecycle.willExpireAt) {
+      this.lifecycle.willExpireAt = new Date(
+        Date.now() + this.compliance.retentionDays * 24 * 60 * 60 * 1000
+      );
+    }
+
+    // Generate integrity hash
+    if (!this.integrity.hash) {
+      this.integrity.hash = await this.generateIntegrityHash();
     }
 
     next();
@@ -316,492 +406,473 @@ auditLogSchema.pre('save', async function(next) {
   }
 });
 
-// Instance methods
-auditLogSchema.methods.archive = async function() {
-  this.archived = true;
-  this.archivedAt = new Date();
-  await this.save();
-  return this;
-};
-
-auditLogSchema.methods.markExported = async function(exportedBy) {
-  this.exported = true;
-  this.exportedAt = new Date();
-  this.exportedBy = exportedBy;
-  await this.save();
-  return this;
-};
-
-auditLogSchema.methods.addComplianceTag = async function(tag) {
-  if (!this.compliance.tags) {
-    this.compliance.tags = [];
-  }
-  
-  if (!this.compliance.tags.includes(tag)) {
-    this.compliance.tags.push(tag);
-    await this.save();
-  }
-  
-  return this;
-};
-
-auditLogSchema.methods.flagAsAnomalous = async function(indicators = []) {
-  this.security.anomalous = true;
-  this.security.indicators = [
-    ...new Set([...this.security.indicators || [], ...indicators])
-  ];
-  
-  // Increase risk score
-  this.security.riskScore = Math.min(100, this.security.riskScore + 30);
-  
-  // Update threat level
-  if (this.security.riskScore > 80) {
-    this.security.threatLevel = 'critical';
-  } else if (this.security.riskScore > 60) {
-    this.security.threatLevel = 'high';
-  } else if (this.security.riskScore > 40) {
-    this.security.threatLevel = 'medium';
-  } else {
-    this.security.threatLevel = 'low';
-  }
-  
-  await this.save();
-  return this;
-};
-
-auditLogSchema.methods.verify = async function() {
-  const currentSignature = await this.constructor.generateSignature(this);
-  return currentSignature.hash === this.signature.hash;
-};
-
-auditLogSchema.methods.redact = async function(fields = []) {
-  const redactValue = (value) => {
-    if (typeof value === 'string') {
-      return value.replace(/./g, '*');
+// ==================== Post-save Middleware ====================
+auditLogSchema.post('save', async function(doc) {
+  try {
+    // Check if we need to trigger alerts
+    if (doc.isHighRisk || doc.security.anomalyDetected) {
+      const AuditAlert = mongoose.model('AuditAlert');
+      await AuditAlert.createFromAuditLog(doc);
     }
-    return '[REDACTED]';
-  };
 
-  for (const field of fields) {
-    if (this.details && this.details[field]) {
-      this.details[field] = redactValue(this.details[field]);
-    }
-    
-    // Redact in changes
-    for (const change of this.changes || []) {
-      if (change.field === field) {
-        change.oldValue = redactValue(change.oldValue);
-        change.newValue = redactValue(change.newValue);
-      }
-    }
-  }
-  
-  this.markModified('details');
-  this.markModified('changes');
-  await this.save();
-  
-  return this;
-};
+    // Update organization analytics
+    const Organization = mongoose.model('Organization');
+    await Organization.updateAnalytics(doc.organizationId, {
+      auditEvent: doc.event.type,
+      timestamp: doc.createdAt
+    });
 
-// Static methods
-auditLogSchema.statics.generateEventId = function() {
-  return `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-};
+  } catch (error) {
+    logger.error('Error in audit log post-save hook', {
+      auditLogId: doc._id,
+      error: error.message
+    });
+  }
+});
 
-auditLogSchema.statics.determineSeverity = function(log) {
-  // Critical severity
-  if (log.category === 'SECURITY' && log.result.status === 'failure') {
-    return 'critical';
-  }
-  
-  if (['DELETE', 'DESTROY', 'PURGE'].some(action => log.action.includes(action))) {
-    return 'high';
-  }
-  
-  // High severity
-  if (['AUTH', 'SECURITY', 'COMPLIANCE'].includes(log.category)) {
-    return 'high';
-  }
-  
-  // Medium severity
-  if (['UPDATE', 'MODIFY', 'CHANGE'].some(action => log.action.includes(action))) {
-    return 'medium';
-  }
-  
-  // Low severity
-  return 'low';
-};
-
-auditLogSchema.statics.calculateRiskScore = function(log) {
+// ==================== Instance Methods ====================
+auditLogSchema.methods.calculateRiskScore = function() {
   let score = 0;
   
-  // Category-based scoring
-  const categoryScores = {
-    SECURITY: 30,
-    AUTH: 20,
-    BILLING: 25,
-    COMPLIANCE: 20,
-    ADMIN: 15,
-    USER: 10,
-    SYSTEM: 15
+  // Severity-based scoring
+  const severityScores = {
+    critical: 40,
+    high: 30,
+    medium: 20,
+    low: 10,
+    info: 0
   };
-  
-  score += categoryScores[log.category] || 5;
-  
-  // Result-based scoring
-  if (log.result.status === 'failure') {
-    score += 20;
+  score += severityScores[this.event.severity] || 0;
+
+  // Failed operations
+  if (this.result.status === 'failure') score += 20;
+
+  // Anomaly detection
+  if (this.security.anomalyDetected) score += 30;
+  if (this.security.anomalyScore) score += Math.min(this.security.anomalyScore, 20);
+
+  // Threat indicators
+  if (this.security.threatIndicators?.length) {
+    const threatScore = this.security.threatIndicators.reduce(
+      (sum, indicator) => sum + (indicator.score || 10), 0
+    );
+    score += Math.min(threatScore, 30);
   }
-  
-  // Action-based scoring
-  if (log.action.includes('DELETE') || log.action.includes('DESTROY')) {
-    score += 15;
-  }
-  
-  if (log.action.includes('ADMIN') || log.action.includes('PRIVILEGE')) {
-    score += 10;
-  }
-  
-  // Actor-based scoring
-  if (log.actor.type === 'api' || log.actor.type === 'service') {
-    score += 5;
-  }
-  
-  // Anomaly indicators
-  if (log.actor.ip && log.actor.ip.includes('tor')) {
-    score += 20;
-  }
-  
-  return Math.min(100, score);
+
+  // Suspicious request patterns
+  if (this.request?.ip?.isTor || this.request?.ip?.threatLevel === 'high') score += 15;
+
+  // Data classification sensitivity
+  const classificationScores = {
+    restricted: 20,
+    confidential: 15,
+    internal: 5,
+    public: 0
+  };
+  score += classificationScores[this.compliance.dataClassification] || 0;
+
+  return Math.min(score, 100);
 };
 
-auditLogSchema.statics.generateSignature = async function(log) {
+auditLogSchema.methods.calculateRetentionDays = function() {
+  // Default retention periods by compliance framework
+  const frameworkRetention = {
+    hipaa: 2190, // 6 years
+    sox: 2555,   // 7 years
+    gdpr: 1095,  // 3 years
+    'pci-dss': 365,
+    iso27001: 1095,
+    ccpa: 730    // 2 years
+  };
+
+  // Get maximum retention requirement
+  let maxRetention = 90; // Default 90 days
+
+  if (this.compliance.frameworks?.length) {
+    for (const framework of this.compliance.frameworks) {
+      const days = frameworkRetention[framework];
+      if (days > maxRetention) maxRetention = days;
+    }
+  }
+
+  // Adjust based on severity
+  if (this.event.severity === 'critical') {
+    maxRetention = Math.max(maxRetention, 365);
+  }
+
+  // Legal hold overrides
+  if (this.compliance.legalHold) {
+    maxRetention = 36500; // 100 years effectively indefinite
+  }
+
+  return maxRetention;
+};
+
+auditLogSchema.methods.generateIntegrityHash = async function() {
   const crypto = require('crypto');
   
-  const data = {
-    eventId: log.eventId,
-    action: log.action,
-    category: log.category,
-    actor: log.actor,
-    target: log.target,
-    timestamp: log.timestamp
+  const dataToHash = {
+    event: this.event,
+    actor: this.actor,
+    resource: this.resource,
+    changes: this.changes,
+    result: this.result,
+    timestamp: this.createdAt || new Date()
   };
-  
-  const hash = crypto
-    .createHash('sha256')
-    .update(JSON.stringify(data))
-    .digest('hex');
-  
-  return {
-    hash,
-    algorithm: 'sha256',
-    timestamp: new Date()
-  };
+
+  const jsonString = JSON.stringify(dataToHash, Object.keys(dataToHash).sort());
+  return crypto.createHash('sha256').update(jsonString).digest('hex');
 };
 
-auditLogSchema.statics.log = async function(eventData) {
-  const log = new this(eventData);
+auditLogSchema.methods.verifyIntegrity = async function() {
+  const currentHash = await this.generateIntegrityHash();
+  this.integrity.verified = currentHash === this.integrity.hash;
+  this.integrity.tamperDetected = !this.integrity.verified;
   
+  if (this.integrity.tamperDetected) {
+    this.integrity.verificationErrors = ['Hash mismatch detected'];
+    
+    // Log security incident
+    logger.security('Audit log tampering detected', {
+      auditLogId: this._id,
+      expectedHash: this.integrity.hash,
+      actualHash: currentHash
+    });
+  }
+  
+  return this.integrity.verified;
+};
+
+auditLogSchema.methods.markAsExported = async function(exportId) {
+  this.lifecycle.exported = true;
+  this.lifecycle.exportedAt = new Date();
+  this.lifecycle.exportId = exportId;
+  await this.save();
+};
+
+auditLogSchema.methods.archive = async function(location) {
+  this.lifecycle.archived = true;
+  this.lifecycle.archivedAt = new Date();
+  this.lifecycle.archiveLocation = location;
+  await this.save();
+};
+
+auditLogSchema.methods.redactSensitiveData = function() {
+  // Redact sensitive fields while maintaining structure
+  const redacted = this.toObject();
+  
+  // Redact IP address (keep encrypted version)
+  if (redacted.request?.ip?.address) {
+    redacted.request.ip.address = 'REDACTED';
+  }
+  
+  // Redact sensitive change values
+  if (redacted.changes?.fields) {
+    redacted.changes.fields = redacted.changes.fields.map(field => {
+      if (field.sensitive) {
+        return {
+          ...field,
+          oldValue: field.oldValue ? 'REDACTED' : null,
+          newValue: field.newValue ? 'REDACTED' : null
+        };
+      }
+      return field;
+    });
+  }
+  
+  // Redact error stack traces in production
+  if (redacted.result?.error?.stack && process.env.NODE_ENV === 'production') {
+    redacted.result.error.stack = 'REDACTED';
+  }
+  
+  return redacted;
+};
+
+// ==================== Static Methods ====================
+auditLogSchema.statics.logEvent = async function(eventData) {
   try {
-    await log.save();
+    const auditLog = new this(eventData);
+    await auditLog.save();
     
-    // Check for anomalies
-    const anomalies = await this.detectAnomalies(log);
-    if (anomalies.length > 0) {
-      await log.flagAsAnomalous(anomalies);
-    }
-    
-    return log;
-    
-  } catch (error) {
-    logger.error('Failed to create audit log', error);
-    
-    // Audit logging should not break the application
-    // Return a minimal log object
-    return {
-      eventId: log.eventId,
-      timestamp: log.timestamp,
-      error: error.message
-    };
-  }
-};
-
-auditLogSchema.statics.detectAnomalies = async function(log) {
-  const anomalies = [];
-  
-  // Check for rapid repeated failures
-  const recentFailures = await this.countDocuments({
-    'actor.userId': log.actor.userId,
-    'result.status': 'failure',
-    timestamp: { $gte: new Date(Date.now() - 5 * 60 * 1000) } // 5 minutes
-  });
-  
-  if (recentFailures > 5) {
-    anomalies.push('rapid_failures');
-  }
-  
-  // Check for unusual time
-  const hour = new Date(log.timestamp).getHours();
-  if (hour >= 2 && hour <= 5) {
-    anomalies.push('unusual_time');
-  }
-  
-  // Check for privilege escalation attempts
-  if (log.category === 'AUTH' && 
-      log.action.includes('PRIVILEGE') && 
-      log.result.status === 'failure') {
-    anomalies.push('privilege_escalation_attempt');
-  }
-  
-  // Check for data exfiltration patterns
-  if (log.action.includes('EXPORT') || log.action.includes('DOWNLOAD')) {
-    const recentExports = await this.countDocuments({
-      'actor.userId': log.actor.userId,
-      action: { $in: ['EXPORT', 'DOWNLOAD'] },
-      timestamp: { $gte: new Date(Date.now() - 60 * 60 * 1000) } // 1 hour
+    logger.debug('Audit event logged', {
+      id: auditLog._id,
+      event: auditLog.event.type,
+      severity: auditLog.event.severity
     });
     
-    if (recentExports > 10) {
-      anomalies.push('excessive_data_export');
-    }
+    return auditLog;
+  } catch (error) {
+    logger.error('Failed to log audit event', {
+      error: error.message,
+      eventType: eventData?.event?.type
+    });
+    throw error;
   }
-  
-  return anomalies;
 };
 
-auditLogSchema.statics.search = async function(criteria = {}) {
+auditLogSchema.statics.findByActor = async function(userId, options = {}) {
   const {
     startDate,
     endDate,
-    actors,
-    categories,
-    actions,
-    severity,
-    result,
-    organizationId,
-    tenantId,
-    anomalous,
+    eventTypes,
     limit = 100,
-    skip = 0,
-    sort = { timestamp: -1 }
-  } = criteria;
+    skip = 0
+  } = options;
 
-  const query = { archived: false };
+  const query = { 'actor.userId': userId };
   
-  // Date range
   if (startDate || endDate) {
-    query.timestamp = {};
-    if (startDate) query.timestamp.$gte = startDate;
-    if (endDate) query.timestamp.$lte = endDate;
+    query.createdAt = {};
+    if (startDate) query.createdAt.$gte = startDate;
+    if (endDate) query.createdAt.$lte = endDate;
   }
   
-  // Actors
-  if (actors && actors.length > 0) {
-    query['actor.userId'] = { $in: actors };
+  if (eventTypes?.length) {
+    query['event.type'] = { $in: eventTypes };
   }
-  
-  // Categories
-  if (categories && categories.length > 0) {
-    query.category = { $in: categories };
-  }
-  
-  // Actions
-  if (actions && actions.length > 0) {
-    query.action = { $in: actions };
-  }
-  
-  // Severity
-  if (severity) {
-    query.severity = severity;
-  }
-  
-  // Result
-  if (result) {
-    query['result.status'] = result;
-  }
-  
-  // Organization
-  if (organizationId) {
-    query['context.organizationId'] = organizationId;
-  }
-  
-  // Tenant
-  if (tenantId) {
-    query['context.tenantId'] = tenantId;
-  }
-  
-  // Anomalous
-  if (anomalous !== undefined) {
-    query['security.anomalous'] = anomalous;
-  }
-  
+
   return await this.find(query)
-    .sort(sort)
+    .sort({ createdAt: -1 })
     .limit(limit)
     .skip(skip)
-    .populate('actor.userId', 'username email')
-    .populate('context.organizationId', 'name');
+    .lean();
 };
 
-auditLogSchema.statics.generateReport = async function(options = {}) {
-  const {
-    startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days
-    endDate = new Date(),
-    organizationId,
-    groupBy = 'category'
-  } = options;
-
-  const match = {
-    timestamp: { $gte: startDate, $lte: endDate },
-    archived: false
+auditLogSchema.statics.findByResource = async function(resourceType, resourceId, options = {}) {
+  const query = {
+    'resource.type': resourceType,
+    'resource.id': resourceId
   };
-  
-  if (organizationId) {
-    match['context.organizationId'] = organizationId;
+
+  if (options.includeRelated) {
+    query.$or = [
+      { 'resource.type': resourceType, 'resource.id': resourceId },
+      { 'resource.parentType': resourceType, 'resource.parentId': resourceId }
+    ];
   }
 
-  const report = await this.aggregate([
-    { $match: match },
+  return await this.find(query)
+    .sort({ createdAt: -1 })
+    .limit(options.limit || 50)
+    .lean();
+};
+
+auditLogSchema.statics.getSecurityMetrics = async function(organizationId, timeRange = '24h') {
+  const timeRanges = {
+    '1h': 60 * 60 * 1000,
+    '24h': 24 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
+    '30d': 30 * 24 * 60 * 60 * 1000
+  };
+
+  const startDate = new Date(Date.now() - (timeRanges[timeRange] || timeRanges['24h']));
+
+  const metrics = await this.aggregate([
     {
-      $group: {
-        _id: `$${groupBy}`,
-        total: { $sum: 1 },
-        successful: {
-          $sum: { $cond: [{ $eq: ['$result.status', 'success'] }, 1, 0] }
-        },
-        failed: {
-          $sum: { $cond: [{ $eq: ['$result.status', 'failure'] }, 1, 0] }
-        },
-        anomalous: {
-          $sum: { $cond: ['$security.anomalous', 1, 0] }
-        },
-        avgRiskScore: { $avg: '$security.riskScore' },
-        uniqueActors: { $addToSet: '$actor.userId' },
-        actions: { $addToSet: '$action' }
+      $match: {
+        organizationId: mongoose.Types.ObjectId(organizationId),
+        createdAt: { $gte: startDate }
       }
     },
     {
-      $project: {
-        _id: 0,
-        [groupBy]: '$_id',
-        total: 1,
-        successful: 1,
-        failed: 1,
-        anomalous: 1,
-        avgRiskScore: { $round: ['$avgRiskScore', 2] },
-        uniqueActorCount: { $size: '$uniqueActors' },
-        actionCount: { $size: '$actions' },
-        successRate: {
-          $multiply: [
-            { $divide: ['$successful', '$total'] },
-            100
-          ]
-        }
+      $facet: {
+        summary: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              failures: {
+                $sum: { $cond: [{ $eq: ['$result.status', 'failure'] }, 1, 0] }
+              },
+              anomalies: {
+                $sum: { $cond: ['$security.anomalyDetected', 1, 0] }
+              },
+              highRisk: {
+                $sum: { 
+                  $cond: [{ $gte: ['$event.risk.score', 70] }, 1, 0] 
+                }
+              }
+            }
+          }
+        ],
+        bySeverity: [
+          {
+            $group: {
+              _id: '$event.severity',
+              count: { $sum: 1 }
+            }
+          }
+        ],
+        byEventType: [
+          {
+            $group: {
+              _id: '$event.type',
+              count: { $sum: 1 },
+              failures: {
+                $sum: { $cond: [{ $eq: ['$result.status', 'failure'] }, 1, 0] }
+              }
+            }
+          },
+          { $sort: { count: -1 } },
+          { $limit: 10 }
+        ],
+        topActors: [
+          {
+            $group: {
+              _id: '$actor.userId',
+              email: { $first: '$actor.email' },
+              eventCount: { $sum: 1 },
+              failureCount: {
+                $sum: { $cond: [{ $eq: ['$result.status', 'failure'] }, 1, 0] }
+              }
+            }
+          },
+          { $sort: { eventCount: -1 } },
+          { $limit: 10 }
+        ],
+        timeline: [
+          {
+            $group: {
+              _id: {
+                $dateToString: {
+                  format: '%Y-%m-%d %H:00',
+                  date: '$createdAt'
+                }
+              },
+              count: { $sum: 1 },
+              failures: {
+                $sum: { $cond: [{ $eq: ['$result.status', 'failure'] }, 1, 0] }
+              }
+            }
+          },
+          { $sort: { _id: 1 } }
+        ]
       }
-    },
-    { $sort: { total: -1 } }
+    }
   ]);
 
-  // Calculate totals
-  const totals = report.reduce((acc, item) => ({
-    total: acc.total + item.total,
-    successful: acc.successful + item.successful,
-    failed: acc.failed + item.failed,
-    anomalous: acc.anomalous + item.anomalous
-  }), { total: 0, successful: 0, failed: 0, anomalous: 0 });
+  return metrics[0];
+};
+
+auditLogSchema.statics.searchLogs = async function(searchParams) {
+  const {
+    query,
+    organizationId,
+    tenantId,
+    startDate,
+    endDate,
+    severity,
+    eventTypes,
+    actors,
+    resources,
+    statuses,
+    limit = 50,
+    skip = 0,
+    sort = { createdAt: -1 }
+  } = searchParams;
+
+  const searchQuery = {};
+
+  // Required filters
+  if (organizationId) searchQuery.organizationId = organizationId;
+  if (tenantId) searchQuery.tenantId = tenantId;
+
+  // Date range
+  if (startDate || endDate) {
+    searchQuery.createdAt = {};
+    if (startDate) searchQuery.createdAt.$gte = new Date(startDate);
+    if (endDate) searchQuery.createdAt.$lte = new Date(endDate);
+  }
+
+  // Text search
+  if (query) {
+    searchQuery.$text = { $search: query };
+  }
+
+  // Filters
+  if (severity?.length) {
+    searchQuery['event.severity'] = { $in: severity };
+  }
+  if (eventTypes?.length) {
+    searchQuery['event.type'] = { $in: eventTypes };
+  }
+  if (actors?.length) {
+    searchQuery['actor.userId'] = { $in: actors };
+  }
+  if (resources?.length) {
+    searchQuery.$or = resources.map(r => ({
+      'resource.type': r.type,
+      'resource.id': r.id
+    }));
+  }
+  if (statuses?.length) {
+    searchQuery['result.status'] = { $in: statuses };
+  }
+
+  const [logs, total] = await Promise.all([
+    this.find(searchQuery)
+      .sort(sort)
+      .limit(limit)
+      .skip(skip)
+      .populate('actor.userId', 'name email')
+      .lean(),
+    this.countDocuments(searchQuery)
+  ]);
 
   return {
-    period: { startDate, endDate },
-    groupBy,
-    totals,
-    breakdown: report
+    logs,
+    total,
+    hasMore: total > skip + logs.length
   };
 };
 
-auditLogSchema.statics.exportLogs = async function(criteria, format = 'json') {
-  const logs = await this.search({ ...criteria, limit: 10000 });
-  
-  // Mark as exported
-  const logIds = logs.map(log => log._id);
-  await this.updateMany(
-    { _id: { $in: logIds } },
-    { 
-      exported: true,
-      exportedAt: new Date()
+auditLogSchema.statics.cleanupExpiredLogs = async function(batchSize = 1000) {
+  const expiredLogs = await this.find({
+    'lifecycle.willExpireAt': { $lte: new Date() },
+    'lifecycle.expirationProcessed': { $ne: true },
+    'compliance.legalHold': { $ne: true }
+  })
+  .limit(batchSize)
+  .select('_id organizationId');
+
+  let processed = 0;
+  let errors = 0;
+
+  for (const log of expiredLogs) {
+    try {
+      // Archive before deletion if required
+      if (log.compliance?.retentionRequired) {
+        await log.archive(`archive/${log.organizationId}/${log._id}`);
+      }
+
+      // Mark as processed
+      await this.updateOne(
+        { _id: log._id },
+        { 
+          $set: { 
+            'lifecycle.expirationProcessed': true,
+            'lifecycle.processedAt': new Date()
+          }
+        }
+      );
+
+      processed++;
+    } catch (error) {
+      errors++;
+      logger.error('Failed to process expired audit log', {
+        logId: log._id,
+        error: error.message
+      });
     }
-  );
-  
-  if (format === 'csv') {
-    return this.convertToCSV(logs);
   }
-  
-  return logs;
-};
-
-auditLogSchema.statics.convertToCSV = function(logs) {
-  const headers = [
-    'Event ID', 'Timestamp', 'Category', 'Action', 'Actor', 
-    'Target', 'Result', 'Severity', 'Risk Score', 'IP Address'
-  ];
-  
-  const rows = logs.map(log => [
-    log.eventId,
-    log.timestamp.toISOString(),
-    log.category,
-    log.action,
-    log.actor.email || log.actor.username || 'System',
-    log.target.name || log.target.id || 'N/A',
-    log.result.status,
-    log.severity,
-    log.security.riskScore,
-    log.actor.ip || 'N/A'
-  ]);
-  
-  const csv = [
-    headers.join(','),
-    ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-  ].join('\n');
-  
-  return csv;
-};
-
-auditLogSchema.statics.cleanup = async function(options = {}) {
-  const {
-    archiveAfterDays = 90,
-    deleteAfterDays = 2555 // 7 years
-  } = options;
-
-  const now = new Date();
-  const archiveDate = new Date(now - archiveAfterDays * 24 * 60 * 60 * 1000);
-  const deleteDate = new Date(now - deleteAfterDays * 24 * 60 * 60 * 1000);
-
-  // Archive old logs
-  const archiveResult = await this.updateMany(
-    {
-      timestamp: { $lt: archiveDate },
-      archived: false
-    },
-    {
-      archived: true,
-      archivedAt: now
-    }
-  );
-
-  // Delete very old logs (respecting retention policy)
-  const deleteResult = await this.deleteMany({
-    timestamp: { $lt: deleteDate },
-    'compliance.retentionDays': { $lte: deleteAfterDays }
-  });
 
   logger.info('Audit log cleanup completed', {
-    archived: archiveResult.modifiedCount,
-    deleted: deleteResult.deletedCount
+    processed,
+    errors,
+    total: expiredLogs.length
   });
 
-  return {
-    archived: archiveResult.modifiedCount,
-    deleted: deleteResult.deletedCount
-  };
+  return { processed, errors, total: expiredLogs.length };
 };
 
 // Create and export model
