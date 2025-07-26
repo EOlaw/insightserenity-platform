@@ -1,28 +1,29 @@
 'use strict';
 
 /**
- * @fileoverview Database migration runner with version control and rollback
+ * @fileoverview Central migration runner for executing database schema and data migrations
  * @module shared/lib/database/migrations/migration-runner
- * @requires module:shared/lib/database/connection-manager
- * @requires module:shared/lib/database/transaction-manager
- * @requires module:shared/lib/utils/logger
- * @requires module:shared/lib/utils/app-error
  * @requires fs/promises
  * @requires path
- * @requires crypto
+ * @requires module:shared/lib/utils/logger
+ * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/database/connection-manager
+ * @requires module:shared/lib/database/transaction-manager
+ * @requires module:shared/config
  */
 
-const fs = require('fs/promises');
+const fs = require('fs').promises;
 const path = require('path');
-const crypto = require('crypto');
-const ConnectionManager = require('../connection-manager');
-const TransactionManager = require('../transaction-manager');
 const logger = require('../../utils/logger');
 const AppError = require('../../utils/app-error');
+const ConnectionManager = require('../connection-manager');
+const TransactionManager = require('../transaction-manager');
+const config = require('../../../config');
 
 /**
  * @class MigrationRunner
- * @description Manages database migrations with version control
+ * @description Manages the execution of database migrations with version control,
+ * rollback support, and comprehensive error handling
  */
 class MigrationRunner {
   /**
@@ -35,86 +36,67 @@ class MigrationRunner {
     RUNNING: 'running',
     COMPLETED: 'completed',
     FAILED: 'failed',
-    ROLLED_BACK: 'rolled-back'
+    ROLLED_BACK: 'rolled_back'
   };
 
-  static #MIGRATION_TYPES = {
-    SCHEMA: 'schema',
-    DATA: 'data',
-    INDEX: 'index',
-    PROCEDURE: 'procedure',
-    HOTFIX: 'hotfix'
-  };
-
-  static #DEFAULT_OPTIONS = {
-    migrationsPath: './migrations',
-    pattern: /^\d{3}-.*\.js$/,
-    tableName: '_migrations',
-    transactional: true,
-    validateChecksum: true,
-    lock: true,
-    lockTimeout: 60000,
-    dryRun: false
-  };
-
-  static #migrationHistory = new Map();
-  static #activeMigrations = new Map();
-  static #migrationLock = null;
+  static #MIGRATION_COLLECTION = 'migration_history';
+  static #MIGRATION_LOCK_COLLECTION = 'migration_locks';
+  static #LOCK_TIMEOUT = 300000; // 5 minutes
+  static #migrations = new Map();
+  static #isInitialized = false;
 
   /**
-   * Creates an instance of MigrationRunner
-   * @constructor
-   * @param {Object} [options={}] - Configuration options
-   * @param {string} [options.migrationsPath] - Path to migration files
-   * @param {string} [options.tableName] - Migrations table name
-   * @param {boolean} [options.transactional=true] - Use transactions
-   * @param {boolean} [options.validateChecksum=true] - Validate migration checksums
-   * @param {Object} [options.transactionManager] - Transaction manager instance
-   */
-  constructor(options = {}) {
-    this.options = {
-      ...MigrationRunner.#DEFAULT_OPTIONS,
-      ...options
-    };
-
-    this.transactionManager = options.transactionManager || new TransactionManager();
-    this.migrationsPath = path.resolve(this.options.migrationsPath);
-    this.migrationRegistry = new Map();
-    this.appliedMigrations = new Map();
-  }
-
-  /**
-   * Initializes migration runner
+   * Initializes the migration runner
+   * @static
    * @async
    * @param {Object} [options={}] - Initialization options
+   * @param {string} [options.connectionName='default'] - Database connection name
+   * @param {string} [options.migrationsPath] - Path to migrations directory
+   * @param {boolean} [options.createCollections=true] - Auto-create migration collections
    * @returns {Promise<void>}
    * @throws {AppError} If initialization fails
    */
-  async initialize(options = {}) {
+  static async initialize(options = {}) {
     try {
-      // Ensure migrations directory exists
-      await fs.mkdir(this.migrationsPath, { recursive: true });
+      const {
+        connectionName = 'default',
+        migrationsPath = __dirname,
+        createCollections = true
+      } = options;
 
-      // Create migrations table if needed
-      await this.#ensureMigrationsTable();
+      logger.info('Initializing migration runner', { connectionName, migrationsPath });
 
-      // Load migration history
-      await this.#loadMigrationHistory();
+      // Get database connection
+      const connection = ConnectionManager.getConnection(connectionName);
+      if (!connection) {
+        throw new AppError('No database connection found', 500, 'NO_CONNECTION');
+      }
 
-      // Discover available migrations
-      await this.#discoverMigrations();
+      // Store configuration
+      MigrationRunner.#config = {
+        connectionName,
+        migrationsPath,
+        connection
+      };
 
-      logger.info('MigrationRunner initialized', {
-        migrationsPath: this.migrationsPath,
-        discoveredMigrations: this.migrationRegistry.size,
-        appliedMigrations: this.appliedMigrations.size
+      // Create migration collections if needed
+      if (createCollections) {
+        await MigrationRunner.#ensureCollections();
+      }
+
+      // Load available migrations
+      await MigrationRunner.#loadMigrations();
+
+      MigrationRunner.#isInitialized = true;
+
+      logger.info('Migration runner initialized successfully', {
+        migrationsCount: MigrationRunner.#migrations.size
       });
 
     } catch (error) {
-      logger.error('Failed to initialize MigrationRunner', error);
-
+      logger.error('Failed to initialize migration runner', error);
       throw new AppError(
-        'MigrationRunner initialization failed',
+        'Migration runner initialization failed',
         500,
         'MIGRATION_INIT_ERROR',
         { originalError: error.message }
@@ -123,324 +105,256 @@ class MigrationRunner {
   }
 
   /**
-   * Runs pending migrations
+   * Runs all pending migrations
+   * @static
    * @async
-   * @param {Object} [options={}] - Migration options
-   * @param {number} [options.target] - Target migration version
-   * @param {boolean} [options.force=false] - Force run even with checksum mismatch
-   * @param {Array<string>} [options.only] - Only run specific migrations
+   * @param {Object} [options={}] - Run options
+   * @param {boolean} [options.dryRun=false] - Simulate without applying changes
+   * @param {Array<string>} [options.only] - Run only specific migrations
    * @param {Array<string>} [options.skip] - Skip specific migrations
-   * @returns {Promise<Object>} Migration result
+   * @param {boolean} [options.force=false] - Force run even if locked
+   * @returns {Promise<Object>} Migration results
    * @throws {AppError} If migration fails
    */
-  async migrate(options = {}) {
-    const runId = this.#generateRunId();
-    const startTime = Date.now();
-
+  static async run(options = {}) {
     try {
+      MigrationRunner.#ensureInitialized();
+
       const {
-        target,
-        force = false,
+        dryRun = false,
         only = [],
         skip = [],
-        fake = false
+        force = false
       } = options;
 
+      logger.info('Starting migration run', { dryRun, only, skip });
+
       // Acquire migration lock
-      if (this.options.lock) {
-        await this.#acquireLock();
-      }
+      const lockId = await MigrationRunner.#acquireLock(force);
 
-      logger.info('Starting migration run', {
-        runId,
-        target,
-        force,
-        dryRun: this.options.dryRun
-      });
+      try {
+        // Get pending migrations
+        const pendingMigrations = await MigrationRunner.#getPendingMigrations(only, skip);
 
-      // Initialize run context
-      const runContext = {
-        id: runId,
-        state: MigrationRunner.#MIGRATION_STATES.RUNNING,
-        startTime,
-        migrations: [],
-        successful: 0,
-        failed: 0,
-        skipped: 0,
-        errors: [],
-        options
-      };
+        if (pendingMigrations.length === 0) {
+          logger.info('No pending migrations found');
+          return {
+            success: true,
+            migrationsRun: 0,
+            message: 'All migrations are up to date'
+          };
+        }
 
-      MigrationRunner.#activeMigrations.set(runId, runContext);
+        logger.info(`Found ${pendingMigrations.length} pending migrations`);
 
-      // Get migrations to run
-      const migrationsToRun = await this.#getMigrationsToRun({
-        target,
-        only,
-        skip
-      });
-
-      if (migrationsToRun.length === 0) {
-        logger.info('No migrations to run');
-        runContext.state = MigrationRunner.#MIGRATION_STATES.COMPLETED;
-        return this.#completeRun(runContext);
-      }
-
-      // Validate migrations
-      if (this.options.validateChecksum && !force) {
-        await this.#validateMigrations(migrationsToRun);
-      }
-
-      // Execute migrations
-      for (const migration of migrationsToRun) {
-        const migrationContext = {
-          name: migration.name,
-          version: migration.version,
-          startTime: Date.now(),
-          state: MigrationRunner.#MIGRATION_STATES.PENDING
+        const results = {
+          success: true,
+          migrationsRun: 0,
+          migrations: [],
+          errors: []
         };
 
-        runContext.migrations.push(migrationContext);
+        // Run each migration
+        for (const migrationName of pendingMigrations) {
+          try {
+            const result = await MigrationRunner.#runMigration(migrationName, { dryRun });
+            results.migrations.push(result);
+            results.migrationsRun++;
 
-        try {
-          if (fake) {
-            // Mark as applied without running
-            await this.#recordMigration(migration, { fake: true });
-          } else if (this.options.transactional && migration.transactional !== false) {
-            // Run with transaction
-            await this.transactionManager.withTransaction(async (txn) => {
-              await this.#executeMigration(migration, txn);
+            if (!dryRun) {
+              await MigrationRunner.#recordMigration(migrationName, result);
+            }
+
+          } catch (error) {
+            logger.error(`Migration ${migrationName} failed`, error);
+            
+            results.success = false;
+            results.errors.push({
+              migration: migrationName,
+              error: error.message
             });
-          } else {
-            // Run without transaction
-            await this.#executeMigration(migration);
+
+            // Stop on first error
+            break;
           }
-
-          migrationContext.state = MigrationRunner.#MIGRATION_STATES.COMPLETED;
-          migrationContext.endTime = Date.now();
-          migrationContext.duration = migrationContext.endTime - migrationContext.startTime;
-          runContext.successful++;
-
-          if (!fake) {
-            await this.#recordMigration(migration);
-          }
-
-        } catch (error) {
-          migrationContext.state = MigrationRunner.#MIGRATION_STATES.FAILED;
-          migrationContext.endTime = Date.now();
-          migrationContext.duration = migrationContext.endTime - migrationContext.startTime;
-          migrationContext.error = error.message;
-          runContext.failed++;
-          runContext.errors.push({
-            migration: migration.name,
-            error: error.message
-          });
-
-          logger.error('Migration execution failed', {
-            migration: migration.name,
-            error: error.message
-          });
-
-          // Stop on first failure
-          throw error;
         }
-      }
 
-      // Complete run
-      runContext.state = MigrationRunner.#MIGRATION_STATES.COMPLETED;
-      return this.#completeRun(runContext);
+        return results;
+
+      } finally {
+        // Release lock
+        await MigrationRunner.#releaseLock(lockId);
+      }
 
     } catch (error) {
       logger.error('Migration run failed', error);
-
-      const runContext = MigrationRunner.#activeMigrations.get(runId);
-      if (runContext) {
-        runContext.state = MigrationRunner.#MIGRATION_STATES.FAILED;
-        runContext.error = error.message;
-        this.#completeRun(runContext);
-      }
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
       throw new AppError(
-        'Migration run failed',
+        'Failed to run migrations',
         500,
         'MIGRATION_RUN_ERROR',
         { originalError: error.message }
       );
-
-    } finally {
-      // Release lock
-      if (this.options.lock) {
-        await this.#releaseLock();
-      }
     }
   }
 
   /**
    * Rolls back migrations
+   * @static
    * @async
    * @param {Object} [options={}] - Rollback options
    * @param {number} [options.steps=1] - Number of migrations to rollback
-   * @param {number} [options.target] - Target version to rollback to
-   * @param {boolean} [options.force=false] - Force rollback
-   * @returns {Promise<Object>} Rollback result
+   * @param {string} [options.to] - Rollback to specific migration
+   * @param {boolean} [options.dryRun=false] - Simulate rollback
+   * @returns {Promise<Object>} Rollback results
    * @throws {AppError} If rollback fails
    */
-  async rollback(options = {}) {
+  static async rollback(options = {}) {
     try {
+      MigrationRunner.#ensureInitialized();
+
       const {
         steps = 1,
-        target,
-        force = false
+        to,
+        dryRun = false
       } = options;
 
+      logger.info('Starting migration rollback', { steps, to, dryRun });
+
       // Acquire migration lock
-      if (this.options.lock) {
-        await this.#acquireLock();
-      }
+      const lockId = await MigrationRunner.#acquireLock();
 
-      logger.info('Starting migration rollback', options);
+      try {
+        // Get migrations to rollback
+        const migrationsToRollback = await MigrationRunner.#getMigrationsToRollback(steps, to);
 
-      const migrationsToRollback = await this.#getMigrationsToRollback({
-        steps,
-        target
-      });
+        if (migrationsToRollback.length === 0) {
+          logger.info('No migrations to rollback');
+          return {
+            success: true,
+            migrationsRolledBack: 0,
+            message: 'No migrations to rollback'
+          };
+        }
 
-      if (migrationsToRollback.length === 0) {
-        logger.info('No migrations to rollback');
-        return {
-          rolledBack: 0,
-          migrations: []
+        const results = {
+          success: true,
+          migrationsRolledBack: 0,
+          migrations: [],
+          errors: []
         };
-      }
 
-      const results = {
-        rolledBack: 0,
-        failed: 0,
-        migrations: []
-      };
+        // Rollback each migration in reverse order
+        for (const migrationName of migrationsToRollback.reverse()) {
+          try {
+            const migration = MigrationRunner.#migrations.get(migrationName);
+            
+            if (!migration || !migration.down) {
+              throw new Error(`Migration ${migrationName} does not support rollback`);
+            }
 
-      // Rollback in reverse order
-      for (const migration of migrationsToRollback.reverse()) {
-        try {
-          if (this.options.transactional && migration.transactional !== false) {
-            await this.transactionManager.withTransaction(async (txn) => {
-              await this.#rollbackMigration(migration, txn);
+            if (!dryRun) {
+              await migration.down();
+              await MigrationRunner.#updateMigrationStatus(
+                migrationName,
+                MigrationRunner.#MIGRATION_STATES.ROLLED_BACK
+              );
+            }
+
+            results.migrations.push({
+              name: migrationName,
+              status: 'rolled_back'
             });
-          } else {
-            await this.#rollbackMigration(migration);
-          }
+            results.migrationsRolledBack++;
 
-          results.rolledBack++;
-          results.migrations.push({
-            name: migration.name,
-            version: migration.version,
-            status: 'rolled-back'
-          });
+            logger.info(`Rolled back migration: ${migrationName}`);
 
-          await this.#removeMigrationRecord(migration);
+          } catch (error) {
+            logger.error(`Rollback failed for ${migrationName}`, error);
+            
+            results.success = false;
+            results.errors.push({
+              migration: migrationName,
+              error: error.message
+            });
 
-        } catch (error) {
-          results.failed++;
-          results.migrations.push({
-            name: migration.name,
-            version: migration.version,
-            status: 'failed',
-            error: error.message
-          });
-
-          if (!force) {
-            throw error;
+            // Stop on first error
+            break;
           }
         }
+
+        return results;
+
+      } finally {
+        // Release lock
+        await MigrationRunner.#releaseLock(lockId);
       }
-
-      logger.info('Migration rollback completed', {
-        rolledBack: results.rolledBack,
-        failed: results.failed
-      });
-
-      return results;
 
     } catch (error) {
       logger.error('Migration rollback failed', error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
       throw new AppError(
-        'Migration rollback failed',
+        'Failed to rollback migrations',
         500,
         'MIGRATION_ROLLBACK_ERROR',
         { originalError: error.message }
       );
-
-    } finally {
-      // Release lock
-      if (this.options.lock) {
-        await this.#releaseLock();
-      }
     }
   }
 
   /**
    * Gets migration status
+   * @static
    * @async
-   * @param {Object} [options={}] - Status options
-   * @returns {Promise<Object>} Migration status
+   * @returns {Promise<Object>} Migration status information
    */
-  async status(options = {}) {
+  static async status() {
     try {
-      const { detailed = false } = options;
+      MigrationRunner.#ensureInitialized();
 
-      const applied = Array.from(this.appliedMigrations.values())
-        .sort((a, b) => a.version - b.version);
+      const db = MigrationRunner.#config.connection.db;
+      const collection = db.collection(MigrationRunner.#MIGRATION_COLLECTION);
 
-      const pending = [];
-      const available = Array.from(this.migrationRegistry.values())
-        .sort((a, b) => a.version - b.version);
+      // Get completed migrations
+      const completedMigrations = await collection
+        .find({ status: MigrationRunner.#MIGRATION_STATES.COMPLETED })
+        .sort({ executedAt: 1 })
+        .toArray();
 
-      for (const migration of available) {
-        if (!this.appliedMigrations.has(migration.name)) {
-          pending.push(migration);
+      // Get all available migrations
+      const allMigrations = Array.from(MigrationRunner.#migrations.keys()).sort();
+
+      // Determine pending migrations
+      const completedNames = completedMigrations.map(m => m.name);
+      const pendingMigrations = allMigrations.filter(name => !completedNames.includes(name));
+
+      // Get failed migrations
+      const failedMigrations = await collection
+        .find({ status: MigrationRunner.#MIGRATION_STATES.FAILED })
+        .toArray();
+
+      return {
+        total: allMigrations.length,
+        completed: completedMigrations.length,
+        pending: pendingMigrations.length,
+        failed: failedMigrations.length,
+        migrations: {
+          completed: completedMigrations.map(m => ({
+            name: m.name,
+            executedAt: m.executedAt,
+            duration: m.duration
+          })),
+          pending: pendingMigrations,
+          failed: failedMigrations.map(m => ({
+            name: m.name,
+            failedAt: m.failedAt,
+            error: m.error
+          }))
         }
-      }
-
-      const status = {
-        applied: applied.length,
-        pending: pending.length,
-        total: available.length,
-        lastApplied: applied[applied.length - 1] || null,
-        nextPending: pending[0] || null
       };
-
-      if (detailed) {
-        status.appliedMigrations = applied.map(m => ({
-          name: m.name,
-          version: m.version,
-          appliedAt: m.appliedAt,
-          duration: m.duration
-        }));
-
-        status.pendingMigrations = pending.map(m => ({
-          name: m.name,
-          version: m.version,
-          type: m.type,
-          description: m.description
-        }));
-      }
-
-      return status;
 
     } catch (error) {
       logger.error('Failed to get migration status', error);
-
       throw new AppError(
-        'Failed to get migration status',
+        'Failed to retrieve migration status',
         500,
         'MIGRATION_STATUS_ERROR',
         { originalError: error.message }
@@ -450,73 +364,110 @@ class MigrationRunner {
 
   /**
    * Creates a new migration file
+   * @static
    * @async
    * @param {string} name - Migration name
    * @param {Object} [options={}] - Creation options
-   * @returns {Promise<Object>} Created migration info
+   * @returns {Promise<string>} Created file path
    * @throws {AppError} If creation fails
    */
-  async create(name, options = {}) {
+  static async create(name, options = {}) {
     try {
       if (!name) {
-        throw new AppError('Migration name is required', 400, 'MISSING_MIGRATION_NAME');
+        throw new AppError('Migration name is required', 400, 'INVALID_NAME');
       }
 
-      const {
-        type = MigrationRunner.#MIGRATION_TYPES.SCHEMA,
-        template = 'default'
-      } = options;
+      // Generate timestamp and filename
+      const timestamp = new Date().getTime();
+      const paddedNumber = String(MigrationRunner.#migrations.size + 1).padStart(3, '0');
+      const filename = `${paddedNumber}-${name}.js`;
+      const filepath = path.join(MigrationRunner.#config.migrationsPath, filename);
 
-      // Generate filename
-      const timestamp = Date.now();
-      const version = await this.#getNextVersion();
-      const fileName = `${version.toString().padStart(3, '0')}-${name}.js`;
-      const filePath = path.join(this.migrationsPath, fileName);
+      // Migration template
+      const template = `'use strict';
 
-      // Check if file exists
-      try {
-        await fs.access(filePath);
-        throw new AppError('Migration file already exists', 409, 'MIGRATION_EXISTS');
-      } catch (error) {
-        // File doesn't exist, continue
-      }
+/**
+ * @fileoverview ${name} migration
+ * @module shared/lib/database/migrations/${filename}
+ * @requires module:shared/lib/utils/logger
+ * @requires module:shared/lib/utils/app-error
+ */
 
-      // Generate migration content
-      const content = this.#generateMigrationContent(name, {
-        type,
-        template,
-        timestamp,
-        version
-      });
+const logger = require('../../utils/logger');
+const AppError = require('../../utils/app-error');
 
-      // Write migration file
-      await fs.writeFile(filePath, content, 'utf8');
+/**
+ * @class ${name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, '')}Migration
+ * @description ${options.description || 'Migration description'}
+ */
+class ${name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, '')}Migration {
+  /**
+   * Applies the migration
+   * @static
+   * @async
+   * @returns {Promise<void>}
+   * @throws {AppError} If migration fails
+   */
+  static async up() {
+    try {
+      logger.info('Running migration: ${name}');
 
-      logger.info('Migration file created', {
-        fileName,
-        name,
-        type,
-        version
-      });
+      // TODO: Implement migration logic
 
-      return {
-        fileName,
-        filePath,
-        name,
-        type,
-        version,
-        timestamp
-      };
+      logger.info('Migration completed: ${name}');
+
+    } catch (error) {
+      logger.error('Migration failed: ${name}', error);
+      throw new AppError(
+        'Migration failed',
+        500,
+        'MIGRATION_ERROR',
+        { migration: '${name}', originalError: error.message }
+      );
+    }
+  }
+
+  /**
+   * Rolls back the migration
+   * @static
+   * @async
+   * @returns {Promise<void>}
+   * @throws {AppError} If rollback fails
+   */
+  static async down() {
+    try {
+      logger.info('Rolling back migration: ${name}');
+
+      // TODO: Implement rollback logic
+
+      logger.info('Rollback completed: ${name}');
+
+    } catch (error) {
+      logger.error('Rollback failed: ${name}', error);
+      throw new AppError(
+        'Rollback failed',
+        500,
+        'ROLLBACK_ERROR',
+        { migration: '${name}', originalError: error.message }
+      );
+    }
+  }
+}
+
+module.exports = ${name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, '')}Migration;
+`;
+
+      // Write file
+      await fs.writeFile(filepath, template);
+
+      logger.info('Created migration file', { filename, filepath });
+
+      return filepath;
 
     } catch (error) {
       logger.error('Failed to create migration', error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
       throw new AppError(
-        'Migration creation failed',
+        'Failed to create migration file',
         500,
         'MIGRATION_CREATE_ERROR',
         { originalError: error.message }
@@ -525,460 +476,200 @@ class MigrationRunner {
   }
 
   /**
-   * Validates migration integrity
-   * @async
-   * @param {Object} [options={}] - Validation options
-   * @returns {Promise<Object>} Validation result
+   * @private
+   * Ensures migration runner is initialized
+   * @static
+   * @throws {AppError} If not initialized
    */
-  async validate(options = {}) {
-    try {
-      const results = {
-        valid: true,
-        errors: [],
-        warnings: []
-      };
-
-      // Check for duplicate versions
-      const versions = new Map();
-      for (const [name, migration] of this.migrationRegistry) {
-        if (versions.has(migration.version)) {
-          results.valid = false;
-          results.errors.push({
-            type: 'duplicate-version',
-            version: migration.version,
-            migrations: [versions.get(migration.version), name]
-          });
-        }
-        versions.set(migration.version, name);
-      }
-
-      // Check for checksum mismatches
-      for (const [name, applied] of this.appliedMigrations) {
-        const current = this.migrationRegistry.get(name);
-        
-        if (!current) {
-          results.warnings.push({
-            type: 'missing-file',
-            migration: name,
-            message: 'Applied migration file not found'
-          });
-          continue;
-        }
-
-        if (applied.checksum !== current.checksum) {
-          results.valid = false;
-          results.errors.push({
-            type: 'checksum-mismatch',
-            migration: name,
-            expected: applied.checksum,
-            actual: current.checksum
-          });
-        }
-      }
-
-      // Check for gaps in version sequence
-      const sortedVersions = Array.from(versions.keys()).sort((a, b) => a - b);
-      for (let i = 1; i < sortedVersions.length; i++) {
-        if (sortedVersions[i] - sortedVersions[i - 1] > 1) {
-          results.warnings.push({
-            type: 'version-gap',
-            between: [sortedVersions[i - 1], sortedVersions[i]]
-          });
-        }
-      }
-
-      logger.info('Migration validation completed', {
-        valid: results.valid,
-        errors: results.errors.length,
-        warnings: results.warnings.length
-      });
-
-      return results;
-
-    } catch (error) {
-      logger.error('Failed to validate migrations', error);
-
+  static #ensureInitialized() {
+    if (!MigrationRunner.#isInitialized) {
       throw new AppError(
-        'Migration validation failed',
+        'Migration runner not initialized',
         500,
-        'MIGRATION_VALIDATION_ERROR',
-        { originalError: error.message }
+        'NOT_INITIALIZED'
       );
     }
   }
 
   /**
    * @private
-   * Ensures migrations table exists
+   * Ensures migration collections exist
+   * @static
    * @async
+   * @returns {Promise<void>}
    */
-  async #ensureMigrationsTable() {
+  static async #ensureCollections() {
     try {
-      const connection = ConnectionManager.getConnection();
-      
-      if (!connection) {
-        throw new AppError('No database connection', 500, 'NO_CONNECTION');
-      }
+      const db = MigrationRunner.#config.connection.db;
+      const collections = await db.listCollections().toArray();
+      const collectionNames = collections.map(c => c.name);
 
-      // Create migrations collection/table
-      const db = connection.db;
-      const collections = await db.listCollections({ name: this.options.tableName }).toArray();
-      
-      if (collections.length === 0) {
-        await db.createCollection(this.options.tableName);
-        
-        // Create indexes
-        await db.collection(this.options.tableName).createIndex(
-          { version: 1 },
-          { unique: true }
-        );
-        
-        await db.collection(this.options.tableName).createIndex(
+      // Create migration history collection
+      if (!collectionNames.includes(MigrationRunner.#MIGRATION_COLLECTION)) {
+        await db.createCollection(MigrationRunner.#MIGRATION_COLLECTION);
+        await db.collection(MigrationRunner.#MIGRATION_COLLECTION).createIndex(
           { name: 1 },
           { unique: true }
         );
+      }
 
-        logger.info('Migrations table created', {
-          tableName: this.options.tableName
-        });
+      // Create migration lock collection
+      if (!collectionNames.includes(MigrationRunner.#MIGRATION_LOCK_COLLECTION)) {
+        await db.createCollection(MigrationRunner.#MIGRATION_LOCK_COLLECTION);
+        await db.collection(MigrationRunner.#MIGRATION_LOCK_COLLECTION).createIndex(
+          { expiresAt: 1 },
+          { expireAfterSeconds: 0 }
+        );
       }
 
     } catch (error) {
-      logger.error('Failed to ensure migrations table', error);
+      logger.error('Failed to ensure collections', error);
       throw error;
     }
   }
 
   /**
    * @private
-   * Loads migration history from database
+   * Loads migration files
+   * @static
    * @async
+   * @returns {Promise<void>}
    */
-  async #loadMigrationHistory() {
+  static async #loadMigrations() {
     try {
-      const connection = ConnectionManager.getConnection();
-      
-      if (!connection) {
-        return;
-      }
+      const files = await fs.readdir(MigrationRunner.#config.migrationsPath);
+      const migrationFiles = files
+        .filter(file => file.match(/^\d{3}-.+\.js$/) && file !== 'migration-runner.js')
+        .sort();
 
-      const migrations = await connection.db
-        .collection(this.options.tableName)
-        .find()
-        .sort({ version: 1 })
-        .toArray();
-
-      this.appliedMigrations.clear();
-      migrations.forEach(record => {
-        this.appliedMigrations.set(record.name, record);
-        MigrationRunner.#migrationHistory.set(record.name, record);
-      });
-
-      logger.info('Migration history loaded', {
-        appliedCount: this.appliedMigrations.size
-      });
-
-    } catch (error) {
-      logger.warn('Failed to load migration history', error);
-    }
-  }
-
-  /**
-   * @private
-   * Discovers available migration files
-   * @async
-   */
-  async #discoverMigrations() {
-    try {
-      const files = await fs.readdir(this.migrationsPath);
-      const migrationFiles = files.filter(file => this.options.pattern.test(file));
-
-      this.migrationRegistry.clear();
+      MigrationRunner.#migrations.clear();
 
       for (const file of migrationFiles) {
-        const filePath = path.join(this.migrationsPath, file);
-        const migration = await this.#loadMigration(filePath);
-        
-        if (migration) {
-          this.migrationRegistry.set(migration.name, migration);
-        }
+        const filepath = path.join(MigrationRunner.#config.migrationsPath, file);
+        const MigrationClass = require(filepath);
+        const migrationName = file.replace('.js', '');
+
+        MigrationRunner.#migrations.set(migrationName, MigrationClass);
       }
 
-      logger.debug('Migrations discovered', {
-        count: this.migrationRegistry.size
-      });
+      logger.info(`Loaded ${MigrationRunner.#migrations.size} migrations`);
 
     } catch (error) {
-      logger.error('Failed to discover migrations', error);
+      logger.error('Failed to load migrations', error);
+      throw error;
     }
   }
 
   /**
    * @private
-   * Loads a migration file
+   * Gets pending migrations
+   * @static
    * @async
-   * @param {string} filePath - Migration file path
-   * @returns {Promise<Object|null>} Migration info
+   * @param {Array<string>} only - Run only these migrations
+   * @param {Array<string>} skip - Skip these migrations
+   * @returns {Promise<Array<string>>} Pending migration names
    */
-  async #loadMigration(filePath) {
+  static async #getPendingMigrations(only = [], skip = []) {
     try {
-      // Clear from require cache for fresh load
-      delete require.cache[require.resolve(filePath)];
-      
-      const migrationModule = require(filePath);
-      const fileName = path.basename(filePath);
-      const match = fileName.match(/^(\d{3})-(.*)\.js$/);
+      const db = MigrationRunner.#config.connection.db;
+      const collection = db.collection(MigrationRunner.#MIGRATION_COLLECTION);
 
-      if (!match) {
-        logger.warn('Invalid migration filename', { fileName });
-        return null;
+      // Get completed migrations
+      const completedMigrations = await collection
+        .find({ status: MigrationRunner.#MIGRATION_STATES.COMPLETED })
+        .project({ name: 1 })
+        .toArray();
+
+      const completedNames = completedMigrations.map(m => m.name);
+      const allMigrations = Array.from(MigrationRunner.#migrations.keys()).sort();
+
+      let pendingMigrations = allMigrations.filter(name => !completedNames.includes(name));
+
+      // Apply filters
+      if (only.length > 0) {
+        pendingMigrations = pendingMigrations.filter(name => only.includes(name));
       }
 
-      const [, version, name] = match;
+      if (skip.length > 0) {
+        pendingMigrations = pendingMigrations.filter(name => !skip.includes(name));
+      }
 
-      // Calculate checksum
-      const content = await fs.readFile(filePath, 'utf8');
-      const checksum = crypto
-        .createHash('sha256')
-        .update(content)
-        .digest('hex');
-
-      return {
-        name,
-        fileName,
-        filePath,
-        version: parseInt(version, 10),
-        type: migrationModule.type || MigrationRunner.#MIGRATION_TYPES.SCHEMA,
-        description: migrationModule.description || '',
-        up: migrationModule.up,
-        down: migrationModule.down,
-        checksum,
-        transactional: migrationModule.transactional !== false
-      };
+      return pendingMigrations;
 
     } catch (error) {
-      logger.error('Failed to load migration', {
-        filePath,
-        error: error.message
-      });
-      return null;
+      logger.error('Failed to get pending migrations', error);
+      throw error;
     }
   }
 
   /**
    * @private
-   * Gets migrations to run
+   * Runs a single migration
+   * @static
    * @async
-   * @param {Object} options - Filter options
-   * @returns {Promise<Array>} Migrations to run
+   * @param {string} migrationName - Migration name
+   * @param {Object} options - Run options
+   * @returns {Promise<Object>} Migration result
    */
-  async #getMigrationsToRun(options) {
-    const { target, only, skip } = options;
-    const migrationsToRun = [];
+  static async #runMigration(migrationName, options = {}) {
+    const startTime = Date.now();
+    const migration = MigrationRunner.#migrations.get(migrationName);
 
-    const sortedMigrations = Array.from(this.migrationRegistry.values())
-      .sort((a, b) => a.version - b.version);
-
-    for (const migration of sortedMigrations) {
-      // Check if already applied
-      if (this.appliedMigrations.has(migration.name)) {
-        continue;
-      }
-
-      // Check target version
-      if (target && migration.version > target) {
-        break;
-      }
-
-      // Check only filter
-      if (only.length > 0 && !only.includes(migration.name)) {
-        continue;
-      }
-
-      // Check skip filter
-      if (skip.includes(migration.name)) {
-        continue;
-      }
-
-      migrationsToRun.push(migration);
+    if (!migration) {
+      throw new Error(`Migration ${migrationName} not found`);
     }
 
-    return migrationsToRun;
-  }
+    logger.info(`Running migration: ${migrationName}`);
 
-  /**
-   * @private
-   * Gets migrations to rollback
-   * @async
-   * @param {Object} options - Rollback options
-   * @returns {Promise<Array>} Migrations to rollback
-   */
-  async #getMigrationsToRollback(options) {
-    const { steps, target } = options;
+    if (!options.dryRun) {
+      // Execute migration with transaction support if available
+      const session = await MigrationRunner.#config.connection.startSession();
 
-    const appliedMigrations = Array.from(this.appliedMigrations.values())
-      .sort((a, b) => b.version - a.version);
+      try {
+        await session.withTransaction(async () => {
+          await migration.up();
+        });
 
-    const migrationsToRollback = [];
-
-    if (target !== undefined) {
-      // Rollback to specific version
-      for (const applied of appliedMigrations) {
-        if (applied.version <= target) {
-          break;
-        }
-
-        const migration = this.migrationRegistry.get(applied.name);
-        if (migration) {
-          migrationsToRollback.push(migration);
-        }
-      }
-    } else {
-      // Rollback by steps
-      const count = Math.min(steps, appliedMigrations.length);
-      for (let i = 0; i < count; i++) {
-        const applied = appliedMigrations[i];
-        const migration = this.migrationRegistry.get(applied.name);
-        if (migration) {
-          migrationsToRollback.push(migration);
-        }
+      } finally {
+        await session.endSession();
       }
     }
 
-    return migrationsToRollback;
-  }
+    const duration = Date.now() - startTime;
 
-  /**
-   * @private
-   * Validates migrations
-   * @async
-   * @param {Array} migrations - Migrations to validate
-   * @throws {AppError} If validation fails
-   */
-  async #validateMigrations(migrations) {
-    for (const migration of migrations) {
-      const applied = this.appliedMigrations.get(migration.name);
-      
-      if (applied && applied.checksum !== migration.checksum) {
-        throw new AppError(
-          `Checksum mismatch for migration: ${migration.name}`,
-          400,
-          'CHECKSUM_MISMATCH',
-          {
-            migration: migration.name,
-            expected: applied.checksum,
-            actual: migration.checksum
-          }
-        );
-      }
-    }
-  }
+    logger.info(`Migration completed: ${migrationName}`, { duration });
 
-  /**
-   * @private
-   * Executes a migration
-   * @async
-   * @param {Object} migration - Migration to execute
-   * @param {Object} [transaction] - Transaction context
-   */
-  async #executeMigration(migration, transaction) {
-    if (!migration.up || typeof migration.up !== 'function') {
-      throw new AppError('Migration missing up function', 400, 'INVALID_MIGRATION');
-    }
-
-    logger.info('Executing migration', {
-      name: migration.name,
-      version: migration.version
-    });
-
-    if (this.options.dryRun) {
-      logger.info('Dry run - would execute migration', {
-        name: migration.name
-      });
-      return;
-    }
-
-    const context = {
-      transaction,
-      logger: logger.child({ migration: migration.name }),
-      connection: ConnectionManager.getConnection(),
-      version: migration.version
+    return {
+      name: migrationName,
+      status: MigrationRunner.#MIGRATION_STATES.COMPLETED,
+      duration,
+      executedAt: new Date()
     };
-
-    await migration.up(context);
-
-    logger.info('Migration executed successfully', {
-      name: migration.name,
-      version: migration.version
-    });
-  }
-
-  /**
-   * @private
-   * Rolls back a migration
-   * @async
-   * @param {Object} migration - Migration to rollback
-   * @param {Object} [transaction] - Transaction context
-   */
-  async #rollbackMigration(migration, transaction) {
-    if (!migration.down || typeof migration.down !== 'function') {
-      throw new AppError('Migration missing down function', 400, 'NO_ROLLBACK_FUNCTION');
-    }
-
-    logger.info('Rolling back migration', {
-      name: migration.name,
-      version: migration.version
-    });
-
-    if (this.options.dryRun) {
-      logger.info('Dry run - would rollback migration', {
-        name: migration.name
-      });
-      return;
-    }
-
-    const context = {
-      transaction,
-      logger: logger.child({ migration: migration.name }),
-      connection: ConnectionManager.getConnection(),
-      version: migration.version
-    };
-
-    await migration.down(context);
-
-    logger.info('Migration rolled back successfully', {
-      name: migration.name,
-      version: migration.version
-    });
   }
 
   /**
    * @private
    * Records migration execution
+   * @static
    * @async
-   * @param {Object} migration - Executed migration
-   * @param {Object} [options={}] - Record options
+   * @param {string} migrationName - Migration name
+   * @param {Object} result - Migration result
+   * @returns {Promise<void>}
    */
-  async #recordMigration(migration, options = {}) {
+  static async #recordMigration(migrationName, result) {
     try {
-      const connection = ConnectionManager.getConnection();
-      
-      const record = {
-        name: migration.name,
-        version: migration.version,
-        fileName: migration.fileName,
-        type: migration.type,
-        checksum: migration.checksum,
-        appliedAt: new Date(),
-        duration: options.duration || null,
-        fake: options.fake || false
-      };
+      const db = MigrationRunner.#config.connection.db;
+      const collection = db.collection(MigrationRunner.#MIGRATION_COLLECTION);
 
-      await connection.db
-        .collection(this.options.tableName)
-        .insertOne(record);
-
-      this.appliedMigrations.set(migration.name, record);
+      await collection.replaceOne(
+        { name: migrationName },
+        {
+          name: migrationName,
+          ...result,
+          updatedAt: new Date()
+        },
+        { upsert: true }
+      );
 
     } catch (error) {
       logger.error('Failed to record migration', error);
@@ -988,23 +679,67 @@ class MigrationRunner {
 
   /**
    * @private
-   * Removes migration record
+   * Gets migrations to rollback
+   * @static
    * @async
-   * @param {Object} migration - Migration to remove
+   * @param {number} steps - Number of steps to rollback
+   * @param {string} to - Target migration
+   * @returns {Promise<Array<string>>} Migrations to rollback
    */
-  async #removeMigrationRecord(migration) {
+  static async #getMigrationsToRollback(steps, to) {
     try {
-      const connection = ConnectionManager.getConnection();
-      
-      await connection.db
-        .collection(this.options.tableName)
-        .deleteOne({ name: migration.name });
+      const db = MigrationRunner.#config.connection.db;
+      const collection = db.collection(MigrationRunner.#MIGRATION_COLLECTION);
 
-      this.appliedMigrations.delete(migration.name);
-      MigrationRunner.#migrationHistory.delete(migration.name);
+      let query = { status: MigrationRunner.#MIGRATION_STATES.COMPLETED };
+      
+      const completedMigrations = await collection
+        .find(query)
+        .sort({ executedAt: -1 })
+        .toArray();
+
+      if (to) {
+        const targetIndex = completedMigrations.findIndex(m => m.name === to);
+        if (targetIndex === -1) {
+          throw new Error(`Target migration ${to} not found`);
+        }
+        return completedMigrations.slice(0, targetIndex).map(m => m.name);
+      }
+
+      return completedMigrations.slice(0, steps).map(m => m.name);
 
     } catch (error) {
-      logger.error('Failed to remove migration record', error);
+      logger.error('Failed to get migrations to rollback', error);
+      throw error;
+    }
+  }
+
+  /**
+   * @private
+   * Updates migration status
+   * @static
+   * @async
+   * @param {string} migrationName - Migration name
+   * @param {string} status - New status
+   * @returns {Promise<void>}
+   */
+  static async #updateMigrationStatus(migrationName, status) {
+    try {
+      const db = MigrationRunner.#config.connection.db;
+      const collection = db.collection(MigrationRunner.#MIGRATION_COLLECTION);
+
+      await collection.updateOne(
+        { name: migrationName },
+        {
+          $set: {
+            status,
+            updatedAt: new Date()
+          }
+        }
+      );
+
+    } catch (error) {
+      logger.error('Failed to update migration status', error);
       throw error;
     }
   }
@@ -1012,170 +747,86 @@ class MigrationRunner {
   /**
    * @private
    * Acquires migration lock
+   * @static
    * @async
+   * @param {boolean} force - Force acquire lock
+   * @returns {Promise<string>} Lock ID
    */
-  async #acquireLock() {
-    const lockId = `migration_lock_${Date.now()}`;
-    const startTime = Date.now();
+  static async #acquireLock(force = false) {
+    try {
+      const db = MigrationRunner.#config.connection.db;
+      const collection = db.collection(MigrationRunner.#MIGRATION_LOCK_COLLECTION);
+      const lockId = `migration_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    while (MigrationRunner.#migrationLock !== null) {
-      if (Date.now() - startTime > this.options.lockTimeout) {
-        throw new AppError(
-          'Failed to acquire migration lock',
-          408,
-          'LOCK_TIMEOUT'
-        );
+      if (!force) {
+        // Check for existing locks
+        const existingLock = await collection.findOne({
+          active: true,
+          expiresAt: { $gt: new Date() }
+        });
+
+        if (existingLock) {
+          throw new AppError(
+            'Migration already in progress',
+            409,
+            'MIGRATION_LOCKED'
+          );
+        }
       }
 
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+      // Create new lock
+      await collection.insertOne({
+        _id: lockId,
+        active: true,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + MigrationRunner.#LOCK_TIMEOUT),
+        hostname: require('os').hostname(),
+        pid: process.pid
+      });
 
-    MigrationRunner.#migrationLock = lockId;
-    logger.debug('Migration lock acquired', { lockId });
+      return lockId;
+
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      logger.error('Failed to acquire lock', error);
+      throw new AppError(
+        'Failed to acquire migration lock',
+        500,
+        'LOCK_ERROR',
+        { originalError: error.message }
+      );
+    }
   }
 
   /**
    * @private
    * Releases migration lock
+   * @static
    * @async
+   * @param {string} lockId - Lock ID
+   * @returns {Promise<void>}
    */
-  async #releaseLock() {
-    if (MigrationRunner.#migrationLock) {
-      const lockId = MigrationRunner.#migrationLock;
-      MigrationRunner.#migrationLock = null;
-      logger.debug('Migration lock released', { lockId });
+  static async #releaseLock(lockId) {
+    try {
+      const db = MigrationRunner.#config.connection.db;
+      const collection = db.collection(MigrationRunner.#MIGRATION_LOCK_COLLECTION);
+
+      await collection.deleteOne({ _id: lockId });
+
+    } catch (error) {
+      logger.error('Failed to release lock', error);
+      // Don't throw - lock will expire anyway
     }
   }
 
   /**
    * @private
-   * Completes migration run
-   * @param {Object} context - Run context
-   * @returns {Object} Run result
-   */
-  #completeRun(context) {
-    context.endTime = Date.now();
-    context.duration = context.endTime - context.startTime;
-
-    MigrationRunner.#activeMigrations.delete(context.id);
-    MigrationRunner.#migrationHistory.set(context.id, context);
-
-    logger.info('Migration run completed', {
-      runId: context.id,
-      successful: context.successful,
-      failed: context.failed,
-      duration: context.duration
-    });
-
-    return {
-      runId: context.id,
-      state: context.state,
-      successful: context.successful,
-      failed: context.failed,
-      skipped: context.skipped,
-      duration: context.duration,
-      migrations: context.migrations,
-      errors: context.errors
-    };
-  }
-
-  /**
-   * @private
-   * Generates unique run ID
-   * @returns {string} Run ID
-   */
-  #generateRunId() {
-    return `mig_run_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * @private
-   * Gets next version number
-   * @async
-   * @returns {Promise<number>} Next version
-   */
-  async #getNextVersion() {
-    const migrations = Array.from(this.migrationRegistry.values());
-    
-    if (migrations.length === 0) {
-      return 1;
-    }
-
-    const maxVersion = Math.max(...migrations.map(m => m.version));
-    return maxVersion + 1;
-  }
-
-  /**
-   * @private
-   * Generates migration file content
-   * @param {string} name - Migration name
-   * @param {Object} options - Generation options
-   * @returns {string} Migration content
-   */
-  #generateMigrationContent(name, options) {
-    const { type, timestamp, version } = options;
-
-    return `'use strict';
-
-/**
- * @fileoverview ${name} migration
- * @version ${version}
- * @generated ${new Date(timestamp).toISOString()}
- */
-
-module.exports = {
-  type: '${type}',
-  description: '${name} migration',
-  transactional: true,
-
-  /**
-   * Run the migration
-   * @param {Object} context - Migration context
-   * @param {Object} [context.transaction] - Transaction context
-   * @param {Object} context.logger - Logger instance
-   * @param {Object} context.connection - Database connection
-   * @param {number} context.version - Migration version
-   */
-  async up(context) {
-    const { transaction, logger, connection, version } = context;
-    
-    logger.info('Running ${name} migration');
-    
-    // TODO: Implement migration logic
-    
-    logger.info('${name} migration completed');
-  },
-
-  /**
-   * Rollback the migration
-   * @param {Object} context - Migration context
-   * @param {Object} [context.transaction] - Transaction context
-   * @param {Object} context.logger - Logger instance
-   * @param {Object} context.connection - Database connection
-   * @param {number} context.version - Migration version
-   */
-  async down(context) {
-    const { transaction, logger, connection, version } = context;
-    
-    logger.info('Rolling back ${name} migration');
-    
-    // TODO: Implement rollback logic
-    
-    logger.info('${name} migration rolled back');
-  }
-};
-`;
-  }
-
-  /**
-   * Clears migration runner data (for testing)
+   * Configuration storage
    * @static
    */
-  static clearAll() {
-    MigrationRunner.#migrationHistory.clear();
-    MigrationRunner.#activeMigrations.clear();
-    MigrationRunner.#migrationLock = null;
-  }
+  static #config = null;
 }
 
 module.exports = MigrationRunner;
