@@ -1,925 +1,541 @@
 'use strict';
 
 /**
- * @fileoverview Model validation utilities for database operations
+ * @fileoverview Database model structure and inheritance validator
  * @module shared/lib/database/validators/model-validator
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
- * @requires module:shared/lib/utils/validators/common-validators
+ * @requires module:shared/lib/utils/constants/error-codes
+ * @requires module:shared/lib/database/models/base-model
  */
 
 const logger = require('../../utils/logger');
 const AppError = require('../../utils/app-error');
-const commonValidators = require('../../utils/validators/common-validators');
+const { ERROR_CODES } = require('../../utils/constants/error-codes');
+const BaseModel = require('../models/base-model');
 
 /**
  * @class ModelValidator
- * @description Provides validation utilities for database models
+ * @description Validates database model structure, inheritance, and required methods
+ * to ensure consistency across all models in the system
  */
 class ModelValidator {
   /**
    * @private
    * @static
    * @readonly
+   * @type {Array<string>}
+   * @description Required methods that all models must implement
    */
-  static #VALIDATION_RULES = {
-    STRING: {
-      minLength: 0,
-      maxLength: 1000,
-      pattern: null,
-      enum: null,
-      trim: true,
-      lowercase: false,
-      uppercase: false
-    },
-    NUMBER: {
-      min: -Infinity,
-      max: Infinity,
-      integer: false,
-      positive: false,
-      negative: false
-    },
-    DATE: {
-      min: null,
-      max: null,
-      future: false,
-      past: false
-    },
-    ARRAY: {
-      minLength: 0,
-      maxLength: 1000,
-      unique: false,
-      itemType: null
-    },
-    OBJECT: {
-      schema: null,
-      strict: true,
-      allowUnknown: false
-    }
-  };
-
-  static #ERROR_MESSAGES = {
-    REQUIRED: 'Field is required',
-    TYPE: 'Invalid field type',
-    MIN_LENGTH: 'Field is too short',
-    MAX_LENGTH: 'Field is too long',
-    MIN_VALUE: 'Value is too small',
-    MAX_VALUE: 'Value is too large',
-    PATTERN: 'Field does not match required pattern',
-    ENUM: 'Value is not in allowed list',
-    EMAIL: 'Invalid email address',
-    URL: 'Invalid URL',
-    PHONE: 'Invalid phone number',
-    DATE: 'Invalid date',
-    UNIQUE: 'Value must be unique',
-    CUSTOM: 'Validation failed'
-  };
+  static #REQUIRED_METHODS = [
+    'create',
+    'findById',
+    'findOne',
+    'find',
+    'updateById',
+    'deleteById',
+    'count',
+    'exists'
+  ];
 
   /**
-   * Creates a validation schema
+   * @private
    * @static
-   * @param {Object} definition - Schema definition
-   * @returns {Object} Validation schema
+   * @readonly
+   * @type {Array<string>}
+   * @description Required static properties for model metadata
    */
-  static createSchema(definition) {
-    const schema = {};
-
-    for (const [field, rules] of Object.entries(definition)) {
-      schema[field] = ModelValidator.#processFieldRules(field, rules);
-    }
-
-    return schema;
-  }
+  static #REQUIRED_PROPERTIES = [
+    'collectionName',
+    'schema',
+    'indexes'
+  ];
 
   /**
-   * Validates data against schema
+   * @private
    * @static
-   * @async
-   * @param {Object} data - Data to validate
-   * @param {Object} schema - Validation schema
+   * @readonly
+   * @type {Array<string>}
+   * @description Base fields required in all model schemas
+   */
+  static #BASE_FIELDS = [
+    '_id',
+    'createdAt',
+    'updatedAt'
+  ];
+
+  /**
+   * @private
+   * @static
+   * @readonly
+   * @type {Object}
+   * @description Validation cache to improve performance
+   */
+  static #validationCache = new Map();
+
+  /**
+   * Validates a model class structure and inheritance
+   * @static
+   * @param {Function} ModelClass - The model class to validate
    * @param {Object} [options={}] - Validation options
-   * @returns {Promise<Object>} Validation result
+   * @param {boolean} [options.skipCache=false] - Skip validation cache
+   * @param {boolean} [options.validateSchema=true] - Validate schema structure
+   * @param {boolean} [options.validateMethods=true] - Validate required methods
+   * @param {boolean} [options.strict=true] - Strict validation mode
+   * @returns {Object} Validation result with details
+   * @throws {AppError} If validation fails in strict mode
    */
-  static async validate(data, schema, options = {}) {
+  static validate(ModelClass, options = {}) {
     const {
-      partial = false,
-      stripUnknown = false,
-      context = {}
+      skipCache = false,
+      validateSchema = true,
+      validateMethods = true,
+      strict = true
     } = options;
 
-    const errors = [];
-    const validated = {};
-
     try {
-      // Check for unknown fields
-      if (!stripUnknown) {
-        for (const field of Object.keys(data)) {
-          if (!schema[field]) {
-            errors.push({
-              field,
-              message: 'Unknown field',
-              code: 'UNKNOWN_FIELD'
-            });
-          }
-        }
+      // Check cache
+      const cacheKey = ModelClass.name;
+      if (!skipCache && ModelValidator.#validationCache.has(cacheKey)) {
+        logger.debug(`Using cached validation for model: ${cacheKey}`);
+        return ModelValidator.#validationCache.get(cacheKey);
       }
 
-      // Validate each field
-      for (const [field, rules] of Object.entries(schema)) {
-        const value = data[field];
-        const fieldContext = { ...context, field, data };
+      logger.info(`Validating model: ${ModelClass.name}`, { options });
 
-        // Check required
-        if (rules.required) {
-          const isRequired = typeof rules.required === 'function'
-            ? await rules.required(fieldContext)
-            : rules.required;
-
-          if (isRequired && (value === undefined || value === null || value === '')) {
-            errors.push({
-              field,
-              message: rules.messages?.required || ModelValidator.#ERROR_MESSAGES.REQUIRED,
-              code: 'REQUIRED_FIELD'
-            });
-            continue;
-          }
-        }
-
-        // Skip validation if field is not present and not required
-        if (value === undefined || value === null) {
-          if (!partial) {
-            validated[field] = value;
-          }
-          continue;
-        }
-
-        // Validate field
-        const fieldResult = await ModelValidator.#validateField(field, value, rules, fieldContext);
-        
-        if (fieldResult.error) {
-          errors.push(fieldResult.error);
-        } else {
-          validated[field] = fieldResult.value;
-        }
-      }
-
-      // Run cross-field validations
-      if (schema._validate && errors.length === 0) {
-        const crossValidation = await schema._validate(validated, context);
-        
-        if (crossValidation && !crossValidation.valid) {
-          errors.push(...crossValidation.errors);
-        }
-      }
-
-      return {
-        valid: errors.length === 0,
-        errors,
-        data: validated
+      const validationResult = {
+        valid: true,
+        model: ModelClass.name,
+        errors: [],
+        warnings: [],
+        metadata: {}
       };
 
-    } catch (error) {
-      logger.error('Validation error', error);
+      // Validate class type
+      if (typeof ModelClass !== 'function') {
+        validationResult.valid = false;
+        validationResult.errors.push({
+          type: 'TYPE_ERROR',
+          message: 'Model must be a class or constructor function',
+          field: 'ModelClass'
+        });
+      }
 
-      return {
-        valid: false,
-        errors: [{
-          field: '_error',
-          message: error.message,
-          code: 'VALIDATION_ERROR'
-        }],
-        data: null
-      };
-    }
-  }
+      // Validate inheritance from BaseModel
+      if (!ModelValidator.#validateInheritance(ModelClass)) {
+        validationResult.valid = false;
+        validationResult.errors.push({
+          type: 'INHERITANCE_ERROR',
+          message: 'Model must extend BaseModel',
+          field: 'prototype'
+        });
+      }
 
-  /**
-   * Creates a model validator middleware
-   * @static
-   * @param {Object} schema - Validation schema
-   * @param {Object} [options={}] - Middleware options
-   * @returns {Function} Express middleware
-   */
-  static middleware(schema, options = {}) {
-    return async (req, res, next) => {
-      const {
-        source = 'body',
-        onError = null
-      } = options;
+      // Validate required properties
+      const propertyValidation = ModelValidator.#validateProperties(ModelClass);
+      if (!propertyValidation.valid) {
+        validationResult.valid = false;
+        validationResult.errors.push(...propertyValidation.errors);
+      }
+      validationResult.metadata.properties = propertyValidation.metadata;
 
-      const data = req[source];
-      const result = await ModelValidator.validate(data, schema, {
-        ...options,
-        context: { req, res }
-      });
-
-      if (!result.valid) {
-        if (onError) {
-          return onError(result.errors, req, res, next);
+      // Validate required methods
+      if (validateMethods) {
+        const methodValidation = ModelValidator.#validateMethods(ModelClass);
+        if (!methodValidation.valid) {
+          validationResult.valid = false;
+          validationResult.errors.push(...methodValidation.errors);
         }
+        validationResult.metadata.methods = methodValidation.metadata;
+      }
 
-        return next(new AppError(
-          'Validation failed',
+      // Validate schema structure
+      if (validateSchema && ModelClass.schema) {
+        const schemaValidation = ModelValidator.#validateSchemaStructure(ModelClass);
+        if (!schemaValidation.valid) {
+          validationResult.valid = false;
+          validationResult.errors.push(...schemaValidation.errors);
+        }
+        validationResult.warnings.push(...schemaValidation.warnings);
+        validationResult.metadata.schema = schemaValidation.metadata;
+      }
+
+      // Validate indexes
+      const indexValidation = ModelValidator.#validateIndexes(ModelClass);
+      if (!indexValidation.valid) {
+        validationResult.warnings.push(...indexValidation.warnings);
+      }
+      validationResult.metadata.indexes = indexValidation.metadata;
+
+      // Cache successful validation
+      if (validationResult.valid && !skipCache) {
+        ModelValidator.#validationCache.set(cacheKey, validationResult);
+      }
+
+      // Handle strict mode
+      if (strict && !validationResult.valid) {
+        const errorDetails = validationResult.errors.map(e => e.message).join('; ');
+        throw new AppError(
+          `Model validation failed: ${errorDetails}`,
           400,
-          'VALIDATION_ERROR',
-          { errors: result.errors }
-        ));
+          ERROR_CODES.VALIDATION_ERROR,
+          { model: ModelClass.name, errors: validationResult.errors }
+        );
       }
 
-      req.validated = result.data;
-      next();
-    };
-  }
+      logger.info(`Model validation completed: ${ModelClass.name}`, {
+        valid: validationResult.valid,
+        errorCount: validationResult.errors.length,
+        warningCount: validationResult.warnings.length
+      });
 
-  /**
-   * @private
-   * Processes field rules
-   * @static
-   * @param {string} field - Field name
-   * @param {Object} rules - Field rules
-   * @returns {Object} Processed rules
-   */
-  static #processFieldRules(field, rules) {
-    if (typeof rules === 'string') {
-      // Shorthand type definition
-      return { type: rules };
-    }
-
-    const processed = { ...rules };
-
-    // Add default validators based on type
-    if (processed.type) {
-      const defaults = ModelValidator.#getTypeDefaults(processed.type);
-      Object.assign(processed, { ...defaults, ...processed });
-    }
-
-    // Process nested schemas
-    if (processed.type === 'object' && processed.schema) {
-      processed.schema = ModelValidator.createSchema(processed.schema);
-    }
-
-    if (processed.type === 'array' && processed.items?.schema) {
-      processed.items.schema = ModelValidator.createSchema(processed.items.schema);
-    }
-
-    return processed;
-  }
-
-  /**
-   * @private
-   * Gets default rules for type
-   * @static
-   * @param {string} type - Field type
-   * @returns {Object} Default rules
-   */
-  static #getTypeDefaults(type) {
-    const defaults = {
-      string: {
-        transform: (value) => {
-          if (typeof value !== 'string') {
-            value = String(value);
-          }
-          return value.trim();
-        }
-      },
-      number: {
-        transform: (value) => {
-          const num = Number(value);
-          if (isNaN(num)) {
-            throw new Error('Invalid number');
-          }
-          return num;
-        }
-      },
-      boolean: {
-        transform: (value) => {
-          if (typeof value === 'string') {
-            return ['true', '1', 'yes', 'on'].includes(value.toLowerCase());
-          }
-          return Boolean(value);
-        }
-      },
-      date: {
-        transform: (value) => {
-          if (value instanceof Date) {
-            return value;
-          }
-          const date = new Date(value);
-          if (isNaN(date.getTime())) {
-            throw new Error('Invalid date');
-          }
-          return date;
-        }
-      },
-      array: {
-        transform: (value) => {
-          if (!Array.isArray(value)) {
-            return [value];
-          }
-          return value;
-        }
-      },
-      object: {
-        transform: (value) => {
-          if (typeof value === 'string') {
-            try {
-              return JSON.parse(value);
-            } catch {
-              throw new Error('Invalid JSON');
-            }
-          }
-          return value;
-        }
-      }
-    };
-
-    return defaults[type] || {};
-  }
-
-  /**
-   * @private
-   * Validates a single field
-   * @static
-   * @async
-   * @param {string} field - Field name
-   * @param {*} value - Field value
-   * @param {Object} rules - Field rules
-   * @param {Object} context - Validation context
-   * @returns {Promise<Object>} Validation result
-   */
-  static async #validateField(field, value, rules, context) {
-    try {
-      let processedValue = value;
-
-      // Apply transformation
-      if (rules.transform) {
-        processedValue = await rules.transform(processedValue, context);
-      }
-
-      // Type validation
-      if (rules.type) {
-        const typeValid = await ModelValidator.#validateType(processedValue, rules.type);
-        
-        if (!typeValid) {
-          return {
-            error: {
-              field,
-              message: rules.messages?.type || ModelValidator.#ERROR_MESSAGES.TYPE,
-              code: 'INVALID_TYPE',
-              expected: rules.type,
-              actual: typeof processedValue
-            }
-          };
-        }
-      }
-
-      // Apply type-specific validations
-      switch (rules.type) {
-        case 'string':
-          const stringResult = await ModelValidator.#validateString(field, processedValue, rules);
-          if (stringResult.error) return stringResult;
-          processedValue = stringResult.value;
-          break;
-
-        case 'number':
-          const numberResult = await ModelValidator.#validateNumber(field, processedValue, rules);
-          if (numberResult.error) return numberResult;
-          processedValue = numberResult.value;
-          break;
-
-        case 'date':
-          const dateResult = await ModelValidator.#validateDate(field, processedValue, rules);
-          if (dateResult.error) return dateResult;
-          processedValue = dateResult.value;
-          break;
-
-        case 'array':
-          const arrayResult = await ModelValidator.#validateArray(field, processedValue, rules, context);
-          if (arrayResult.error) return arrayResult;
-          processedValue = arrayResult.value;
-          break;
-
-        case 'object':
-          const objectResult = await ModelValidator.#validateObject(field, processedValue, rules, context);
-          if (objectResult.error) return objectResult;
-          processedValue = objectResult.value;
-          break;
-      }
-
-      // Custom validators
-      if (rules.validate) {
-        const validators = Array.isArray(rules.validate) ? rules.validate : [rules.validate];
-        
-        for (const validator of validators) {
-          const result = await validator(processedValue, context);
-          
-          if (result === false || (result && !result.valid)) {
-            return {
-              error: {
-                field,
-                message: result.message || rules.messages?.custom || ModelValidator.#ERROR_MESSAGES.CUSTOM,
-                code: result.code || 'CUSTOM_VALIDATION_FAILED'
-              }
-            };
-          }
-        }
-      }
-
-      // Common validators
-      if (rules.email && !commonValidators.isEmail(processedValue)) {
-        return {
-          error: {
-            field,
-            message: rules.messages?.email || ModelValidator.#ERROR_MESSAGES.EMAIL,
-            code: 'INVALID_EMAIL'
-          }
-        };
-      }
-
-      if (rules.url && !commonValidators.isURL(processedValue)) {
-        return {
-          error: {
-            field,
-            message: rules.messages?.url || ModelValidator.#ERROR_MESSAGES.URL,
-            code: 'INVALID_URL'
-          }
-        };
-      }
-
-      if (rules.phone && !commonValidators.isPhoneNumber(processedValue)) {
-        return {
-          error: {
-            field,
-            message: rules.messages?.phone || ModelValidator.#ERROR_MESSAGES.PHONE,
-            code: 'INVALID_PHONE'
-          }
-        };
-      }
-
-      return { value: processedValue };
+      return validationResult;
 
     } catch (error) {
-      return {
-        error: {
-          field,
-          message: error.message,
-          code: 'VALIDATION_EXCEPTION'
-        }
-      };
-    }
-  }
-
-  /**
-   * @private
-   * Validates value type
-   * @static
-   * @async
-   * @param {*} value - Value to validate
-   * @param {string} expectedType - Expected type
-   * @returns {Promise<boolean>} Is valid
-   */
-  static async #validateType(value, expectedType) {
-    switch (expectedType) {
-      case 'string':
-        return typeof value === 'string';
-      case 'number':
-        return typeof value === 'number' && !isNaN(value);
-      case 'boolean':
-        return typeof value === 'boolean';
-      case 'date':
-        return value instanceof Date && !isNaN(value.getTime());
-      case 'array':
-        return Array.isArray(value);
-      case 'object':
-        return value !== null && typeof value === 'object' && !Array.isArray(value);
-      case 'objectid':
-        return /^[0-9a-fA-F]{24}$/.test(value);
-      default:
-        return true;
-    }
-  }
-
-  /**
-   * @private
-   * Validates string value
-   * @static
-   * @async
-   * @param {string} field - Field name
-   * @param {string} value - String value
-   * @param {Object} rules - Validation rules
-   * @returns {Promise<Object>} Validation result
-   */
-  static async #validateString(field, value, rules) {
-    let processedValue = value;
-
-    // Length validation
-    if (rules.minLength !== undefined && value.length < rules.minLength) {
-      return {
-        error: {
-          field,
-          message: rules.messages?.minLength || `${ModelValidator.#ERROR_MESSAGES.MIN_LENGTH} (min: ${rules.minLength})`,
-          code: 'MIN_LENGTH',
-          min: rules.minLength,
-          actual: value.length
-        }
-      };
-    }
-
-    if (rules.maxLength !== undefined && value.length > rules.maxLength) {
-      return {
-        error: {
-          field,
-          message: rules.messages?.maxLength || `${ModelValidator.#ERROR_MESSAGES.MAX_LENGTH} (max: ${rules.maxLength})`,
-          code: 'MAX_LENGTH',
-          max: rules.maxLength,
-          actual: value.length
-        }
-      };
-    }
-
-    // Pattern validation
-    if (rules.pattern) {
-      const pattern = rules.pattern instanceof RegExp ? rules.pattern : new RegExp(rules.pattern);
-      
-      if (!pattern.test(value)) {
-        return {
-          error: {
-            field,
-            message: rules.messages?.pattern || ModelValidator.#ERROR_MESSAGES.PATTERN,
-            code: 'PATTERN_MISMATCH',
-            pattern: pattern.toString()
-          }
-        };
+      if (error instanceof AppError) {
+        throw error;
       }
+      
+      logger.error(`Model validation error: ${ModelClass.name}`, error);
+      throw new AppError(
+        'Model validation failed',
+        500,
+        ERROR_CODES.INTERNAL_ERROR,
+        { model: ModelClass.name, originalError: error.message }
+      );
     }
-
-    // Enum validation
-    if (rules.enum && !rules.enum.includes(value)) {
-      return {
-        error: {
-          field,
-          message: rules.messages?.enum || `${ModelValidator.#ERROR_MESSAGES.ENUM}: ${rules.enum.join(', ')}`,
-          code: 'ENUM_MISMATCH',
-          allowed: rules.enum
-        }
-      };
-    }
-
-    // Transformations
-    if (rules.trim) {
-      processedValue = processedValue.trim();
-    }
-
-    if (rules.lowercase) {
-      processedValue = processedValue.toLowerCase();
-    }
-
-    if (rules.uppercase) {
-      processedValue = processedValue.toUpperCase();
-    }
-
-    return { value: processedValue };
   }
 
   /**
-   * @private
-   * Validates number value
+   * Validates multiple models at once
    * @static
-   * @async
-   * @param {string} field - Field name
-   * @param {number} value - Number value
-   * @param {Object} rules - Validation rules
-   * @returns {Promise<Object>} Validation result
+   * @param {Array<Function>} modelClasses - Array of model classes to validate
+   * @param {Object} [options={}] - Validation options
+   * @returns {Object} Aggregated validation results
+   * @throws {AppError} If any validation fails in strict mode
    */
-  static async #validateNumber(field, value, rules) {
-    // Range validation
-    if (rules.min !== undefined && value < rules.min) {
-      return {
-        error: {
-          field,
-          message: rules.messages?.min || `${ModelValidator.#ERROR_MESSAGES.MIN_VALUE} (min: ${rules.min})`,
-          code: 'MIN_VALUE',
-          min: rules.min,
-          actual: value
-        }
+  static validateMultiple(modelClasses, options = {}) {
+    try {
+      logger.info(`Validating ${modelClasses.length} models`);
+
+      const results = {
+        valid: true,
+        totalModels: modelClasses.length,
+        validModels: 0,
+        invalidModels: 0,
+        models: {}
       };
-    }
 
-    if (rules.max !== undefined && value > rules.max) {
-      return {
-        error: {
-          field,
-          message: rules.messages?.max || `${ModelValidator.#ERROR_MESSAGES.MAX_VALUE} (max: ${rules.max})`,
-          code: 'MAX_VALUE',
-          max: rules.max,
-          actual: value
+      for (const ModelClass of modelClasses) {
+        const result = ModelValidator.validate(ModelClass, { ...options, strict: false });
+        results.models[ModelClass.name] = result;
+
+        if (result.valid) {
+          results.validModels++;
+        } else {
+          results.invalidModels++;
+          results.valid = false;
         }
-      };
-    }
-
-    // Integer validation
-    if (rules.integer && !Number.isInteger(value)) {
-      return {
-        error: {
-          field,
-          message: 'Value must be an integer',
-          code: 'NOT_INTEGER'
-        }
-      };
-    }
-
-    // Sign validation
-    if (rules.positive && value <= 0) {
-      return {
-        error: {
-          field,
-          message: 'Value must be positive',
-          code: 'NOT_POSITIVE'
-        }
-      };
-    }
-
-    if (rules.negative && value >= 0) {
-      return {
-        error: {
-          field,
-          message: 'Value must be negative',
-          code: 'NOT_NEGATIVE'
-        }
-      };
-    }
-
-    return { value };
-  }
-
-  /**
-   * @private
-   * Validates date value
-   * @static
-   * @async
-   * @param {string} field - Field name
-   * @param {Date} value - Date value
-   * @param {Object} rules - Validation rules
-   * @returns {Promise<Object>} Validation result
-   */
-  static async #validateDate(field, value, rules) {
-    const now = new Date();
-
-    // Range validation
-    if (rules.min) {
-      const minDate = rules.min instanceof Date ? rules.min : new Date(rules.min);
-      
-      if (value < minDate) {
-        return {
-          error: {
-            field,
-            message: rules.messages?.min || `Date must be after ${minDate.toISOString()}`,
-            code: 'DATE_TOO_EARLY',
-            min: minDate,
-            actual: value
-          }
-        };
       }
-    }
 
-    if (rules.max) {
-      const maxDate = rules.max instanceof Date ? rules.max : new Date(rules.max);
-      
-      if (value > maxDate) {
-        return {
-          error: {
-            field,
-            message: rules.messages?.max || `Date must be before ${maxDate.toISOString()}`,
-            code: 'DATE_TOO_LATE',
-            max: maxDate,
-            actual: value
-          }
-        };
-      }
-    }
-
-    // Time validation
-    if (rules.future && value <= now) {
-      return {
-        error: {
-          field,
-          message: 'Date must be in the future',
-          code: 'NOT_FUTURE'
-        }
-      };
-    }
-
-    if (rules.past && value >= now) {
-      return {
-        error: {
-          field,
-          message: 'Date must be in the past',
-          code: 'NOT_PAST'
-        }
-      };
-    }
-
-    return { value };
-  }
-
-  /**
-   * @private
-   * Validates array value
-   * @static
-   * @async
-   * @param {string} field - Field name
-   * @param {Array} value - Array value
-   * @param {Object} rules - Validation rules
-   * @param {Object} context - Validation context
-   * @returns {Promise<Object>} Validation result
-   */
-  static async #validateArray(field, value, rules, context) {
-    // Length validation
-    if (rules.minLength !== undefined && value.length < rules.minLength) {
-      return {
-        error: {
-          field,
-          message: `Array must have at least ${rules.minLength} items`,
-          code: 'ARRAY_TOO_SHORT',
-          min: rules.minLength,
-          actual: value.length
-        }
-      };
-    }
-
-    if (rules.maxLength !== undefined && value.length > rules.maxLength) {
-      return {
-        error: {
-          field,
-          message: `Array must have at most ${rules.maxLength} items`,
-          code: 'ARRAY_TOO_LONG',
-          max: rules.maxLength,
-          actual: value.length
-        }
-      };
-    }
-
-    // Unique validation
-    if (rules.unique) {
-      const uniqueValues = new Set(value);
-      
-      if (uniqueValues.size !== value.length) {
-        return {
-          error: {
-            field,
-            message: 'Array must contain unique values',
-            code: 'ARRAY_NOT_UNIQUE'
-          }
-        };
-      }
-    }
-
-    // Item validation
-    if (rules.items) {
-      const validatedItems = [];
-      
-      for (let i = 0; i < value.length; i++) {
-        const itemContext = { ...context, index: i };
-        const itemResult = await ModelValidator.#validateField(
-          `${field}[${i}]`,
-          value[i],
-          rules.items,
-          itemContext
+      if (options.strict && !results.valid) {
+        throw new AppError(
+          `Model validation failed for ${results.invalidModels} models`,
+          400,
+          ERROR_CODES.VALIDATION_ERROR,
+          { results }
         );
-        
-        if (itemResult.error) {
-          return itemResult;
-        }
-        
-        validatedItems.push(itemResult.value);
+      }
+
+      return results;
+
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
       }
       
-      return { value: validatedItems };
+      logger.error('Multiple model validation error', error);
+      throw new AppError(
+        'Multiple model validation failed',
+        500,
+        ERROR_CODES.INTERNAL_ERROR,
+        { originalError: error.message }
+      );
     }
+  }
 
-    return { value };
+  /**
+   * Clears the validation cache
+   * @static
+   * @param {string} [modelName] - Specific model to clear, or all if not provided
+   */
+  static clearCache(modelName) {
+    if (modelName) {
+      ModelValidator.#validationCache.delete(modelName);
+      logger.debug(`Cleared validation cache for model: ${modelName}`);
+    } else {
+      ModelValidator.#validationCache.clear();
+      logger.debug('Cleared all validation cache');
+    }
   }
 
   /**
    * @private
-   * Validates object value
+   * Validates model inheritance from BaseModel
    * @static
-   * @async
-   * @param {string} field - Field name
-   * @param {Object} value - Object value
-   * @param {Object} rules - Validation rules
-   * @param {Object} context - Validation context
-   * @returns {Promise<Object>} Validation result
+   * @param {Function} ModelClass - Model class to validate
+   * @returns {boolean} True if properly inherits from BaseModel
    */
-  static async #validateObject(field, value, rules, context) {
-    if (rules.schema) {
-      const result = await ModelValidator.validate(value, rules.schema, {
-        partial: !rules.strict,
-        stripUnknown: !rules.allowUnknown,
-        context
-      });
-      
-      if (!result.valid) {
-        return {
-          error: {
-            field,
-            message: 'Object validation failed',
-            code: 'OBJECT_VALIDATION_FAILED',
-            errors: result.errors
-          }
-        };
+  static #validateInheritance(ModelClass) {
+    try {
+      // Check prototype chain
+      let proto = Object.getPrototypeOf(ModelClass);
+      while (proto) {
+        if (proto === BaseModel) {
+          return true;
+        }
+        proto = Object.getPrototypeOf(proto);
       }
-      
-      return { value: result.data };
+      return false;
+    } catch (error) {
+      logger.error('Inheritance validation error', error);
+      return false;
+    }
+  }
+
+  /**
+   * @private
+   * Validates required properties on model class
+   * @static
+   * @param {Function} ModelClass - Model class to validate
+   * @returns {Object} Validation result with metadata
+   */
+  static #validateProperties(ModelClass) {
+    const result = {
+      valid: true,
+      errors: [],
+      metadata: {
+        present: [],
+        missing: []
+      }
+    };
+
+    for (const property of ModelValidator.#REQUIRED_PROPERTIES) {
+      if (ModelClass.hasOwnProperty(property)) {
+        result.metadata.present.push(property);
+        
+        // Additional property-specific validation
+        switch (property) {
+          case 'collectionName':
+            if (typeof ModelClass.collectionName !== 'string' || !ModelClass.collectionName.trim()) {
+              result.valid = false;
+              result.errors.push({
+                type: 'PROPERTY_ERROR',
+                message: 'collectionName must be a non-empty string',
+                field: property
+              });
+            }
+            break;
+          
+          case 'schema':
+            if (!ModelClass.schema || typeof ModelClass.schema !== 'object') {
+              result.valid = false;
+              result.errors.push({
+                type: 'PROPERTY_ERROR',
+                message: 'schema must be a valid object',
+                field: property
+              });
+            }
+            break;
+          
+          case 'indexes':
+            if (!Array.isArray(ModelClass.indexes)) {
+              result.valid = false;
+              result.errors.push({
+                type: 'PROPERTY_ERROR',
+                message: 'indexes must be an array',
+                field: property
+              });
+            }
+            break;
+        }
+      } else {
+        result.valid = false;
+        result.metadata.missing.push(property);
+        result.errors.push({
+          type: 'MISSING_PROPERTY',
+          message: `Required property '${property}' is missing`,
+          field: property
+        });
+      }
     }
 
-    return { value };
+    return result;
   }
 
   /**
-   * Creates a compound validator
+   * @private
+   * Validates required methods on model class
    * @static
-   * @param {...Function} validators - Validator functions
-   * @returns {Function} Compound validator
+   * @param {Function} ModelClass - Model class to validate
+   * @returns {Object} Validation result with metadata
    */
-  static compound(...validators) {
-    return async (value, context) => {
-      for (const validator of validators) {
-        const result = await validator(value, context);
+  static #validateMethods(ModelClass) {
+    const result = {
+      valid: true,
+      errors: [],
+      metadata: {
+        present: [],
+        missing: [],
+        overridden: []
+      }
+    };
+
+    for (const method of ModelValidator.#REQUIRED_METHODS) {
+      if (typeof ModelClass[method] === 'function') {
+        result.metadata.present.push(method);
         
-        if (result === false || (result && !result.valid)) {
-          return result;
+        // Check if method is overridden from BaseModel
+        if (ModelClass[method] !== BaseModel[method]) {
+          result.metadata.overridden.push(method);
         }
+      } else {
+        result.valid = false;
+        result.metadata.missing.push(method);
+        result.errors.push({
+          type: 'MISSING_METHOD',
+          message: `Required method '${method}' is missing or not a function`,
+          field: method
+        });
       }
-      
-      return true;
-    };
+    }
+
+    return result;
   }
 
   /**
-   * Creates a conditional validator
+   * @private
+   * Validates schema structure and base fields
    * @static
-   * @param {Function} condition - Condition function
-   * @param {Function} validator - Validator function
-   * @returns {Function} Conditional validator
+   * @param {Function} ModelClass - Model class to validate
+   * @returns {Object} Validation result with metadata
    */
-  static conditional(condition, validator) {
-    return async (value, context) => {
-      const shouldValidate = await condition(value, context);
-      
-      if (!shouldValidate) {
-        return true;
+  static #validateSchemaStructure(ModelClass) {
+    const result = {
+      valid: true,
+      errors: [],
+      warnings: [],
+      metadata: {
+        fields: [],
+        baseFields: {
+          present: [],
+          missing: []
+        },
+        fieldTypes: {}
       }
-      
-      return await validator(value, context);
     };
+
+    const schema = ModelClass.schema;
+
+    // Validate base fields
+    for (const baseField of ModelValidator.#BASE_FIELDS) {
+      if (baseField in schema) {
+        result.metadata.baseFields.present.push(baseField);
+      } else {
+        result.metadata.baseFields.missing.push(baseField);
+        result.warnings.push({
+          type: 'MISSING_BASE_FIELD',
+          message: `Base field '${baseField}' is missing from schema`,
+          field: baseField
+        });
+      }
+    }
+
+    // Validate field definitions
+    for (const [fieldName, fieldDefinition] of Object.entries(schema)) {
+      result.metadata.fields.push(fieldName);
+      
+      // Validate field definition structure
+      if (fieldDefinition === null || fieldDefinition === undefined) {
+        result.valid = false;
+        result.errors.push({
+          type: 'INVALID_FIELD_DEFINITION',
+          message: `Field '${fieldName}' has null or undefined definition`,
+          field: fieldName
+        });
+        continue;
+      }
+
+      // Store field type information
+      if (fieldDefinition.type) {
+        result.metadata.fieldTypes[fieldName] = fieldDefinition.type.name || 'Unknown';
+      }
+
+      // Validate required fields have proper configuration
+      if (fieldDefinition.required && fieldDefinition.default !== undefined) {
+        result.warnings.push({
+          type: 'FIELD_CONFIGURATION_WARNING',
+          message: `Field '${fieldName}' is required but has a default value`,
+          field: fieldName
+        });
+      }
+    }
+
+    return result;
   }
 
   /**
-   * Creates a sanitizer
+   * @private
+   * Validates index definitions
    * @static
-   * @param {Object} rules - Sanitization rules
-   * @returns {Function} Sanitizer function
+   * @param {Function} ModelClass - Model class to validate
+   * @returns {Object} Validation result with metadata
    */
-  static sanitizer(rules) {
-    return (value) => {
-      if (typeof value !== 'string') {
-        return value;
+  static #validateIndexes(ModelClass) {
+    const result = {
+      valid: true,
+      warnings: [],
+      metadata: {
+        count: 0,
+        types: [],
+        fields: []
       }
-
-      let sanitized = value;
-
-      if (rules.trim) {
-        sanitized = sanitized.trim();
-      }
-
-      if (rules.lowercase) {
-        sanitized = sanitized.toLowerCase();
-      }
-
-      if (rules.uppercase) {
-        sanitized = sanitized.toUpperCase();
-      }
-
-      if (rules.escape) {
-        sanitized = sanitized
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#039;');
-      }
-
-      if (rules.stripHtml) {
-        sanitized = sanitized.replace(/<[^>]*>/g, '');
-      }
-
-      if (rules.normalizeWhitespace) {
-        sanitized = sanitized.replace(/\s+/g, ' ');
-      }
-
-      return sanitized;
     };
+
+    if (!ModelClass.indexes || !Array.isArray(ModelClass.indexes)) {
+      return result;
+    }
+
+    result.metadata.count = ModelClass.indexes.length;
+
+    for (const [index, indexDef] of ModelClass.indexes.entries()) {
+      if (!indexDef || typeof indexDef !== 'object') {
+        result.valid = false;
+        result.warnings.push({
+          type: 'INVALID_INDEX',
+          message: `Index at position ${index} is not a valid object`,
+          field: `indexes[${index}]`
+        });
+        continue;
+      }
+
+      // Extract index type
+      if (indexDef.unique) result.metadata.types.push('unique');
+      if (indexDef.sparse) result.metadata.types.push('sparse');
+      if (indexDef.text) result.metadata.types.push('text');
+      if (indexDef['2dsphere']) result.metadata.types.push('2dsphere');
+
+      // Extract indexed fields
+      if (indexDef.fields) {
+        result.metadata.fields.push(...Object.keys(indexDef.fields));
+      }
+    }
+
+    // Remove duplicates
+    result.metadata.types = [...new Set(result.metadata.types)];
+    result.metadata.fields = [...new Set(result.metadata.fields)];
+
+    return result;
   }
 }
 
