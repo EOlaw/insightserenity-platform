@@ -1,26 +1,29 @@
 'use strict';
 
 /**
- * @fileoverview Database seed management with versioning and rollback support
+ * @fileoverview Central seed manager for executing database seeders with dependency management
  * @module shared/lib/database/seeders/seed-manager
- * @requires module:shared/lib/database/connection-manager
- * @requires module:shared/lib/database/transaction-manager
- * @requires module:shared/lib/utils/logger
- * @requires module:shared/lib/utils/app-error
  * @requires fs/promises
  * @requires path
+ * @requires module:shared/lib/utils/logger
+ * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/database/connection-manager
+ * @requires module:shared/lib/database/transaction-manager
+ * @requires module:shared/config
  */
 
-const fs = require('fs/promises');
+const fs = require('fs').promises;
 const path = require('path');
-const ConnectionManager = require('../connection-manager');
-const TransactionManager = require('../transaction-manager');
 const logger = require('../../utils/logger');
 const AppError = require('../../utils/app-error');
+const ConnectionManager = require('../connection-manager');
+const TransactionManager = require('../transaction-manager');
+const config = require('../../../config');
 
 /**
  * @class SeedManager
- * @description Manages database seeding operations with versioning and rollback
+ * @description Manages the execution of database seeders with dependency resolution,
+ * environment-specific seeding, and comprehensive error handling
  */
 class SeedManager {
   /**
@@ -33,80 +36,78 @@ class SeedManager {
     RUNNING: 'running',
     COMPLETED: 'completed',
     FAILED: 'failed',
-    ROLLED_BACK: 'rolled-back'
+    SKIPPED: 'skipped'
   };
 
-  static #SEED_TYPES = {
-    INITIAL: 'initial',
-    DEVELOPMENT: 'development',
-    TEST: 'test',
-    DEMO: 'demo',
-    PRODUCTION: 'production'
-  };
-
-  static #DEFAULT_OPTIONS = {
-    seedsPath: './seeders',
-    pattern: /^\d{3}-.*\.js$/,
-    transactional: true,
-    continueOnError: false,
-    dryRun: false,
-    parallel: false,
-    maxParallel: 5
-  };
-
-  static #seedHistory = new Map();
-  static #activeSeedRuns = new Map();
+  static #SEED_COLLECTION = 'seed_history';
+  static #SEED_LOCK_COLLECTION = 'seed_locks';
+  static #LOCK_TIMEOUT = 300000; // 5 minutes
+  static #seeders = new Map();
+  static #isInitialized = false;
+  static #environment = null;
 
   /**
-   * Creates an instance of SeedManager
-   * @constructor
-   * @param {Object} [options={}] - Configuration options
-   * @param {string} [options.seedsPath] - Path to seed files
-   * @param {RegExp} [options.pattern] - Seed file pattern
-   * @param {boolean} [options.transactional=true] - Use transactions
-   * @param {boolean} [options.continueOnError=false] - Continue on seed failure
-   * @param {Object} [options.transactionManager] - Transaction manager instance
-   */
-  constructor(options = {}) {
-    this.options = {
-      ...SeedManager.#DEFAULT_OPTIONS,
-      ...options
-    };
-
-    this.transactionManager = options.transactionManager || new TransactionManager();
-    this.seedsPath = path.resolve(this.options.seedsPath);
-    this.executedSeeds = new Set();
-    this.seedRegistry = new Map();
-  }
-
-  /**
-   * Initializes seed manager
+   * Initializes the seed manager
+   * @static
    * @async
    * @param {Object} [options={}] - Initialization options
+   * @param {string} [options.connectionName='default'] - Database connection name
+   * @param {string} [options.seedersPath] - Path to seeders directory
+   * @param {string} [options.environment] - Environment (development, staging, production)
+   * @param {boolean} [options.createCollections=true] - Auto-create seed collections
    * @returns {Promise<void>}
    * @throws {AppError} If initialization fails
    */
-  async initialize(options = {}) {
+  static async initialize(options = {}) {
     try {
-      // Ensure seeds directory exists
-      await fs.mkdir(this.seedsPath, { recursive: true });
+      const {
+        connectionName = 'default',
+        seedersPath = __dirname,
+        environment = process.env.NODE_ENV || 'development',
+        createCollections = true
+      } = options;
 
-      // Load seed history from database
-      await this.#loadSeedHistory();
+      logger.info('Initializing seed manager', { 
+        connectionName, 
+        seedersPath, 
+        environment 
+      });
 
-      // Discover available seeds
-      await this.#discoverSeeds();
+      // Get database connection
+      const connection = ConnectionManager.getConnection(connectionName);
+      if (!connection) {
+        throw new AppError('No database connection found', 500, 'NO_CONNECTION');
+      }
 
-      logger.info('SeedManager initialized', {
-        seedsPath: this.seedsPath,
-        discoveredSeeds: this.seedRegistry.size
+      // Store configuration
+      SeedManager.#config = {
+        connectionName,
+        seedersPath,
+        connection,
+        environment
+      };
+
+      SeedManager.#environment = environment;
+
+      // Create seed collections if needed
+      if (createCollections) {
+        await SeedManager.#ensureCollections();
+      }
+
+      // Load available seeders
+      await SeedManager.#loadSeeders();
+
+      SeedManager.#isInitialized = true;
+
+      logger.info('Seed manager initialized successfully', {
+        seedersCount: SeedManager.#seeders.size,
+        environment: SeedManager.#environment
       });
 
     } catch (error) {
-      logger.error('Failed to initialize SeedManager', error);
-
+      logger.error('Failed to initialize seed manager', error);
       throw new AppError(
-        'SeedManager initialization failed',
+        'Seed manager initialization failed',
         500,
         'SEED_INIT_ERROR',
         { originalError: error.message }
@@ -115,219 +116,257 @@ class SeedManager {
   }
 
   /**
-   * Runs database seeds
+   * Runs seeders based on options
+   * @static
    * @async
-   * @param {Object} [options={}] - Seed options
-   * @param {string} [options.type] - Seed type to run
-   * @param {Array<string>} [options.only] - Only run specific seeds
-   * @param {Array<string>} [options.skip] - Skip specific seeds
-   * @param {boolean} [options.fresh=false] - Run all seeds fresh
-   * @param {Object} [options.data={}] - Additional data for seeds
-   * @returns {Promise<Object>} Seed run result
+   * @param {Object} [options={}] - Run options
+   * @param {boolean} [options.fresh=false] - Drop collections before seeding
+   * @param {boolean} [options.force=false] - Force re-run completed seeders
+   * @param {Array<string>} [options.only] - Run only specific seeders
+   * @param {Array<string>} [options.skip] - Skip specific seeders
+   * @param {boolean} [options.testData=false] - Include test data seeders
+   * @returns {Promise<Object>} Seeding results
    * @throws {AppError} If seeding fails
    */
-  async seed(options = {}) {
-    const runId = this.#generateRunId();
-    const startTime = Date.now();
-
+  static async seed(options = {}) {
     try {
+      SeedManager.#ensureInitialized();
+
       const {
-        type = SeedManager.#SEED_TYPES.DEVELOPMENT,
+        fresh = false,
+        force = false,
         only = [],
         skip = [],
-        fresh = false,
-        data = {}
+        testData = SeedManager.#environment !== 'production'
       } = options;
 
-      logger.info('Starting seed run', {
-        runId,
-        type,
-        fresh,
-        seedCount: this.seedRegistry.size
+      logger.info('Starting database seeding', { 
+        fresh, 
+        force, 
+        only, 
+        skip, 
+        testData,
+        environment: SeedManager.#environment 
       });
 
-      // Initialize run context
-      const runContext = {
-        id: runId,
-        type,
-        state: SeedManager.#SEED_STATES.RUNNING,
-        startTime,
-        seeds: [],
-        successful: 0,
-        failed: 0,
-        skipped: 0,
-        errors: [],
-        options
-      };
+      // Acquire seed lock
+      const lockId = await SeedManager.#acquireLock();
 
-      SeedManager.#activeSeedRuns.set(runId, runContext);
+      try {
+        // Fresh seed - clear existing data
+        if (fresh) {
+          await SeedManager.#freshSeed();
+        }
 
-      // Get seeds to run
-      const seedsToRun = await this.#getSeeedsToRun({
-        type,
-        only,
-        skip,
-        fresh
-      });
+        // Get seeders to run
+        const seedersToRun = await SeedManager.#getSeedersToRun({
+          force,
+          only,
+          skip,
+          testData
+        });
 
-      if (seedsToRun.length === 0) {
-        logger.info('No seeds to run');
-        runContext.state = SeedManager.#SEED_STATES.COMPLETED;
-        return this.#completeRun(runContext);
+        if (seedersToRun.length === 0) {
+          logger.info('No seeders to run');
+          return {
+            success: true,
+            seedersRun: 0,
+            message: 'All seeders are up to date'
+          };
+        }
+
+        logger.info(`Running ${seedersToRun.length} seeders`);
+
+        const results = {
+          success: true,
+          seedersRun: 0,
+          seeders: [],
+          errors: []
+        };
+
+        // Run each seeder
+        for (const seederName of seedersToRun) {
+          try {
+            const result = await SeedManager.#runSeeder(seederName);
+            results.seeders.push(result);
+            results.seedersRun++;
+
+            await SeedManager.#recordSeeder(seederName, result);
+
+          } catch (error) {
+            logger.error(`Seeder ${seederName} failed`, error);
+            
+            results.success = false;
+            results.errors.push({
+              seeder: seederName,
+              error: error.message,
+              stack: error.stack
+            });
+
+            // Stop on first error unless force is enabled
+            if (!force) {
+              break;
+            }
+          }
+        }
+
+        // Log summary
+        SeedManager.#logSummary(results);
+
+        return results;
+
+      } finally {
+        // Release lock
+        await SeedManager.#releaseLock(lockId);
       }
-
-      // Execute seeds
-      if (this.options.parallel && !this.options.transactional) {
-        await this.#runSeedsParallel(seedsToRun, runContext, data);
-      } else {
-        await this.#runSeedsSequential(seedsToRun, runContext, data);
-      }
-
-      // Complete run
-      runContext.state = SeedManager.#SEED_STATES.COMPLETED;
-      return this.#completeRun(runContext);
 
     } catch (error) {
-      logger.error('Seed run failed', error);
-
-      const runContext = SeedManager.#activeSeedRuns.get(runId);
-      if (runContext) {
-        runContext.state = SeedManager.#SEED_STATES.FAILED;
-        runContext.error = error.message;
-        this.#completeRun(runContext);
-      }
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
+      logger.error('Database seeding failed', error);
       throw new AppError(
-        'Seed run failed',
+        'Failed to seed database',
         500,
-        'SEED_RUN_ERROR',
+        'SEED_ERROR',
         { originalError: error.message }
       );
     }
   }
 
   /**
-   * Rolls back seeds
+   * Resets specific seeders
+   * @static
    * @async
-   * @param {Object} [options={}] - Rollback options
-   * @param {number} [options.steps=1] - Number of seeds to rollback
-   * @param {string} [options.to] - Rollback to specific seed
-   * @param {boolean} [options.all=false] - Rollback all seeds
-   * @returns {Promise<Object>} Rollback result
-   * @throws {AppError} If rollback fails
+   * @param {Object} [options={}] - Reset options
+   * @param {Array<string>} [options.seeders] - Specific seeders to reset
+   * @param {boolean} [options.all=false] - Reset all seeders
+   * @returns {Promise<Object>} Reset results
+   * @throws {AppError} If reset fails
    */
-  async rollback(options = {}) {
+  static async reset(options = {}) {
     try {
-      const {
-        steps = 1,
-        to,
-        all = false
-      } = options;
+      SeedManager.#ensureInitialized();
 
-      logger.info('Starting seed rollback', options);
+      const { seeders = [], all = false } = options;
 
-      const seedsToRollback = await this.#getSeedsToRollback({
-        steps,
-        to,
-        all
-      });
+      if (!all && seeders.length === 0) {
+        throw new AppError(
+          'Must specify seeders to reset or use --all flag',
+          400,
+          'INVALID_RESET_OPTIONS'
+        );
+      }
 
-      if (seedsToRollback.length === 0) {
-        logger.info('No seeds to rollback');
+      logger.info('Resetting seeders', { seeders, all });
+
+      const db = SeedManager.#config.connection.db;
+      const collection = db.collection(SeedManager.#SEED_COLLECTION);
+
+      if (all) {
+        // Reset all seeders
+        const result = await collection.deleteMany({});
+        logger.info(`Reset ${result.deletedCount} seeder records`);
+
         return {
-          rolledBack: 0,
-          seeds: []
+          success: true,
+          resetCount: result.deletedCount,
+          message: 'All seeders have been reset'
         };
       }
 
-      const results = {
-        rolledBack: 0,
-        failed: 0,
-        seeds: []
-      };
-
-      // Rollback in reverse order
-      for (const seedName of seedsToRollback.reverse()) {
-        try {
-          await this.#rollbackSeed(seedName);
-          results.rolledBack++;
-          results.seeds.push({
-            name: seedName,
-            status: 'rolled-back'
-          });
-        } catch (error) {
-          results.failed++;
-          results.seeds.push({
-            name: seedName,
-            status: 'failed',
-            error: error.message
-          });
-
-          if (!this.options.continueOnError) {
-            throw error;
-          }
-        }
-      }
-
-      logger.info('Seed rollback completed', {
-        rolledBack: results.rolledBack,
-        failed: results.failed
+      // Reset specific seeders
+      const result = await collection.deleteMany({
+        name: { $in: seeders }
       });
 
-      return results;
+      logger.info(`Reset ${result.deletedCount} seeder records`);
+
+      return {
+        success: true,
+        resetCount: result.deletedCount,
+        seeders: seeders,
+        message: `Reset ${result.deletedCount} seeders`
+      };
 
     } catch (error) {
-      logger.error('Seed rollback failed', error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
+      logger.error('Failed to reset seeders', error);
       throw new AppError(
-        'Seed rollback failed',
+        'Failed to reset seeders',
         500,
-        'SEED_ROLLBACK_ERROR',
+        'RESET_ERROR',
         { originalError: error.message }
       );
     }
   }
 
   /**
-   * Gets seed status
+   * Gets seeding status
+   * @static
    * @async
-   * @param {Object} [options={}] - Status options
-   * @returns {Promise<Object>} Seed status
+   * @returns {Promise<Object>} Seeding status information
    */
-  async status(options = {}) {
+  static async status() {
     try {
-      const executed = await this.#getExecutedSeeds();
-      const pending = [];
-      const available = Array.from(this.seedRegistry.keys()).sort();
+      SeedManager.#ensureInitialized();
 
-      for (const seedName of available) {
-        if (!executed.has(seedName)) {
-          pending.push(seedName);
+      const db = SeedManager.#config.connection.db;
+      const collection = db.collection(SeedManager.#SEED_COLLECTION);
+
+      // Get completed seeders
+      const completedSeeders = await collection
+        .find({ status: SeedManager.#SEED_STATES.COMPLETED })
+        .sort({ executedAt: 1 })
+        .toArray();
+
+      // Get all available seeders
+      const allSeeders = Array.from(SeedManager.#seeders.keys()).sort();
+
+      // Determine pending seeders
+      const completedNames = completedSeeders.map(s => s.name);
+      const pendingSeeders = allSeeders.filter(name => !completedNames.includes(name));
+
+      // Get failed seeders
+      const failedSeeders = await collection
+        .find({ status: SeedManager.#SEED_STATES.FAILED })
+        .toArray();
+
+      // Get environment-specific stats
+      const environmentStats = await collection.aggregate([
+        {
+          $group: {
+            _id: '$environment',
+            count: { $sum: 1 },
+            lastRun: { $max: '$executedAt' }
+          }
         }
-      }
-
-      const lastRun = await this.#getLastSeedRun();
+      ]).toArray();
 
       return {
-        executed: Array.from(executed).sort(),
-        pending: pending.sort(),
-        total: available.length,
-        lastRun
+        environment: SeedManager.#environment,
+        total: allSeeders.length,
+        completed: completedSeeders.length,
+        pending: pendingSeeders.length,
+        failed: failedSeeders.length,
+        seeders: {
+          completed: completedSeeders.map(s => ({
+            name: s.name,
+            executedAt: s.executedAt,
+            duration: s.duration,
+            environment: s.environment
+          })),
+          pending: pendingSeeders,
+          failed: failedSeeders.map(s => ({
+            name: s.name,
+            failedAt: s.failedAt,
+            error: s.error,
+            environment: s.environment
+          }))
+        },
+        environmentStats
       };
 
     } catch (error) {
-      logger.error('Failed to get seed status', error);
-
+      logger.error('Failed to get seeding status', error);
       throw new AppError(
-        'Failed to get seed status',
+        'Failed to retrieve seeding status',
         500,
         'SEED_STATUS_ERROR',
         { originalError: error.message }
@@ -336,126 +375,404 @@ class SeedManager {
   }
 
   /**
-   * Creates a new seed file
+   * Validates seed data integrity
+   * @static
    * @async
-   * @param {string} name - Seed name
-   * @param {Object} [options={}] - Creation options
-   * @returns {Promise<Object>} Created seed info
-   * @throws {AppError} If creation fails
+   * @param {Object} [options={}] - Validation options
+   * @returns {Promise<Object>} Validation results
    */
-  async create(name, options = {}) {
+  static async validate(options = {}) {
     try {
-      if (!name) {
-        throw new AppError('Seed name is required', 400, 'MISSING_SEED_NAME');
+      SeedManager.#ensureInitialized();
+
+      logger.info('Validating seed data integrity');
+
+      const results = {
+        valid: true,
+        issues: [],
+        validations: []
+      };
+
+      // Run validation for each completed seeder
+      const db = SeedManager.#config.connection.db;
+      const collection = db.collection(SeedManager.#SEED_COLLECTION);
+      
+      const completedSeeders = await collection
+        .find({ status: SeedManager.#SEED_STATES.COMPLETED })
+        .toArray();
+
+      for (const seederRecord of completedSeeders) {
+        const seeder = SeedManager.#seeders.get(seederRecord.name);
+        
+        if (seeder && typeof seeder.validate === 'function') {
+          try {
+            const validation = await seeder.validate();
+            results.validations.push({
+              seeder: seederRecord.name,
+              ...validation
+            });
+
+            if (!validation.valid) {
+              results.valid = false;
+              results.issues.push(...validation.issues);
+            }
+
+          } catch (error) {
+            results.valid = false;
+            results.issues.push({
+              seeder: seederRecord.name,
+              issue: 'Validation failed',
+              error: error.message
+            });
+          }
+        }
       }
 
-      const {
-        type = SeedManager.#SEED_TYPES.DEVELOPMENT,
-        template = 'default'
-      } = options;
-
-      // Generate filename
-      const timestamp = Date.now();
-      const sequence = await this.#getNextSequence();
-      const fileName = `${sequence.toString().padStart(3, '0')}-${name}.js`;
-      const filePath = path.join(this.seedsPath, fileName);
-
-      // Check if file exists
-      try {
-        await fs.access(filePath);
-        throw new AppError('Seed file already exists', 409, 'SEED_EXISTS');
-      } catch (error) {
-        // File doesn't exist, continue
-      }
-
-      // Generate seed content
-      const content = this.#generateSeedContent(name, {
-        type,
-        template,
-        timestamp
+      logger.info('Seed data validation completed', {
+        valid: results.valid,
+        issuesCount: results.issues.length
       });
 
-      // Write seed file
-      await fs.writeFile(filePath, content, 'utf8');
+      return results;
 
-      logger.info('Seed file created', {
-        fileName,
-        name,
-        type
+    } catch (error) {
+      logger.error('Failed to validate seed data', error);
+      throw new AppError(
+        'Failed to validate seed data',
+        500,
+        'VALIDATION_ERROR',
+        { originalError: error.message }
+      );
+    }
+  }
+
+  /**
+   * @private
+   * Ensures seed manager is initialized
+   * @static
+   * @throws {AppError} If not initialized
+   */
+  static #ensureInitialized() {
+    if (!SeedManager.#isInitialized) {
+      throw new AppError(
+        'Seed manager not initialized',
+        500,
+        'NOT_INITIALIZED'
+      );
+    }
+  }
+
+  /**
+   * @private
+   * Ensures seed collections exist
+   * @static
+   * @async
+   * @returns {Promise<void>}
+   */
+  static async #ensureCollections() {
+    try {
+      const db = SeedManager.#config.connection.db;
+      const collections = await db.listCollections().toArray();
+      const collectionNames = collections.map(c => c.name);
+
+      // Create seed history collection
+      if (!collectionNames.includes(SeedManager.#SEED_COLLECTION)) {
+        await db.createCollection(SeedManager.#SEED_COLLECTION);
+        await db.collection(SeedManager.#SEED_COLLECTION).createIndex(
+          { name: 1, environment: 1 },
+          { unique: true }
+        );
+        await db.collection(SeedManager.#SEED_COLLECTION).createIndex(
+          { status: 1 }
+        );
+        await db.collection(SeedManager.#SEED_COLLECTION).createIndex(
+          { executedAt: -1 }
+        );
+      }
+
+      // Create seed lock collection
+      if (!collectionNames.includes(SeedManager.#SEED_LOCK_COLLECTION)) {
+        await db.createCollection(SeedManager.#SEED_LOCK_COLLECTION);
+        await db.collection(SeedManager.#SEED_LOCK_COLLECTION).createIndex(
+          { expiresAt: 1 },
+          { expireAfterSeconds: 0 }
+        );
+      }
+
+    } catch (error) {
+      logger.error('Failed to ensure collections', error);
+      throw error;
+    }
+  }
+
+  /**
+   * @private
+   * Loads seeder files
+   * @static
+   * @async
+   * @returns {Promise<void>}
+   */
+  static async #loadSeeders() {
+    try {
+      const files = await fs.readdir(SeedManager.#config.seedersPath);
+      const seederFiles = files
+        .filter(file => file.match(/^\d{3}-.+\.js$/) && file !== 'seed-manager.js')
+        .sort();
+
+      SeedManager.#seeders.clear();
+
+      for (const file of seederFiles) {
+        const filepath = path.join(SeedManager.#config.seedersPath, file);
+        const SeederClass = require(filepath);
+        const seederName = file.replace('.js', '');
+
+        // Validate seeder class
+        if (!SeederClass.up || typeof SeederClass.up !== 'function') {
+          logger.warn(`Seeder ${seederName} missing up() method, skipping`);
+          continue;
+        }
+
+        SeedManager.#seeders.set(seederName, SeederClass);
+      }
+
+      logger.info(`Loaded ${SeedManager.#seeders.size} seeders`);
+
+    } catch (error) {
+      logger.error('Failed to load seeders', error);
+      throw error;
+    }
+  }
+
+  /**
+   * @private
+   * Gets seeders to run
+   * @static
+   * @async
+   * @param {Object} options - Filter options
+   * @returns {Promise<Array<string>>} Seeder names to run
+   */
+  static async #getSeedersToRun(options) {
+    try {
+      const { force, only, skip, testData } = options;
+
+      const db = SeedManager.#config.connection.db;
+      const collection = db.collection(SeedManager.#SEED_COLLECTION);
+
+      // Get completed seeders for current environment
+      const completedSeeders = force ? [] : await collection
+        .find({ 
+          status: SeedManager.#SEED_STATES.COMPLETED,
+          environment: SeedManager.#environment
+        })
+        .project({ name: 1 })
+        .toArray();
+
+      const completedNames = completedSeeders.map(s => s.name);
+      let allSeeders = Array.from(SeedManager.#seeders.keys()).sort();
+
+      // Filter out test data seeders in production
+      if (!testData) {
+        allSeeders = allSeeders.filter(name => !name.includes('test-data'));
+      }
+
+      let seedersToRun = allSeeders.filter(name => !completedNames.includes(name));
+
+      // Apply filters
+      if (only.length > 0) {
+        seedersToRun = seedersToRun.filter(name => only.includes(name));
+      }
+
+      if (skip.length > 0) {
+        seedersToRun = seedersToRun.filter(name => !skip.includes(name));
+      }
+
+      return seedersToRun;
+
+    } catch (error) {
+      logger.error('Failed to get seeders to run', error);
+      throw error;
+    }
+  }
+
+  /**
+   * @private
+   * Runs a single seeder
+   * @static
+   * @async
+   * @param {string} seederName - Seeder name
+   * @returns {Promise<Object>} Seeder result
+   */
+  static async #runSeeder(seederName) {
+    const startTime = Date.now();
+    const seeder = SeedManager.#seeders.get(seederName);
+
+    if (!seeder) {
+      throw new Error(`Seeder ${seederName} not found`);
+    }
+
+    logger.info(`Running seeder: ${seederName}`);
+
+    // Execute seeder with transaction support
+    const session = await SeedManager.#config.connection.startSession();
+
+    try {
+      let recordsSeeded = 0;
+
+      await session.withTransaction(async () => {
+        const result = await seeder.up({
+          environment: SeedManager.#environment,
+          session
+        });
+
+        recordsSeeded = result?.recordsSeeded || 0;
+      });
+
+      const duration = Date.now() - startTime;
+
+      logger.info(`Seeder completed: ${seederName}`, { 
+        duration, 
+        recordsSeeded 
       });
 
       return {
-        fileName,
-        filePath,
-        name,
-        type,
-        timestamp
+        name: seederName,
+        status: SeedManager.#SEED_STATES.COMPLETED,
+        duration,
+        recordsSeeded,
+        executedAt: new Date(),
+        environment: SeedManager.#environment
       };
 
     } catch (error) {
-      logger.error('Failed to create seed', error);
+      logger.error(`Seeder failed: ${seederName}`, error);
+      throw error;
 
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  /**
+   * @private
+   * Records seeder execution
+   * @static
+   * @async
+   * @param {string} seederName - Seeder name
+   * @param {Object} result - Seeder result
+   * @returns {Promise<void>}
+   */
+  static async #recordSeeder(seederName, result) {
+    try {
+      const db = SeedManager.#config.connection.db;
+      const collection = db.collection(SeedManager.#SEED_COLLECTION);
+
+      await collection.replaceOne(
+        { 
+          name: seederName,
+          environment: SeedManager.#environment
+        },
+        {
+          name: seederName,
+          ...result,
+          updatedAt: new Date()
+        },
+        { upsert: true }
+      );
+
+    } catch (error) {
+      logger.error('Failed to record seeder', error);
+      throw error;
+    }
+  }
+
+  /**
+   * @private
+   * Performs fresh seed by dropping collections
+   * @static
+   * @async
+   * @returns {Promise<void>}
+   */
+  static async #freshSeed() {
+    try {
+      logger.warn('Performing fresh seed - dropping existing data');
+
+      const db = SeedManager.#config.connection.db;
+      const collections = await db.listCollections().toArray();
+      
+      const protectedCollections = [
+        SeedManager.#SEED_COLLECTION,
+        SeedManager.#SEED_LOCK_COLLECTION,
+        'migration_history',
+        'migration_locks'
+      ];
+
+      for (const collection of collections) {
+        if (!protectedCollections.includes(collection.name)) {
+          await db.dropCollection(collection.name);
+          logger.info(`Dropped collection: ${collection.name}`);
+        }
+      }
+
+      // Clear seed history for current environment
+      await db.collection(SeedManager.#SEED_COLLECTION).deleteMany({
+        environment: SeedManager.#environment
+      });
+
+    } catch (error) {
+      logger.error('Failed to perform fresh seed', error);
+      throw error;
+    }
+  }
+
+  /**
+   * @private
+   * Acquires seed lock
+   * @static
+   * @async
+   * @returns {Promise<string>} Lock ID
+   */
+  static async #acquireLock() {
+    try {
+      const db = SeedManager.#config.connection.db;
+      const collection = db.collection(SeedManager.#SEED_LOCK_COLLECTION);
+      const lockId = `seed_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Check for existing locks
+      const existingLock = await collection.findOne({
+        active: true,
+        expiresAt: { $gt: new Date() }
+      });
+
+      if (existingLock) {
+        throw new AppError(
+          'Seeding already in progress',
+          409,
+          'SEED_LOCKED'
+        );
+      }
+
+      // Create new lock
+      await collection.insertOne({
+        _id: lockId,
+        active: true,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + SeedManager.#LOCK_TIMEOUT),
+        hostname: require('os').hostname(),
+        pid: process.pid,
+        environment: SeedManager.#environment
+      });
+
+      return lockId;
+
+    } catch (error) {
       if (error instanceof AppError) {
         throw error;
       }
-
+      logger.error('Failed to acquire lock', error);
       throw new AppError(
-        'Seed creation failed',
+        'Failed to acquire seed lock',
         500,
-        'SEED_CREATE_ERROR',
-        { originalError: error.message }
-      );
-    }
-  }
-
-  /**
-   * Lists available seeds
-   * @async
-   * @param {Object} [options={}] - List options
-   * @returns {Promise<Array>} List of seeds
-   */
-  async list(options = {}) {
-    try {
-      const {
-        type,
-        executed,
-        pending
-      } = options;
-
-      await this.#discoverSeeds();
-
-      let seeds = Array.from(this.seedRegistry.values());
-
-      // Filter by type
-      if (type) {
-        seeds = seeds.filter(seed => seed.type === type);
-      }
-
-      // Filter by execution status
-      const executedSeeds = await this.#getExecutedSeeds();
-      
-      if (executed === true) {
-        seeds = seeds.filter(seed => executedSeeds.has(seed.name));
-      } else if (executed === false || pending === true) {
-        seeds = seeds.filter(seed => !executedSeeds.has(seed.name));
-      }
-
-      // Add execution info
-      const seedsWithInfo = seeds.map(seed => ({
-        ...seed,
-        executed: executedSeeds.has(seed.name),
-        executedAt: executedSeeds.get(seed.name)?.executedAt || null
-      }));
-
-      return seedsWithInfo.sort((a, b) => a.sequence - b.sequence);
-
-    } catch (error) {
-      logger.error('Failed to list seeds', error);
-
-      throw new AppError(
-        'Failed to list seeds',
-        500,
-        'SEED_LIST_ERROR',
+        'LOCK_ERROR',
         { originalError: error.message }
       );
     }
@@ -463,605 +780,69 @@ class SeedManager {
 
   /**
    * @private
-   * Loads seed history from database
+   * Releases seed lock
+   * @static
    * @async
+   * @param {string} lockId - Lock ID
+   * @returns {Promise<void>}
    */
-  async #loadSeedHistory() {
+  static async #releaseLock(lockId) {
     try {
-      const connection = ConnectionManager.getConnection();
-      
-      if (!connection) {
-        logger.warn('No database connection, skipping seed history load');
-        return;
-      }
+      const db = SeedManager.#config.connection.db;
+      const collection = db.collection(SeedManager.#SEED_LOCK_COLLECTION);
 
-      const SeedModel = require('../models/seed-model');
-      const history = await SeedModel.find().sort({ sequence: 1 });
-
-      history.forEach(record => {
-        this.executedSeeds.add(record.name);
-        SeedManager.#seedHistory.set(record.name, record);
-      });
-
-      logger.info('Seed history loaded', {
-        executedCount: this.executedSeeds.size
-      });
+      await collection.deleteOne({ _id: lockId });
 
     } catch (error) {
-      logger.warn('Failed to load seed history', error);
+      logger.error('Failed to release lock', error);
+      // Don't throw - lock will expire anyway
     }
   }
 
   /**
    * @private
-   * Discovers available seed files
-   * @async
+   * Logs seeding summary
+   * @static
+   * @param {Object} results - Seeding results
    */
-  async #discoverSeeds() {
-    try {
-      const files = await fs.readdir(this.seedsPath);
-      const seedFiles = files.filter(file => this.options.pattern.test(file));
+  static #logSummary(results) {
+    const summary = [
+      '',
+      '=== Seeding Summary ===',
+      `Environment: ${SeedManager.#environment}`,
+      `Total Seeders Run: ${results.seedersRun}`,
+      `Success: ${results.success}`,
+      `Errors: ${results.errors.length}`,
+      ''
+    ];
 
-      this.seedRegistry.clear();
-
-      for (const file of seedFiles) {
-        const filePath = path.join(this.seedsPath, file);
-        const seed = await this.#loadSeed(filePath);
-        
-        if (seed) {
-          this.seedRegistry.set(seed.name, seed);
-        }
-      }
-
-      logger.debug('Seeds discovered', {
-        count: this.seedRegistry.size
+    if (results.seeders.length > 0) {
+      summary.push('Completed Seeders:');
+      results.seeders.forEach(s => {
+        summary.push(`  ✓ ${s.name} (${s.duration}ms, ${s.recordsSeeded} records)`);
       });
-
-    } catch (error) {
-      logger.error('Failed to discover seeds', error);
+      summary.push('');
     }
-  }
 
-  /**
-   * @private
-   * Loads a seed file
-   * @async
-   * @param {string} filePath - Seed file path
-   * @returns {Promise<Object|null>} Seed info
-   */
-  async #loadSeed(filePath) {
-    try {
-      // Clear from require cache for fresh load
-      delete require.cache[require.resolve(filePath)];
-      
-      const seedModule = require(filePath);
-      const fileName = path.basename(filePath);
-      const match = fileName.match(/^(\d{3})-(.*)\.js$/);
-
-      if (!match) {
-        logger.warn('Invalid seed filename', { fileName });
-        return null;
-      }
-
-      const [, sequence, name] = match;
-
-      return {
-        name,
-        fileName,
-        filePath,
-        sequence: parseInt(sequence, 10),
-        type: seedModule.type || SeedManager.#SEED_TYPES.DEVELOPMENT,
-        description: seedModule.description || '',
-        up: seedModule.up,
-        down: seedModule.down,
-        dependencies: seedModule.dependencies || []
-      };
-
-    } catch (error) {
-      logger.error('Failed to load seed', {
-        filePath,
-        error: error.message
+    if (results.errors.length > 0) {
+      summary.push('Failed Seeders:');
+      results.errors.forEach(e => {
+        summary.push(`  ✗ ${e.seeder}: ${e.error}`);
       });
-      return null;
+      summary.push('');
     }
+
+    summary.push('======================');
+
+    logger.info(summary.join('\n'));
   }
 
   /**
    * @private
-   * Gets seeds to run based on options
-   * @async
-   * @param {Object} options - Filter options
-   * @returns {Promise<Array>} Seeds to run
-   */
-  async #getSeeedsToRun(options) {
-    const { type, only, skip, fresh } = options;
-    const executedSeeds = fresh ? new Set() : await this.#getExecutedSeeds();
-    const seedsToRun = [];
-
-    for (const [name, seed] of this.seedRegistry) {
-      // Check if already executed
-      if (!fresh && executedSeeds.has(name)) {
-        continue;
-      }
-
-      // Check type filter
-      if (type && seed.type !== type) {
-        continue;
-      }
-
-      // Check only filter
-      if (only.length > 0 && !only.includes(name)) {
-        continue;
-      }
-
-      // Check skip filter
-      if (skip.includes(name)) {
-        continue;
-      }
-
-      seedsToRun.push(seed);
-    }
-
-    // Sort by sequence
-    return seedsToRun.sort((a, b) => a.sequence - b.sequence);
-  }
-
-  /**
-   * @private
-   * Runs seeds sequentially
-   * @async
-   * @param {Array} seeds - Seeds to run
-   * @param {Object} context - Run context
-   * @param {Object} data - Seed data
-   */
-  async #runSeedsSequential(seeds, context, data) {
-    for (const seed of seeds) {
-      const seedContext = {
-        name: seed.name,
-        startTime: Date.now(),
-        state: SeedManager.#SEED_STATES.PENDING
-      };
-
-      context.seeds.push(seedContext);
-
-      try {
-        if (this.options.transactional) {
-          await this.transactionManager.withTransaction(async (txn) => {
-            await this.#executeSeed(seed, data, txn);
-          });
-        } else {
-          await this.#executeSeed(seed, data);
-        }
-
-        seedContext.state = SeedManager.#SEED_STATES.COMPLETED;
-        seedContext.endTime = Date.now();
-        seedContext.duration = seedContext.endTime - seedContext.startTime;
-        context.successful++;
-
-        // Record execution
-        await this.#recordSeedExecution(seed);
-
-      } catch (error) {
-        seedContext.state = SeedManager.#SEED_STATES.FAILED;
-        seedContext.endTime = Date.now();
-        seedContext.duration = seedContext.endTime - seedContext.startTime;
-        seedContext.error = error.message;
-        context.failed++;
-        context.errors.push({
-          seed: seed.name,
-          error: error.message
-        });
-
-        logger.error('Seed execution failed', {
-          seed: seed.name,
-          error: error.message
-        });
-
-        if (!this.options.continueOnError) {
-          throw error;
-        }
-      }
-    }
-  }
-
-  /**
-   * @private
-   * Runs seeds in parallel
-   * @async
-   * @param {Array} seeds - Seeds to run
-   * @param {Object} context - Run context
-   * @param {Object} data - Seed data
-   */
-  async #runSeedsParallel(seeds, context, data) {
-    const chunks = this.#chunkArray(seeds, this.options.maxParallel);
-
-    for (const chunk of chunks) {
-      const promises = chunk.map(async (seed) => {
-        const seedContext = {
-          name: seed.name,
-          startTime: Date.now(),
-          state: SeedManager.#SEED_STATES.PENDING
-        };
-
-        context.seeds.push(seedContext);
-
-        try {
-          await this.#executeSeed(seed, data);
-
-          seedContext.state = SeedManager.#SEED_STATES.COMPLETED;
-          seedContext.endTime = Date.now();
-          seedContext.duration = seedContext.endTime - seedContext.startTime;
-          context.successful++;
-
-          await this.#recordSeedExecution(seed);
-
-        } catch (error) {
-          seedContext.state = SeedManager.#SEED_STATES.FAILED;
-          seedContext.endTime = Date.now();
-          seedContext.duration = seedContext.endTime - seedContext.startTime;
-          seedContext.error = error.message;
-          context.failed++;
-          context.errors.push({
-            seed: seed.name,
-            error: error.message
-          });
-
-          if (!this.options.continueOnError) {
-            throw error;
-          }
-        }
-      });
-
-      await Promise.all(promises);
-    }
-  }
-
-  /**
-   * @private
-   * Executes a single seed
-   * @async
-   * @param {Object} seed - Seed to execute
-   * @param {Object} data - Seed data
-   * @param {Object} [transaction] - Transaction context
-   */
-  async #executeSeed(seed, data, transaction) {
-    if (!seed.up || typeof seed.up !== 'function') {
-      throw new AppError('Seed missing up function', 400, 'INVALID_SEED');
-    }
-
-    logger.info('Executing seed', { name: seed.name });
-
-    // Check dependencies
-    if (seed.dependencies.length > 0) {
-      await this.#checkDependencies(seed.dependencies);
-    }
-
-    // Execute seed
-    if (this.options.dryRun) {
-      logger.info('Dry run - would execute seed', { name: seed.name });
-      return;
-    }
-
-    const context = {
-      data,
-      transaction,
-      logger: logger.child({ seed: seed.name })
-    };
-
-    await seed.up(context);
-
-    logger.info('Seed executed successfully', { name: seed.name });
-  }
-
-  /**
-   * @private
-   * Rolls back a single seed
-   * @async
-   * @param {string} seedName - Seed name to rollback
-   */
-  async #rollbackSeed(seedName) {
-    const seed = this.seedRegistry.get(seedName);
-    
-    if (!seed) {
-      throw new AppError('Seed not found', 404, 'SEED_NOT_FOUND');
-    }
-
-    if (!seed.down || typeof seed.down !== 'function') {
-      throw new AppError('Seed missing down function', 400, 'NO_ROLLBACK_FUNCTION');
-    }
-
-    logger.info('Rolling back seed', { name: seedName });
-
-    if (this.options.dryRun) {
-      logger.info('Dry run - would rollback seed', { name: seedName });
-      return;
-    }
-
-    const context = {
-      logger: logger.child({ seed: seedName })
-    };
-
-    if (this.options.transactional) {
-      await this.transactionManager.withTransaction(async (txn) => {
-        context.transaction = txn;
-        await seed.down(context);
-      });
-    } else {
-      await seed.down(context);
-    }
-
-    // Remove from executed seeds
-    await this.#removeSeedExecution(seedName);
-
-    logger.info('Seed rolled back successfully', { name: seedName });
-  }
-
-  /**
-   * @private
-   * Records seed execution
-   * @async
-   * @param {Object} seed - Executed seed
-   */
-  async #recordSeedExecution(seed) {
-    try {
-      const SeedModel = require('../models/seed-model');
-      
-      await SeedModel.create({
-        name: seed.name,
-        fileName: seed.fileName,
-        sequence: seed.sequence,
-        type: seed.type,
-        executedAt: new Date(),
-        version: 1
-      });
-
-      this.executedSeeds.add(seed.name);
-
-    } catch (error) {
-      logger.error('Failed to record seed execution', error);
-    }
-  }
-
-  /**
-   * @private
-   * Removes seed execution record
-   * @async
-   * @param {string} seedName - Seed name
-   */
-  async #removeSeedExecution(seedName) {
-    try {
-      const SeedModel = require('../models/seed-model');
-      
-      await SeedModel.deleteOne({ name: seedName });
-      this.executedSeeds.delete(seedName);
-      SeedManager.#seedHistory.delete(seedName);
-
-    } catch (error) {
-      logger.error('Failed to remove seed execution record', error);
-    }
-  }
-
-  /**
-   * @private
-   * Gets executed seeds
-   * @async
-   * @returns {Promise<Set>} Executed seed names
-   */
-  async #getExecutedSeeds() {
-    if (this.executedSeeds.size === 0) {
-      await this.#loadSeedHistory();
-    }
-    return new Set(this.executedSeeds);
-  }
-
-  /**
-   * @private
-   * Gets seeds to rollback
-   * @async
-   * @param {Object} options - Rollback options
-   * @returns {Promise<Array>} Seeds to rollback
-   */
-  async #getSeedsToRollback(options) {
-    const executed = Array.from(await this.#getExecutedSeeds()).sort();
-
-    if (options.all) {
-      return executed;
-    }
-
-    if (options.to) {
-      const index = executed.indexOf(options.to);
-      if (index === -1) {
-        throw new AppError('Target seed not found', 404, 'SEED_NOT_FOUND');
-      }
-      return executed.slice(index);
-    }
-
-    return executed.slice(-options.steps);
-  }
-
-  /**
-   * @private
-   * Checks seed dependencies
-   * @async
-   * @param {Array} dependencies - Required dependencies
-   */
-  async #checkDependencies(dependencies) {
-    const executed = await this.#getExecutedSeeds();
-
-    for (const dep of dependencies) {
-      if (!executed.has(dep)) {
-        throw new AppError(
-          `Missing dependency: ${dep}`,
-          400,
-          'MISSING_DEPENDENCY'
-        );
-      }
-    }
-  }
-
-  /**
-   * @private
-   * Gets last seed run info
-   * @async
-   * @returns {Promise<Object|null>} Last run info
-   */
-  async #getLastSeedRun() {
-    const history = Array.from(SeedManager.#seedHistory.values());
-    
-    if (history.length === 0) {
-      return null;
-    }
-
-    const lastSeed = history.sort((a, b) => 
-      new Date(b.executedAt) - new Date(a.executedAt)
-    )[0];
-
-    return {
-      name: lastSeed.name,
-      executedAt: lastSeed.executedAt,
-      sequence: lastSeed.sequence
-    };
-  }
-
-  /**
-   * @private
-   * Completes seed run
-   * @param {Object} context - Run context
-   * @returns {Object} Run result
-   */
-  #completeRun(context) {
-    context.endTime = Date.now();
-    context.duration = context.endTime - context.startTime;
-
-    SeedManager.#activeSeedRuns.delete(context.id);
-    SeedManager.#seedHistory.set(context.id, context);
-
-    logger.info('Seed run completed', {
-      runId: context.id,
-      successful: context.successful,
-      failed: context.failed,
-      duration: context.duration
-    });
-
-    return {
-      runId: context.id,
-      state: context.state,
-      successful: context.successful,
-      failed: context.failed,
-      skipped: context.skipped,
-      duration: context.duration,
-      seeds: context.seeds,
-      errors: context.errors
-    };
-  }
-
-  /**
-   * @private
-   * Generates unique run ID
-   * @returns {string} Run ID
-   */
-  #generateRunId() {
-    return `run_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * @private
-   * Gets next sequence number
-   * @async
-   * @returns {Promise<number>} Next sequence
-   */
-  async #getNextSequence() {
-    const seeds = Array.from(this.seedRegistry.values());
-    
-    if (seeds.length === 0) {
-      return 1;
-    }
-
-    const maxSequence = Math.max(...seeds.map(s => s.sequence));
-    return maxSequence + 1;
-  }
-
-  /**
-   * @private
-   * Generates seed file content
-   * @param {string} name - Seed name
-   * @param {Object} options - Generation options
-   * @returns {string} Seed content
-   */
-  #generateSeedContent(name, options) {
-    const { type, timestamp } = options;
-
-    return `'use strict';
-
-/**
- * @fileoverview ${name} seed
- * @generated ${new Date(timestamp).toISOString()}
- */
-
-module.exports = {
-  type: '${type}',
-  description: '${name} seed',
-  dependencies: [],
-
-  /**
-   * Run the seed
-   * @param {Object} context - Seed context
-   * @param {Object} context.data - Seed data
-   * @param {Object} [context.transaction] - Transaction context
-   * @param {Object} context.logger - Logger instance
-   */
-  async up(context) {
-    const { data, transaction, logger } = context;
-    
-    logger.info('Running ${name} seed');
-    
-    // TODO: Implement seed logic
-    
-    logger.info('${name} seed completed');
-  },
-
-  /**
-   * Rollback the seed
-   * @param {Object} context - Seed context
-   * @param {Object} [context.transaction] - Transaction context
-   * @param {Object} context.logger - Logger instance
-   */
-  async down(context) {
-    const { transaction, logger } = context;
-    
-    logger.info('Rolling back ${name} seed');
-    
-    // TODO: Implement rollback logic
-    
-    logger.info('${name} seed rolled back');
-  }
-};
-`;
-  }
-
-  /**
-   * @private
-   * Chunks array into smaller arrays
-   * @param {Array} array - Array to chunk
-   * @param {number} size - Chunk size
-   * @returns {Array<Array>} Chunked arrays
-   */
-  #chunkArray(array, size) {
-    const chunks = [];
-    for (let i = 0; i < array.length; i += size) {
-      chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
-  }
-
-  /**
-   * Clears seed manager data (for testing)
+   * Configuration storage
    * @static
    */
-  static clearAll() {
-    SeedManager.#seedHistory.clear();
-    SeedManager.#activeSeedRuns.clear();
-  }
+  static #config = null;
 }
 
 module.exports = SeedManager;
