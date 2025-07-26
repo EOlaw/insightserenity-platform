@@ -1,57 +1,90 @@
 'use strict';
 
 /**
- * @fileoverview Notification model for multi-channel notification management
- * @module shared/lib/database/models/notification-model
+ * @fileoverview Notification model for system and user-level alerts, reminders, and messages
+ * @module shared/lib/database/models/platform/notification-model
  * @requires mongoose
  * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/services/notification-service
+ * @requires module:shared/lib/services/email-service
  * @requires module:shared/lib/utils/helpers/string-helper
+ * @requires module:shared/lib/utils/formatters/text-formatter
+ * @requires module:shared/lib/security/encryption/encryption-service
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('./base-model');
-const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
-const stringHelper = require('../../utils/helpers/string-helper');
+const BaseModel = require('../base-model');
+const logger = require('../../../utils/logger');
+const AppError = require('../../../utils/app-error');
+const notificationService = require('../../../services/notification-service');
+const emailService = require('../../../services/email-service');
+const stringHelper = require('../../../utils/helpers/string-helper');
+const textFormatter = require('../../../utils/formatters/text-formatter');
+const encryptionService = require('../../../security/encryption/encryption-service');
 
 /**
- * Notification schema definition
+ * Notification schema definition for managing platform notifications
  */
 const notificationSchemaDefinition = {
-  // Notification Identification
-  notificationId: {
-    type: String,
+  // ==================== Multi-tenancy ====================
+  tenantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tenant',
     required: true,
-    unique: true,
     index: true
   },
 
-  // Type and Category
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    index: true
+  },
+
+  // ==================== Recipient Information ====================
+  recipientId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
+
+  recipientType: {
+    type: String,
+    enum: ['user', 'organization', 'team', 'role', 'broadcast'],
+    default: 'user'
+  },
+
+  recipientEmail: {
+    type: String,
+    lowercase: true,
+    trim: true
+  },
+
+  recipientName: String,
+
+  // ==================== Notification Content ====================
   type: {
     type: String,
     required: true,
     enum: [
-      'alert', 'info', 'warning', 'error', 'success',
-      'reminder', 'announcement', 'message', 'update',
-      'invitation', 'request', 'approval', 'system'
+      'info', 'success', 'warning', 'error', 'critical',
+      'system', 'security', 'billing', 'usage', 'compliance',
+      'announcement', 'reminder', 'task', 'approval', 'mention',
+      'subscription', 'feature', 'maintenance', 'integration'
     ],
     index: true
   },
 
   category: {
     type: String,
-    required: true,
     enum: [
-      'account', 'security', 'billing', 'system', 'user',
-      'organization', 'project', 'task', 'message', 'integration',
-      'compliance', 'report', 'maintenance', 'marketing'
+      'general', 'account', 'billing', 'security', 'system',
+      'collaboration', 'workflow', 'analytics', 'compliance'
     ],
-    index: true
+    default: 'general'
   },
-
-  subcategory: String,
 
   priority: {
     type: String,
@@ -60,7 +93,6 @@ const notificationSchemaDefinition = {
     index: true
   },
 
-  // Content
   title: {
     type: String,
     required: true,
@@ -73,380 +105,443 @@ const notificationSchemaDefinition = {
     maxlength: 2000
   },
 
-  excerpt: {
+  shortMessage: {
     type: String,
     maxlength: 160
   },
 
-  // Rich content
+  // ==================== Rich Content ====================
   content: {
     html: String,
     markdown: String,
+    plainText: String,
     template: String,
-    variables: mongoose.Schema.Types.Mixed
-  },
-
-  // Recipients
-  recipient: {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-      index: true
-    },
-    email: String,
-    name: String,
-    preferences: {
-      email: Boolean,
-      sms: Boolean,
-      push: Boolean,
-      inApp: Boolean
-    }
-  },
-
-  // Sender
-  sender: {
-    type: {
-      type: String,
-      enum: ['system', 'user', 'organization', 'service'],
-      default: 'system'
-    },
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    name: String,
-    avatar: String
-  },
-
-  // Organization & Context
-  organizationId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Organization',
-    index: true
-  },
-
-  tenantId: {
-    type: String,
-    index: true
-  },
-
-  // Channels
-  channels: {
-    email: {
-      enabled: {
-        type: Boolean,
-        default: false
-      },
-      sent: {
-        type: Boolean,
-        default: false
-      },
-      sentAt: Date,
-      delivered: Boolean,
-      deliveredAt: Date,
-      opened: Boolean,
-      openedAt: Date,
-      clicked: Boolean,
-      clickedAt: Date,
-      bounced: Boolean,
-      bouncedAt: Date,
-      error: String,
-      messageId: String
-    },
-    sms: {
-      enabled: {
-        type: Boolean,
-        default: false
-      },
-      sent: {
-        type: Boolean,
-        default: false
-      },
-      sentAt: Date,
-      delivered: Boolean,
-      deliveredAt: Date,
-      error: String,
-      messageId: String,
-      phoneNumber: String
-    },
-    push: {
-      enabled: {
-        type: Boolean,
-        default: false
-      },
-      sent: {
-        type: Boolean,
-        default: false
-      },
-      sentAt: Date,
-      delivered: Boolean,
-      deliveredAt: Date,
-      clicked: Boolean,
-      clickedAt: Date,
-      error: String,
-      tokens: [String]
-    },
-    inApp: {
-      enabled: {
-        type: Boolean,
-        default: true
-      },
-      seen: {
-        type: Boolean,
-        default: false
-      },
-      seenAt: Date,
-      clicked: Boolean,
-      clickedAt: Date,
-      dismissed: Boolean,
-      dismissedAt: Date
-    },
-    webhook: {
-      enabled: {
-        type: Boolean,
-        default: false
-      },
-      sent: {
-        type: Boolean,
-        default: false
-      },
-      sentAt: Date,
+    templateData: mongoose.Schema.Types.Mixed,
+    attachments: [{
+      fileName: String,
+      fileType: String,
+      fileSize: Number,
       url: String,
-      response: {
-        status: Number,
-        body: String
-      },
-      error: String
-    }
+      secureUrl: String
+    }]
   },
 
-  // Status
-  status: {
-    type: String,
-    enum: ['pending', 'processing', 'sent', 'delivered', 'failed', 'cancelled'],
-    default: 'pending',
-    index: true
-  },
-
-  // Delivery
-  delivery: {
-    scheduled: Boolean,
-    scheduledFor: Date,
-    sendAfter: Date,
-    sendBefore: Date,
-    timezone: String,
-    attempts: {
-      type: Number,
-      default: 0
-    },
-    maxAttempts: {
-      type: Number,
-      default: 3
-    },
-    lastAttemptAt: Date,
-    nextRetryAt: Date,
-    retryCount: {
-      type: Number,
-      default: 0
-    }
-  },
-
-  // Actions
+  // ==================== Actions & Links ====================
   actions: [{
+    actionId: {
+      type: String,
+      default: () => stringHelper.generateRandomString(16)
+    },
     label: {
       type: String,
       required: true
     },
+    url: String,
     type: {
       type: String,
       enum: ['link', 'button', 'api', 'dismiss'],
       default: 'link'
     },
-    url: String,
-    method: String,
-    payload: mongoose.Schema.Types.Mixed,
     style: {
       type: String,
-      enum: ['primary', 'secondary', 'danger', 'success', 'info'],
+      enum: ['primary', 'secondary', 'success', 'danger', 'warning'],
       default: 'primary'
     },
-    clicked: Boolean,
-    clickedAt: Date
+    requiresAuth: {
+      type: Boolean,
+      default: true
+    },
+    metadata: mongoose.Schema.Types.Mixed
   }],
 
-  // Metadata
+  link: {
+    url: String,
+    label: String,
+    external: {
+      type: Boolean,
+      default: false
+    }
+  },
+
+  // ==================== Delivery Configuration ====================
+  delivery: {
+    methods: [{
+      type: String,
+      enum: ['in-app', 'email', 'sms', 'push', 'slack', 'webhook'],
+      required: true
+    }],
+    
+    email: {
+      to: [String],
+      cc: [String],
+      bcc: [String],
+      replyTo: String,
+      subject: String,
+      templateId: String
+    },
+
+    sms: {
+      phoneNumber: String,
+      provider: String
+    },
+
+    push: {
+      deviceTokens: [String],
+      sound: String,
+      badge: Number,
+      data: mongoose.Schema.Types.Mixed
+    },
+
+    slack: {
+      channelId: String,
+      webhookUrl: String,
+      mentionUsers: [String]
+    },
+
+    webhook: {
+      url: String,
+      headers: mongoose.Schema.Types.Mixed,
+      authToken: String
+    },
+
+    scheduling: {
+      scheduledFor: Date,
+      timezone: String,
+      recurring: {
+        enabled: { type: Boolean, default: false },
+        frequency: {
+          type: String,
+          enum: ['daily', 'weekly', 'monthly', 'custom']
+        },
+        interval: Number,
+        endDate: Date
+      }
+    }
+  },
+
+  // ==================== Status Tracking ====================
+  status: {
+    state: {
+      type: String,
+      enum: ['pending', 'scheduled', 'sending', 'sent', 'delivered', 'failed', 'cancelled'],
+      default: 'pending',
+      index: true
+    },
+
+    isRead: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+
+    readAt: Date,
+    readBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+
+    sentAt: Date,
+    deliveredAt: Date,
+    failedAt: Date,
+
+    deliveryStatus: {
+      type: Map,
+      of: {
+        status: String,
+        sentAt: Date,
+        deliveredAt: Date,
+        failedAt: Date,
+        error: String,
+        attempts: Number
+      }
+    },
+
+    retries: {
+      count: {
+        type: Number,
+        default: 0
+      },
+      maxRetries: {
+        type: Number,
+        default: 3
+      },
+      lastAttempt: Date,
+      nextRetry: Date
+    }
+  },
+
+  // ==================== User Interaction ====================
+  interaction: {
+    clicked: {
+      type: Boolean,
+      default: false
+    },
+    clickedAt: Date,
+    clickedAction: String,
+    
+    dismissed: {
+      type: Boolean,
+      default: false
+    },
+    dismissedAt: Date,
+    dismissedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+
+    snoozed: {
+      type: Boolean,
+      default: false
+    },
+    snoozedUntil: Date,
+    snoozedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+
+    archived: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    archivedAt: Date,
+
+    starred: {
+      type: Boolean,
+      default: false
+    },
+    starredAt: Date
+  },
+
+  // ==================== Grouping & Threading ====================
+  grouping: {
+    groupId: {
+      type: String,
+      index: true
+    },
+    threadId: {
+      type: String,
+      index: true
+    },
+    parentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Notification'
+    },
+    isGrouped: {
+      type: Boolean,
+      default: false
+    },
+    groupCount: {
+      type: Number,
+      default: 1
+    }
+  },
+
+  // ==================== Source & Context ====================
+  source: {
+    service: {
+      type: String,
+      required: true
+    },
+    entityType: String,
+    entityId: String,
+    eventType: String,
+    triggeredBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    automatedTrigger: {
+      type: Boolean,
+      default: false
+    }
+  },
+
+  // ==================== Security & Privacy ====================
+  security: {
+    encrypted: {
+      type: Boolean,
+      default: false
+    },
+    encryptedFields: [String],
+    sensitiveData: {
+      type: Boolean,
+      default: false
+    },
+    dataClassification: {
+      type: String,
+      enum: ['public', 'internal', 'confidential', 'restricted'],
+      default: 'internal'
+    },
+    retentionPolicy: {
+      deleteAfterRead: Boolean,
+      retentionDays: {
+        type: Number,
+        default: 90
+      },
+      deleteAt: Date
+    }
+  },
+
+  // ==================== Preferences & Rules ====================
+  preferences: {
+    allowDismiss: {
+      type: Boolean,
+      default: true
+    },
+    requiresAcknowledgment: {
+      type: Boolean,
+      default: false
+    },
+    persistUntilRead: {
+      type: Boolean,
+      default: false
+    },
+    showInApp: {
+      type: Boolean,
+      default: true
+    },
+    sound: {
+      enabled: Boolean,
+      soundFile: String
+    },
+    vibration: Boolean
+  },
+
+  // ==================== Metadata & Analytics ====================
   metadata: {
-    source: String,
-    campaign: String,
-    reference: String,
     tags: [String],
-    custom: mongoose.Schema.Types.Mixed
-  },
-
-  // Related Entities
-  relatedTo: {
-    type: {
+    customFields: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed
+    },
+    locale: {
       type: String,
-      enum: ['user', 'organization', 'project', 'task', 'document', 'invoice', 'other']
+      default: 'en'
     },
-    id: mongoose.Schema.Types.ObjectId,
-    name: String,
-    url: String
-  },
-
-  // Grouping
-  groupId: {
-    type: String,
-    index: true
-  },
-
-  thread: {
-    id: String,
-    position: Number,
-    total: Number
-  },
-
-  // Expiration
-  expiresAt: {
-    type: Date,
-    index: true
-  },
-
-  expired: {
-    type: Boolean,
-    default: false
-  },
-
-  // Tracking
-  events: [{
-    type: {
-      type: String,
-      enum: ['created', 'sent', 'delivered', 'opened', 'clicked', 'failed', 'bounced']
+    translations: {
+      type: Map,
+      of: {
+        title: String,
+        message: String,
+        shortMessage: String
+      }
     },
-    timestamp: Date,
-    channel: String,
-    details: mongoose.Schema.Types.Mixed
-  }],
-
-  // Statistics
-  stats: {
-    sendAttempts: {
-      type: Number,
-      default: 0
+    campaign: {
+      campaignId: String,
+      campaignName: String,
+      segment: String
     },
-    successfulChannels: {
-      type: Number,
-      default: 0
-    },
-    failedChannels: {
-      type: Number,
-      default: 0
-    },
-    interactions: {
-      type: Number,
-      default: 0
-    },
-    firstInteractionAt: Date,
-    lastInteractionAt: Date
+    tracking: {
+      utmSource: String,
+      utmMedium: String,
+      utmCampaign: String,
+      correlationId: String
+    }
   },
 
-  // Timestamps
-  createdAt: {
-    type: Date,
-    default: Date.now,
-    index: true
+  // ==================== Expiration ====================
+  expiration: {
+    expiresAt: {
+      type: Date,
+      index: true
+    },
+    expired: {
+      type: Boolean,
+      default: false
+    },
+    autoDelete: {
+      type: Boolean,
+      default: true
+    }
   },
 
-  updatedAt: {
-    type: Date,
-    default: Date.now
+  // ==================== Audit Trail ====================
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
 
-  // Archival
-  archived: {
-    type: Boolean,
-    default: false,
-    index: true
-  },
-
-  archivedAt: Date
+  updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
 };
 
 // Create schema
 const notificationSchema = BaseModel.createSchema(notificationSchemaDefinition, {
   collection: 'notifications',
-  timestamps: false // We manage timestamps manually
+  timestamps: true,
+  versionKey: false
 });
 
-// Indexes
-notificationSchema.index({ 'recipient.userId': 1, status: 1, createdAt: -1 });
-notificationSchema.index({ organizationId: 1, createdAt: -1 });
-notificationSchema.index({ type: 1, category: 1, status: 1 });
-notificationSchema.index({ 'channels.inApp.seen': 1, 'recipient.userId': 1 });
-notificationSchema.index({ 'delivery.scheduledFor': 1, status: 1 });
-notificationSchema.index({ groupId: 1, createdAt: -1 });
+// ==================== Indexes ====================
+notificationSchema.index({ recipientId: 1, 'status.isRead': 1, createdAt: -1 });
+notificationSchema.index({ tenantId: 1, type: 1, createdAt: -1 });
+notificationSchema.index({ organizationId: 1, category: 1, priority: 1 });
+notificationSchema.index({ 'status.state': 1, 'delivery.scheduling.scheduledFor': 1 });
+notificationSchema.index({ 'grouping.groupId': 1, createdAt: -1 });
+notificationSchema.index({ 'interaction.archived': 1, recipientId: 1 });
+notificationSchema.index({ 'expiration.expiresAt': 1 }, { expireAfterSeconds: 0 });
 
-// Virtual fields
-notificationSchema.virtual('isRead').get(function() {
-  return this.channels.inApp.seen || false;
+// Text search index
+notificationSchema.index({
+  title: 'text',
+  message: 'text',
+  shortMessage: 'text'
 });
 
-notificationSchema.virtual('isSent').get(function() {
-  return ['sent', 'delivered'].includes(this.status);
-});
-
-notificationSchema.virtual('isDelivered').get(function() {
-  return this.status === 'delivered';
+// ==================== Virtual Fields ====================
+notificationSchema.virtual('isExpired').get(function() {
+  return this.expiration.expiresAt && this.expiration.expiresAt < new Date();
 });
 
 notificationSchema.virtual('isPending').get(function() {
-  return this.status === 'pending' || this.status === 'processing';
+  return this.status.state === 'pending' || this.status.state === 'scheduled';
 });
 
-notificationSchema.virtual('channelsSent').get(function() {
-  const channels = [];
-  if (this.channels.email.sent) channels.push('email');
-  if (this.channels.sms.sent) channels.push('sms');
-  if (this.channels.push.sent) channels.push('push');
-  if (this.channels.webhook.sent) channels.push('webhook');
-  return channels;
+notificationSchema.virtual('isDelivered').get(function() {
+  return this.status.state === 'delivered' || this.status.state === 'sent';
 });
 
-notificationSchema.virtual('successRate').get(function() {
-  const total = this.stats.sendAttempts || 0;
-  const successful = this.stats.successfulChannels || 0;
-  return total > 0 ? (successful / total) * 100 : 0;
+notificationSchema.virtual('requiresRetry').get(function() {
+  return this.status.state === 'failed' && 
+         this.status.retries.count < this.status.retries.maxRetries;
 });
 
-// Pre-save middleware
+notificationSchema.virtual('formattedMessage').get(function() {
+  if (this.content.html) return this.content.html;
+  if (this.content.markdown) return textFormatter.markdownToHtml(this.content.markdown);
+  return textFormatter.plainToHtml(this.message);
+});
+
+// ==================== Pre-save Middleware ====================
 notificationSchema.pre('save', async function(next) {
   try {
-    // Generate notification ID if not provided
-    if (!this.notificationId && this.isNew) {
-      this.notificationId = await this.constructor.generateNotificationId();
+    // Generate short message if not provided
+    if (!this.shortMessage && this.message) {
+      this.shortMessage = textFormatter.truncate(this.message, 160);
     }
 
-    // Generate excerpt if not provided
-    if (!this.excerpt && this.message) {
-      this.excerpt = stringHelper.truncate(this.message, 160);
+    // Set expiration date based on retention policy
+    if (!this.expiration.expiresAt && this.security.retentionPolicy.retentionDays) {
+      this.expiration.expiresAt = new Date(
+        Date.now() + this.security.retentionPolicy.retentionDays * 24 * 60 * 60 * 1000
+      );
     }
 
-    // Update timestamps
-    this.updatedAt = new Date();
-
-    // Set expiration if not set
-    if (!this.expiresAt && this.isNew) {
-      const expirationDays = this.type === 'system' ? 7 : 30;
-      this.expiresAt = new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000);
+    // Encrypt sensitive fields if required
+    if (this.security.sensitiveData && !this.security.encrypted) {
+      await this.encryptSensitiveData();
     }
 
-    // Track event
-    if (this.isNew) {
-      this.events.push({
-        type: 'created',
-        timestamp: new Date()
-      });
+    // Validate delivery methods
+    if (this.delivery.methods.length === 0) {
+      this.delivery.methods = ['in-app'];
+    }
+
+    // Set scheduling
+    if (this.delivery.scheduling.scheduledFor && this.delivery.scheduling.scheduledFor > new Date()) {
+      this.status.state = 'scheduled';
     }
 
     next();
@@ -455,611 +550,414 @@ notificationSchema.pre('save', async function(next) {
   }
 });
 
-// Instance methods
-notificationSchema.methods.send = async function(options = {}) {
-  if (this.status !== 'pending') {
-    throw new AppError('Notification already processed', 400, 'INVALID_STATUS');
-  }
-
-  this.status = 'processing';
-  this.delivery.attempts++;
-  this.delivery.lastAttemptAt = new Date();
-
+// ==================== Post-save Middleware ====================
+notificationSchema.post('save', async function(doc) {
   try {
-    const results = await this.#sendToChannels(options);
-    
-    // Update status based on results
-    const hasSuccess = Object.values(results).some(r => r.success);
-    const allFailed = Object.values(results).every(r => !r.success);
-
-    if (allFailed) {
-      this.status = 'failed';
-      
-      // Schedule retry if attempts remain
-      if (this.delivery.attempts < this.delivery.maxAttempts) {
-        const retryDelay = Math.pow(2, this.delivery.attempts) * 60000; // Exponential backoff
-        this.delivery.nextRetryAt = new Date(Date.now() + retryDelay);
-        this.status = 'pending';
-      }
-    } else {
-      this.status = hasSuccess ? 'sent' : 'failed';
+    // Process immediate notifications
+    if (doc.status.state === 'pending' && !doc.delivery.scheduling.scheduledFor) {
+      await notificationService.processNotification(doc);
     }
-
-    // Update stats
-    for (const [channel, result] of Object.entries(results)) {
-      if (result.success) {
-        this.stats.successfulChannels++;
-      } else {
-        this.stats.failedChannels++;
-      }
-    }
-
-    await this.save();
-    return results;
-
   } catch (error) {
-    this.status = 'failed';
-    await this.save();
-    throw error;
-  }
-};
-
-notificationSchema.methods.markAsRead = async function() {
-  if (!this.channels.inApp.seen) {
-    this.channels.inApp.seen = true;
-    this.channels.inApp.seenAt = new Date();
-    
-    this.events.push({
-      type: 'opened',
-      timestamp: new Date(),
-      channel: 'inApp'
+    logger.error('Error processing notification', {
+      error: error.message,
+      notificationId: doc._id
     });
+  }
+});
 
-    this.stats.interactions++;
-    if (!this.stats.firstInteractionAt) {
-      this.stats.firstInteractionAt = new Date();
+// ==================== Instance Methods ====================
+notificationSchema.methods.encryptSensitiveData = async function() {
+  const fieldsToEncrypt = ['message', 'content.html', 'content.plainText'];
+  
+  for (const field of fieldsToEncrypt) {
+    const value = this.get(field);
+    if (value) {
+      const encrypted = await encryptionService.encrypt(value);
+      this.set(field, encrypted);
     }
-    this.stats.lastInteractionAt = new Date();
+  }
+  
+  this.security.encrypted = true;
+  this.security.encryptedFields = fieldsToEncrypt;
+  
+  return this;
+};
 
-    await this.save();
+notificationSchema.methods.decryptSensitiveData = async function() {
+  if (!this.security.encrypted) return this;
+  
+  for (const field of this.security.encryptedFields) {
+    const encryptedValue = this.get(field);
+    if (encryptedValue) {
+      const decrypted = await encryptionService.decrypt(encryptedValue);
+      this.set(field, decrypted);
+    }
   }
   
   return this;
 };
 
-notificationSchema.methods.markAsClicked = async function(actionIndex) {
-  this.channels.inApp.clicked = true;
-  this.channels.inApp.clickedAt = new Date();
-
-  if (actionIndex !== undefined && this.actions[actionIndex]) {
-    this.actions[actionIndex].clicked = true;
-    this.actions[actionIndex].clickedAt = new Date();
-  }
-
-  this.events.push({
-    type: 'clicked',
-    timestamp: new Date(),
-    channel: 'inApp',
-    details: { actionIndex }
+notificationSchema.methods.markAsRead = async function(userId) {
+  this.status.isRead = true;
+  this.status.readAt = new Date();
+  this.status.readBy = userId || this.recipientId;
+  
+  await this.save();
+  
+  logger.info('Notification marked as read', {
+    notificationId: this._id,
+    userId
   });
-
-  this.stats.interactions++;
-  this.stats.lastInteractionAt = new Date();
-
-  await this.save();
+  
   return this;
 };
 
-notificationSchema.methods.dismiss = async function() {
-  this.channels.inApp.dismissed = true;
-  this.channels.inApp.dismissedAt = new Date();
+notificationSchema.methods.markAsDelivered = async function(method, deliveredAt = new Date()) {
+  this.status.state = 'delivered';
+  this.status.deliveredAt = deliveredAt;
+  
+  if (!this.status.deliveryStatus) {
+    this.status.deliveryStatus = new Map();
+  }
+  
+  this.status.deliveryStatus.set(method, {
+    status: 'delivered',
+    deliveredAt,
+    attempts: (this.status.deliveryStatus.get(method)?.attempts || 0) + 1
+  });
   
   await this.save();
+  
   return this;
 };
 
-notificationSchema.methods.cancel = async function() {
-  if (!['pending', 'processing'].includes(this.status)) {
-    throw new AppError('Cannot cancel sent notification', 400, 'INVALID_STATUS');
+notificationSchema.methods.markAsFailed = async function(method, error) {
+  const currentMethodStatus = this.status.deliveryStatus?.get(method) || {};
+  const attempts = (currentMethodStatus.attempts || 0) + 1;
+  
+  if (!this.status.deliveryStatus) {
+    this.status.deliveryStatus = new Map();
   }
+  
+  this.status.deliveryStatus.set(method, {
+    status: 'failed',
+    failedAt: new Date(),
+    error: error.message || error,
+    attempts
+  });
+  
+  this.status.retries.count = attempts;
+  this.status.retries.lastAttempt = new Date();
+  
+  // Check if all methods have failed
+  const allFailed = this.delivery.methods.every(m => 
+    this.status.deliveryStatus.get(m)?.status === 'failed'
+  );
+  
+  if (allFailed) {
+    this.status.state = 'failed';
+    this.status.failedAt = new Date();
+  }
+  
+  // Schedule retry if applicable
+  if (this.requiresRetry) {
+    const retryDelay = Math.pow(2, this.status.retries.count) * 60 * 1000; // Exponential backoff
+    this.status.retries.nextRetry = new Date(Date.now() + retryDelay);
+  }
+  
+  await this.save();
+  
+  logger.error('Notification delivery failed', {
+    notificationId: this._id,
+    method,
+    error: error.message,
+    attempts
+  });
+  
+  return this;
+};
 
-  this.status = 'cancelled';
+notificationSchema.methods.dismiss = async function(userId) {
+  this.interaction.dismissed = true;
+  this.interaction.dismissedAt = new Date();
+  this.interaction.dismissedBy = userId;
+  
+  await this.save();
+  
+  return this;
+};
+
+notificationSchema.methods.snooze = async function(until, userId) {
+  this.interaction.snoozed = true;
+  this.interaction.snoozedUntil = until;
+  this.interaction.snoozedBy = userId;
+  
   await this.save();
   
   return this;
 };
 
 notificationSchema.methods.archive = async function() {
-  this.archived = true;
-  this.archivedAt = new Date();
-  await this.save();
-  return this;
-};
-
-notificationSchema.methods.updateDeliveryStatus = async function(channel, status, details = {}) {
-  const channelConfig = this.channels[channel];
+  this.interaction.archived = true;
+  this.interaction.archivedAt = new Date();
   
-  if (!channelConfig) {
-    throw new AppError(`Invalid channel: ${channel}`, 400, 'INVALID_CHANNEL');
-  }
-
-  if (status === 'delivered') {
-    channelConfig.delivered = true;
-    channelConfig.deliveredAt = new Date();
-    
-    if (this.status === 'sent') {
-      this.status = 'delivered';
-    }
-  } else if (status === 'bounced') {
-    channelConfig.bounced = true;
-    channelConfig.bouncedAt = new Date();
-    channelConfig.error = details.error;
-  } else if (status === 'opened' && channel === 'email') {
-    channelConfig.opened = true;
-    channelConfig.openedAt = new Date();
-  } else if (status === 'clicked' && channel === 'email') {
-    channelConfig.clicked = true;
-    channelConfig.clickedAt = new Date();
-  }
-
-  this.events.push({
-    type: status,
-    timestamp: new Date(),
-    channel,
-    details
-  });
-
   await this.save();
+  
   return this;
 };
 
-// Private instance methods
-notificationSchema.methods.#sendToChannels = async function(options) {
-  const results = {};
-
-  // Send to enabled channels
-  if (this.channels.email.enabled && this.recipient.preferences?.email !== false) {
-    results.email = await this.#sendEmail();
-  }
-
-  if (this.channels.sms.enabled && this.recipient.preferences?.sms !== false) {
-    results.sms = await this.#sendSMS();
-  }
-
-  if (this.channels.push.enabled && this.recipient.preferences?.push !== false) {
-    results.push = await this.#sendPush();
-  }
-
-  if (this.channels.webhook.enabled) {
-    results.webhook = await this.#sendWebhook();
-  }
-
-  // InApp is always created
-  this.channels.inApp.enabled = true;
-
-  return results;
+notificationSchema.methods.trackAction = async function(actionId) {
+  this.interaction.clicked = true;
+  this.interaction.clickedAt = new Date();
+  this.interaction.clickedAction = actionId;
+  
+  await this.save();
+  
+  // Track analytics
+  logger.info('Notification action tracked', {
+    notificationId: this._id,
+    actionId
+  });
+  
+  return this;
 };
 
-notificationSchema.methods.#sendEmail = async function() {
+notificationSchema.methods.sendViaEmail = async function() {
+  if (!this.delivery.methods.includes('email')) {
+    throw new AppError('Email delivery not configured', 400, 'EMAIL_NOT_CONFIGURED');
+  }
+  
+  const emailData = {
+    to: this.delivery.email.to || [this.recipientEmail],
+    subject: this.delivery.email.subject || this.title,
+    html: this.formattedMessage,
+    text: this.message,
+    templateId: this.delivery.email.templateId,
+    templateData: this.content.templateData
+  };
+  
   try {
-    // In production, integrate with email service
-    logger.info('Sending email notification', {
-      notificationId: this.notificationId,
-      to: this.recipient.email
-    });
-
-    this.channels.email.sent = true;
-    this.channels.email.sentAt = new Date();
-    this.channels.email.messageId = `msg_${Date.now()}`;
-
-    this.events.push({
-      type: 'sent',
-      timestamp: new Date(),
-      channel: 'email'
-    });
-
-    return { success: true };
+    await emailService.sendEmail(emailData);
+    await this.markAsDelivered('email');
   } catch (error) {
-    this.channels.email.error = error.message;
-    return { success: false, error: error.message };
+    await this.markAsFailed('email', error);
+    throw error;
   }
 };
 
-notificationSchema.methods.#sendSMS = async function() {
-  try {
-    // In production, integrate with SMS service
-    logger.info('Sending SMS notification', {
-      notificationId: this.notificationId,
-      to: this.channels.sms.phoneNumber
-    });
-
-    this.channels.sms.sent = true;
-    this.channels.sms.sentAt = new Date();
-    this.channels.sms.messageId = `sms_${Date.now()}`;
-
-    this.events.push({
-      type: 'sent',
-      timestamp: new Date(),
-      channel: 'sms'
-    });
-
-    return { success: true };
-  } catch (error) {
-    this.channels.sms.error = error.message;
-    return { success: false, error: error.message };
-  }
-};
-
-notificationSchema.methods.#sendPush = async function() {
-  try {
-    // In production, integrate with push notification service
-    logger.info('Sending push notification', {
-      notificationId: this.notificationId,
-      tokens: this.channels.push.tokens?.length
-    });
-
-    this.channels.push.sent = true;
-    this.channels.push.sentAt = new Date();
-
-    this.events.push({
-      type: 'sent',
-      timestamp: new Date(),
-      channel: 'push'
-    });
-
-    return { success: true };
-  } catch (error) {
-    this.channels.push.error = error.message;
-    return { success: false, error: error.message };
-  }
-};
-
-notificationSchema.methods.#sendWebhook = async function() {
-  try {
-    // In production, make actual HTTP request
-    logger.info('Sending webhook notification', {
-      notificationId: this.notificationId,
-      url: this.channels.webhook.url
-    });
-
-    this.channels.webhook.sent = true;
-    this.channels.webhook.sentAt = new Date();
-    this.channels.webhook.response = {
-      status: 200,
-      body: 'OK'
-    };
-
-    this.events.push({
-      type: 'sent',
-      timestamp: new Date(),
-      channel: 'webhook'
-    });
-
-    return { success: true };
-  } catch (error) {
-    this.channels.webhook.error = error.message;
-    return { success: false, error: error.message };
-  }
-};
-
-// Static methods
-notificationSchema.statics.generateNotificationId = function() {
-  return `notif_${Date.now()}_${stringHelper.generateRandomString(8)}`;
-};
-
+// ==================== Static Methods ====================
 notificationSchema.statics.createNotification = async function(data) {
   const notification = new this(data);
-  
-  // Auto-enable channels based on type and priority
-  if (data.priority === 'critical' || data.priority === 'urgent') {
-    notification.channels.email.enabled = true;
-    notification.channels.push.enabled = true;
-  }
-
   await notification.save();
   
-  // Send immediately if not scheduled
-  if (!notification.delivery.scheduled) {
-    await notification.send();
-  }
-
+  logger.info('Notification created', {
+    notificationId: notification._id,
+    type: notification.type,
+    recipientId: notification.recipientId
+  });
+  
   return notification;
 };
 
-notificationSchema.statics.sendBulk = async function(recipients, notificationData) {
-  const notifications = [];
-  const errors = [];
-
-  for (const recipient of recipients) {
-    try {
-      const notification = await this.createNotification({
-        ...notificationData,
-        recipient: {
-          userId: recipient.userId || recipient._id,
-          email: recipient.email,
-          name: recipient.name || `${recipient.profile?.firstName} ${recipient.profile?.lastName}`,
-          preferences: recipient.preferences?.notifications
-        }
-      });
-
-      notifications.push(notification);
-    } catch (error) {
-      errors.push({
-        recipient: recipient._id || recipient.userId,
-        error: error.message
-      });
-    }
-  }
-
+notificationSchema.statics.createBulkNotifications = async function(recipients, notificationData) {
+  const notifications = recipients.map(recipient => ({
+    ...notificationData,
+    recipientId: recipient._id || recipient,
+    recipientEmail: recipient.email,
+    recipientName: recipient.name
+  }));
+  
+  const created = await this.insertMany(notifications);
+  
   logger.info('Bulk notifications created', {
-    total: recipients.length,
-    successful: notifications.length,
-    failed: errors.length
+    count: created.length,
+    type: notificationData.type
   });
-
-  return { notifications, errors };
+  
+  return created;
 };
 
-notificationSchema.statics.getUnreadCount = async function(userId) {
-  return await this.countDocuments({
-    'recipient.userId': userId,
-    'channels.inApp.seen': false,
-    status: { $in: ['sent', 'delivered'] },
-    archived: false,
-    expiresAt: { $gt: new Date() }
-  });
-};
-
-notificationSchema.statics.getByUser = async function(userId, options = {}) {
+notificationSchema.statics.getUserNotifications = async function(userId, options = {}) {
   const {
     unreadOnly = false,
-    type,
-    category,
+    types = [],
+    categories = [],
     limit = 50,
     skip = 0,
-    sort = { createdAt: -1 }
+    includeArchived = false,
+    includeSnoozed = false
   } = options;
-
+  
   const query = {
-    'recipient.userId': userId,
-    archived: false,
-    expiresAt: { $gt: new Date() }
+    recipientId: userId,
+    'status.state': { $in: ['sent', 'delivered'] }
   };
-
+  
   if (unreadOnly) {
-    query['channels.inApp.seen'] = false;
+    query['status.isRead'] = false;
   }
-
-  if (type) {
-    query.type = type;
+  
+  if (types.length > 0) {
+    query.type = { $in: types };
   }
-
-  if (category) {
-    query.category = category;
+  
+  if (categories.length > 0) {
+    query.category = { $in: categories };
   }
-
-  return await this.find(query)
-    .sort(sort)
+  
+  if (!includeArchived) {
+    query['interaction.archived'] = false;
+  }
+  
+  if (!includeSnoozed) {
+    query.$or = [
+      { 'interaction.snoozed': false },
+      { 'interaction.snoozedUntil': { $lte: new Date() } }
+    ];
+  }
+  
+  const notifications = await this.find(query)
+    .sort({ priority: -1, createdAt: -1 })
     .limit(limit)
-    .skip(skip);
+    .skip(skip)
+    .populate('source.triggeredBy', 'name email');
+  
+  const unreadCount = await this.countDocuments({
+    recipientId: userId,
+    'status.isRead': false,
+    'interaction.archived': false
+  });
+  
+  return {
+    notifications,
+    unreadCount,
+    hasMore: notifications.length === limit
+  };
 };
 
 notificationSchema.statics.markAllAsRead = async function(userId, filters = {}) {
   const query = {
-    'recipient.userId': userId,
-    'channels.inApp.seen': false,
-    archived: false
+    recipientId: userId,
+    'status.isRead': false
   };
-
-  if (filters.type) {
-    query.type = filters.type;
-  }
-
-  if (filters.category) {
-    query.category = filters.category;
-  }
-
+  
+  if (filters.type) query.type = filters.type;
+  if (filters.category) query.category = filters.category;
+  
   const result = await this.updateMany(query, {
-    'channels.inApp.seen': true,
-    'channels.inApp.seenAt': new Date(),
-    $push: {
-      events: {
-        type: 'opened',
-        timestamp: new Date(),
-        channel: 'inApp',
-        details: { bulk: true }
-      }
+    $set: {
+      'status.isRead': true,
+      'status.readAt': new Date()
     }
   });
-
-  return result;
+  
+  logger.info('Notifications marked as read', {
+    userId,
+    count: result.modifiedCount
+  });
+  
+  return result.modifiedCount;
 };
 
-notificationSchema.statics.processScheduled = async function() {
+notificationSchema.statics.getGroupedNotifications = async function(groupId) {
+  return await this.find({
+    'grouping.groupId': groupId
+  }).sort({ createdAt: -1 });
+};
+
+notificationSchema.statics.getPendingScheduledNotifications = async function() {
   const now = new Date();
   
-  const scheduled = await this.find({
-    status: 'pending',
-    'delivery.scheduled': true,
-    'delivery.scheduledFor': { $lte: now },
-    'delivery.sendAfter': { $lte: now }
-  }).limit(100);
-
-  const results = {
-    processed: 0,
-    successful: 0,
-    failed: 0
-  };
-
-  for (const notification of scheduled) {
-    try {
-      await notification.send();
-      results.successful++;
-    } catch (error) {
-      results.failed++;
-      logger.error('Failed to send scheduled notification', {
-        notificationId: notification.notificationId,
-        error: error.message
-      });
-    }
-    results.processed++;
-  }
-
-  return results;
+  return await this.find({
+    'status.state': 'scheduled',
+    'delivery.scheduling.scheduledFor': { $lte: now }
+  });
 };
 
-notificationSchema.statics.retryFailed = async function() {
-  const failed = await this.find({
-    status: 'pending',
-    'delivery.nextRetryAt': { $lte: new Date() },
-    'delivery.attempts': { $lt: 3 }
-  }).limit(50);
-
-  const results = {
-    retried: 0,
-    successful: 0,
-    failed: 0
-  };
-
-  for (const notification of failed) {
-    try {
-      await notification.send();
-      results.successful++;
-    } catch (error) {
-      results.failed++;
-    }
-    results.retried++;
-  }
-
-  return results;
+notificationSchema.statics.getRetryableNotifications = async function() {
+  return await this.find({
+    'status.state': 'failed',
+    'status.retries.count': { $lt: 3 },
+    $or: [
+      { 'status.retries.nextRetry': { $lte: new Date() } },
+      { 'status.retries.nextRetry': { $exists: false } }
+    ]
+  });
 };
 
-notificationSchema.statics.cleanup = async function(options = {}) {
-  const {
-    archiveAfterDays = 30,
-    deleteAfterDays = 90
-  } = options;
-
-  const now = new Date();
-  const archiveDate = new Date(now - archiveAfterDays * 24 * 60 * 60 * 1000);
-  const deleteDate = new Date(now - deleteAfterDays * 24 * 60 * 60 * 1000);
-
-  // Archive old read notifications
-  const archiveResult = await this.updateMany({
-    createdAt: { $lt: archiveDate },
-    'channels.inApp.seen': true,
-    archived: false
-  }, {
-    archived: true,
-    archivedAt: now
-  });
-
-  // Delete very old notifications
-  const deleteResult = await this.deleteMany({
-    createdAt: { $lt: deleteDate }
-  });
-
-  // Delete expired notifications
-  const expiredResult = await this.deleteMany({
-    expiresAt: { $lt: now }
-  });
-
-  logger.info('Notification cleanup completed', {
-    archived: archiveResult.modifiedCount,
-    deleted: deleteResult.deletedCount + expiredResult.deletedCount
-  });
-
-  return {
-    archived: archiveResult.modifiedCount,
-    deleted: deleteResult.deletedCount + expiredResult.deletedCount
-  };
-};
-
-notificationSchema.statics.getStatistics = async function(filters = {}) {
+notificationSchema.statics.getNotificationStatistics = async function(filters = {}) {
   const match = {};
   
+  if (filters.tenantId) match.tenantId = filters.tenantId;
+  if (filters.organizationId) match.organizationId = filters.organizationId;
   if (filters.startDate || filters.endDate) {
     match.createdAt = {};
     if (filters.startDate) match.createdAt.$gte = filters.startDate;
     if (filters.endDate) match.createdAt.$lte = filters.endDate;
   }
-
-  if (filters.organizationId) {
-    match.organizationId = filters.organizationId;
-  }
-
+  
   const stats = await this.aggregate([
     { $match: match },
     {
-      $group: {
-        _id: null,
-        total: { $sum: 1 },
-        sent: {
-          $sum: { $cond: [{ $eq: ['$status', 'sent'] }, 1, 0] }
-        },
-        delivered: {
-          $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] }
-        },
-        failed: {
-          $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
-        },
-        read: {
-          $sum: { $cond: ['$channels.inApp.seen', 1, 0] }
-        },
-        clicked: {
-          $sum: { $cond: ['$channels.inApp.clicked', 1, 0] }
-        },
-        avgResponseTime: {
-          $avg: {
-            $subtract: ['$channels.inApp.seenAt', '$createdAt']
+      $facet: {
+        byType: [
+          { $group: { _id: '$type', count: { $sum: 1 } } }
+        ],
+        byStatus: [
+          { $group: { _id: '$status.state', count: { $sum: 1 } } }
+        ],
+        byPriority: [
+          { $group: { _id: '$priority', count: { $sum: 1 } } }
+        ],
+        deliveryMethods: [
+          { $unwind: '$delivery.methods' },
+          { $group: { _id: '$delivery.methods', count: { $sum: 1 } } }
+        ],
+        engagement: [
+          {
+            $group: {
+              _id: null,
+              totalSent: { $sum: 1 },
+              totalRead: { $sum: { $cond: ['$status.isRead', 1, 0] } },
+              totalClicked: { $sum: { $cond: ['$interaction.clicked', 1, 0] } },
+              totalDismissed: { $sum: { $cond: ['$interaction.dismissed', 1, 0] } }
+            }
           }
-        },
-        byType: { $push: '$type' },
-        byCategory: { $push: '$category' },
-        byChannel: {
-          $push: {
-            email: '$channels.email.sent',
-            sms: '$channels.sms.sent',
-            push: '$channels.push.sent'
-          }
-        }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        total: 1,
-        sent: 1,
-        delivered: 1,
-        failed: 1,
-        read: 1,
-        clicked: 1,
-        deliveryRate: {
-          $multiply: [{ $divide: ['$delivered', '$sent'] }, 100]
-        },
-        readRate: {
-          $multiply: [{ $divide: ['$read', '$delivered'] }, 100]
-        },
-        clickRate: {
-          $multiply: [{ $divide: ['$clicked', '$read'] }, 100]
-        },
-        avgResponseTime: { $divide: ['$avgResponseTime', 1000] } // Convert to seconds
+        ]
       }
     }
   ]);
-
-  return stats[0] || {
-    total: 0,
-    sent: 0,
-    delivered: 0,
-    failed: 0,
-    read: 0,
-    clicked: 0,
-    deliveryRate: 0,
-    readRate: 0,
-    clickRate: 0,
-    avgResponseTime: 0
+  
+  const result = stats[0];
+  const engagement = result.engagement[0] || {};
+  
+  return {
+    distribution: {
+      byType: result.byType,
+      byStatus: result.byStatus,
+      byPriority: result.byPriority,
+      byDeliveryMethod: result.deliveryMethods
+    },
+    engagement: {
+      ...engagement,
+      readRate: engagement.totalSent ? (engagement.totalRead / engagement.totalSent) : 0,
+      clickRate: engagement.totalSent ? (engagement.totalClicked / engagement.totalSent) : 0
+    }
   };
+};
+
+notificationSchema.statics.cleanupExpiredNotifications = async function() {
+  const result = await this.deleteMany({
+    'expiration.expired': true,
+    'expiration.autoDelete': true,
+    'expiration.expiresAt': { $lte: new Date() }
+  });
+  
+  logger.info('Expired notifications cleaned up', {
+    deletedCount: result.deletedCount
+  });
+  
+  return result.deletedCount;
 };
 
 // Create and export model

@@ -1,83 +1,128 @@
 'use strict';
 
 /**
- * @fileoverview Webhook model for event-driven integrations
- * @module shared/lib/database/models/webhook-model
+ * @fileoverview Webhook model for third-party integrations and event delivery
+ * @module shared/lib/database/models/platform/webhook-model
  * @requires mongoose
  * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/services/webhook-service
+ * @requires module:shared/lib/security/encryption/hash-service
  * @requires module:shared/lib/utils/helpers/string-helper
- * @requires module:shared/lib/security/encryption/crypto-utils
+ * @requires module:shared/lib/utils/validators/common-validators
+ * @requires module:shared/lib/security/audit/audit-service
+ * @requires module:shared/lib/utils/helpers/crypto-helper
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('./base-model');
-const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
-const stringHelper = require('../../utils/helpers/string-helper');
-const cryptoUtils = require('../../security/encryption/crypto-utils');
+const BaseModel = require('../base-model');
+const logger = require('../../../utils/logger');
+const AppError = require('../../../utils/app-error');
+const webhookService = require('../../../services/webhook-service');
+const hashService = require('../../../security/encryption/hash-service');
+const stringHelper = require('../../../utils/helpers/string-helper');
+const validators = require('../../../utils/validators/common-validators');
+const auditService = require('../../../security/audit/audit-service');
+const cryptoHelper = require('../../../utils/helpers/crypto-helper');
 
 /**
- * Webhook schema definition
+ * Webhook schema definition for managing event subscriptions and deliveries
  */
 const webhookSchemaDefinition = {
-  // Webhook Identification
-  webhookId: {
-    type: String,
+  // ==================== Multi-tenancy ====================
+  tenantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tenant',
     required: true,
-    unique: true,
     index: true
   },
 
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    required: true,
+    index: true
+  },
+
+  // ==================== Webhook Configuration ====================
   name: {
     type: String,
     required: true,
     trim: true,
-    maxlength: 100
+    maxlength: 200
   },
 
   description: {
     type: String,
-    maxlength: 500
+    maxlength: 1000
   },
 
-  // Endpoint Configuration
-  url: {
+  targetUrl: {
     type: String,
     required: true,
+    trim: true,
     validate: {
-      validator: function(v) {
-        return /^https?:\/\/.+/.test(v);
-      },
+      validator: validators.isURL,
       message: 'Invalid webhook URL'
     }
   },
 
-  method: {
-    type: String,
-    enum: ['POST', 'PUT', 'PATCH'],
-    default: 'POST'
-  },
-
-  headers: {
-    type: Map,
-    of: String,
-    default: new Map()
-  },
-
-  // Authentication
-  auth: {
-    type: {
+  // ==================== Events & Subscriptions ====================
+  events: {
+    subscribed: [{
       type: String,
-      enum: ['none', 'basic', 'bearer', 'apikey', 'hmac', 'oauth2'],
-      default: 'none'
+      required: true,
+      enum: [
+        // User events
+        'user.created', 'user.updated', 'user.deleted', 'user.login', 'user.logout',
+        'user.password_changed', 'user.mfa_enabled', 'user.mfa_disabled',
+        
+        // Organization events
+        'organization.created', 'organization.updated', 'organization.deleted',
+        'organization.member_added', 'organization.member_removed', 'organization.settings_changed',
+        
+        // Billing events
+        'subscription.created', 'subscription.updated', 'subscription.cancelled',
+        'subscription.renewed', 'subscription.trial_ended', 'payment.succeeded',
+        'payment.failed', 'invoice.created', 'invoice.paid',
+        
+        // Project/Resource events
+        'project.created', 'project.updated', 'project.deleted', 'project.member_added',
+        'resource.created', 'resource.updated', 'resource.deleted',
+        
+        // Security events
+        'security.breach_detected', 'security.suspicious_activity', 'security.access_denied',
+        'security.permission_changed', 'security.audit_exported',
+        
+        // System events
+        'system.maintenance_scheduled', 'system.status_changed', 'system.error',
+        'api.rate_limit_exceeded', 'storage.limit_reached'
+      ]
+    }],
+    
+    eventFilters: {
+      includePatterns: [String],
+      excludePatterns: [String],
+      conditions: mongoose.Schema.Types.Mixed
     },
+    
+    eventCategories: [{
+      type: String,
+      enum: ['user', 'organization', 'billing', 'project', 'security', 'system']
+    }]
+  },
+
+  // ==================== Authentication & Security ====================
+  authentication: {
+    method: {
+      type: String,
+      enum: ['none', 'basic', 'bearer', 'hmac', 'oauth2', 'custom'],
+      default: 'hmac'
+    },
+    
     credentials: {
-      username: {
-        type: String,
-        select: false
-      },
+      username: String,
       password: {
         type: String,
         select: false
@@ -86,392 +131,562 @@ const webhookSchemaDefinition = {
         type: String,
         select: false
       },
-      apiKey: {
+      clientId: String,
+      clientSecret: {
         type: String,
         select: false
-      },
-      apiKeyHeader: String,
-      secret: {
-        type: String,
-        select: false
-      },
+      }
+    },
+    
+    hmac: {
       algorithm: {
         type: String,
         enum: ['sha256', 'sha512'],
         default: 'sha256'
       },
-      oauth: {
-        clientId: {
-          type: String,
-          select: false
-        },
-        clientSecret: {
-          type: String,
-          select: false
-        },
-        tokenUrl: String,
-        scope: String
+      secret: {
+        type: String,
+        select: false,
+        required: function() {
+          return this.authentication.method === 'hmac';
+        }
+      },
+      headerName: {
+        type: String,
+        default: 'X-Webhook-Signature'
+      }
+    },
+    
+    oauth2: {
+      tokenUrl: String,
+      scope: String,
+      grantType: {
+        type: String,
+        default: 'client_credentials'
+      }
+    },
+    
+    customHeaders: {
+      type: Map,
+      of: String
+    }
+  },
+
+  // ==================== Request Configuration ====================
+  requestConfig: {
+    method: {
+      type: String,
+      enum: ['POST', 'PUT', 'PATCH'],
+      default: 'POST'
+    },
+    
+    headers: {
+      type: Map,
+      of: String,
+      default: () => new Map([
+        ['Content-Type', 'application/json'],
+        ['User-Agent', 'InsightSerenity-Webhook/1.0']
+      ])
+    },
+    
+    timeout: {
+      type: Number,
+      default: 30000, // 30 seconds
+      min: 1000,
+      max: 300000
+    },
+    
+    maxPayloadSize: {
+      type: Number,
+      default: 1048576, // 1MB
+      min: 1024,
+      max: 10485760 // 10MB
+    },
+    
+    compression: {
+      enabled: {
+        type: Boolean,
+        default: true
+      },
+      algorithm: {
+        type: String,
+        enum: ['gzip', 'deflate', 'br'],
+        default: 'gzip'
+      }
+    },
+    
+    tls: {
+      rejectUnauthorized: {
+        type: Boolean,
+        default: true
+      },
+      minVersion: {
+        type: String,
+        enum: ['TLSv1.2', 'TLSv1.3'],
+        default: 'TLSv1.2'
       }
     }
   },
 
-  // Events
-  events: [{
-    type: String,
-    required: true
-  }],
-
-  eventFilters: {
-    include: {
-      type: Map,
-      of: mongoose.Schema.Types.Mixed
-    },
-    exclude: {
-      type: Map,
-      of: mongoose.Schema.Types.Mixed
-    }
-  },
-
-  // Owner Information
-  organizationId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Organization',
-    required: true,
-    index: true
-  },
-
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-
-  // Status
-  status: {
-    type: String,
-    enum: ['active', 'inactive', 'suspended', 'failed'],
-    default: 'active',
-    index: true
-  },
-
-  enabled: {
-    type: Boolean,
-    default: true,
-    index: true
-  },
-
-  // Verification
-  verified: {
-    type: Boolean,
-    default: false
-  },
-
-  verificationToken: {
-    type: String,
-    select: false
-  },
-
-  verifiedAt: Date,
-
-  // Configuration
-  config: {
-    retryEnabled: {
+  // ==================== Retry Configuration ====================
+  retryConfig: {
+    enabled: {
       type: Boolean,
       default: true
     },
+    
     maxRetries: {
       type: Number,
       default: 3,
       min: 0,
       max: 10
     },
-    retryDelay: {
+    
+    initialDelay: {
       type: Number,
-      default: 1000, // milliseconds
+      default: 1000, // 1 second
       min: 100,
-      max: 300000
+      max: 60000
     },
-    timeout: {
+    
+    backoffMultiplier: {
       type: Number,
-      default: 30000, // milliseconds
-      min: 1000,
-      max: 300000
-    },
-    includeHeaders: {
-      type: Boolean,
-      default: true
-    },
-    payloadFormat: {
-      type: String,
-      enum: ['json', 'form', 'xml'],
-      default: 'json'
-    },
-    signatureHeader: {
-      type: String,
-      default: 'X-Webhook-Signature'
-    },
-    timestampHeader: {
-      type: String,
-      default: 'X-Webhook-Timestamp'
-    },
-    idHeader: {
-      type: String,
-      default: 'X-Webhook-ID'
-    },
-    batchingEnabled: {
-      type: Boolean,
-      default: false
-    },
-    batchSize: {
-      type: Number,
-      default: 10,
+      default: 2,
       min: 1,
-      max: 100
+      max: 10
     },
-    batchDelay: {
+    
+    maxDelay: {
       type: Number,
-      default: 5000 // milliseconds
+      default: 300000, // 5 minutes
+      min: 1000,
+      max: 3600000
+    },
+    
+    retryableStatusCodes: {
+      type: [Number],
+      default: [408, 429, 500, 502, 503, 504]
+    },
+    
+    jitter: {
+      enabled: {
+        type: Boolean,
+        default: true
+      },
+      factor: {
+        type: Number,
+        default: 0.1
+      }
     }
   },
 
-  // Rate Limiting
+  // ==================== Delivery Status ====================
+  status: {
+    state: {
+      type: String,
+      enum: ['active', 'inactive', 'paused', 'failed', 'suspended'],
+      default: 'active',
+      index: true
+    },
+    
+    health: {
+      status: {
+        type: String,
+        enum: ['healthy', 'degraded', 'unhealthy', 'unknown'],
+        default: 'unknown'
+      },
+      lastChecked: Date,
+      consecutiveFailures: {
+        type: Number,
+        default: 0
+      },
+      errorRate: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 1
+      }
+    },
+    
+    suspension: {
+      suspended: {
+        type: Boolean,
+        default: false
+      },
+      suspendedAt: Date,
+      suspendedUntil: Date,
+      reason: String,
+      autoResume: {
+        type: Boolean,
+        default: true
+      }
+    },
+    
+    lastDelivery: {
+      attemptedAt: Date,
+      succeededAt: Date,
+      failedAt: Date,
+      statusCode: Number,
+      responseTime: Number,
+      error: String
+    }
+  },
+
+  // ==================== Delivery History & Statistics ====================
+  statistics: {
+    totalDeliveries: {
+      type: Number,
+      default: 0
+    },
+    
+    successfulDeliveries: {
+      type: Number,
+      default: 0
+    },
+    
+    failedDeliveries: {
+      type: Number,
+      default: 0
+    },
+    
+    totalRetries: {
+      type: Number,
+      default: 0
+    },
+    
+    averageResponseTime: {
+      type: Number,
+      default: 0
+    },
+    
+    successRate: {
+      type: Number,
+      default: 1,
+      min: 0,
+      max: 1
+    },
+    
+    lastReset: {
+      type: Date,
+      default: Date.now
+    },
+    
+    hourlyStats: [{
+      hour: Date,
+      deliveries: Number,
+      successes: Number,
+      failures: Number,
+      avgResponseTime: Number
+    }],
+    
+    eventStats: {
+      type: Map,
+      of: {
+        count: Number,
+        successes: Number,
+        failures: Number
+      }
+    }
+  },
+
+  // ==================== Rate Limiting ====================
   rateLimit: {
     enabled: {
       type: Boolean,
       default: false
     },
-    requests: {
-      type: Number,
-      default: 100
+    
+    limits: {
+      perSecond: Number,
+      perMinute: Number,
+      perHour: Number,
+      perDay: Number
     },
-    window: {
-      type: Number,
-      default: 60000 // 1 minute in milliseconds
-    },
-    current: {
-      count: {
-        type: Number,
-        default: 0
+    
+    currentUsage: {
+      second: {
+        count: { type: Number, default: 0 },
+        resetAt: Date
       },
-      resetAt: Date
+      minute: {
+        count: { type: Number, default: 0 },
+        resetAt: Date
+      },
+      hour: {
+        count: { type: Number, default: 0 },
+        resetAt: Date
+      },
+      day: {
+        count: { type: Number, default: 0 },
+        resetAt: Date
+      }
+    },
+    
+    exceeded: {
+      type: Boolean,
+      default: false
     }
   },
 
-  // Delivery Statistics
-  stats: {
-    totalDeliveries: {
-      type: Number,
-      default: 0
+  // ==================== Payload Transformation ====================
+  transformation: {
+    enabled: {
+      type: Boolean,
+      default: false
     },
-    successfulDeliveries: {
-      type: Number,
-      default: 0
+    
+    template: {
+      type: mongoose.Schema.Types.Mixed,
+      validate: {
+        validator: function(value) {
+          if (!this.transformation.enabled) return true;
+          return value && typeof value === 'object';
+        },
+        message: 'Transformation template is required when transformation is enabled'
+      }
     },
-    failedDeliveries: {
-      type: Number,
-      default: 0
+    
+    jmesPath: String,
+    
+    includeFields: [String],
+    excludeFields: [String],
+    
+    customScript: {
+      enabled: Boolean,
+      script: String,
+      sandbox: {
+        type: Boolean,
+        default: true
+      }
     },
-    lastDeliveryAt: Date,
-    lastSuccessAt: Date,
-    lastFailureAt: Date,
-    averageResponseTime: {
-      type: Number,
-      default: 0
-    },
-    consecutiveFailures: {
-      type: Number,
-      default: 0
-    },
-    totalRetries: {
-      type: Number,
-      default: 0
-    }
-  },
-
-  // Recent Deliveries
-  recentDeliveries: [{
-    deliveryId: String,
-    eventType: String,
-    timestamp: Date,
-    status: {
+    
+    format: {
       type: String,
-      enum: ['pending', 'success', 'failure', 'retrying']
+      enum: ['json', 'xml', 'form', 'custom'],
+      default: 'json'
+    }
+  },
+
+  // ==================== Validation & Testing ====================
+  validation: {
+    enabled: {
+      type: Boolean,
+      default: true
     },
+    
+    validateSSL: {
+      type: Boolean,
+      default: true
+    },
+    
+    validatePayload: {
+      type: Boolean,
+      default: true
+    },
+    
+    schema: mongoose.Schema.Types.Mixed,
+    
+    testEndpoint: {
+      enabled: Boolean,
+      url: String,
+      lastTested: Date,
+      testResult: {
+        success: Boolean,
+        statusCode: Number,
+        responseTime: Number,
+        error: String
+      }
+    }
+  },
+
+  // ==================== Circuit Breaker ====================
+  circuitBreaker: {
+    enabled: {
+      type: Boolean,
+      default: true
+    },
+    
+    threshold: {
+      type: Number,
+      default: 5
+    },
+    
+    timeout: {
+      type: Number,
+      default: 60000 // 1 minute
+    },
+    
+    state: {
+      type: String,
+      enum: ['closed', 'open', 'half-open'],
+      default: 'closed'
+    },
+    
+    lastStateChange: Date,
+    nextAttempt: Date,
+    failureCount: {
+      type: Number,
+      default: 0
+    }
+  },
+
+  // ==================== Metadata & Tags ====================
+  metadata: {
+    tags: [String],
+    
+    customFields: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed
+    },
+    
+    integration: {
+      platform: String,
+      version: String,
+      accountId: String
+    },
+    
+    documentation: {
+      url: String,
+      notes: String
+    },
+    
+    owner: {
+      team: String,
+      contactEmail: String
+    },
+    
+    compliance: {
+      dataClassification: {
+        type: String,
+        enum: ['public', 'internal', 'confidential', 'restricted'],
+        default: 'internal'
+      },
+      regulations: [String]
+    }
+  },
+
+  // ==================== Delivery Queue ====================
+  queue: {
+    pending: [{
+      eventId: String,
+      eventType: String,
+      payload: mongoose.Schema.Types.Mixed,
+      attemptCount: Number,
+      nextAttempt: Date,
+      addedAt: Date
+    }],
+    
+    processing: {
+      type: Boolean,
+      default: false
+    },
+    
+    lastProcessed: Date,
+    
+    maxQueueSize: {
+      type: Number,
+      default: 1000
+    }
+  },
+
+  // ==================== Audit & History ====================
+  deliveryHistory: [{
+    deliveryId: {
+      type: String,
+      default: () => stringHelper.generateRandomString(16)
+    },
+    eventId: String,
+    eventType: String,
+    deliveredAt: Date,
+    attemptNumber: Number,
+    success: Boolean,
     statusCode: Number,
     responseTime: Number,
-    attempts: Number,
+    responseHeaders: mongoose.Schema.Types.Mixed,
+    responseBody: String,
     error: String,
-    payload: {
-      type: mongoose.Schema.Types.Mixed,
-      select: false
-    },
-    response: {
-      type: mongoose.Schema.Types.Mixed,
-      select: false
-    }
+    retryCount: Number
   }],
 
-  // Error Tracking
-  errors: [{
-    timestamp: Date,
-    type: {
-      type: String,
-      enum: ['connection', 'timeout', 'auth', 'validation', 'server', 'unknown']
-    },
-    message: String,
-    statusCode: Number,
-    eventType: String,
-    resolved: {
-      type: Boolean,
-      default: false
-    }
-  }],
-
-  // Suspension
-  suspension: {
-    suspended: {
-      type: Boolean,
-      default: false
-    },
-    reason: String,
-    suspendedAt: Date,
-    autoResume: {
-      type: Boolean,
-      default: true
-    },
-    resumeAt: Date,
-    suspensionCount: {
-      type: Number,
-      default: 0
-    }
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
 
-  // Security
-  security: {
-    ipWhitelist: [String],
-    allowedOrigins: [String],
-    requireHttps: {
-      type: Boolean,
-      default: true
-    },
-    validateSsl: {
-      type: Boolean,
-      default: true
-    }
-  },
-
-  // Transform Rules
-  transformRules: [{
-    field: String,
-    operation: {
-      type: String,
-      enum: ['remove', 'rename', 'mask', 'encrypt', 'hash', 'custom']
-    },
-    target: String,
-    value: mongoose.Schema.Types.Mixed
-  }],
-
-  // Metadata
-  metadata: {
-    version: {
-      type: String,
-      default: '1.0'
-    },
-    tags: [String],
-    custom: mongoose.Schema.Types.Mixed
-  },
-
-  // Timestamps
-  createdAt: {
-    type: Date,
-    default: Date.now,
-    index: true
-  },
-
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  },
-
-  lastTriggeredAt: Date,
-
-  // Expiration
-  expiresAt: {
-    type: Date,
-    index: true
+  updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   }
 };
 
 // Create schema
 const webhookSchema = BaseModel.createSchema(webhookSchemaDefinition, {
   collection: 'webhooks',
-  timestamps: false // We manage timestamps manually
+  timestamps: true,
+  versionKey: false
 });
 
-// Indexes
-webhookSchema.index({ organizationId: 1, status: 1 });
-webhookSchema.index({ events: 1, enabled: 1 });
-webhookSchema.index({ 'stats.lastDeliveryAt': -1 });
-webhookSchema.index({ 'suspension.suspended': 1, 'suspension.resumeAt': 1 });
+// ==================== Indexes ====================
+webhookSchema.index({ tenantId: 1, organizationId: 1, 'status.state': 1 });
+webhookSchema.index({ 'events.subscribed': 1 });
+webhookSchema.index({ 'status.state': 1, 'status.health.status': 1 });
+webhookSchema.index({ 'queue.pending.nextAttempt': 1 });
+webhookSchema.index({ 'circuitBreaker.state': 1, 'circuitBreaker.nextAttempt': 1 });
 
-// Virtual fields
-webhookSchema.virtual('isActive').get(function() {
-  return this.status === 'active' && this.enabled && !this.suspension.suspended;
+// ==================== Virtual Fields ====================
+webhookSchema.virtual('isHealthy').get(function() {
+  return this.status.health.status === 'healthy' && 
+         this.status.state === 'active' &&
+         this.circuitBreaker.state !== 'open';
+});
+
+webhookSchema.virtual('canDeliver').get(function() {
+  return this.status.state === 'active' && 
+         !this.status.suspension.suspended &&
+         this.circuitBreaker.state !== 'open' &&
+         !this.rateLimit.exceeded;
+});
+
+webhookSchema.virtual('requiresAuthentication').get(function() {
+  return this.authentication.method !== 'none';
+});
+
+webhookSchema.virtual('queueSize').get(function() {
+  return this.queue.pending.length;
 });
 
 webhookSchema.virtual('successRate').get(function() {
-  if (this.stats.totalDeliveries === 0) return 100;
-  return (this.stats.successfulDeliveries / this.stats.totalDeliveries) * 100;
+  if (this.statistics.totalDeliveries === 0) return 1;
+  return this.statistics.successfulDeliveries / this.statistics.totalDeliveries;
 });
 
-webhookSchema.virtual('failureRate').get(function() {
-  if (this.stats.totalDeliveries === 0) return 0;
-  return (this.stats.failedDeliveries / this.stats.totalDeliveries) * 100;
-});
-
-webhookSchema.virtual('needsVerification').get(function() {
-  return !this.verified && this.verificationToken;
-});
-
-webhookSchema.virtual('isSuspended').get(function() {
-  return this.suspension.suspended && 
-         (!this.suspension.resumeAt || this.suspension.resumeAt > new Date());
-});
-
-// Pre-save middleware
+// ==================== Pre-save Middleware ====================
 webhookSchema.pre('save', async function(next) {
   try {
-    // Generate webhook ID if not provided
-    if (!this.webhookId && this.isNew) {
-      this.webhookId = await this.constructor.generateWebhookId();
+    // Generate HMAC secret if not provided
+    if (this.authentication.method === 'hmac' && !this.authentication.hmac.secret) {
+      this.authentication.hmac.secret = cryptoHelper.generateSecureToken(32);
     }
 
-    // Generate verification token if not verified
-    if (!this.verified && !this.verificationToken && this.isNew) {
-      this.verificationToken = await this.constructor.generateVerificationToken();
-    }
-
-    // Update timestamp
-    this.updatedAt = new Date();
-
-    // Ensure default headers
-    if (!this.headers.has('Content-Type')) {
-      this.headers.set('Content-Type', 
-        this.config.payloadFormat === 'json' ? 'application/json' : 
-        this.config.payloadFormat === 'xml' ? 'application/xml' : 
-        'application/x-www-form-urlencoded'
+    // Hash sensitive credentials
+    if (this.isModified('authentication.credentials.password')) {
+      this.authentication.credentials.password = await hashService.hashPassword(
+        this.authentication.credentials.password
       );
     }
 
-    // Trim recent deliveries to last 100
-    if (this.recentDeliveries.length > 100) {
-      this.recentDeliveries = this.recentDeliveries.slice(-100);
+    // Validate event subscriptions
+    if (this.events.subscribed.length === 0 && this.events.eventCategories.length === 0) {
+      throw new AppError('At least one event or event category must be subscribed', 400, 'NO_EVENTS_SUBSCRIBED');
     }
 
-    // Trim errors to last 50
-    if (this.errors.length > 50) {
-      this.errors = this.errors.slice(-50);
+    // Initialize statistics if new
+    if (this.isNew) {
+      this.initializeStatistics();
     }
+
+    // Update success rate
+    this.updateSuccessRate();
 
     next();
   } catch (error) {
@@ -479,691 +694,828 @@ webhookSchema.pre('save', async function(next) {
   }
 });
 
-// Instance methods
-webhookSchema.methods.trigger = async function(event, payload) {
-  if (!this.isActive) {
-    throw new AppError('Webhook is not active', 400, 'WEBHOOK_INACTIVE');
-  }
-
-  // Check if event is subscribed
-  if (!this.events.includes(event) && !this.events.includes('*')) {
-    return { skipped: true, reason: 'Event not subscribed' };
-  }
-
-  // Apply event filters
-  if (!this.#passesFilters(event, payload)) {
-    return { skipped: true, reason: 'Filtered out' };
-  }
-
-  // Check rate limit
-  if (this.rateLimit.enabled && !this.#checkRateLimit()) {
-    throw new AppError('Rate limit exceeded', 429, 'RATE_LIMIT_EXCEEDED');
-  }
-
-  // Create delivery
-  const delivery = {
-    deliveryId: `del_${Date.now()}_${stringHelper.generateRandomString(8)}`,
-    eventType: event,
-    timestamp: new Date(),
-    status: 'pending',
-    attempts: 0,
-    payload
-  };
-
-  // Transform payload
-  const transformedPayload = await this.#transformPayload(payload);
-
-  // Prepare request
-  const request = await this.#prepareRequest(event, transformedPayload, delivery.deliveryId);
-
-  // Execute delivery
-  const result = await this.#deliver(request, delivery);
-
-  // Update statistics
-  await this.#updateStats(result);
-
-  // Record delivery
-  this.recentDeliveries.push(delivery);
-  this.lastTriggeredAt = new Date();
-
-  // Handle failures
-  if (!result.success) {
-    await this.#handleFailure(result, delivery);
-  } else {
-    this.stats.consecutiveFailures = 0;
-  }
-
-  await this.save();
-
-  return result;
-};
-
-webhookSchema.methods.verify = async function(token) {
-  if (this.verified) {
-    return { verified: true, message: 'Already verified' };
-  }
-
-  if (token !== this.verificationToken) {
-    throw new AppError('Invalid verification token', 400, 'INVALID_TOKEN');
-  }
-
-  this.verified = true;
-  this.verifiedAt = new Date();
-  this.verificationToken = undefined;
-
-  await this.save();
-
-  return { verified: true, message: 'Webhook verified successfully' };
-};
-
-webhookSchema.methods.suspend = async function(reason, duration) {
-  this.suspension.suspended = true;
-  this.suspension.reason = reason;
-  this.suspension.suspendedAt = new Date();
-  this.suspension.suspensionCount++;
-
-  if (duration && this.suspension.autoResume) {
-    this.suspension.resumeAt = new Date(Date.now() + duration);
-  }
-
-  this.status = 'suspended';
-
-  await this.save();
-  await this.audit('WEBHOOK_SUSPENDED', { reason, duration });
-
-  return this;
-};
-
-webhookSchema.methods.resume = async function() {
-  if (!this.suspension.suspended) {
-    return this;
-  }
-
-  this.suspension.suspended = false;
-  this.suspension.reason = null;
-  this.suspension.suspendedAt = null;
-  this.suspension.resumeAt = null;
-
-  this.status = 'active';
-  this.stats.consecutiveFailures = 0;
-
-  await this.save();
-  await this.audit('WEBHOOK_RESUMED');
-
-  return this;
-};
-
-webhookSchema.methods.updateAuth = async function(authData) {
-  Object.assign(this.auth, authData);
-
-  // Encrypt sensitive data
-  if (this.auth.credentials) {
-    for (const field of ['password', 'token', 'apiKey', 'secret']) {
-      if (this.auth.credentials[field]) {
-        this.auth.credentials[field] = await cryptoUtils.encrypt(
-          this.auth.credentials[field]
-        );
-      }
+// ==================== Post-save Middleware ====================
+webhookSchema.post('save', async function(doc) {
+  try {
+    // Audit log for security-sensitive changes
+    if (doc.wasModified('authentication') || doc.wasModified('targetUrl')) {
+      await auditService.logSecurityEvent({
+        eventType: 'WEBHOOK_CONFIGURATION_CHANGED',
+        tenantId: doc.tenantId,
+        organizationId: doc.organizationId,
+        userId: doc.updatedBy,
+        details: {
+          webhookId: doc._id,
+          changes: doc.modifiedPaths()
+        }
+      });
     }
+  } catch (error) {
+    logger.error('Error in webhook post-save hook', {
+      error: error.message,
+      webhookId: doc._id
+    });
   }
+});
 
-  await this.save();
-  return this;
-};
-
-webhookSchema.methods.test = async function(samplePayload) {
-  const testDelivery = {
-    deliveryId: `test_${Date.now()}`,
-    eventType: 'test',
-    timestamp: new Date(),
-    status: 'pending',
-    attempts: 1,
-    payload: samplePayload || { test: true, timestamp: new Date() }
-  };
-
-  const request = await this.#prepareRequest('test', testDelivery.payload, testDelivery.deliveryId);
-  const result = await this.#deliver(request, testDelivery, true);
-
-  return {
-    success: result.success,
-    statusCode: result.statusCode,
-    responseTime: result.responseTime,
-    error: result.error,
-    response: result.response
-  };
-};
-
-webhookSchema.methods.addEvent = async function(event) {
-  if (!this.events.includes(event)) {
-    this.events.push(event);
-    await this.save();
-  }
-  return this;
-};
-
-webhookSchema.methods.removeEvent = async function(event) {
-  this.events = this.events.filter(e => e !== event);
-  await this.save();
-  return this;
-};
-
-webhookSchema.methods.clearStats = async function() {
-  this.stats = {
+// ==================== Instance Methods ====================
+webhookSchema.methods.initializeStatistics = function() {
+  this.statistics = {
     totalDeliveries: 0,
     successfulDeliveries: 0,
     failedDeliveries: 0,
+    totalRetries: 0,
     averageResponseTime: 0,
-    consecutiveFailures: 0,
-    totalRetries: 0
+    successRate: 1,
+    lastReset: new Date(),
+    hourlyStats: [],
+    eventStats: new Map()
   };
-  
-  this.recentDeliveries = [];
-  this.errors = [];
-
-  await this.save();
-  return this;
 };
 
-// Private instance methods
-webhookSchema.methods.#passesFilters = function(event, payload) {
-  // Check include filters
-  if (this.eventFilters.include && this.eventFilters.include.size > 0) {
-    for (const [key, value] of this.eventFilters.include) {
-      if (payload[key] !== value) {
-        return false;
-      }
+webhookSchema.methods.updateSuccessRate = function() {
+  if (this.statistics.totalDeliveries > 0) {
+    this.statistics.successRate = this.statistics.successfulDeliveries / this.statistics.totalDeliveries;
+  }
+};
+
+webhookSchema.methods.generateSignature = function(payload) {
+  if (this.authentication.method !== 'hmac') {
+    throw new AppError('HMAC authentication not configured', 400, 'HMAC_NOT_CONFIGURED');
+  }
+
+  const secret = this.authentication.hmac.secret;
+  const algorithm = this.authentication.hmac.algorithm;
+  const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
+
+  return cryptoHelper.generateHmac(payloadString, secret, algorithm);
+};
+
+webhookSchema.methods.validateUrl = async function() {
+  try {
+    const url = new URL(this.targetUrl);
+    
+    // Check protocol
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      throw new AppError('Invalid protocol', 400, 'INVALID_PROTOCOL');
     }
-  }
-
-  // Check exclude filters
-  if (this.eventFilters.exclude && this.eventFilters.exclude.size > 0) {
-    for (const [key, value] of this.eventFilters.exclude) {
-      if (payload[key] === value) {
-        return false;
-      }
+    
+    // Validate against private networks if required
+    if (this.validation.validateSSL && url.protocol === 'http:') {
+      logger.warn('Webhook uses insecure HTTP protocol', {
+        webhookId: this._id,
+        url: this.targetUrl
+      });
     }
+    
+    return true;
+  } catch (error) {
+    throw new AppError('Invalid webhook URL', 400, 'INVALID_URL');
   }
-
-  return true;
 };
 
-webhookSchema.methods.#checkRateLimit = function() {
-  const now = Date.now();
-  
-  if (!this.rateLimit.current.resetAt || this.rateLimit.current.resetAt < now) {
-    this.rateLimit.current.count = 0;
-    this.rateLimit.current.resetAt = new Date(now + this.rateLimit.window);
+webhookSchema.methods.deliver = async function(event) {
+  // Check if webhook can deliver
+  if (!this.canDeliver) {
+    throw new AppError('Webhook cannot deliver in current state', 400, 'WEBHOOK_UNAVAILABLE');
   }
 
-  if (this.rateLimit.current.count >= this.rateLimit.requests) {
-    return false;
+  // Check rate limits
+  if (this.rateLimit.enabled) {
+    await this.checkRateLimit();
   }
 
-  this.rateLimit.current.count++;
-  return true;
-};
-
-webhookSchema.methods.#transformPayload = async function(payload) {
-  let transformed = { ...payload };
-
-  for (const rule of this.transformRules) {
-    switch (rule.operation) {
-      case 'remove':
-        delete transformed[rule.field];
-        break;
-        
-      case 'rename':
-        if (transformed[rule.field] !== undefined) {
-          transformed[rule.target] = transformed[rule.field];
-          delete transformed[rule.field];
-        }
-        break;
-        
-      case 'mask':
-        if (transformed[rule.field]) {
-          transformed[rule.field] = transformed[rule.field].toString().replace(/./g, '*');
-        }
-        break;
-        
-      case 'encrypt':
-        if (transformed[rule.field]) {
-          transformed[rule.field] = await cryptoUtils.encrypt(transformed[rule.field]);
-        }
-        break;
-        
-      case 'hash':
-        if (transformed[rule.field]) {
-          transformed[rule.field] = cryptoUtils.hashString(transformed[rule.field]);
-        }
-        break;
-    }
+  // Transform payload if needed
+  let payload = event.data;
+  if (this.transformation.enabled) {
+    payload = await this.transformPayload(payload);
   }
 
-  return transformed;
-};
-
-webhookSchema.methods.#prepareRequest = async function(event, payload, deliveryId) {
-  const timestamp = Date.now();
-  const headers = Object.fromEntries(this.headers);
-
-  // Add webhook headers
-  headers[this.config.idHeader] = deliveryId;
-  headers[this.config.timestampHeader] = timestamp.toString();
-  headers['X-Webhook-Event'] = event;
+  // Prepare request
+  const requestOptions = {
+    url: this.targetUrl,
+    method: this.requestConfig.method,
+    headers: Object.fromEntries(this.requestConfig.headers),
+    timeout: this.requestConfig.timeout,
+    data: payload
+  };
 
   // Add authentication
-  switch (this.auth.type) {
-    case 'basic':
-      const credentials = `${this.auth.credentials.username}:${await cryptoUtils.decrypt(this.auth.credentials.password)}`;
-      headers['Authorization'] = `Basic ${Buffer.from(credentials).toString('base64')}`;
-      break;
-      
-    case 'bearer':
-      headers['Authorization'] = `Bearer ${await cryptoUtils.decrypt(this.auth.credentials.token)}`;
-      break;
-      
-    case 'apikey':
-      headers[this.auth.credentials.apiKeyHeader || 'X-API-Key'] = await cryptoUtils.decrypt(this.auth.credentials.apiKey);
-      break;
-      
-    case 'hmac':
-      const signature = await this.#generateSignature(payload, timestamp);
-      headers[this.config.signatureHeader] = signature;
-      break;
+  await this.addAuthentication(requestOptions, payload);
+
+  // Attempt delivery
+  const startTime = Date.now();
+  let response;
+  let success = false;
+  let error = null;
+
+  try {
+    response = await webhookService.sendWebhook(requestOptions);
+    success = response.status >= 200 && response.status < 300;
+  } catch (err) {
+    error = err;
+    success = false;
   }
 
-  // Prepare body
-  let body;
-  switch (this.config.payloadFormat) {
-    case 'json':
-      body = JSON.stringify(payload);
-      break;
-      
-    case 'form':
-      body = new URLSearchParams(payload).toString();
-      break;
-      
-    case 'xml':
-      // Simple XML conversion
-      body = this.#toXML(payload);
-      break;
+  const responseTime = Date.now() - startTime;
+
+  // Record delivery
+  await this.recordDelivery({
+    eventId: event.id,
+    eventType: event.type,
+    success,
+    statusCode: response?.status,
+    responseTime,
+    error: error?.message
+  });
+
+  // Handle failure
+  if (!success) {
+    await this.handleDeliveryFailure(event, error);
   }
 
   return {
-    url: this.url,
-    method: this.method,
-    headers,
-    body,
-    timeout: this.config.timeout
+    success,
+    statusCode: response?.status,
+    responseTime,
+    error: error?.message
   };
 };
 
-webhookSchema.methods.#generateSignature = async function(payload, timestamp) {
-  const secret = await cryptoUtils.decrypt(this.auth.credentials.secret);
-  const data = `${timestamp}.${JSON.stringify(payload)}`;
+webhookSchema.methods.checkRateLimit = async function() {
+  const now = new Date();
+  const limits = this.rateLimit.limits;
   
-  return cryptoUtils.generateHMAC(data, secret, this.auth.credentials.algorithm);
-};
-
-webhookSchema.methods.#deliver = async function(request, delivery, isTest = false) {
-  const startTime = Date.now();
-  let result = {
-    success: false,
-    attempts: 0
-  };
-
-  for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
-    result.attempts = attempt + 1;
-    delivery.attempts = result.attempts;
-
-    try {
-      // In production, make actual HTTP request
-      // For now, simulate
-      const response = await this.#simulateHttpRequest(request);
-      
-      result.success = response.status >= 200 && response.status < 300;
-      result.statusCode = response.status;
-      result.responseTime = Date.now() - startTime;
-      result.response = response.body;
-
-      if (result.success) {
-        delivery.status = 'success';
-        delivery.statusCode = result.statusCode;
-        delivery.responseTime = result.responseTime;
-        break;
-      } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-    } catch (error) {
-      result.error = error.message;
-      delivery.status = attempt < this.config.maxRetries ? 'retrying' : 'failure';
-      delivery.error = error.message;
-
-      if (attempt < this.config.maxRetries && this.config.retryEnabled && !isTest) {
-        const delay = this.config.retryDelay * Math.pow(2, attempt); // Exponential backoff
-        await new Promise(resolve => setTimeout(resolve, delay));
-        this.stats.totalRetries++;
-      }
-    }
-  }
-
-  return result;
-};
-
-webhookSchema.methods.#simulateHttpRequest = async function(request) {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 50));
-
-  // Simulate various responses
-  const scenarios = [
-    { status: 200, statusText: 'OK', probability: 0.8 },
-    { status: 201, statusText: 'Created', probability: 0.1 },
-    { status: 400, statusText: 'Bad Request', probability: 0.05 },
-    { status: 401, statusText: 'Unauthorized', probability: 0.02 },
-    { status: 500, statusText: 'Internal Server Error', probability: 0.02 },
-    { status: 503, statusText: 'Service Unavailable', probability: 0.01 }
-  ];
-
-  const random = Math.random();
-  let cumulative = 0;
-
-  for (const scenario of scenarios) {
-    cumulative += scenario.probability;
-    if (random <= cumulative) {
-      return {
-        status: scenario.status,
-        statusText: scenario.statusText,
-        body: { received: true, timestamp: new Date() }
-      };
-    }
-  }
-
-  return scenarios[0];
-};
-
-webhookSchema.methods.#updateStats = async function(result) {
-  this.stats.totalDeliveries++;
+  // Check each limit period
+  const periods = ['second', 'minute', 'hour', 'day'];
   
-  if (result.success) {
-    this.stats.successfulDeliveries++;
-    this.stats.lastSuccessAt = new Date();
-  } else {
-    this.stats.failedDeliveries++;
-    this.stats.lastFailureAt = new Date();
-    this.stats.consecutiveFailures++;
-  }
-
-  this.stats.lastDeliveryAt = new Date();
-
-  // Update average response time
-  if (result.responseTime) {
-    const totalTime = this.stats.averageResponseTime * (this.stats.totalDeliveries - 1);
-    this.stats.averageResponseTime = (totalTime + result.responseTime) / this.stats.totalDeliveries;
-  }
-};
-
-webhookSchema.methods.#handleFailure = async function(result, delivery) {
-  // Record error
-  this.errors.push({
-    timestamp: new Date(),
-    type: this.#categorizeError(result.error),
-    message: result.error,
-    statusCode: result.statusCode,
-    eventType: delivery.eventType
-  });
-
-  // Auto-suspend after consecutive failures
-  if (this.stats.consecutiveFailures >= 10) {
-    await this.suspend(
-      'Suspended due to consecutive failures',
-      24 * 60 * 60 * 1000 // 24 hours
-    );
-  }
-};
-
-webhookSchema.methods.#categorizeError = function(error) {
-  if (error.includes('timeout')) return 'timeout';
-  if (error.includes('ECONNREFUSED') || error.includes('ENOTFOUND')) return 'connection';
-  if (error.includes('401') || error.includes('403')) return 'auth';
-  if (error.includes('400') || error.includes('422')) return 'validation';
-  if (error.includes('500') || error.includes('502') || error.includes('503')) return 'server';
-  return 'unknown';
-};
-
-webhookSchema.methods.#toXML = function(obj, rootName = 'webhook') {
-  const convert = (data, name) => {
-    if (Array.isArray(data)) {
-      return data.map(item => convert(item, name)).join('');
+  for (const period of periods) {
+    if (!limits[`per${period.charAt(0).toUpperCase() + period.slice(1)}`]) continue;
+    
+    const current = this.rateLimit.currentUsage[period];
+    const limit = limits[`per${period.charAt(0).toUpperCase() + period.slice(1)}`];
+    
+    // Reset if period expired
+    if (!current.resetAt || current.resetAt < now) {
+      current.count = 0;
+      current.resetAt = this.getNextResetTime(period);
     }
     
-    if (typeof data === 'object' && data !== null) {
-      const attrs = [];
-      const children = [];
+    // Check limit
+    if (current.count >= limit) {
+      this.rateLimit.exceeded = true;
+      throw new AppError(`Rate limit exceeded: ${limit} per ${period}`, 429, 'RATE_LIMIT_EXCEEDED');
+    }
+    
+    // Increment counter
+    current.count++;
+  }
+  
+  this.rateLimit.exceeded = false;
+  await this.save();
+};
+
+webhookSchema.methods.getNextResetTime = function(period) {
+  const now = new Date();
+  
+  switch (period) {
+    case 'second':
+      return new Date(now.getTime() + 1000);
+    case 'minute':
+      return new Date(now.getTime() + 60000);
+    case 'hour':
+      return new Date(now.getTime() + 3600000);
+    case 'day':
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      return tomorrow;
+    default:
+      return now;
+  }
+};
+
+webhookSchema.methods.transformPayload = async function(payload) {
+  if (!this.transformation.enabled) return payload;
+  
+  let transformed = payload;
+  
+  // Apply template
+  if (this.transformation.template) {
+    transformed = this.applyTemplate(payload, this.transformation.template);
+  }
+  
+  // Apply field filters
+  if (this.transformation.includeFields?.length > 0) {
+    transformed = this.filterFields(transformed, this.transformation.includeFields, true);
+  }
+  
+  if (this.transformation.excludeFields?.length > 0) {
+    transformed = this.filterFields(transformed, this.transformation.excludeFields, false);
+  }
+  
+  // Apply custom script if enabled
+  if (this.transformation.customScript?.enabled && this.transformation.customScript.script) {
+    transformed = await this.runCustomScript(transformed);
+  }
+  
+  // Format conversion
+  if (this.transformation.format !== 'json') {
+    transformed = await this.convertFormat(transformed, this.transformation.format);
+  }
+  
+  return transformed;
+};
+
+webhookSchema.methods.applyTemplate = function(data, template) {
+  // Simple template replacement
+  const processTemplate = (tmpl, context) => {
+    if (typeof tmpl === 'string') {
+      return tmpl.replace(/\{\{(\w+)\}\}/g, (match, key) => context[key] || match);
+    }
+    if (Array.isArray(tmpl)) {
+      return tmpl.map(item => processTemplate(item, context));
+    }
+    if (typeof tmpl === 'object' && tmpl !== null) {
+      const result = {};
+      for (const [key, value] of Object.entries(tmpl)) {
+        result[key] = processTemplate(value, context);
+      }
+      return result;
+    }
+    return tmpl;
+  };
+  
+  return processTemplate(template, data);
+};
+
+webhookSchema.methods.filterFields = function(data, fields, include) {
+  const result = {};
+  
+  const processPath = (obj, path) => {
+    const parts = path.split('.');
+    let current = obj;
+    
+    for (const part of parts) {
+      if (current && typeof current === 'object' && part in current) {
+        current = current[part];
+      } else {
+        return undefined;
+      }
+    }
+    
+    return current;
+  };
+  
+  const setPath = (obj, path, value) => {
+    const parts = path.split('.');
+    let current = obj;
+    
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!(parts[i] in current)) {
+        current[parts[i]] = {};
+      }
+      current = current[parts[i]];
+    }
+    
+    current[parts[parts.length - 1]] = value;
+  };
+  
+  if (include) {
+    // Include only specified fields
+    for (const field of fields) {
+      const value = processPath(data, field);
+      if (value !== undefined) {
+        setPath(result, field, value);
+      }
+    }
+    return result;
+  } else {
+    // Exclude specified fields
+    const cloned = JSON.parse(JSON.stringify(data));
+    for (const field of fields) {
+      const parts = field.split('.');
+      let current = cloned;
       
-      for (const [key, value] of Object.entries(data)) {
-        if (typeof value === 'object') {
-          children.push(convert(value, key));
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (current && typeof current === 'object' && parts[i] in current) {
+          current = current[parts[i]];
         } else {
-          attrs.push(`${key}="${value}"`);
+          break;
         }
       }
       
-      const attrString = attrs.length > 0 ? ` ${attrs.join(' ')}` : '';
-      const childString = children.join('');
+      if (current && typeof current === 'object') {
+        delete current[parts[parts.length - 1]];
+      }
+    }
+    return cloned;
+  }
+};
+
+webhookSchema.methods.addAuthentication = async function(requestOptions, payload) {
+  switch (this.authentication.method) {
+    case 'none':
+      break;
       
-      return `<${name}${attrString}>${childString}</${name}>`;
+    case 'basic':
+      const { username, password } = this.authentication.credentials;
+      requestOptions.auth = { username, password };
+      break;
+      
+    case 'bearer':
+      requestOptions.headers['Authorization'] = `Bearer ${this.authentication.credentials.token}`;
+      break;
+      
+    case 'hmac':
+      const signature = this.generateSignature(payload);
+      requestOptions.headers[this.authentication.hmac.headerName] = signature;
+      break;
+      
+    case 'oauth2':
+      // TODO: Implement OAuth2 token retrieval and refresh
+      break;
+      
+    case 'custom':
+      if (this.authentication.customHeaders) {
+        for (const [key, value] of this.authentication.customHeaders) {
+          requestOptions.headers[key] = value;
+        }
+      }
+      break;
+  }
+};
+
+webhookSchema.methods.recordDelivery = async function(deliveryInfo) {
+  const { eventId, eventType, success, statusCode, responseTime, error } = deliveryInfo;
+  
+  // Update statistics
+  this.statistics.totalDeliveries++;
+  if (success) {
+    this.statistics.successfulDeliveries++;
+    this.status.health.consecutiveFailures = 0;
+  } else {
+    this.statistics.failedDeliveries++;
+    this.status.health.consecutiveFailures++;
+  }
+  
+  // Update average response time
+  const totalTime = this.statistics.averageResponseTime * (this.statistics.totalDeliveries - 1) + responseTime;
+  this.statistics.averageResponseTime = totalTime / this.statistics.totalDeliveries;
+  
+  // Update event statistics
+  if (!this.statistics.eventStats.has(eventType)) {
+    this.statistics.eventStats.set(eventType, { count: 0, successes: 0, failures: 0 });
+  }
+  
+  const eventStat = this.statistics.eventStats.get(eventType);
+  eventStat.count++;
+  if (success) {
+    eventStat.successes++;
+  } else {
+    eventStat.failures++;
+  }
+  
+  // Update last delivery info
+  this.status.lastDelivery = {
+    attemptedAt: new Date(),
+    succeededAt: success ? new Date() : this.status.lastDelivery.succeededAt,
+    failedAt: !success ? new Date() : this.status.lastDelivery.failedAt,
+    statusCode,
+    responseTime,
+    error
+  };
+  
+  // Add to delivery history
+  if (this.deliveryHistory.length >= 100) {
+    this.deliveryHistory.shift(); // Keep only last 100 deliveries
+  }
+  
+  this.deliveryHistory.push({
+    eventId,
+    eventType,
+    deliveredAt: new Date(),
+    success,
+    statusCode,
+    responseTime,
+    error
+  });
+  
+  // Update health status
+  this.updateHealthStatus();
+  
+  await this.save();
+};
+
+webhookSchema.methods.updateHealthStatus = function() {
+  const errorRate = this.statistics.failedDeliveries / this.statistics.totalDeliveries;
+  
+  if (this.status.health.consecutiveFailures >= 5 || errorRate > 0.5) {
+    this.status.health.status = 'unhealthy';
+  } else if (this.status.health.consecutiveFailures >= 3 || errorRate > 0.25) {
+    this.status.health.status = 'degraded';
+  } else {
+    this.status.health.status = 'healthy';
+  }
+  
+  this.status.health.errorRate = errorRate;
+  this.status.health.lastChecked = new Date();
+  
+  // Update circuit breaker
+  if (this.circuitBreaker.enabled) {
+    this.updateCircuitBreaker();
+  }
+};
+
+webhookSchema.methods.updateCircuitBreaker = function() {
+  const { threshold, timeout } = this.circuitBreaker;
+  
+  switch (this.circuitBreaker.state) {
+    case 'closed':
+      if (this.status.health.consecutiveFailures >= threshold) {
+        this.circuitBreaker.state = 'open';
+        this.circuitBreaker.lastStateChange = new Date();
+        this.circuitBreaker.nextAttempt = new Date(Date.now() + timeout);
+        logger.warn('Circuit breaker opened', {
+          webhookId: this._id,
+          failures: this.status.health.consecutiveFailures
+        });
+      }
+      break;
+      
+    case 'open':
+      if (new Date() >= this.circuitBreaker.nextAttempt) {
+        this.circuitBreaker.state = 'half-open';
+        this.circuitBreaker.lastStateChange = new Date();
+        logger.info('Circuit breaker half-opened', { webhookId: this._id });
+      }
+      break;
+      
+    case 'half-open':
+      if (this.status.health.consecutiveFailures === 0) {
+        this.circuitBreaker.state = 'closed';
+        this.circuitBreaker.failureCount = 0;
+        this.circuitBreaker.lastStateChange = new Date();
+        logger.info('Circuit breaker closed', { webhookId: this._id });
+      } else {
+        this.circuitBreaker.state = 'open';
+        this.circuitBreaker.lastStateChange = new Date();
+        this.circuitBreaker.nextAttempt = new Date(Date.now() + timeout * 2);
+        logger.warn('Circuit breaker re-opened', { webhookId: this._id });
+      }
+      break;
+  }
+};
+
+webhookSchema.methods.handleDeliveryFailure = async function(event, error) {
+  // Add to retry queue if retries are enabled
+  if (this.retryConfig.enabled && this.retryConfig.maxRetries > 0) {
+    const existingEntry = this.queue.pending.find(e => e.eventId === event.id);
+    
+    if (existingEntry) {
+      existingEntry.attemptCount++;
+      if (existingEntry.attemptCount <= this.retryConfig.maxRetries) {
+        existingEntry.nextAttempt = this.calculateNextRetryTime(existingEntry.attemptCount);
+      } else {
+        // Max retries exceeded, remove from queue
+        this.queue.pending = this.queue.pending.filter(e => e.eventId !== event.id);
+      }
+    } else {
+      // Add new entry to queue
+      this.queue.pending.push({
+        eventId: event.id,
+        eventType: event.type,
+        payload: event.data,
+        attemptCount: 1,
+        nextAttempt: this.calculateNextRetryTime(1),
+        addedAt: new Date()
+      });
     }
     
-    return `<${name}>${data}</${name}>`;
+    // Trim queue if needed
+    if (this.queue.pending.length > this.queue.maxQueueSize) {
+      this.queue.pending = this.queue.pending.slice(-this.queue.maxQueueSize);
+    }
+    
+    await this.save();
+  }
+  
+  // Suspend webhook if too many failures
+  if (this.status.health.consecutiveFailures >= 10) {
+    await this.suspend('Too many consecutive failures', 3600000); // 1 hour
+  }
+};
+
+webhookSchema.methods.calculateNextRetryTime = function(attemptCount) {
+  const { initialDelay, backoffMultiplier, maxDelay, jitter } = this.retryConfig;
+  
+  let delay = initialDelay * Math.pow(backoffMultiplier, attemptCount - 1);
+  delay = Math.min(delay, maxDelay);
+  
+  // Add jitter if enabled
+  if (jitter.enabled) {
+    const jitterAmount = delay * jitter.factor;
+    delay += (Math.random() - 0.5) * 2 * jitterAmount;
+  }
+  
+  return new Date(Date.now() + delay);
+};
+
+webhookSchema.methods.suspend = async function(reason, duration) {
+  this.status.suspension.suspended = true;
+  this.status.suspension.suspendedAt = new Date();
+  this.status.suspension.reason = reason;
+  
+  if (duration) {
+    this.status.suspension.suspendedUntil = new Date(Date.now() + duration);
+  }
+  
+  await this.save();
+  
+  logger.warn('Webhook suspended', {
+    webhookId: this._id,
+    reason,
+    until: this.status.suspension.suspendedUntil
+  });
+};
+
+webhookSchema.methods.resume = async function() {
+  this.status.suspension.suspended = false;
+  this.status.suspension.suspendedAt = null;
+  this.status.suspension.suspendedUntil = null;
+  this.status.suspension.reason = null;
+  
+  // Reset circuit breaker
+  if (this.circuitBreaker.state === 'open') {
+    this.circuitBreaker.state = 'half-open';
+    this.circuitBreaker.lastStateChange = new Date();
+  }
+  
+  await this.save();
+  
+  logger.info('Webhook resumed', { webhookId: this._id });
+};
+
+webhookSchema.methods.test = async function() {
+  const testEvent = {
+    id: 'test-' + stringHelper.generateRandomString(16),
+    type: 'webhook.test',
+    data: {
+      webhookId: this._id,
+      timestamp: new Date(),
+      message: 'This is a test webhook delivery'
+    }
   };
-
-  return `<?xml version="1.0" encoding="UTF-8"?>${convert(obj, rootName)}`;
+  
+  try {
+    const result = await this.deliver(testEvent);
+    
+    this.validation.testEndpoint.lastTested = new Date();
+    this.validation.testEndpoint.testResult = {
+      success: result.success,
+      statusCode: result.statusCode,
+      responseTime: result.responseTime,
+      error: result.error
+    };
+    
+    await this.save();
+    
+    return result;
+  } catch (error) {
+    this.validation.testEndpoint.lastTested = new Date();
+    this.validation.testEndpoint.testResult = {
+      success: false,
+      error: error.message
+    };
+    
+    await this.save();
+    
+    throw error;
+  }
 };
 
-// Static methods
-webhookSchema.statics.generateWebhookId = function() {
-  return `whk_${Date.now()}_${stringHelper.generateRandomString(12)}`;
+webhookSchema.methods.processQueue = async function() {
+  if (this.queue.processing || this.queue.pending.length === 0) {
+    return;
+  }
+  
+  this.queue.processing = true;
+  await this.save();
+  
+  try {
+    const now = new Date();
+    const readyEvents = this.queue.pending.filter(e => e.nextAttempt <= now);
+    
+    for (const queuedEvent of readyEvents) {
+      try {
+        await this.deliver({
+          id: queuedEvent.eventId,
+          type: queuedEvent.eventType,
+          data: queuedEvent.payload
+        });
+        
+        // Remove from queue on success
+        this.queue.pending = this.queue.pending.filter(e => e.eventId !== queuedEvent.eventId);
+      } catch (error) {
+        // Error handling is done in deliver method
+        logger.error('Failed to deliver queued event', {
+          webhookId: this._id,
+          eventId: queuedEvent.eventId,
+          error: error.message
+        });
+      }
+    }
+    
+    this.queue.lastProcessed = new Date();
+  } finally {
+    this.queue.processing = false;
+    await this.save();
+  }
 };
 
-webhookSchema.statics.generateVerificationToken = function() {
-  return stringHelper.generateRandomString(32);
-};
-
+// ==================== Static Methods ====================
 webhookSchema.statics.createWebhook = async function(data) {
   const webhook = new this(data);
-  
-  // Set default events if not provided
-  if (!webhook.events || webhook.events.length === 0) {
-    webhook.events = ['*']; // Subscribe to all events
-  }
-
   await webhook.save();
+  
+  logger.info('Webhook created', {
+    webhookId: webhook._id,
+    organizationId: webhook.organizationId,
+    events: webhook.events.subscribed.length
+  });
   
   return webhook;
 };
 
-webhookSchema.statics.findByOrganization = async function(organizationId, options = {}) {
-  const {
-    status,
-    enabled,
-    event,
-    limit = 50,
-    skip = 0,
-    sort = { createdAt: -1 }
-  } = options;
-
-  const query = { organizationId };
-
-  if (status) {
-    query.status = status;
-  }
-
-  if (enabled !== undefined) {
-    query.enabled = enabled;
-  }
-
-  if (event) {
-    query.events = event;
-  }
-
-  return await this.find(query)
-    .sort(sort)
-    .limit(limit)
-    .skip(skip);
-};
-
-webhookSchema.statics.findActiveByEvent = async function(event, organizationId) {
-  return await this.find({
+webhookSchema.statics.findActiveWebhooks = async function(tenantId, organizationId, eventType) {
+  const query = {
+    tenantId,
     organizationId,
-    events: { $in: [event, '*'] },
-    status: 'active',
-    enabled: true,
-    'suspension.suspended': false
-  });
+    'status.state': 'active',
+    'status.suspension.suspended': false,
+    $or: [
+      { 'events.subscribed': eventType },
+      { 'events.eventCategories': eventType.split('.')[0] }
+    ]
+  };
+  
+  return await this.find(query);
 };
 
-webhookSchema.statics.triggerEvent = async function(event, payload, organizationId) {
-  const webhooks = await this.findActiveByEvent(event, organizationId);
+webhookSchema.statics.deliverEvent = async function(event) {
+  const { tenantId, organizationId, type: eventType } = event;
+  
+  const webhooks = await this.findActiveWebhooks(tenantId, organizationId, eventType);
   const results = [];
-
+  
   for (const webhook of webhooks) {
     try {
-      const result = await webhook.trigger(event, payload);
+      const result = await webhook.deliver(event);
       results.push({
-        webhookId: webhook.webhookId,
-        success: result.success || result.skipped,
-        ...result
+        webhookId: webhook._id,
+        success: result.success,
+        statusCode: result.statusCode
       });
     } catch (error) {
       results.push({
-        webhookId: webhook.webhookId,
+        webhookId: webhook._id,
         success: false,
         error: error.message
       });
     }
   }
-
-  logger.info('Webhook event triggered', {
-    event,
-    organizationId,
-    webhooksTriggered: results.length,
-    successful: results.filter(r => r.success).length
+  
+  logger.info('Event delivered to webhooks', {
+    eventType,
+    webhookCount: webhooks.length,
+    successCount: results.filter(r => r.success).length
   });
-
+  
   return results;
 };
 
-webhookSchema.statics.resumeSuspended = async function() {
-  const now = new Date();
-  
-  const suspended = await this.find({
-    'suspension.suspended': true,
-    'suspension.autoResume': true,
-    'suspension.resumeAt': { $lte: now }
+webhookSchema.statics.processAllQueues = async function() {
+  const webhooks = await this.find({
+    'queue.pending.0': { $exists: true },
+    'queue.processing': false
   });
-
-  const results = {
-    processed: 0,
-    resumed: 0,
-    failed: 0
-  };
-
-  for (const webhook of suspended) {
-    try {
-      await webhook.resume();
-      results.resumed++;
-    } catch (error) {
-      results.failed++;
-      logger.error('Failed to resume webhook', {
-        webhookId: webhook.webhookId,
-        error: error.message
-      });
-    }
-    results.processed++;
-  }
-
-  return results;
+  
+  const results = await Promise.allSettled(
+    webhooks.map(webhook => webhook.processQueue())
+  );
+  
+  const processed = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.filter(r => r.status === 'rejected').length;
+  
+  logger.info('Processed webhook queues', { processed, failed });
+  
+  return { processed, failed };
 };
 
-webhookSchema.statics.getStatistics = async function(organizationId) {
-  const webhooks = await this.find({ organizationId });
+webhookSchema.statics.checkHealthStatuses = async function() {
+  const staleThreshold = new Date(Date.now() - 3600000); // 1 hour
   
-  const stats = {
-    total: webhooks.length,
-    active: 0,
-    suspended: 0,
-    verified: 0,
-    totalDeliveries: 0,
-    totalSuccessful: 0,
-    totalFailed: 0,
-    averageSuccessRate: 0,
-    eventDistribution: {},
-    statusDistribution: {}
-  };
-
+  const webhooks = await this.find({
+    'status.state': 'active',
+    $or: [
+      { 'status.health.lastChecked': { $lt: staleThreshold } },
+      { 'status.health.lastChecked': { $exists: false } }
+    ]
+  });
+  
   for (const webhook of webhooks) {
-    if (webhook.isActive) stats.active++;
-    if (webhook.isSuspended) stats.suspended++;
-    if (webhook.verified) stats.verified++;
-    
-    stats.totalDeliveries += webhook.stats.totalDeliveries;
-    stats.totalSuccessful += webhook.stats.successfulDeliveries;
-    stats.totalFailed += webhook.stats.failedDeliveries;
-
-    // Event distribution
-    for (const event of webhook.events) {
-      stats.eventDistribution[event] = (stats.eventDistribution[event] || 0) + 1;
-    }
-
-    // Status distribution
-    stats.statusDistribution[webhook.status] = (stats.statusDistribution[webhook.status] || 0) + 1;
+    webhook.updateHealthStatus();
+    await webhook.save();
   }
-
-  if (stats.totalDeliveries > 0) {
-    stats.averageSuccessRate = (stats.totalSuccessful / stats.totalDeliveries) * 100;
-  }
-
-  return stats;
+  
+  return webhooks.length;
 };
 
-webhookSchema.statics.cleanup = async function(options = {}) {
-  const {
-    deleteInactiveDays = 90,
-    deleteFailedDays = 30
-  } = options;
-
+webhookSchema.statics.resumeSuspendedWebhooks = async function() {
   const now = new Date();
-  const inactiveDate = new Date(now - deleteInactiveDays * 24 * 60 * 60 * 1000);
-  const failedDate = new Date(now - deleteFailedDays * 24 * 60 * 60 * 1000);
-
-  // Delete old inactive webhooks
-  const inactiveResult = await this.deleteMany({
-    status: 'inactive',
-    updatedAt: { $lt: inactiveDate }
+  
+  const webhooks = await this.find({
+    'status.suspension.suspended': true,
+    'status.suspension.autoResume': true,
+    'status.suspension.suspendedUntil': { $lte: now }
   });
+  
+  for (const webhook of webhooks) {
+    await webhook.resume();
+  }
+  
+  logger.info('Resumed suspended webhooks', { count: webhooks.length });
+  
+  return webhooks.length;
+};
 
-  // Delete old failed webhooks
-  const failedResult = await this.deleteMany({
-    status: 'failed',
-    updatedAt: { $lt: failedDate }
-  });
-
-  // Delete expired webhooks
-  const expiredResult = await this.deleteMany({
-    expiresAt: { $lt: now }
-  });
-
-  logger.info('Webhook cleanup completed', {
-    inactive: inactiveResult.deletedCount,
-    failed: failedResult.deletedCount,
-    expired: expiredResult.deletedCount
-  });
-
+webhookSchema.statics.getWebhookStatistics = async function(filters = {}) {
+  const match = {};
+  
+  if (filters.tenantId) match.tenantId = filters.tenantId;
+  if (filters.organizationId) match.organizationId = filters.organizationId;
+  if (filters.startDate || filters.endDate) {
+    match.createdAt = {};
+    if (filters.startDate) match.createdAt.$gte = filters.startDate;
+    if (filters.endDate) match.createdAt.$lte = filters.endDate;
+  }
+  
+  const stats = await this.aggregate([
+    { $match: match },
+    {
+      $facet: {
+        overview: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              active: { $sum: { $cond: [{ $eq: ['$status.state', 'active'] }, 1, 0] } },
+              healthy: { $sum: { $cond: [{ $eq: ['$status.health.status', 'healthy'] }, 1, 0] } },
+              suspended: { $sum: { $cond: ['$status.suspension.suspended', 1, 0] } }
+            }
+          }
+        ],
+        deliveryStats: [
+          {
+            $group: {
+              _id: null,
+              totalDeliveries: { $sum: '$statistics.totalDeliveries' },
+              successfulDeliveries: { $sum: '$statistics.successfulDeliveries' },
+              failedDeliveries: { $sum: '$statistics.failedDeliveries' },
+              avgResponseTime: { $avg: '$statistics.averageResponseTime' }
+            }
+          }
+        ],
+        eventDistribution: [
+          { $unwind: '$events.subscribed' },
+          {
+            $group: {
+              _id: '$events.subscribed',
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { count: -1 } },
+          { $limit: 10 }
+        ],
+        authMethods: [
+          {
+            $group: {
+              _id: '$authentication.method',
+              count: { $sum: 1 }
+            }
+          }
+        ]
+      }
+    }
+  ]);
+  
+  const result = stats[0];
+  
   return {
-    inactive: inactiveResult.deletedCount,
-    failed: failedResult.deletedCount,
-    expired: expiredResult.deletedCount
+    overview: result.overview[0] || {},
+    deliveryStats: result.deliveryStats[0] || {},
+    eventDistribution: result.eventDistribution,
+    authMethods: result.authMethods
   };
 };
 
