@@ -1622,9 +1622,9 @@ userSchema.statics.bulkInvite = async function(invitations, invitedBy) {
 };
 
 // Create and export model
-const UserModel = BaseModel.createModel('User', userSchema);
+const User = BaseModel.createModel('User', userSchema);
 
 module.exports = {
   schema: userSchema,
-  model: UserModel
+  model: User
 };
