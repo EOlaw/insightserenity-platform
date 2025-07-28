@@ -1,877 +1,936 @@
-// server/shared/security/passport/strategies/organization-strategy.js
-/**
- * @file Organization SSO Strategy
- * @description Enterprise single sign-on authentication strategy
- * @version 3.0.0
- */
-
-const Strategy = require('passport-strategy').Strategy;
-const saml = require('@node-saml/passport-saml');
-const jwt = require('jsonwebtoken');
-
-const OrganizationService = require('../../../../hosted-organizations/organizations/services/organization-service');
-const AuthService = require('../../../auth/services/auth-service');
-const config = require('../../../config/config');
-const UserService = require('../../../users/services/user-service');
-const { AuthenticationError, ValidationError } = require('../../../utils/app-error');
-const logger = require('../../../utils/logger');
-const AuditService = require('../../services/audit-service');
+'use strict';
 
 /**
- * Organization SSO Strategy Class
- * @class OrganizationSSOStrategy
+ * @fileoverview Organization-based authentication strategy for multi-tenant support
+ * @module shared/lib/auth/strategies/organization-strategy
+ * @requires module:passport-strategy
+ * @requires module:shared/lib/auth/services/auth-service
+ * @requires module:shared/lib/auth/services/password-service
+ * @requires module:shared/lib/auth/services/token-service
+ * @requires module:shared/lib/database/models/user-model
+ * @requires module:shared/lib/database/models/organization-model
+ * @requires module:shared/lib/database/models/tenant-model
+ * @requires module:shared/lib/database/models/organization-member-model
+ * @requires module:shared/lib/services/cache-service
+ * @requires module:shared/lib/security/audit/audit-service
+ * @requires module:shared/lib/utils/logger
+ * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/utils/constants/error-codes
  */
-class OrganizationSSOStrategy extends Strategy {
-  constructor() {
+
+const { Strategy } = require('passport-strategy');
+const AuthService = require('../services/auth-service');
+const PasswordService = require('../services/password-service');
+const TokenService = require('../services/token-service');
+const UserModel = require('../../database/models/user-model');
+const OrganizationModel = require('../../database/models/organization-model');
+const TenantModel = require('../../database/models/tenant-model');
+const OrganizationMemberModel = require('../../database/models/organization-member-model');
+const CacheService = require('../../services/cache-service');
+const AuditService = require('../../security/audit/audit-service');
+const logger = require('../../utils/logger');
+const AppError = require('../../utils/app-error');
+const { ERROR_CODES } = require('../../utils/constants/error-codes');
+
+/**
+ * @class OrganizationAuthStrategy
+ * @extends Strategy
+ * @description Multi-tenant organization authentication strategy
+ */
+class OrganizationAuthStrategy extends Strategy {
+  /**
+   * @private
+   * @type {AuthService}
+   */
+  #authService;
+
+  /**
+   * @private
+   * @type {PasswordService}
+   */
+  #passwordService;
+
+  /**
+   * @private
+   * @type {TokenService}
+   */
+  #tokenService;
+
+  /**
+   * @private
+   * @type {CacheService}
+   */
+  #cacheService;
+
+  /**
+   * @private
+   * @type {AuditService}
+   */
+  #auditService;
+
+  /**
+   * @private
+   * @type {Object}
+   */
+  #config;
+
+  /**
+   * @private
+   * @type {Map}
+   */
+  #organizationCache;
+
+  /**
+   * @private
+   * @static
+   * @readonly
+   * @type {Object}
+   */
+  static #DEFAULT_CONFIG = {
+    name: 'organization',
+    identifierField: 'identifier', // Can be 'email', 'username', or custom
+    passwordField: 'password',
+    organizationField: 'organization', // Field containing org identifier
+    passReqToCallback: true,
+    session: false,
+    multiTenant: {
+      strategy: 'subdomain', // 'subdomain' | 'header' | 'path' | 'field'
+      isolation: 'logical', // 'logical' | 'physical' | 'hybrid'
+      allowCrossOrganization: false,
+      enforceOrgBoundaries: true,
+      supportGlobalUsers: true // Allow users to exist across organizations
+    },
+    organization: {
+      identifierType: 'slug', // 'slug' | 'id' | 'domain' | 'code'
+      autoDetect: true,
+      requireVerification: true,
+      allowInactive: false,
+      checkSubscription: true,
+      enforceLimits: true
+    },
+    security: {
+      isolateSessions: true,
+      preventOrgSwitching: false,
+      requireOrgContext: true,
+      validateMembership: true,
+      checkPermissions: true,
+      enforceIPRestrictions: true
+    },
+    features: {
+      supportSSO: true,
+      supportSAML: true,
+      supportOIDC: true,
+      supportCustomDomains: true,
+      supportWhiteLabeling: true
+    },
+    cache: {
+      organizationCacheTTL: 3600, // 1 hour
+      membershipCacheTTL: 1800, // 30 minutes
+      tenantCacheTTL: 7200 // 2 hours
+    },
+    audit: {
+      logOrganizationAccess: true,
+      logCrossOrgAttempts: true,
+      logMembershipChecks: true,
+      trackOrgUsage: true
+    }
+  };
+
+  /**
+   * Creates organization strategy instance
+   * @param {Object} [config] - Strategy configuration
+   * @param {Object} [services] - Service instances
+   */
+  constructor(config = {}, services = {}) {
     super();
-    this.name = 'organization';
     
-    // SSO provider configurations
-    this.providers = new Map();
-    
-    // Supported SSO protocols
-    this.supportedProtocols = ['saml', 'oidc', 'oauth2', 'ldap', 'custom'];
-    
-    // Default attribute mappings
-    this.defaultAttributeMappings = {
-      email: ['email', 'mail', 'emailAddress', 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'],
-      firstName: ['firstName', 'givenName', 'given_name', 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname'],
-      lastName: ['lastName', 'surname', 'family_name', 'sn', 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname'],
-      displayName: ['displayName', 'name', 'cn', 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'],
-      employeeId: ['employeeId', 'employeeNumber', 'employee_id'],
-      department: ['department', 'dept', 'ou'],
-      jobTitle: ['title', 'jobTitle', 'position'],
-      manager: ['manager', 'managerEmail', 'reports_to'],
-      groups: ['groups', 'memberOf', 'roles']
-    };
+    this.#config = { ...OrganizationAuthStrategy.#DEFAULT_CONFIG, ...config };
+    this.#authService = services.authService || new AuthService();
+    this.#passwordService = services.passwordService || new PasswordService();
+    this.#tokenService = services.tokenService || new TokenService();
+    this.#cacheService = services.cacheService || new CacheService();
+    this.#auditService = services.auditService || new AuditService();
+    this.#organizationCache = new Map();
+
+    this.name = this.#config.name;
+
+    logger.info('OrganizationAuthStrategy initialized', {
+      strategy: this.#config.multiTenant.strategy,
+      isolation: this.#config.multiTenant.isolation,
+      identifierType: this.#config.organization.identifierType
+    });
   }
-  
+
   /**
-   * Create and configure the organization strategy
-   * @returns {OrganizationSSOStrategy} Configured passport strategy
-   */
-  async createStrategy() {
-    // Load organization SSO configurations
-    await this.loadOrganizationConfigs();
-    return this;
-  }
-  
-  /**
-   * Authenticate request
+   * Authenticates user within organization context
    * @param {Object} req - Express request object
-   * @param {Object} options - Authentication options
+   * @param {Object} [options] - Authentication options
    */
-  async authenticate(req, options) {
+  async authenticate(req, options = {}) {
+    const correlationId = req.correlationId || this.#generateCorrelationId();
+    const startTime = Date.now();
+
     try {
-      const { organizationId, slug, action } = req.params;
-      const identifier = organizationId || slug;
-      
-      if (!identifier) {
-        return this.fail({ message: 'Organization identifier required' }, 400);
+      // Extract credentials
+      const identifier = req.body[this.#config.identifierField];
+      const password = req.body[this.#config.passwordField];
+      const organizationIdentifier = req.body[this.#config.organizationField];
+
+      // Validate input
+      if (!identifier || !password) {
+        throw new AppError(
+          'Credentials required',
+          400,
+          ERROR_CODES.VALIDATION_ERROR,
+          { correlationId }
+        );
       }
-      
-      const context = {
-        ip: req.ip,
-        userAgent: req.get('user-agent'),
-        origin: req.get('origin'),
-        organizationIdentifier: identifier
-      };
-      
-      // Get organization SSO configuration
-      const ssoConfig = await this.getOrganizationSSOConfig(identifier);
-      
-      if (!ssoConfig) {
-        return this.fail({ message: 'SSO not configured for this organization' }, 404);
+
+      // Detect organization context
+      const organization = await this.#detectOrganization(
+        req,
+        organizationIdentifier,
+        correlationId
+      );
+
+      if (!organization) {
+        throw new AppError(
+          'Organization context required',
+          400,
+          ERROR_CODES.ORGANIZATION_NOT_FOUND,
+          { correlationId }
+        );
       }
-      
-      // Handle different SSO actions
-      let result;
-      
-      switch (action || req.body.action) {
-        case 'login':
-          result = await this.initiateSSO(ssoConfig, req, context);
-          break;
-          
-        case 'callback':
-          result = await this.handleSSOCallback(ssoConfig, req, context);
-          break;
-          
-        case 'metadata':
-          result = await this.getMetadata(ssoConfig);
-          break;
-          
-        case 'logout':
-          result = await this.handleSSOLogout(ssoConfig, req, context);
-          break;
-          
-        default:
-          return this.fail({ message: 'Invalid SSO action' }, 400);
+
+      // Validate organization status
+      await this.#validateOrganization(organization, correlationId);
+
+      // Find user within organization
+      const user = await this.#findOrganizationUser(
+        identifier,
+        organization._id,
+        correlationId
+      );
+
+      if (!user) {
+        throw new AppError(
+          'Invalid credentials',
+          401,
+          ERROR_CODES.INVALID_CREDENTIALS,
+          { correlationId }
+        );
       }
-      
-      if (result.redirect) {
-        return this.redirect(result.redirect);
+
+      // Verify password
+      const isValidPassword = await this.#passwordService.verifyPassword(
+        password,
+        user.password
+      );
+
+      if (!isValidPassword) {
+        await this.#handleFailedLogin(user, organization, correlationId);
+        throw new AppError(
+          'Invalid credentials',
+          401,
+          ERROR_CODES.INVALID_CREDENTIALS,
+          { correlationId }
+        );
       }
-      
-      if (result.success && result.user) {
-        this.success(result.user, {
-          method: 'organization-sso',
-          provider: ssoConfig.provider,
-          sessionId: result.sessionId,
-          organizationId: ssoConfig.organizationId
-        });
-      } else if (result.metadata) {
-        req.res.type('application/xml').send(result.metadata);
-      } else {
-        this.fail(result, result.statusCode || 401);
+
+      // Validate membership and permissions
+      const membership = await this.#validateMembership(
+        user,
+        organization,
+        correlationId
+      );
+
+      // Check organization-specific restrictions
+      await this.#checkOrganizationRestrictions(
+        user,
+        organization,
+        membership,
+        req,
+        correlationId
+      );
+
+      // Get tenant configuration if multi-tenant
+      const tenant = await this.#getTenantConfiguration(organization, correlationId);
+
+      // Enhance user with organization context
+      const enhancedUser = await this.#enhanceUserWithOrgContext(
+        user,
+        organization,
+        membership,
+        tenant,
+        correlationId
+      );
+
+      // Update login metadata
+      await this.#updateLoginMetadata(user, organization, req);
+
+      // Audit successful login
+      if (this.#config.audit.logOrganizationAccess) {
+        await this.#auditOrganizationLogin(
+          req,
+          enhancedUser,
+          organization,
+          true,
+          correlationId
+        );
       }
-      
-    } catch (error) {
-      logger.error('Organization SSO error', { error });
-      this.error(error);
-    }
-  }
-  
-  /**
-   * Load organization SSO configurations
-   */
-  async loadOrganizationConfigs() {
-    try {
-      // This would load from database
-      // For now, using placeholder
-      logger.info('Loading organization SSO configurations');
-    } catch (error) {
-      logger.error('Failed to load SSO configurations', { error });
-    }
-  }
-  
-  /**
-   * Get organization SSO configuration
-   * @param {string} identifier - Organization ID or slug
-   * @returns {Promise<Object>} SSO configuration
-   */
-  async getOrganizationSSOConfig(identifier) {
-    try {
-      // Get organization
-      const organization = await OrganizationService.getOrganizationByIdentifier(identifier);
-      
-      if (!organization || !organization.ssoConfig?.enabled) {
-        return null;
-      }
-      
-      // Build configuration based on provider type
-      const config = {
-        organizationId: organization._id,
-        organizationName: organization.name,
-        slug: organization.slug,
-        provider: organization.ssoConfig.provider,
-        protocol: organization.ssoConfig.protocol,
-        ...organization.ssoConfig.settings
-      };
-      
-      // Add attribute mappings
-      config.attributeMappings = {
-        ...this.defaultAttributeMappings,
-        ...organization.ssoConfig.attributeMappings
-      };
-      
-      return config;
-      
-    } catch (error) {
-      logger.error('Failed to get SSO configuration', { error, identifier });
-      return null;
-    }
-  }
-  
-  /**
-   * Initiate SSO login
-   * @param {Object} ssoConfig - SSO configuration
-   * @param {Object} req - Express request
-   * @param {Object} context - Request context
-   * @returns {Promise<Object>} SSO initiation result
-   */
-  async initiateSSO(ssoConfig, req, context) {
-    try {
-      switch (ssoConfig.protocol) {
-        case 'saml':
-          return await this.initiateSAML(ssoConfig, req, context);
-          
-        case 'oidc':
-          return await this.initiateOIDC(ssoConfig, req, context);
-          
-        case 'oauth2':
-          return await this.initiateOAuth2(ssoConfig, req, context);
-          
-        case 'ldap':
-          return await this.handleLDAP(ssoConfig, req, context);
-          
-        case 'custom':
-          return await this.handleCustomSSO(ssoConfig, req, context);
-          
-        default:
-          return {
-            success: false,
-            message: `Unsupported SSO protocol: ${ssoConfig.protocol}`,
-            statusCode: 400
-          };
-      }
-    } catch (error) {
-      logger.error('SSO initiation error', { error, organizationId: ssoConfig.organizationId });
-      return {
-        success: false,
-        message: 'Failed to initiate SSO',
-        statusCode: 500
-      };
-    }
-  }
-  
-  /**
-   * Initiate SAML authentication
-   * @param {Object} ssoConfig - SAML configuration
-   * @param {Object} req - Express request
-   * @param {Object} context - Request context
-   * @returns {Promise<Object>} SAML initiation result
-   */
-  async initiateSAML(ssoConfig, req, context) {
-    const samlStrategy = new saml.Strategy({
-      callbackUrl: `${config.server.url}/auth/sso/${ssoConfig.slug}/callback`,
-      entryPoint: ssoConfig.saml.entryPoint,
-      issuer: ssoConfig.saml.issuer || config.server.url,
-      cert: ssoConfig.saml.cert,
-      identifierFormat: ssoConfig.saml.identifierFormat || 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
-      acceptedClockSkewMs: 5000,
-      attributeConsumingServiceIndex: false,
-      disableRequestedAuthnContext: true,
-      forceAuthn: false,
-      skipRequestCompression: false,
-      authnRequestBinding: 'HTTP-Redirect'
-    }, () => {});
-    
-    return new Promise((resolve, reject) => {
-      samlStrategy.getAuthorizeUrl(req, {}, (err, url) => {
-        if (err) {
-          reject(err);
-        } else {
-          // Store state in session
-          req.session.ssoState = {
-            organizationId: ssoConfig.organizationId,
-            protocol: 'saml',
-            timestamp: Date.now(),
-            context
-          };
-          
-          // Audit log
-          AuditService.log({
-            type: 'sso_login_initiated',
-            action: 'initiate_sso',
-            category: 'authentication',
-            result: 'success',
-            target: {
-              type: 'organization',
-              id: ssoConfig.organizationId
-            },
-            metadata: {
-              ...context,
-              provider: 'saml',
-              organizationSlug: ssoConfig.slug
-            }
-          });
-          
-          resolve({ redirect: url });
-        }
-      });
-    });
-  }
-  
-  /**
-   * Initiate OIDC authentication
-   * @param {Object} ssoConfig - OIDC configuration
-   * @param {Object} req - Express request
-   * @param {Object} context - Request context
-   * @returns {Promise<Object>} OIDC initiation result
-   */
-  async initiateOIDC(ssoConfig, req, context) {
-    const { Issuer, generators } = require('openid-client');
-    
-    try {
-      // Discover OIDC configuration
-      const issuer = await Issuer.discover(ssoConfig.oidc.discoveryUrl);
-      
-      const client = new issuer.Client({
-        client_id: ssoConfig.oidc.clientId,
-        client_secret: ssoConfig.oidc.clientSecret,
-        redirect_uris: [`${config.server.url}/auth/sso/${ssoConfig.slug}/callback`],
-        response_types: ['code']
-      });
-      
-      // Generate state and nonce
-      const state = generators.state();
-      const nonce = generators.nonce();
-      
-      // Store in session
-      req.session.ssoState = {
-        organizationId: ssoConfig.organizationId,
-        protocol: 'oidc',
-        state,
-        nonce,
-        timestamp: Date.now(),
-        context
-      };
-      
-      // Generate authorization URL
-      const authorizationUrl = client.authorizationUrl({
-        scope: ssoConfig.oidc.scope || 'openid email profile',
-        state,
-        nonce,
-        prompt: 'select_account'
-      });
-      
-      // Audit log
-      await AuditService.log({
-        type: 'sso_login_initiated',
-        action: 'initiate_sso',
-        category: 'authentication',
-        result: 'success',
-        target: {
-          type: 'organization',
-          id: ssoConfig.organizationId
-        },
-        metadata: {
-          ...context,
-          provider: 'oidc',
-          organizationSlug: ssoConfig.slug
-        }
-      });
-      
-      return { redirect: authorizationUrl };
-      
-    } catch (error) {
-      logger.error('OIDC initiation error', { error });
-      return {
-        success: false,
-        message: 'Failed to initiate OIDC authentication',
-        statusCode: 500
-      };
-    }
-  }
-  
-  /**
-   * Handle SSO callback
-   * @param {Object} ssoConfig - SSO configuration
-   * @param {Object} req - Express request
-   * @param {Object} context - Request context
-   * @returns {Promise<Object>} Callback handling result
-   */
-  async handleSSOCallback(ssoConfig, req, context) {
-    try {
-      // Verify session state
-      const sessionState = req.session.ssoState;
-      
-      if (!sessionState || sessionState.organizationId !== ssoConfig.organizationId) {
-        return {
-          success: false,
-          message: 'Invalid SSO session',
-          statusCode: 400
-        };
-      }
-      
-      // Check session timeout (5 minutes)
-      if (Date.now() - sessionState.timestamp > 300000) {
-        delete req.session.ssoState;
-        return {
-          success: false,
-          message: 'SSO session expired',
-          statusCode: 400
-        };
-      }
-      
-      let profile;
-      
-      switch (ssoConfig.protocol) {
-        case 'saml':
-          profile = await this.handleSAMLCallback(ssoConfig, req);
-          break;
-          
-        case 'oidc':
-          profile = await this.handleOIDCCallback(ssoConfig, req, sessionState);
-          break;
-          
-        case 'oauth2':
-          profile = await this.handleOAuth2Callback(ssoConfig, req, sessionState);
-          break;
-          
-        default:
-          return {
-            success: false,
-            message: 'Invalid SSO protocol',
-            statusCode: 400
-          };
-      }
-      
-      if (!profile) {
-        return {
-          success: false,
-          message: 'Failed to process SSO response',
-          statusCode: 401
-        };
-      }
-      
-      // Process user profile
-      const result = await this.processUserProfile(profile, ssoConfig, sessionState.context);
-      
-      // Clean up session
-      delete req.session.ssoState;
-      
-      return result;
-      
-    } catch (error) {
-      logger.error('SSO callback error', { error });
-      return {
-        success: false,
-        message: 'SSO authentication failed',
-        statusCode: 500
-      };
-    }
-  }
-  
-  /**
-   * Handle SAML callback
-   * @param {Object} ssoConfig - SAML configuration
-   * @param {Object} req - Express request
-   * @returns {Promise<Object>} User profile
-   */
-  async handleSAMLCallback(ssoConfig, req) {
-    const samlStrategy = new saml.Strategy({
-      callbackUrl: `${config.server.url}/auth/sso/${ssoConfig.slug}/callback`,
-      entryPoint: ssoConfig.saml.entryPoint,
-      issuer: ssoConfig.saml.issuer || config.server.url,
-      cert: ssoConfig.saml.cert,
-      identifierFormat: ssoConfig.saml.identifierFormat || 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
-      acceptedClockSkewMs: 5000
-    }, () => {});
-    
-    return new Promise((resolve, reject) => {
-      samlStrategy._saml.validatePostResponse(req.body, (err, profile) => {
-        if (err) {
-          logger.error('SAML validation error', { err });
-          resolve(null);
-        } else {
-          resolve(this.mapSAMLProfile(profile, ssoConfig.attributeMappings));
-        }
-      });
-    });
-  }
-  
-  /**
-   * Map SAML profile to standard format
-   * @param {Object} samlProfile - SAML profile
-   * @param {Object} mappings - Attribute mappings
-   * @returns {Object} Mapped profile
-   */
-  mapSAMLProfile(samlProfile, mappings) {
-    const profile = {
-      id: samlProfile.nameID,
-      provider: 'saml',
-      raw: samlProfile
-    };
-    
-    // Map attributes
-    for (const [key, possibleNames] of Object.entries(mappings)) {
-      for (const name of possibleNames) {
-        if (samlProfile[name]) {
-          profile[key] = Array.isArray(samlProfile[name]) ? 
-            samlProfile[name][0] : samlProfile[name];
-          break;
-        }
-      }
-    }
-    
-    return profile;
-  }
-  
-  /**
-   * Process user profile from SSO
-   * @param {Object} profile - User profile from SSO
-   * @param {Object} ssoConfig - SSO configuration
-   * @param {Object} context - Request context
-   * @returns {Promise<Object>} Processing result
-   */
-  async processUserProfile(profile, ssoConfig, context) {
-    try {
-      // Validate required attributes
-      if (!profile.email) {
-        return {
-          success: false,
-          message: 'Email not provided by SSO provider',
-          statusCode: 400
-        };
-      }
-      
-      // Check if user exists
-      let userWithAuth = await UserService.getUserWithAuth(profile.email);
-      
-      if (!userWithAuth) {
-        // Check if auto-provisioning is enabled
-        if (!ssoConfig.autoProvision) {
-          return {
-            success: false,
-            message: 'Account not found. Please contact your administrator.',
-            statusCode: 403
-          };
-        }
-        
-        // Create new user
-        const userData = {
-          email: profile.email,
-          firstName: profile.firstName || profile.displayName?.split(' ')[0] || '',
-          lastName: profile.lastName || profile.displayName?.split(' ').slice(1).join(' ') || '',
-          profile: {
-            displayName: profile.displayName || profile.email,
-            employeeId: profile.employeeId,
-            department: profile.department,
-            jobTitle: profile.jobTitle
-          },
-          organization: {
-            current: ssoConfig.organizationId,
-            organizations: [ssoConfig.organizationId]
-          },
-          userType: 'hosted_org_user',
-          role: {
-            primary: this.mapRoleFromGroups(profile.groups, ssoConfig) || 'org_member'
-          },
-          status: 'active',
-          isEmailVerified: true // SSO validates email
-        };
-        
-        const result = await UserService.createUserWithSSO(userData, {
-          provider: ssoConfig.provider,
-          protocol: ssoConfig.protocol,
-          identifier: profile.id,
-          attributes: profile
-        }, context);
-        
-        if (!result.success) {
-          return result;
-        }
-        
-        userWithAuth = result;
-      } else {
-        // Update existing user
-        const { user, auth } = userWithAuth;
-        
-        // Check organization membership
-        if (!user.organization.organizations.includes(ssoConfig.organizationId)) {
-          return {
-            success: false,
-            message: 'You are not authorized to access this organization',
-            statusCode: 403
-          };
-        }
-        
-        // Update SSO information
-        auth.authMethods.organizationSSO = {
-          provider: ssoConfig.provider,
-          identifier: profile.id,
-          attributes: profile,
-          lastSyncedAt: new Date()
-        };
-        
-        // Update user profile if sync is enabled
-        if (ssoConfig.syncProfile) {
-          if (profile.firstName) user.firstName = profile.firstName;
-          if (profile.lastName) user.lastName = profile.lastName;
-          if (profile.displayName) user.profile.displayName = profile.displayName;
-          if (profile.department) user.profile.department = profile.department;
-          if (profile.jobTitle) user.profile.jobTitle = profile.jobTitle;
-          
-          // Update role if group mapping is enabled
-          if (ssoConfig.syncRoles && profile.groups) {
-            const newRole = this.mapRoleFromGroups(profile.groups, ssoConfig);
-            if (newRole && newRole !== user.role.primary) {
-              user.role.primary = newRole;
-            }
-          }
-        }
-        
-        await auth.save();
-        await user.save();
-      }
-      
-      const { user, auth } = userWithAuth;
-      
-      // Check account status
-      const accountCheck = await this.checkAccountStatus(user, auth);
-      if (!accountCheck.valid) {
-        return accountCheck;
-      }
-      
-      // Create session
-      const session = auth.addSession({
-        deviceInfo: {
-          userAgent: context.userAgent,
-          platform: this.extractPlatform(context.userAgent),
-          browser: this.extractBrowser(context.userAgent)
-        },
-        location: {
-          ip: context.ip
-        },
-        expiresAt: new Date(Date.now() + config.auth.sessionDuration),
-        ssoProvider: ssoConfig.provider
-      });
-      
-      // Add login history
-      auth.activity.loginHistory.push({
-        timestamp: new Date(),
-        ip: context.ip,
-        userAgent: context.userAgent,
-        method: 'organization-sso',
-        success: true
-      });
-      
-      await auth.save();
-      
-      // Update user activity
-      user.activity.lastLogin = new Date();
-      await user.save();
-      
-      // Audit log
-      await AuditService.log({
-        type: 'user_login',
-        action: 'authenticate',
-        category: 'authentication',
-        result: 'success',
+
+      logger.info('Organization authentication successful', {
+        correlationId,
         userId: user._id,
-        target: {
-          type: 'user',
-          id: user._id.toString()
-        },
-        metadata: {
-          ...context,
-          method: 'organization-sso',
-          provider: ssoConfig.provider,
-          protocol: ssoConfig.protocol,
-          organizationId: ssoConfig.organizationId,
-          sessionId: session.sessionId
-        }
+        organizationId: organization._id,
+        duration: Date.now() - startTime
       });
-      
-      return {
-        success: true,
-        user: this.prepareUserObject(user, session.sessionId),
-        sessionId: session.sessionId
-      };
-      
+
+      this.success(enhancedUser);
+
     } catch (error) {
-      logger.error('User profile processing error', { error });
-      return {
-        success: false,
-        message: 'Failed to process user profile',
-        statusCode: 500
-      };
+      const duration = Date.now() - startTime;
+
+      logger.error('Organization authentication failed', {
+        correlationId,
+        error: error.message,
+        duration
+      });
+
+      this.fail(error, error.statusCode || 401);
     }
   }
-  
+
   /**
-   * Map role from SSO groups
-   * @param {Array} groups - User groups from SSO
-   * @param {Object} ssoConfig - SSO configuration
-   * @returns {string} Mapped role
+   * @private
+   * Detects organization from request
    */
-  mapRoleFromGroups(groups, ssoConfig) {
-    if (!groups || !ssoConfig.roleMapping) {
+  async #detectOrganization(req, explicitIdentifier, correlationId) {
+    let organizationIdentifier = explicitIdentifier;
+
+    // Auto-detect organization if enabled
+    if (this.#config.organization.autoDetect && !organizationIdentifier) {
+      switch (this.#config.multiTenant.strategy) {
+        case 'subdomain':
+          organizationIdentifier = this.#extractSubdomain(req);
+          break;
+
+        case 'header':
+          organizationIdentifier = req.headers['x-organization-id'] || 
+                                 req.headers['x-tenant-id'];
+          break;
+
+        case 'path':
+          // Extract from URL path (e.g., /org/acme-corp/login)
+          const pathMatch = req.path.match(/^\/org\/([^\/]+)/);
+          organizationIdentifier = pathMatch?.[1];
+          break;
+
+        case 'field':
+          // Already handled by explicitIdentifier
+          break;
+
+        default:
+          logger.warn('Unknown multi-tenant strategy', {
+            correlationId,
+            strategy: this.#config.multiTenant.strategy
+          });
+      }
+    }
+
+    if (!organizationIdentifier) {
       return null;
     }
-    
-    // Check each group against role mappings
-    for (const group of groups) {
-      const normalizedGroup = group.toLowerCase().trim();
+
+    // Check cache
+    const cacheKey = `org:${this.#config.organization.identifierType}:${organizationIdentifier}`;
+    const cachedOrg = await this.#cacheService.get(cacheKey);
+    if (cachedOrg) {
+      return cachedOrg;
+    }
+
+    // Find organization
+    const query = {};
+    switch (this.#config.organization.identifierType) {
+      case 'slug':
+        query.slug = organizationIdentifier;
+        break;
+      case 'id':
+        query._id = organizationIdentifier;
+        break;
+      case 'domain':
+        query.customDomain = organizationIdentifier;
+        break;
+      case 'code':
+        query.organizationCode = organizationIdentifier;
+        break;
+    }
+
+    const organization = await OrganizationModel.findOne(query)
+      .populate('subscription')
+      .lean();
+
+    if (organization) {
+      // Cache organization
+      await this.#cacheService.set(
+        cacheKey,
+        organization,
+        this.#config.cache.organizationCacheTTL
+      );
+    }
+
+    return organization;
+  }
+
+  /**
+   * @private
+   * Validates organization status
+   */
+  async #validateOrganization(organization, correlationId) {
+    if (!organization.isActive && !this.#config.organization.allowInactive) {
+      throw new AppError(
+        'Organization is inactive',
+        403,
+        ERROR_CODES.ORGANIZATION_INACTIVE,
+        { correlationId, organizationId: organization._id }
+      );
+    }
+
+    if (this.#config.organization.requireVerification && !organization.isVerified) {
+      throw new AppError(
+        'Organization not verified',
+        403,
+        ERROR_CODES.ORGANIZATION_NOT_VERIFIED,
+        { correlationId, organizationId: organization._id }
+      );
+    }
+
+    if (this.#config.organization.checkSubscription && organization.subscription) {
+      const subscription = organization.subscription;
       
-      for (const [role, patterns] of Object.entries(ssoConfig.roleMapping)) {
-        if (patterns.some(pattern => {
-          if (pattern.startsWith('/') && pattern.endsWith('/')) {
-            // Regex pattern
-            const regex = new RegExp(pattern.slice(1, -1), 'i');
-            return regex.test(normalizedGroup);
-          }
-          // Exact match
-          return pattern.toLowerCase() === normalizedGroup;
-        })) {
-          return role;
+      if (!subscription.isActive || subscription.status === 'expired') {
+        throw new AppError(
+          'Organization subscription expired',
+          403,
+          ERROR_CODES.SUBSCRIPTION_EXPIRED,
+          { correlationId, organizationId: organization._id }
+        );
+      }
+
+      if (subscription.status === 'suspended') {
+        throw new AppError(
+          'Organization subscription suspended',
+          403,
+          ERROR_CODES.SUBSCRIPTION_SUSPENDED,
+          { correlationId, organizationId: organization._id }
+        );
+      }
+    }
+  }
+
+  /**
+   * @private
+   * Finds user within organization context
+   */
+  async #findOrganizationUser(identifier, organizationId, correlationId) {
+    const cacheKey = `org_user:${organizationId}:${identifier}`;
+    
+    // Check cache
+    const cachedUser = await this.#cacheService.get(cacheKey);
+    if (cachedUser) {
+      return cachedUser;
+    }
+
+    // Build query
+    const baseQuery = {
+      $or: [
+        { email: identifier },
+        { username: identifier }
+      ],
+      isDeleted: { $ne: true }
+    };
+
+    let user;
+
+    if (this.#config.multiTenant.supportGlobalUsers) {
+      // First, find the user
+      user = await UserModel.findOne(baseQuery)
+        .select('+password')
+        .populate('roles')
+        .populate('permissions')
+        .lean();
+
+      if (user) {
+        // Then check if they have membership in this organization
+        const membership = await OrganizationMemberModel.findOne({
+          userId: user._id,
+          organizationId,
+          isActive: true
+        }).lean();
+
+        if (!membership) {
+          return null; // User exists but not in this organization
         }
       }
+    } else {
+      // Direct query with organization constraint
+      user = await UserModel.findOne({
+        ...baseQuery,
+        organizationId
+      })
+      .select('+password')
+      .populate('roles')
+      .populate('permissions')
+      .lean();
     }
-    
-    return ssoConfig.defaultRole || 'org_member';
+
+    if (user) {
+      // Don't cache user with password
+      const userToCache = { ...user };
+      delete userToCache.password;
+      await this.#cacheService.set(cacheKey, userToCache, this.#config.cache.membershipCacheTTL);
+    }
+
+    return user;
   }
-  
+
   /**
-   * Get SSO metadata
-   * @param {Object} ssoConfig - SSO configuration
-   * @returns {Promise<Object>} Metadata result
+   * @private
+   * Validates organization membership
    */
-  async getMetadata(ssoConfig) {
-    if (ssoConfig.protocol !== 'saml') {
-      return {
-        success: false,
-        message: 'Metadata only available for SAML',
-        statusCode: 400
+  async #validateMembership(user, organization, correlationId) {
+    if (!this.#config.security.validateMembership) {
+      return null;
+    }
+
+    const membership = await OrganizationMemberModel.findOne({
+      userId: user._id,
+      organizationId: organization._id
+    })
+    .populate('role')
+    .populate('permissions')
+    .lean();
+
+    if (!membership) {
+      throw new AppError(
+        'Not a member of this organization',
+        403,
+        ERROR_CODES.ORGANIZATION_MEMBERSHIP_REQUIRED,
+        { correlationId }
+      );
+    }
+
+    if (!membership.isActive) {
+      throw new AppError(
+        'Organization membership inactive',
+        403,
+        ERROR_CODES.MEMBERSHIP_INACTIVE,
+        { correlationId }
+      );
+    }
+
+    if (membership.expiresAt && membership.expiresAt < new Date()) {
+      throw new AppError(
+        'Organization membership expired',
+        403,
+        ERROR_CODES.MEMBERSHIP_EXPIRED,
+        { correlationId }
+      );
+    }
+
+    // Audit membership check
+    if (this.#config.audit.logMembershipChecks) {
+      await this.#auditService.logEvent({
+        event: 'organization.membership_validated',
+        userId: user._id,
+        organizationId: organization._id,
+        correlationId,
+        metadata: {
+          membershipId: membership._id,
+          role: membership.role?.name,
+          permissions: membership.permissions?.length || 0
+        }
+      });
+    }
+
+    return membership;
+  }
+
+  /**
+   * @private
+   * Checks organization-specific restrictions
+   */
+  async #checkOrganizationRestrictions(user, organization, membership, req, correlationId) {
+    // Check IP restrictions
+    if (this.#config.security.enforceIPRestrictions && organization.ipRestrictions?.length > 0) {
+      const clientIP = req.ip || req.connection.remoteAddress;
+      const isAllowedIP = this.#checkIPRestriction(clientIP, organization.ipRestrictions);
+
+      if (!isAllowedIP) {
+        throw new AppError(
+          'Access denied from this IP address',
+          403,
+          ERROR_CODES.IP_RESTRICTED,
+          { correlationId, clientIP }
+        );
+      }
+    }
+
+    // Check time-based restrictions
+    if (organization.accessSchedule) {
+      const isWithinSchedule = this.#checkAccessSchedule(organization.accessSchedule);
+      
+      if (!isWithinSchedule) {
+        throw new AppError(
+          'Access denied outside allowed hours',
+          403,
+          ERROR_CODES.TIME_RESTRICTED,
+          { correlationId }
+        );
+      }
+    }
+
+    // Check member limits
+    if (this.#config.organization.enforceLimits && organization.limits?.maxMembers) {
+      const memberCount = await OrganizationMemberModel.countDocuments({
+        organizationId: organization._id,
+        isActive: true
+      });
+
+      if (memberCount >= organization.limits.maxMembers) {
+        logger.warn('Organization member limit reached', {
+          correlationId,
+          organizationId: organization._id,
+          limit: organization.limits.maxMembers,
+          current: memberCount
+        });
+      }
+    }
+
+    // Check custom restrictions
+    if (organization.customRestrictions && membership) {
+      await this.#evaluateCustomRestrictions(
+        user,
+        organization,
+        membership,
+        req,
+        correlationId
+      );
+    }
+  }
+
+  /**
+   * @private
+   * Gets tenant configuration
+   */
+  async #getTenantConfiguration(organization, correlationId) {
+    if (this.#config.multiTenant.isolation === 'logical') {
+      return null; // No separate tenant config needed
+    }
+
+    const cacheKey = `tenant:${organization._id}`;
+    const cachedTenant = await this.#cacheService.get(cacheKey);
+    if (cachedTenant) {
+      return cachedTenant;
+    }
+
+    const tenant = await TenantModel.findOne({
+      organizationId: organization._id,
+      isActive: true
+    }).lean();
+
+    if (tenant) {
+      await this.#cacheService.set(cacheKey, tenant, this.#config.cache.tenantCacheTTL);
+    }
+
+    return tenant;
+  }
+
+  /**
+   * @private
+   * Enhances user with organization context
+   */
+  async #enhanceUserWithOrgContext(user, organization, membership, tenant, correlationId) {
+    const enhancedUser = {
+      ...user,
+      organization: {
+        _id: organization._id,
+        name: organization.name,
+        slug: organization.slug,
+        logo: organization.logo,
+        customDomain: organization.customDomain
+      },
+      membership: membership ? {
+        _id: membership._id,
+        role: membership.role,
+        permissions: membership.permissions,
+        department: membership.department,
+        joinedAt: membership.createdAt
+      } : null,
+      tenant: tenant ? {
+        _id: tenant._id,
+        database: tenant.database,
+        schema: tenant.schema,
+        isolation: tenant.isolationType
+      } : null,
+      organizationContext: {
+        isOrganizationAdmin: membership?.role?.name === 'organization_admin',
+        organizationPermissions: this.#mergePermissions(user, membership),
+        features: organization.features || {},
+        limits: organization.limits || {}
+      }
+    };
+
+    // Add SSO info if applicable
+    if (this.#config.features.supportSSO && organization.ssoConfig) {
+      enhancedUser.sso = {
+        enabled: organization.ssoConfig.enabled,
+        provider: organization.ssoConfig.provider,
+        enforced: organization.ssoConfig.enforced
       };
     }
-    
-    const samlStrategy = new saml.Strategy({
-      callbackUrl: `${config.server.url}/auth/sso/${ssoConfig.slug}/callback`,
-      issuer: ssoConfig.saml.issuer || config.server.url,
-      cert: null, // SP cert if available
-      privateCert: null // SP private key if available
-    }, () => {});
-    
-    const metadata = samlStrategy.generateServiceProviderMetadata();
-    
-    return {
-      metadata,
-      contentType: 'application/xml'
-    };
+
+    return enhancedUser;
   }
-  
+
   /**
-   * Handle SSO logout
-   * @param {Object} ssoConfig - SSO configuration
-   * @param {Object} req - Express request
-   * @param {Object} context - Request context
-   * @returns {Promise<Object>} Logout result
+   * @private
+   * Extracts subdomain from request
    */
-  async handleSSOLogout(ssoConfig, req, context) {
+  #extractSubdomain(req) {
+    const host = req.get('host') || req.hostname;
+    const parts = host.split('.');
+    
+    // Ignore www
+    if (parts[0] === 'www') {
+      parts.shift();
+    }
+
+    // Get subdomain if exists
+    if (parts.length > 2 || (parts.length === 2 && !parts[1].includes(':'))) {
+      return parts[0];
+    }
+
+    return null;
+  }
+
+  /**
+   * @private
+   * Checks IP restriction
+   */
+  #checkIPRestriction(clientIP, restrictions) {
+    // Simplified IP checking - in production, use proper IP range checking
+    return restrictions.some(restriction => {
+      if (restriction.type === 'exact') {
+        return restriction.value === clientIP;
+      }
+      if (restriction.type === 'range') {
+        // Implement IP range checking
+        return true; // Placeholder
+      }
+      if (restriction.type === 'cidr') {
+        // Implement CIDR checking
+        return true; // Placeholder
+      }
+      return false;
+    });
+  }
+
+  /**
+   * @private
+   * Checks access schedule
+   */
+  #checkAccessSchedule(schedule) {
+    const now = new Date();
+    const currentDay = now.getDay();
+    const currentHour = now.getHours();
+
+    // Check day of week
+    if (schedule.daysOfWeek && !schedule.daysOfWeek.includes(currentDay)) {
+      return false;
+    }
+
+    // Check time range
+    if (schedule.startHour !== undefined && currentHour < schedule.startHour) {
+      return false;
+    }
+    if (schedule.endHour !== undefined && currentHour >= schedule.endHour) {
+      return false;
+    }
+
+    // Check timezone if specified
+    if (schedule.timezone) {
+      // Implement timezone-aware checking
+    }
+
+    return true;
+  }
+
+  /**
+   * @private
+   * Evaluates custom restrictions
+   */
+  async #evaluateCustomRestrictions(user, organization, membership, req, correlationId) {
+    // Placeholder for custom restriction evaluation
+    // This could integrate with a rules engine or custom scripts
+    
+    if (organization.customRestrictions.requireMFA && !user.twoFactorEnabled) {
+      throw new AppError(
+        'Two-factor authentication required by organization',
+        403,
+        ERROR_CODES.MFA_REQUIRED,
+        { correlationId }
+      );
+    }
+
+    if (organization.customRestrictions.minPasswordAge) {
+      const passwordAge = Date.now() - new Date(user.passwordChangedAt).getTime();
+      const minAge = organization.customRestrictions.minPasswordAge * 86400000; // days to ms
+      
+      if (passwordAge < minAge) {
+        throw new AppError(
+          'Password too recently changed',
+          403,
+          ERROR_CODES.PASSWORD_TOO_NEW,
+          { correlationId }
+        );
+      }
+    }
+  }
+
+  /**
+   * @private
+   * Merges user and membership permissions
+   */
+  #mergePermissions(user, membership) {
+    const permissions = new Set();
+
+    // Add user's direct permissions
+    if (user.permissions) {
+      user.permissions.forEach(p => permissions.add(p.code || p));
+    }
+
+    // Add role permissions
+    if (user.roles) {
+      user.roles.forEach(role => {
+        if (role.permissions) {
+          role.permissions.forEach(p => permissions.add(p.code || p));
+        }
+      });
+    }
+
+    // Add membership permissions
+    if (membership) {
+      if (membership.permissions) {
+        membership.permissions.forEach(p => permissions.add(p.code || p));
+      }
+      if (membership.role?.permissions) {
+        membership.role.permissions.forEach(p => permissions.add(p.code || p));
+      }
+    }
+
+    return Array.from(permissions);
+  }
+
+  /**
+   * @private
+   * Handles failed login
+   */
+  async #handleFailedLogin(user, organization, correlationId) {
+    // Track failed attempts
+    await UserModel.findByIdAndUpdate(user._id, {
+      $inc: { failedLoginAttempts: 1 },
+      lastFailedLogin: new Date()
+    });
+
+    // Audit failed login
+    if (this.#config.audit.logOrganizationAccess) {
+      await this.#auditService.logEvent({
+        event: 'organization.login_failed',
+        userId: user._id,
+        organizationId: organization._id,
+        correlationId,
+        metadata: {
+          reason: 'invalid_password'
+        }
+      });
+    }
+  }
+
+  /**
+   * @private
+   * Updates login metadata
+   */
+  async #updateLoginMetadata(user, organization, req) {
+    await UserModel.findByIdAndUpdate(user._id, {
+      lastLogin: new Date(),
+      lastLoginIP: req.ip || req.connection.remoteAddress,
+      lastLoginUserAgent: req.headers['user-agent'],
+      lastLoginOrganization: organization._id,
+      failedLoginAttempts: 0
+    });
+
+    // Update organization member activity
+    await OrganizationMemberModel.findOneAndUpdate(
+      {
+        userId: user._id,
+        organizationId: organization._id
+      },
+      {
+        lastActivityAt: new Date(),
+        $inc: { loginCount: 1 }
+      }
+    );
+  }
+
+  /**
+   * @private
+   * Audits organization login
+   */
+  async #auditOrganizationLogin(req, user, organization, success, correlationId) {
     try {
-      // Perform local logout first
-      if (req.user) {
-        await AuthService.logout({
-          accessToken: req.token,
-          userId: req.user._id
-        }, context);
+      await this.#auditService.logEvent({
+        event: success ? 'organization.login_success' : 'organization.login_failed',
+        userId: user._id,
+        organizationId: organization._id,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'],
+        correlationId,
+        metadata: {
+          method: 'organization',
+          organizationSlug: organization.slug,
+          membershipRole: user.membership?.role?.name,
+          detectionStrategy: this.#config.multiTenant.strategy
+        }
+      });
+
+      // Track organization usage
+      if (this.#config.audit.trackOrgUsage && success) {
+        await this.#auditService.logMetric({
+          metric: 'organization.active_users',
+          organizationId: organization._id,
+          value: 1,
+          timestamp: new Date()
+        });
       }
-      
-      // Handle protocol-specific logout
-      switch (ssoConfig.protocol) {
-        case 'saml':
-          if (ssoConfig.saml.sloUrl) {
-            const samlStrategy = new saml.Strategy({
-              logoutUrl: ssoConfig.saml.sloUrl,
-              issuer: ssoConfig.saml.issuer || config.server.url,
-              cert: ssoConfig.saml.cert
-            }, () => {});
-            
-            return new Promise((resolve) => {
-              samlStrategy.logout(req, (err, url) => {
-                if (err) {
-                  logger.error('SAML logout error', { err });
-                  resolve({ redirect: config.client.url });
-                } else {
-                  resolve({ redirect: url });
-                }
-              });
-            });
-          }
-          break;
-          
-        case 'oidc':
-          if (ssoConfig.oidc.endSessionEndpoint) {
-            const logoutUrl = new URL(ssoConfig.oidc.endSessionEndpoint);
-            logoutUrl.searchParams.set('post_logout_redirect_uri', config.client.url);
-            if (req.user?.idToken) {
-              logoutUrl.searchParams.set('id_token_hint', req.user.idToken);
-            }
-            return { redirect: logoutUrl.toString() };
-          }
-          break;
-      }
-      
-      // Default redirect
-      return { redirect: config.client.url };
-      
     } catch (error) {
-      logger.error('SSO logout error', { error });
-      return { redirect: config.client.url };
+      logger.error('Failed to audit organization login', { error: error.message });
     }
   }
-  
+
   /**
-   * Check account status
-   * @param {Object} user - User object
-   * @param {Object} auth - Auth object
-   * @returns {Object} Status check result
+   * @private
+   * Generates correlation ID
    */
-  async checkAccountStatus(user, auth) {
-    if (!user.active) {
-      return {
-        valid: false,
-        success: false,
-        message: 'Account is inactive',
-        statusCode: 403
-      };
-    }
-    
-    if (user.status === 'suspended') {
-      return {
-        valid: false,
-        success: false,
-        message: 'Account has been suspended',
-        statusCode: 403
-      };
-    }
-    
-    return { valid: true };
-  }
-  
-  /**
-   * Prepare user object for session
-   * @param {Object} user - User document
-   * @param {string} sessionId - Session ID
-   * @returns {Object} Prepared user object
-   */
-  prepareUserObject(user, sessionId) {
-    return {
-      _id: user._id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      displayName: user.profile?.displayName,
-      avatar: user.profile?.avatar,
-      role: user.role,
-      organization: user.organization,
-      userType: user.userType,
-      status: user.status,
-      employeeId: user.profile?.employeeId,
-      department: user.profile?.department,
-      jobTitle: user.profile?.jobTitle,
-      sessionId
-    };
-  }
-  
-  /**
-   * Extract platform from user agent
-   * @param {string} userAgent - User agent string
-   * @returns {string} Platform
-   */
-  extractPlatform(userAgent) {
-    if (/Windows/.test(userAgent)) return 'Windows';
-    if (/Mac/.test(userAgent)) return 'macOS';
-    if (/Linux/.test(userAgent)) return 'Linux';
-    if (/Android/.test(userAgent)) return 'Android';
-    if (/iOS|iPhone|iPad/.test(userAgent)) return 'iOS';
-    return 'Unknown';
-  }
-  
-  /**
-   * Extract browser from user agent
-   * @param {string} userAgent - User agent string
-   * @returns {string} Browser
-   */
-  extractBrowser(userAgent) {
-    if (/Chrome/.test(userAgent) && !/Edge/.test(userAgent)) return 'Chrome';
-    if (/Firefox/.test(userAgent)) return 'Firefox';
-    if (/Safari/.test(userAgent) && !/Chrome/.test(userAgent)) return 'Safari';
-    if (/Edge/.test(userAgent)) return 'Edge';
-    return 'Unknown';
+  #generateCorrelationId() {
+    return `org_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 }
 
-module.exports = OrganizationSSOStrategy;
+// Export factory function
+module.exports = (config) => {
+  return new OrganizationAuthStrategy(config);
+};
+
+// Also export class for testing and extension
+module.exports.OrganizationAuthStrategy = OrganizationAuthStrategy;

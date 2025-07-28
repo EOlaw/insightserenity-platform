@@ -1,910 +1,742 @@
-// server/shared/security/passport/strategies/passkey-strategy.js
-/**
- * @file Passkey Authentication Strategy
- * @description WebAuthn/FIDO2 passwordless authentication strategy
- * @version 3.0.1
- */
-
-const Strategy = require('passport-strategy').Strategy;
-const { Fido2Lib } = require('fido2-lib');
-const crypto = require('crypto');
-
-const AuthService = require('../../../auth/services/auth-service');
-const config = require('../../../config/config');
-const UserService = require('../../../users/services/user-service');
-const { AuthenticationError, ValidationError } = require('../../../utils/app-error');
-const logger = require('../../../utils/logger');
-const AuditService = require('../../services/audit-service');
+'use strict';
 
 /**
- * Passkey Authentication Strategy Class
- * @class PasskeyStrategy
+ * @fileoverview Passkey (WebAuthn/FIDO2) authentication strategy for Passport.js
+ * @module shared/lib/auth/strategies/passkey-strategy
+ * @requires module:@simplewebauthn/server
+ * @requires module:passport-strategy
+ * @requires module:shared/lib/database/models/user-model
+ * @requires module:shared/lib/database/models/passkey-model
+ * @requires module:shared/lib/services/cache-service
+ * @requires module:shared/lib/security/audit/audit-service
+ * @requires module:shared/lib/security/encryption/encryption-service
+ * @requires module:shared/lib/utils/logger
+ * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/utils/constants/error-codes
  */
-class PasskeyStrategy extends Strategy {
-  constructor() {
+
+const { Strategy } = require('passport-strategy');
+const {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse
+} = require('@simplewebauthn/server');
+const UserModel = require('../../database/models/user-model');
+const PasskeyModel = require('../../database/models/passkey-model');
+const CacheService = require('../../services/cache-service');
+const AuditService = require('../../security/audit/audit-service');
+const EncryptionService = require('../../security/encryption/encryption-service');
+const logger = require('../../utils/logger');
+const AppError = require('../../utils/app-error');
+const { ERROR_CODES } = require('../../utils/constants/error-codes');
+
+/**
+ * @class PasskeyAuthStrategy
+ * @extends Strategy
+ * @description WebAuthn/FIDO2 authentication strategy with enterprise security features
+ */
+class PasskeyAuthStrategy extends Strategy {
+  /**
+   * @private
+   * @type {CacheService}
+   */
+  #cacheService;
+
+  /**
+   * @private
+   * @type {AuditService}
+   */
+  #auditService;
+
+  /**
+   * @private
+   * @type {EncryptionService}
+   */
+  #encryptionService;
+
+  /**
+   * @private
+   * @type {Object}
+   */
+  #config;
+
+  /**
+   * @private
+   * @type {Map}
+   */
+  #activeRegistrations;
+
+  /**
+   * @private
+   * @type {Map}
+   */
+  #activeAuthentications;
+
+  /**
+   * @private
+   * @static
+   * @readonly
+   * @type {Object}
+   */
+  static #DEFAULT_CONFIG = {
+    name: 'passkey',
+    rpName: process.env.APP_NAME || 'InsightSerenity Platform',
+    rpID: process.env.APP_DOMAIN || 'localhost',
+    origin: process.env.APP_URL || 'http://localhost:3000',
+    challengeSize: 32,
+    timeout: 60000, // 60 seconds
+    authenticator: {
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform', // 'platform' | 'cross-platform'
+        requireResidentKey: true,
+        residentKey: 'required', // 'discouraged' | 'preferred' | 'required'
+        userVerification: 'required' // 'discouraged' | 'preferred' | 'required'
+      },
+      attestation: 'direct', // 'none' | 'indirect' | 'direct' | 'enterprise'
+      extensions: {
+        credProps: true,
+        largeBlob: {
+          support: 'preferred'
+        }
+      }
+    },
+    security: {
+      requireUserVerification: true,
+      allowBackupAuthenticator: true,
+      validateOrigin: true,
+      validateRpId: true,
+      antiPhishing: true,
+      maxCredentialsPerUser: 10
+    },
+    features: {
+      supportMultiDevice: true,
+      supportPasswordless: true,
+      supportUsernameless: true,
+      syncAcrossDevices: false,
+      allowCredentialSharing: false
+    },
+    cache: {
+      challengeTTL: 300, // 5 minutes
+      registrationTTL: 600, // 10 minutes
+      authenticationTTL: 300 // 5 minutes
+    },
+    audit: {
+      logRegistrationAttempts: true,
+      logAuthenticationAttempts: true,
+      logCredentialUpdates: true,
+      logSecurityEvents: true
+    }
+  };
+
+  /**
+   * Creates passkey strategy instance
+   * @param {Object} [config] - Strategy configuration
+   * @param {CacheService} [cacheService] - Cache service instance
+   * @param {AuditService} [auditService] - Audit service instance
+   * @param {EncryptionService} [encryptionService] - Encryption service instance
+   */
+  constructor(
+    config = {},
+    cacheService,
+    auditService,
+    encryptionService
+  ) {
     super();
-    this.name = 'passkey';
     
-    // Initialize FIDO2 library with corrected config references
-    this.f2l = new Fido2Lib({
-      timeout: config.passkey?.timeout || 60000,
-      rpId: config.passkey?.rpId || config.app?.host || 'localhost',
-      rpName: config.passkey?.rpName || config.app?.name || 'InsightSerenity',
-      rpIcon: config.passkey?.rpIcon,
-      challengeSize: 128,
-      attestation: config.passkey?.attestation || 'none',
-      cryptoParams: [-7, -257], // ES256, RS256
-      authenticatorAttachment: config.passkey?.authenticatorAttachment || 'platform',
-      authenticatorRequireResidentKey: false,
-      authenticatorUserVerification: config.passkey?.userVerification || 'preferred'
+    this.#config = { ...PasskeyAuthStrategy.#DEFAULT_CONFIG, ...config };
+    this.#cacheService = cacheService || new CacheService();
+    this.#auditService = auditService || new AuditService();
+    this.#encryptionService = encryptionService || new EncryptionService();
+    this.#activeRegistrations = new Map();
+    this.#activeAuthentications = new Map();
+
+    this.name = this.#config.name;
+
+    logger.info('PasskeyAuthStrategy initialized', {
+      rpName: this.#config.rpName,
+      rpID: this.#config.rpID,
+      userVerification: this.#config.authenticator.authenticatorSelection.userVerification,
+      attestation: this.#config.authenticator.attestation
     });
-    
-    // Supported authenticator types
-    this.authenticatorTypes = {
-      'platform': 'Platform Authenticator',
-      'cross-platform': 'Security Key',
-      'usb': 'USB Security Key',
-      'nfc': 'NFC Security Key',
-      'ble': 'Bluetooth Security Key',
-      'internal': 'Built-in Authenticator'
-    };
   }
-  
+
   /**
-   * Create and configure the passkey strategy
-   * @returns {PasskeyStrategy} Configured passport strategy
-   */
-  async createStrategy() {
-    return this;
-  }
-  
-  /**
-   * Authenticate request
+   * Authenticates using passkey
    * @param {Object} req - Express request object
-   * @param {Object} options - Authentication options
+   * @param {Object} [options] - Authentication options
    */
-  async authenticate(req, options) {
+  async authenticate(req, options = {}) {
+    const correlationId = req.correlationId || this.#generateCorrelationId();
+    const startTime = Date.now();
+
     try {
-      const action = req.body.action || req.query.action;
-      const context = {
-        ip: req.ip,
-        userAgent: req.get('user-agent'),
-        origin: req.get('origin'),
-        deviceId: req.body.deviceId || req.get('x-device-id'),
-        session: req.session
-      };
-      
-      let result;
-      
+      const { action, credential, challenge, userId } = req.body;
+
       switch (action) {
         case 'register-begin':
-          result = await this.beginRegistration(req.body, context);
+          await this.#handleRegistrationBegin(req, correlationId);
           break;
-          
+
         case 'register-complete':
-          result = await this.completeRegistration(req.body, context);
+          await this.#handleRegistrationComplete(req, correlationId);
           break;
-          
+
         case 'authenticate-begin':
-          result = await this.beginAuthentication(req.body, context);
+          await this.#handleAuthenticationBegin(req, correlationId);
           break;
-          
+
         case 'authenticate-complete':
-          result = await this.completeAuthentication(req.body, context);
+          await this.#handleAuthenticationComplete(req, correlationId);
           break;
-          
+
         default:
-          return this.fail({ message: 'Invalid passkey action' }, 400);
+          throw new AppError(
+            'Invalid passkey action',
+            400,
+            ERROR_CODES.PASSKEY_INVALID_ACTION,
+            { correlationId, action }
+          );
       }
-      
-      if (result.success && result.user) {
-        this.success(result.user, {
-          method: 'passkey',
-          sessionId: result.sessionId,
-          action: action
-        });
-      } else if (result.challenge) {
-        // Return challenge for client
-        req.res.json({
-          success: true,
-          challenge: result.challenge,
-          options: result.options
-        });
-      } else {
-        this.fail(result, result.statusCode || 401);
-      }
-      
+
     } catch (error) {
-      logger.error('Passkey authentication error', { error: error.message, stack: error.stack });
-      this.error(error);
+      const duration = Date.now() - startTime;
+
+      logger.error('Passkey operation failed', {
+        correlationId,
+        error: error.message,
+        duration
+      });
+
+      this.fail(error, 401);
     }
   }
-  
+
   /**
-   * Begin passkey registration
-   * @param {Object} data - Registration data
-   * @param {Object} context - Request context
-   * @returns {Promise<Object>} Registration challenge
+   * Generates registration options for a user
+   * @param {string} userId - User ID
+   * @param {Object} [options] - Registration options
+   * @returns {Promise<Object>} Registration options
    */
-  async beginRegistration(data, context) {
-    const { email, userId, displayName, authenticatorType } = data;
-    
+  async generateRegistrationOptions(userId, options = {}) {
+    const correlationId = options.correlationId || this.#generateCorrelationId();
+
     try {
       // Get user
-      let user, auth;
-      
-      if (userId) {
-        // Adding passkey to existing account
-        const userWithAuth = await UserService.getUserWithAuthById(userId);
-        if (!userWithAuth) {
-          return {
-            success: false,
-            message: 'User not found',
-            statusCode: 404
-          };
-        }
-        ({ user, auth } = userWithAuth);
-      } else if (email) {
-        // Check if user exists
-        const userWithAuth = await UserService.getUserWithAuth(email);
-        if (userWithAuth) {
-          // User exists - they should login first
-          return {
-            success: false,
-            message: 'Account already exists. Please login to add a passkey.',
-            statusCode: 409
-          };
-        }
-        
-        // New user registration
-        user = {
-          _id: crypto.randomBytes(16).toString('hex'),
-          email,
-          displayName: displayName || email.split('@')[0]
-        };
-      } else {
-        return {
-          success: false,
-          message: 'Email or userId required',
-          statusCode: 400
-        };
+      const user = await UserModel.findById(userId).lean();
+      if (!user) {
+        throw new AppError(
+          'User not found',
+          404,
+          ERROR_CODES.USER_NOT_FOUND,
+          { correlationId, userId }
+        );
       }
-      
+
+      // Get existing credentials
+      const existingCredentials = await PasskeyModel.find({
+        userId,
+        isActive: true
+      }).lean();
+
+      // Check credential limit
+      if (existingCredentials.length >= this.#config.security.maxCredentialsPerUser) {
+        throw new AppError(
+          'Maximum passkey limit reached',
+          400,
+          ERROR_CODES.PASSKEY_LIMIT_EXCEEDED,
+          { 
+            correlationId,
+            limit: this.#config.security.maxCredentialsPerUser,
+            current: existingCredentials.length
+          }
+        );
+      }
+
       // Generate registration options
-      const registrationOptions = await this.f2l.attestationOptions();
-      
-      // Generate and store challenge
-      const challenge = registrationOptions.challenge;
-      const challengeData = {
-        challenge: Buffer.from(challenge).toString('base64'),
-        userId: user._id,
-        email: user.email || email,
-        displayName: user.displayName || displayName,
-        authenticatorType,
-        createdAt: new Date(),
-        expiresAt: new Date(Date.now() + 300000) // 5 minutes
-      };
-      
-      // Store challenge in auth record or session
-      if (auth) {
-        auth.authMethods.passkey.challenges.push(challengeData);
-        // Keep only last 5 challenges
-        if (auth.authMethods.passkey.challenges.length > 5) {
-          auth.authMethods.passkey.challenges = auth.authMethods.passkey.challenges.slice(-5);
-        }
-        await auth.save();
-      } else {
-        // Store in session for new users
-        context.session = context.session || {};
-        context.session.passkeyChallenge = challengeData;
-      }
-      
-      // Prepare client options
-      const publicKeyCredentialCreationOptions = {
-        challenge: challenge,
-        rp: {
-          name: this.f2l.config.rpName,
-          id: this.f2l.config.rpId
-        },
-        user: {
-          id: Buffer.from(user._id.toString()),
-          name: user.email || email,
-          displayName: user.displayName || displayName || email
-        },
-        pubKeyCredParams: registrationOptions.pubKeyCredParams,
-        authenticatorSelection: {
-          authenticatorAttachment: authenticatorType === 'platform' ? 'platform' : 'cross-platform',
-          userVerification: 'preferred',
-          residentKey: 'preferred'
-        },
-        timeout: registrationOptions.timeout,
-        attestation: 'none'
-      };
-      
-      // Audit log
-      if (AuditService && AuditService.log) {
-        await AuditService.log({
-          type: 'passkey_registration_started',
-          action: 'begin_passkey_registration',
-          category: 'authentication',
-          result: 'success',
-          userId: user._id,
-          metadata: {
-            ...context,
-            authenticatorType,
-            email: user.email || email
-          }
-        });
-      }
-      
-      return {
-        success: true,
-        challenge: publicKeyCredentialCreationOptions
-      };
-      
-    } catch (error) {
-      logger.error('Passkey registration begin error', { error: error.message, stack: error.stack });
-      return {
-        success: false,
-        message: 'Failed to begin passkey registration',
-        statusCode: 500
-      };
-    }
-  }
-  
-  /**
-   * Complete passkey registration
-   * @param {Object} data - Registration completion data
-   * @param {Object} context - Request context
-   * @returns {Promise<Object>} Registration result
-   */
-  async completeRegistration(data, context) {
-    const { credential, userId, email, deviceName } = data;
-    
-    try {
-      // Validate credential format
-      if (!credential || !credential.id || !credential.response) {
-        return {
-          success: false,
-          message: 'Invalid credential data',
-          statusCode: 400
-        };
-      }
-      
-      // Get stored challenge
-      let challengeData;
-      let user, auth;
-      
-      if (userId) {
-        // Existing user
-        const userWithAuth = await UserService.getUserWithAuthById(userId);
-        if (!userWithAuth) {
-          return {
-            success: false,
-            message: 'User not found',
-            statusCode: 404
-          };
-        }
-        
-        ({ user, auth } = userWithAuth);
-        
-        // Find valid challenge
-        challengeData = auth.authMethods.passkey.challenges.find(c => 
-          !c.used && c.expiresAt > new Date()
-        );
-        
-        if (!challengeData) {
-          return {
-            success: false,
-            message: 'No valid challenge found',
-            statusCode: 400
-          };
-        }
-      } else {
-        // New user - get from session
-        challengeData = context.session?.passkeyChallenge;
-        
-        if (!challengeData || challengeData.expiresAt < new Date()) {
-          return {
-            success: false,
-            message: 'Challenge expired or not found',
-            statusCode: 400
-          };
-        }
-      }
-      
-      // Prepare attestation expectations
-      const attestationExpectations = {
-        challenge: Buffer.from(challengeData.challenge, 'base64'),
-        origin: context.origin || `https://${this.f2l.config.rpId}`,
-        factor: 'either'
-      };
-      
-      // Verify attestation
-      const regResult = await this.f2l.attestationResult(credential, attestationExpectations);
-      
-      if (!regResult || !regResult.authnrData) {
-        return {
-          success: false,
-          message: 'Invalid attestation',
-          statusCode: 400
-        };
-      }
-      
-      // Extract credential data
-      const credentialData = {
-        credentialId: credential.id,
-        publicKey: regResult.authnrData.get('credentialPublicKeyPem'),
-        counter: regResult.authnrData.get('counter'),
-        deviceType: credential.authenticatorAttachment || challengeData.authenticatorType,
-        transports: credential.response.transports || [],
-        createdAt: new Date(),
-        name: deviceName || this.generateDeviceName(context.userAgent, credential.authenticatorAttachment)
-      };
-      
-      // Create or update user
-      if (!user) {
-        // Create new user with passkey
-        const userData = {
-          email: challengeData.email,
-          firstName: challengeData.displayName?.split(' ')[0] || challengeData.email.split('@')[0],
-          lastName: challengeData.displayName?.split(' ').slice(1).join(' ') || '',
-          profile: {
-            displayName: challengeData.displayName || challengeData.email
-          },
-          userType: 'hosted_org_user',
-          role: {
-            primary: 'prospect'
-          },
-          status: 'active',
-          isEmailVerified: true // Passkey registration verifies user presence
-        };
-        
-        const result = await UserService.createUserWithPasskey(userData, credentialData, context);
-        
-        if (!result.success) {
-          return result;
-        }
-        
-        ({ user, auth } = result);
-      } else {
-        // Add passkey to existing user
-        auth.authMethods.passkey.credentials.push(credentialData);
-        
-        // Mark challenge as used
-        challengeData.used = true;
-        
-        // Enable passkey auth if this is the first credential
-        if (auth.authMethods.passkey.credentials.length === 1) {
-          if (!auth.mfa.methods.find(m => m.type === 'passkey')) {
-            auth.addMfaMethod('passkey', {
-              enabled: true
-            });
-          }
-        }
-        
-        await auth.save();
-      }
-      
-      // Create session with proper session duration
-      const sessionDuration = config.session?.maxAge || config.auth?.sessionDuration || 86400000; // 24 hours default
-      const session = auth.addSession({
-        deviceInfo: {
-          userAgent: context.userAgent,
-          platform: this.extractPlatform(context.userAgent),
-          browser: this.extractBrowser(context.userAgent),
-          authenticatorType: credentialData.deviceType
-        },
-        location: {
-          ip: context.ip
-        },
-        expiresAt: new Date(Date.now() + sessionDuration)
-      });
-      
-      // Add login history
-      auth.activity.loginHistory.push({
-        timestamp: new Date(),
-        ip: context.ip,
-        userAgent: context.userAgent,
-        method: 'passkey',
-        success: true,
-        mfaUsed: true
-      });
-      
-      await auth.save();
-      
-      // Update user activity
-      user.activity.lastLogin = new Date();
-      await user.save();
-      
-      // Audit log
-      if (AuditService && AuditService.log) {
-        await AuditService.log({
-          type: 'passkey_registered',
-          action: 'register_passkey',
-          category: 'authentication',
-          result: 'success',
-          userId: user._id,
-          target: {
-            type: 'passkey',
-            id: credential.id
-          },
-          metadata: {
-            ...context,
-            deviceType: credentialData.deviceType,
-            deviceName: credentialData.name,
-            isFirstPasskey: auth.authMethods.passkey.credentials.length === 1
-          }
-        });
-      }
-      
-      return {
-        success: true,
-        user: this.prepareUserObject(user, session.sessionId),
-        sessionId: session.sessionId,
-        message: 'Passkey registered successfully'
-      };
-      
-    } catch (error) {
-      logger.error('Passkey registration complete error', { error: error.message, stack: error.stack });
-      return {
-        success: false,
-        message: 'Failed to complete passkey registration',
-        statusCode: 500
-      };
-    }
-  }
-  
-  /**
-   * Begin passkey authentication
-   * @param {Object} data - Authentication data
-   * @param {Object} context - Request context
-   * @returns {Promise<Object>} Authentication challenge
-   */
-  async beginAuthentication(data, context) {
-    const { email, credentialId } = data;
-    
-    try {
-      let auth;
-      let allowCredentials = [];
-      
-      if (credentialId) {
-        // Specific credential requested
-        auth = await AuthService.getAuthByPasskeyCredential(credentialId);
-        
-        if (!auth) {
-          return {
-            success: false,
-            message: 'Credential not found',
-            statusCode: 404
-          };
-        }
-        
-        const credential = auth.authMethods.passkey.credentials.find(c => 
-          c.credentialId === credentialId
-        );
-        
-        if (credential) {
-          allowCredentials = [{
-            type: 'public-key',
-            id: Buffer.from(credential.credentialId, 'base64'),
-            transports: credential.transports
-          }];
-        }
-      } else if (email) {
-        // Find user by email
-        const userWithAuth = await UserService.getUserWithAuth(email);
-        
-        if (!userWithAuth) {
-          // Don't reveal if user exists
-          return {
-            success: false,
-            message: 'Invalid credentials',
-            statusCode: 401
-          };
-        }
-        
-        auth = userWithAuth.auth;
-        
-        // Get all user's passkey credentials
-        allowCredentials = auth.authMethods.passkey.credentials.map(cred => ({
-          type: 'public-key',
+      const registrationOptions = await generateRegistrationOptions({
+        rpName: this.#config.rpName,
+        rpID: this.#config.rpID,
+        userID: userId,
+        userName: user.username || user.email,
+        userDisplayName: user.displayName || user.firstName || user.username,
+        timeout: this.#config.timeout,
+        attestationType: this.#config.authenticator.attestation,
+        authenticatorSelection: this.#config.authenticator.authenticatorSelection,
+        excludeCredentials: existingCredentials.map(cred => ({
           id: Buffer.from(cred.credentialId, 'base64'),
+          type: 'public-key',
           transports: cred.transports
-        }));
-        
-        if (allowCredentials.length === 0) {
-          return {
-            success: false,
-            message: 'No passkeys found for this account',
-            statusCode: 404
-          };
-        }
-      } else {
-        // Resident key authentication (no email/credentialId provided)
-        // Allow any credential
-        allowCredentials = [];
-      }
-      
-      // Generate authentication options
-      const authnOptions = await this.f2l.assertionOptions();
-      
-      // Store challenge
-      const challengeData = {
-        challenge: Buffer.from(authnOptions.challenge).toString('base64'),
-        authId: auth?._id,
-        createdAt: new Date(),
-        expiresAt: new Date(Date.now() + 300000) // 5 minutes
+        })),
+        extensions: this.#config.authenticator.extensions
+      });
+
+      // Store registration state
+      const registrationState = {
+        userId,
+        challenge: registrationOptions.challenge,
+        userVerification: this.#config.authenticator.authenticatorSelection.userVerification,
+        timestamp: Date.now(),
+        correlationId
       };
-      
-      if (auth) {
-        auth.authMethods.passkey.challenges.push(challengeData);
-        await auth.save();
-      } else {
-        // Store in session for resident key auth
-        context.session = context.session || {};
-        context.session.passkeyChallenge = challengeData;
-      }
-      
-      // Prepare client options
-      const publicKeyCredentialRequestOptions = {
-        challenge: authnOptions.challenge,
-        allowCredentials: allowCredentials.length > 0 ? allowCredentials : undefined,
-        userVerification: 'preferred',
-        timeout: 60000,
-        rpId: this.f2l.config.rpId
-      };
-      
-      // Audit log
-      if (AuditService && AuditService.log) {
-        await AuditService.log({
-          type: 'passkey_authentication_started',
-          action: 'begin_passkey_authentication',
-          category: 'authentication',
-          result: 'success',
-          userId: auth?.userId,
+
+      const stateKey = `passkey_reg:${userId}:${registrationOptions.challenge}`;
+      await this.#cacheService.set(stateKey, registrationState, this.#config.cache.registrationTTL);
+      this.#activeRegistrations.set(registrationOptions.challenge, registrationState);
+
+      // Audit registration attempt
+      if (this.#config.audit.logRegistrationAttempts) {
+        await this.#auditService.logEvent({
+          event: 'passkey.registration.started',
+          userId,
+          correlationId,
           metadata: {
-            ...context,
-            email: email || 'resident_key',
-            credentialCount: allowCredentials.length
+            rpID: this.#config.rpID,
+            attestationType: this.#config.authenticator.attestation,
+            existingCredentials: existingCredentials.length
           }
         });
       }
-      
-      return {
-        success: true,
-        challenge: publicKeyCredentialRequestOptions
-      };
-      
+
+      return registrationOptions;
+
     } catch (error) {
-      logger.error('Passkey authentication begin error', { error: error.message, stack: error.stack });
-      return {
-        success: false,
-        message: 'Failed to begin passkey authentication',
-        statusCode: 500
-      };
+      logger.error('Failed to generate registration options', {
+        correlationId,
+        userId,
+        error: error.message
+      });
+      throw error;
     }
   }
-  
+
   /**
-   * Complete passkey authentication
-   * @param {Object} data - Authentication completion data
-   * @param {Object} context - Request context
-   * @returns {Promise<Object>} Authentication result
+   * Verifies registration response
+   * @param {string} userId - User ID
+   * @param {Object} credential - Registration credential
+   * @param {Object} [options] - Verification options
+   * @returns {Promise<Object>} Verification result
    */
-  async completeAuthentication(data, context) {
-    const { credential } = data;
-    
+  async verifyRegistrationResponse(userId, credential, options = {}) {
+    const correlationId = options.correlationId || this.#generateCorrelationId();
+
     try {
-      // Validate credential format
-      if (!credential || !credential.id || !credential.response) {
-        return {
-          success: false,
-          message: 'Invalid credential data',
-          statusCode: 400
-        };
+      // Get registration state
+      const stateKey = `passkey_reg:${userId}:${credential.response.clientDataJSON}`;
+      const registrationState = await this.#cacheService.get(stateKey) ||
+                               this.#activeRegistrations.get(credential.response.clientDataJSON);
+
+      if (!registrationState) {
+        throw new AppError(
+          'Registration session not found or expired',
+          400,
+          ERROR_CODES.PASSKEY_SESSION_EXPIRED,
+          { correlationId }
+        );
       }
-      
-      // Find auth record by credential ID
-      const auth = await AuthService.getAuthByPasskeyCredential(credential.id);
-      
-      if (!auth) {
-        return {
-          success: false,
-          message: 'Invalid credentials',
-          statusCode: 401
-        };
+
+      // Verify registration
+      const verification = await verifyRegistrationResponse({
+        response: credential,
+        expectedChallenge: registrationState.challenge,
+        expectedOrigin: this.#config.origin,
+        expectedRPID: this.#config.rpID,
+        requireUserVerification: this.#config.security.requireUserVerification
+      });
+
+      if (!verification.verified) {
+        throw new AppError(
+          'Registration verification failed',
+          400,
+          ERROR_CODES.PASSKEY_VERIFICATION_FAILED,
+          { correlationId, info: verification.registrationInfo }
+        );
       }
-      
-      // Get stored credential
-      const storedCredential = auth.authMethods.passkey.credentials.find(c => 
-        c.credentialId === credential.id
-      );
-      
-      if (!storedCredential) {
-        return {
-          success: false,
-          message: 'Credential not found',
-          statusCode: 401
-        };
-      }
-      
-      // Find valid challenge
-      let challengeData = auth.authMethods.passkey.challenges.find(c => 
-        !c.used && c.expiresAt > new Date()
-      );
-      
-      if (!challengeData) {
-        // Check session for resident key auth
-        const sessionChallenge = context.session?.passkeyChallenge;
-        if (!sessionChallenge || sessionChallenge.expiresAt < new Date()) {
-          return {
-            success: false,
-            message: 'Challenge expired or not found',
-            statusCode: 400
-          };
-        }
-        challengeData = sessionChallenge;
-      }
-      
-      // Prepare assertion expectations
-      const assertionExpectations = {
-        challenge: Buffer.from(challengeData.challenge, 'base64'),
-        origin: context.origin || `https://${this.f2l.config.rpId}`,
-        factor: 'either',
-        publicKey: storedCredential.publicKey,
-        prevCounter: storedCredential.counter,
-        userHandle: auth.userId.toString()
+
+      // Save credential
+      const passkeyData = {
+        userId,
+        credentialId: Buffer.from(verification.registrationInfo.credentialID).toString('base64'),
+        credentialPublicKey: Buffer.from(verification.registrationInfo.credentialPublicKey).toString('base64'),
+        counter: verification.registrationInfo.counter,
+        credentialDeviceType: verification.registrationInfo.credentialDeviceType,
+        credentialBackedUp: verification.registrationInfo.credentialBackedUp,
+        transports: credential.response.transports || [],
+        attestationObject: Buffer.from(credential.response.attestationObject).toString('base64'),
+        clientDataJSON: Buffer.from(credential.response.clientDataJSON).toString('base64'),
+        fmt: verification.registrationInfo.fmt,
+        aaguid: verification.registrationInfo.aaguid,
+        userVerified: verification.registrationInfo.userVerified,
+        deviceName: options.deviceName || 'Unknown Device',
+        lastUsedAt: new Date(),
+        registeredAt: new Date(),
+        isActive: true
       };
-      
-      // Verify assertion
-      const authnResult = await this.f2l.assertionResult(credential, assertionExpectations);
-      
-      if (!authnResult) {
-        // Record failed attempt
-        await this.recordFailedAuthentication(auth, context);
-        
-        return {
-          success: false,
-          message: 'Invalid credentials',
-          statusCode: 401
-        };
+
+      const passkey = await PasskeyModel.create(passkeyData);
+
+      // Update user
+      await UserModel.findByIdAndUpdate(userId, {
+        $push: { passkeys: passkey._id },
+        hasPasskey: true,
+        lastPasskeyUpdate: new Date()
+      });
+
+      // Clean up state
+      await this.#cacheService.delete(stateKey);
+      this.#activeRegistrations.delete(registrationState.challenge);
+
+      // Audit successful registration
+      if (this.#config.audit.logRegistrationAttempts) {
+        await this.#auditService.logEvent({
+          event: 'passkey.registration.completed',
+          userId,
+          correlationId,
+          metadata: {
+            credentialId: passkeyData.credentialId,
+            deviceType: passkeyData.credentialDeviceType,
+            backedUp: passkeyData.credentialBackedUp,
+            deviceName: passkeyData.deviceName
+          }
+        });
       }
-      
-      // Update credential counter
-      storedCredential.counter = authnResult.authnrData.get('counter');
-      storedCredential.lastUsedAt = new Date();
-      
-      // Mark challenge as used
-      challengeData.used = true;
-      
-      // Get user
-      const user = await UserService.getUserById(auth.userId);
-      
+
+      return {
+        verified: true,
+        credentialId: passkeyData.credentialId,
+        deviceName: passkeyData.deviceName
+      };
+
+    } catch (error) {
+      logger.error('Failed to verify registration response', {
+        correlationId,
+        userId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * @private
+   * Handles registration begin
+   */
+  async #handleRegistrationBegin(req, correlationId) {
+    const { userId } = req.body;
+
+    if (!userId) {
+      throw new AppError(
+        'User ID required for registration',
+        400,
+        ERROR_CODES.VALIDATION_ERROR,
+        { correlationId }
+      );
+    }
+
+    const options = await this.generateRegistrationOptions(userId, { correlationId });
+    
+    this.success({
+      action: 'register-begin',
+      options,
+      correlationId
+    });
+  }
+
+  /**
+   * @private
+   * Handles registration complete
+   */
+  async #handleRegistrationComplete(req, correlationId) {
+    const { userId, credential, deviceName } = req.body;
+
+    if (!userId || !credential) {
+      throw new AppError(
+        'User ID and credential required',
+        400,
+        ERROR_CODES.VALIDATION_ERROR,
+        { correlationId }
+      );
+    }
+
+    const result = await this.verifyRegistrationResponse(
+      userId,
+      credential,
+      { correlationId, deviceName }
+    );
+
+    this.success({
+      action: 'register-complete',
+      result,
+      correlationId
+    });
+  }
+
+  /**
+   * @private
+   * Handles authentication begin
+   */
+  async #handleAuthenticationBegin(req, correlationId) {
+    const { username } = req.body;
+    let userId = req.body.userId;
+
+    // For usernameless flow, we'll get credentials from the browser
+    if (!userId && !username && this.#config.features.supportUsernameless) {
+      return this.#handleUsernamelessAuthBegin(req, correlationId);
+    }
+
+    // Find user if username provided
+    if (!userId && username) {
+      const user = await UserModel.findOne({
+        $or: [
+          { email: username },
+          { username: username }
+        ],
+        hasPasskey: true
+      }).lean();
+
       if (!user) {
-        return {
-          success: false,
-          message: 'User not found',
-          statusCode: 404
-        };
+        throw new AppError(
+          'User not found or has no passkeys',
+          404,
+          ERROR_CODES.USER_NOT_FOUND,
+          { correlationId }
+        );
       }
-      
-      // Check account status
-      const accountCheck = await this.checkAccountStatus(user, auth);
-      if (!accountCheck.valid) {
-        return accountCheck;
-      }
-      
-      // Create session with proper session duration
-      const sessionDuration = config.session?.maxAge || config.auth?.sessionDuration || 86400000; // 24 hours default
-      const session = auth.addSession({
-        deviceInfo: {
-          userAgent: context.userAgent,
-          platform: this.extractPlatform(context.userAgent),
-          browser: this.extractBrowser(context.userAgent),
-          authenticatorType: storedCredential.deviceType
-        },
-        location: {
-          ip: context.ip
-        },
-        expiresAt: new Date(Date.now() + sessionDuration)
-      });
-      
-      // Add login history
-      auth.activity.loginHistory.push({
-        timestamp: new Date(),
-        ip: context.ip,
-        userAgent: context.userAgent,
-        method: 'passkey',
-        success: true,
-        mfaUsed: true
-      });
-      
-      // Clear failed attempts
-      auth.security.loginAttempts.count = 0;
-      auth.security.loginAttempts.lockedUntil = null;
-      
-      await auth.save();
-      
-      // Update user activity
-      user.activity.lastLogin = new Date();
-      await user.save();
-      
-      // Audit log
-      if (AuditService && AuditService.log) {
-        await AuditService.log({
-          type: 'user_login',
-          action: 'authenticate',
-          category: 'authentication',
-          result: 'success',
-          userId: user._id,
-          target: {
-            type: 'user',
-            id: user._id.toString()
-          },
-          metadata: {
-            ...context,
-            method: 'passkey',
-            credentialId: credential.id,
-            deviceType: storedCredential.deviceType,
-            deviceName: storedCredential.name,
-            sessionId: session.sessionId
-          }
-        });
-      }
-      
-      return {
-        success: true,
-        user: this.prepareUserObject(user, session.sessionId),
-        sessionId: session.sessionId
-      };
-      
-    } catch (error) {
-      logger.error('Passkey authentication complete error', { error: error.message, stack: error.stack });
-      return {
-        success: false,
-        message: 'Failed to complete passkey authentication',
-        statusCode: 500
-      };
+
+      userId = user._id;
     }
-  }
-  
-  /**
-   * Record failed authentication attempt
-   * @param {Object} auth - Auth record
-   * @param {Object} context - Request context
-   */
-  async recordFailedAuthentication(auth, context) {
-    try {
-      auth.addLoginAttempt(false);
-      
-      auth.activity.loginHistory.push({
-        timestamp: new Date(),
-        ip: context.ip,
-        userAgent: context.userAgent,
-        method: 'passkey',
-        success: false
-      });
-      
-      await auth.save();
-      
-      if (AuditService && AuditService.log) {
-        await AuditService.log({
-          type: 'passkey_authentication_failed',
-          action: 'authenticate',
-          category: 'authentication',
-          result: 'failure',
-          userId: auth.userId,
-          metadata: context
-        });
-      }
-    } catch (error) {
-      logger.error('Failed to record authentication attempt', { error: error.message });
+
+    // Get user's passkeys
+    const passkeys = await PasskeyModel.find({
+      userId,
+      isActive: true
+    }).lean();
+
+    if (passkeys.length === 0) {
+      throw new AppError(
+        'No passkeys found for user',
+        404,
+        ERROR_CODES.PASSKEY_NOT_FOUND,
+        { correlationId }
+      );
     }
-  }
-  
-  /**
-   * Check account status
-   * @param {Object} user - User object
-   * @param {Object} auth - Auth object
-   * @returns {Object} Status check result
-   */
-  async checkAccountStatus(user, auth) {
-    if (!user.active) {
-      return {
-        valid: false,
-        success: false,
-        message: 'Account is inactive',
-        statusCode: 403
-      };
-    }
-    
-    if (user.status === 'suspended') {
-      return {
-        valid: false,
-        success: false,
-        message: 'Account has been suspended',
-        statusCode: 403
-      };
-    }
-    
-    if (auth.isLocked && auth.isLocked()) {
-      return {
-        valid: false,
-        success: false,
-        message: 'Account is temporarily locked',
-        statusCode: 423
-      };
-    }
-    
-    return { valid: true };
-  }
-  
-  /**
-   * Generate device name from user agent
-   * @param {string} userAgent - User agent string
-   * @param {string} attachmentType - Authenticator attachment type
-   * @returns {string} Device name
-   */
-  generateDeviceName(userAgent, attachmentType) {
-    const platform = this.extractPlatform(userAgent);
-    const browser = this.extractBrowser(userAgent);
-    const type = attachmentType === 'platform' ? 'Built-in' : 'Security Key';
-    
-    return `${type} on ${platform} ${browser}`;
-  }
-  
-  /**
-   * Prepare user object for session
-   * @param {Object} user - User document
-   * @param {string} sessionId - Session ID
-   * @returns {Object} Prepared user object
-   */
-  prepareUserObject(user, sessionId) {
-    return {
-      _id: user._id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      displayName: user.profile?.displayName,
-      avatar: user.profile?.avatar,
-      role: user.role,
-      organization: user.organization,
-      userType: user.userType,
-      status: user.status,
-      hasPasskey: true,
-      sessionId
+
+    // Generate authentication options
+    const authOptions = await generateAuthenticationOptions({
+      timeout: this.#config.timeout,
+      allowCredentials: passkeys.map(pk => ({
+        id: Buffer.from(pk.credentialId, 'base64'),
+        type: 'public-key',
+        transports: pk.transports
+      })),
+      userVerification: this.#config.authenticator.authenticatorSelection.userVerification,
+      rpID: this.#config.rpID
+    });
+
+    // Store authentication state
+    const authState = {
+      userId,
+      challenge: authOptions.challenge,
+      userVerification: this.#config.authenticator.authenticatorSelection.userVerification,
+      timestamp: Date.now(),
+      correlationId
     };
+
+    const stateKey = `passkey_auth:${authOptions.challenge}`;
+    await this.#cacheService.set(stateKey, authState, this.#config.cache.authenticationTTL);
+    this.#activeAuthentications.set(authOptions.challenge, authState);
+
+    // Audit authentication attempt
+    if (this.#config.audit.logAuthenticationAttempts) {
+      await this.#auditService.logEvent({
+        event: 'passkey.authentication.started',
+        userId,
+        correlationId,
+        metadata: {
+          credentialCount: passkeys.length
+        }
+      });
+    }
+
+    this.success({
+      action: 'authenticate-begin',
+      options: authOptions,
+      correlationId
+    });
   }
-  
+
   /**
-   * Extract platform from user agent
-   * @param {string} userAgent - User agent string
-   * @returns {string} Platform
+   * @private
+   * Handles usernameless authentication begin
    */
-  extractPlatform(userAgent) {
-    if (!userAgent) return 'Unknown';
-    if (/Windows/.test(userAgent)) return 'Windows';
-    if (/Mac/.test(userAgent)) return 'macOS';
-    if (/Linux/.test(userAgent)) return 'Linux';
-    if (/Android/.test(userAgent)) return 'Android';
-    if (/iOS|iPhone|iPad/.test(userAgent)) return 'iOS';
-    return 'Unknown';
+  async #handleUsernamelessAuthBegin(req, correlationId) {
+    // Generate authentication options without allowCredentials
+    const authOptions = await generateAuthenticationOptions({
+      timeout: this.#config.timeout,
+      userVerification: this.#config.authenticator.authenticatorSelection.userVerification,
+      rpID: this.#config.rpID
+    });
+
+    // Store authentication state
+    const authState = {
+      usernameless: true,
+      challenge: authOptions.challenge,
+      userVerification: this.#config.authenticator.authenticatorSelection.userVerification,
+      timestamp: Date.now(),
+      correlationId
+    };
+
+    const stateKey = `passkey_auth:${authOptions.challenge}`;
+    await this.#cacheService.set(stateKey, authState, this.#config.cache.authenticationTTL);
+    this.#activeAuthentications.set(authOptions.challenge, authState);
+
+    this.success({
+      action: 'authenticate-begin',
+      options: authOptions,
+      usernameless: true,
+      correlationId
+    });
   }
-  
+
   /**
-   * Extract browser from user agent
-   * @param {string} userAgent - User agent string
-   * @returns {string} Browser
+   * @private
+   * Handles authentication complete
    */
-  extractBrowser(userAgent) {
-    if (!userAgent) return 'Unknown';
-    if (/Chrome/.test(userAgent) && !/Edge/.test(userAgent)) return 'Chrome';
-    if (/Firefox/.test(userAgent)) return 'Firefox';
-    if (/Safari/.test(userAgent) && !/Chrome/.test(userAgent)) return 'Safari';
-    if (/Edge/.test(userAgent)) return 'Edge';
-    return 'Unknown';
+  async #handleAuthenticationComplete(req, correlationId) {
+    const { credential } = req.body;
+
+    if (!credential) {
+      throw new AppError(
+        'Credential required',
+        400,
+        ERROR_CODES.VALIDATION_ERROR,
+        { correlationId }
+      );
+    }
+
+    // Get authentication state
+    const clientDataJSON = JSON.parse(
+      Buffer.from(credential.response.clientDataJSON, 'base64').toString()
+    );
+    const challenge = clientDataJSON.challenge;
+
+    const stateKey = `passkey_auth:${challenge}`;
+    const authState = await this.#cacheService.get(stateKey) ||
+                     this.#activeAuthentications.get(challenge);
+
+    if (!authState) {
+      throw new AppError(
+        'Authentication session not found or expired',
+        400,
+        ERROR_CODES.PASSKEY_SESSION_EXPIRED,
+        { correlationId }
+      );
+    }
+
+    // Find passkey by credential ID
+    const credentialId = Buffer.from(credential.id, 'base64').toString('base64');
+    const passkey = await PasskeyModel.findOne({
+      credentialId,
+      isActive: true
+    }).lean();
+
+    if (!passkey) {
+      throw new AppError(
+        'Passkey not found',
+        404,
+        ERROR_CODES.PASSKEY_NOT_FOUND,
+        { correlationId, credentialId }
+      );
+    }
+
+    // Get user
+    const user = await UserModel.findById(passkey.userId)
+      .populate('roles')
+      .populate('permissions')
+      .lean();
+
+    if (!user || !user.isActive) {
+      throw new AppError(
+        'User not found or inactive',
+        403,
+        ERROR_CODES.ACCOUNT_INACTIVE,
+        { correlationId }
+      );
+    }
+
+    // Verify authentication
+    const verification = await verifyAuthenticationResponse({
+      response: credential,
+      expectedChallenge: authState.challenge,
+      expectedOrigin: this.#config.origin,
+      expectedRPID: this.#config.rpID,
+      authenticator: {
+        credentialID: Buffer.from(passkey.credentialId, 'base64'),
+        credentialPublicKey: Buffer.from(passkey.credentialPublicKey, 'base64'),
+        counter: passkey.counter
+      },
+      requireUserVerification: this.#config.security.requireUserVerification
+    });
+
+    if (!verification.verified) {
+      throw new AppError(
+        'Authentication verification failed',
+        401,
+        ERROR_CODES.PASSKEY_VERIFICATION_FAILED,
+        { correlationId }
+      );
+    }
+
+    // Update passkey counter and last used
+    await PasskeyModel.findByIdAndUpdate(passkey._id, {
+      counter: verification.authenticationInfo.newCounter,
+      lastUsedAt: new Date(),
+      $inc: { useCount: 1 }
+    });
+
+    // Update user login info
+    await UserModel.findByIdAndUpdate(user._id, {
+      lastLogin: new Date(),
+      lastLoginMethod: 'passkey',
+      lastLoginIP: req.ip || req.connection.remoteAddress,
+      lastLoginUserAgent: req.headers['user-agent']
+    });
+
+    // Clean up state
+    await this.#cacheService.delete(stateKey);
+    this.#activeAuthentications.delete(challenge);
+
+    // Audit successful authentication
+    if (this.#config.audit.logAuthenticationAttempts) {
+      await this.#auditService.logEvent({
+        event: 'passkey.authentication.completed',
+        userId: user._id,
+        correlationId,
+        metadata: {
+          credentialId: passkey.credentialId,
+          deviceName: passkey.deviceName,
+          userVerified: verification.authenticationInfo.userVerified
+        }
+      });
+    }
+
+    // Success
+    this.success(user);
+  }
+
+  /**
+   * @private
+   * Generates correlation ID
+   */
+  #generateCorrelationId() {
+    return `passkey_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 }
 
-module.exports = PasskeyStrategy;
+// Export factory function
+module.exports = (config) => {
+  return new PasskeyAuthStrategy(config);
+};
+
+// Also export class for testing
+module.exports.PasskeyAuthStrategy = PasskeyAuthStrategy;

@@ -1,690 +1,476 @@
-// server/shared/security/passport/strategies/google-strategy.js
+'use strict';
+
 /**
- * @file Google OAuth Strategy
- * @description Google authentication using OAuth 2.0
- * @version 3.0.0
+ * @fileoverview Google OAuth authentication strategy for Passport.js
+ * @module shared/lib/auth/strategies/google-strategy
+ * @requires module:passport-google-oauth20
+ * @requires module:shared/lib/auth/strategies/oauth-strategy
+ * @requires module:shared/lib/utils/logger
+ * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/utils/constants/error-codes
+ * @requires module:shared/lib/integrations/social/google-api
  */
 
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-
-const AuthService = require('../../../auth/services/auth-service');
-const config = require('../../../config/config');
-const UserService = require('../../../users/services/user-service');
-const { AuthenticationError } = require('../../../utils/app-error');
-const logger = require('../../../utils/logger');
-const AuditService = require('../../services/audit-service');
+const BaseOAuthStrategy = require('./oauth-strategy');
+const GoogleAPI = require('../../integrations/social/google-api');
+const logger = require('../../utils/logger');
+const AppError = require('../../utils/app-error');
+const { ERROR_CODES } = require('../../utils/constants/error-codes');
 
 /**
- * Google OAuth Strategy Class
  * @class GoogleAuthStrategy
+ * @extends BaseOAuthStrategy
+ * @description Google OAuth authentication strategy with enterprise features
  */
-class GoogleAuthStrategy {
-  constructor() {
-    this.strategyOptions = {
-      clientID: config.oauth.google.clientId,
-      clientSecret: config.oauth.google.clientSecret,
-      callbackURL: config.oauth.google.callbackUrl,
-      scope: ['profile', 'email', 'openid'],
+class GoogleAuthStrategy extends BaseOAuthStrategy {
+  /**
+   * @private
+   * @type {GoogleAPI}
+   */
+  #googleAPI;
+
+  /**
+   * @private
+   * @static
+   * @readonly
+   * @type {Object}
+   */
+  static #GOOGLE_CONFIG = {
+    provider: 'google',
+    authorizationURL: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenURL: 'https://oauth2.googleapis.com/token',
+    scope: [
+      'profile',
+      'email',
+      'openid'
+    ],
+    accessType: 'offline',
+    prompt: 'consent',
+    includeGrantedScopes: true,
+    features: {
+      fetchWorkspaceInfo: false,
+      validateDomain: false,
+      allowedDomains: [],
+      blockConsumerAccounts: false,
+      fetchGoogleProfile: true,
+      syncProfilePhoto: true
+    },
+    advanced: {
+      hostedDomain: null, // Restrict to specific G Suite domain
+      loginHint: null, // Pre-fill email
+      includeGrantedScopes: true,
+      accessType: 'offline', // Get refresh token
+      approvalPrompt: 'auto'
+    },
+    security: {
+      validateEmailVerified: true,
+      requireWorkspaceAccount: false,
+      checkAccountAge: false,
+      minimumAccountAgeDays: 0
+    }
+  };
+
+  /**
+   * Creates Google strategy instance
+   * @param {Object} [config] - Strategy configuration
+   * @param {Object} [services] - Service instances
+   */
+  constructor(config = {}, services = {}) {
+    const mergedConfig = {
+      ...GoogleAuthStrategy.#GOOGLE_CONFIG,
+      ...config,
+      callbacks: {
+        onNewUser: config.callbacks?.onNewUser || GoogleAuthStrategy.#handleNewGoogleUser,
+        onExistingUser: config.callbacks?.onExistingUser,
+        onAccountLinked: config.callbacks?.onAccountLinked,
+        onAuthError: config.callbacks?.onAuthError
+      }
+    };
+
+    super(mergedConfig, ...Object.values(services));
+    
+    this.#googleAPI = services.googleAPI || new GoogleAPI({
+      scopes: mergedConfig.scope,
+      accessType: mergedConfig.accessType
+    });
+
+    logger.info('GoogleAuthStrategy initialized', {
+      scope: mergedConfig.scope,
+      hostedDomain: mergedConfig.advanced.hostedDomain,
+      blockConsumerAccounts: mergedConfig.features.blockConsumerAccounts
+    });
+  }
+
+  /**
+   * Gets Passport.js strategy configuration
+   * @returns {GoogleStrategy} Configured Google strategy
+   */
+  getStrategy() {
+    const config = this.getConfig();
+    
+    const options = {
+      clientID: process.env.GOOGLE_CLIENT_ID || config.clientID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || config.clientSecret,
+      callbackURL: process.env.GOOGLE_CALLBACK_URL || config.callbackURL || '/auth/google/callback',
+      scope: config.scope,
       passReqToCallback: true,
-      state: true
+      state: true,
+      accessType: config.accessType,
+      prompt: config.prompt,
+      includeGrantedScopes: config.includeGrantedScopes
     };
-    
-    this.profileFields = {
-      id: 'id',
-      displayName: 'displayName',
-      firstName: 'name.givenName',
-      lastName: 'name.familyName',
-      email: 'emails[0].value',
-      emailVerified: 'emails[0].verified',
-      picture: 'photos[0].value',
-      locale: 'locale',
-      provider: 'provider'
-    };
-  }
-  
-  /**
-   * Create and configure the Google strategy
-   * @returns {GoogleStrategy} Configured passport strategy
-   */
-  async createStrategy() {
-    return new GoogleStrategy(this.strategyOptions, async (req, accessToken, refreshToken, profile, done) => {
+
+    // Add advanced options if configured
+    if (config.advanced.hostedDomain) {
+      options.hd = config.advanced.hostedDomain;
+      options.hostedDomain = config.advanced.hostedDomain;
+    }
+
+    if (config.advanced.loginHint) {
+      options.loginHint = config.advanced.loginHint;
+    }
+
+    // Validate required configuration
+    if (!options.clientID || !options.clientSecret) {
+      throw new AppError(
+        'Google OAuth configuration missing',
+        500,
+        ERROR_CODES.OAUTH_CONFIG_MISSING,
+        { provider: 'google' }
+      );
+    }
+
+    return new GoogleStrategy(options, async (req, accessToken, refreshToken, profile, done) => {
+      const startTime = Date.now();
+      const correlationId = req.correlationId || this.generateCorrelationId();
+
       try {
-        // Extract authentication context
-        const context = {
-          ip: req.ip,
-          userAgent: req.get('user-agent'),
-          origin: req.get('origin'),
-          organizationId: req.query.organizationId || req.session?.organizationContext
-        };
-        
-        // Process Google profile
-        const googleProfile = this.extractProfileData(profile);
-        
-        // Validate profile data
-        const validation = await this.validateProfile(googleProfile);
-        if (!validation.valid) {
-          return done(null, false, {
-            message: validation.message,
-            code: 'INVALID_PROFILE'
-          });
-        }
-        
-        // Handle authentication
-        const result = await this.handleGoogleAuth(googleProfile, {
+        // Validate Google-specific requirements
+        await this.#validateGoogleAccount(profile, correlationId);
+
+        // Enhance profile with additional Google data
+        const enhancedProfile = await this.#enhanceGoogleProfile(
+          profile,
           accessToken,
-          refreshToken,
-          context
-        });
-        
-        if (!result.success) {
-          return done(null, false, {
-            message: result.message,
-            code: result.code
-          });
+          correlationId
+        );
+
+        // Check domain restrictions
+        if (config.features.validateDomain) {
+          await this.#validateDomainRestrictions(enhancedProfile, correlationId);
         }
-        
-        // Handle additional requirements
-        if (result.requiresAdditionalInfo) {
-          req.session.pendingAuth = {
-            provider: 'google',
-            profileId: googleProfile.id,
-            profile: googleProfile,
-            tokens: { accessToken, refreshToken }
-          };
-          
-          return done(null, false, {
-            message: 'Additional information required',
-            code: 'ADDITIONAL_INFO_REQUIRED',
-            redirect: '/auth/complete-profile'
-          });
-        }
-        
-        // Successful authentication
-        done(null, result.user, {
-          method: 'google',
-          sessionId: result.sessionId,
-          isNewUser: result.isNewUser
+
+        // Use base OAuth strategy callback handler
+        const baseStrategy = super.getStrategy({
+          ...options,
+          skipUserProfile: true
         });
-        
+
+        // Process through base strategy
+        return baseStrategy._verify(req, accessToken, refreshToken, enhancedProfile, done);
+
       } catch (error) {
-        logger.error('Google authentication error', { error, profileId: profile?.id });
-        done(error);
-      }
-    });
-  }
-  
-  /**
-   * Extract profile data from Google profile
-   * @param {Object} profile - Google profile object
-   * @returns {Object} Extracted profile data
-   */
-  extractProfileData(profile) {
-    const emails = profile.emails || [];
-    const primaryEmail = emails.find(e => e.type === 'account') || emails[0];
-    
-    return {
-      id: profile.id,
-      email: primaryEmail?.value,
-      emailVerified: primaryEmail?.verified || false,
-      displayName: profile.displayName,
-      firstName: profile.name?.givenName,
-      lastName: profile.name?.familyName,
-      picture: profile.photos?.[0]?.value,
-      locale: profile._json?.locale,
-      provider: 'google',
-      raw: profile._json
-    };
-  }
-  
-  /**
-   * Validate Google profile
-   * @param {Object} profile - Extracted profile data
-   * @returns {Object} Validation result
-   */
-  async validateProfile(profile) {
-    if (!profile.id) {
-      return {
-        valid: false,
-        message: 'Google ID is required'
-      };
-    }
-    
-    if (!profile.email) {
-      return {
-        valid: false,
-        message: 'Email is required for authentication'
-      };
-    }
-    
-    // Validate email format
-    if (!config.constants.REGEX.EMAIL.test(profile.email)) {
-      return {
-        valid: false,
-        message: 'Invalid email format from Google'
-      };
-    }
-    
-    // Check if email domain is allowed
-    if (config.oauth.google.allowedDomains?.length > 0) {
-      const domain = profile.email.split('@')[1];
-      if (!config.oauth.google.allowedDomains.includes(domain)) {
-        return {
-          valid: false,
-          message: 'Email domain not allowed'
-        };
-      }
-    }
-    
-    return { valid: true };
-  }
-  
-  /**
-   * Handle Google authentication
-   * @param {Object} profile - Google profile data
-   * @param {Object} authData - Authentication data
-   * @returns {Promise<Object>} Authentication result
-   */
-  async handleGoogleAuth(profile, authData) {
-    try {
-      // Check for existing user
-      let userWithAuth = await UserService.getUserByOAuthProvider('google', profile.id);
-      
-      if (!userWithAuth) {
-        // Check if user exists with same email
-        userWithAuth = await UserService.getUserWithAuth(profile.email);
-        
-        if (userWithAuth) {
-          // Link Google account to existing user
-          return await this.linkGoogleAccount(userWithAuth, profile, authData);
-        } else {
-          // Create new user
-          return await this.createGoogleUser(profile, authData);
-        }
-      } else {
-        // Existing Google user - update and login
-        return await this.loginGoogleUser(userWithAuth, profile, authData);
-      }
-      
-    } catch (error) {
-      logger.error('Google auth handling error', { error, profileId: profile.id });
-      throw error;
-    }
-  }
-  
-  /**
-   * Link Google account to existing user
-   * @param {Object} userWithAuth - Existing user with auth
-   * @param {Object} profile - Google profile
-   * @param {Object} authData - Authentication data
-   * @returns {Promise<Object>} Link result
-   */
-  async linkGoogleAccount(userWithAuth, profile, authData) {
-    const { user, auth } = userWithAuth;
-    
-    // Check if account linking is allowed
-    if (!config.oauth.allowAccountLinking) {
-      return {
-        success: false,
-        message: 'An account with this email already exists. Please login with your password.',
-        code: 'ACCOUNT_EXISTS'
-      };
-    }
-    
-    // Check account status
-    const accountCheck = await this.checkAccountStatus(user, auth);
-    if (!accountCheck.valid) {
-      return accountCheck;
-    }
-    
-    // Update auth record with Google info
-    auth.authMethods.oauth.google = {
-      id: profile.id,
-      email: profile.email,
-      displayName: profile.displayName,
-      picture: profile.picture,
-      accessToken: authData.accessToken,
-      refreshToken: authData.refreshToken,
-      tokenExpiry: new Date(Date.now() + 3600000) // 1 hour
-    };
-    
-    // If email wasn't verified, mark it as verified via Google
-    if (!auth.authMethods.local.isVerified && profile.emailVerified) {
-      auth.authMethods.local.isVerified = true;
-      auth.authMethods.local.verificationToken = undefined;
-      auth.authMethods.local.verificationExpiry = undefined;
-    }
-    
-    // Create session
-    const session = auth.addSession({
-      deviceInfo: {
-        userAgent: authData.context.userAgent,
-        platform: this.extractPlatform(authData.context.userAgent),
-        browser: this.extractBrowser(authData.context.userAgent)
-      },
-      location: {
-        ip: authData.context.ip
-      },
-      expiresAt: new Date(Date.now() + config.auth.sessionDuration)
-    });
-    
-    // Add login history
-    auth.activity.loginHistory.push({
-      timestamp: new Date(),
-      ip: authData.context.ip,
-      userAgent: authData.context.userAgent,
-      method: 'google',
-      success: true
-    });
-    
-    await auth.save();
-    
-    // Update user profile if needed
-    if (!user.profile.avatar && profile.picture) {
-      user.profile.avatar = profile.picture;
-    }
-    
-    user.activity.lastLogin = new Date();
-    await user.save();
-    
-    // Audit log
-    await AuditService.log({
-      type: 'oauth_account_linked',
-      action: 'link_account',
-      category: 'authentication',
-      result: 'success',
-      userId: user._id,
-      target: {
-        type: 'oauth_provider',
-        id: 'google'
-      },
-      metadata: {
-        ...authData.context,
-        provider: 'google',
-        googleId: profile.id
-      }
-    });
-    
-    return {
-      success: true,
-      user: this.prepareUserObject(user, session.sessionId),
-      sessionId: session.sessionId,
-      isNewUser: false
-    };
-  }
-  
-  /**
-   * Create new user with Google account
-   * @param {Object} profile - Google profile
-   * @param {Object} authData - Authentication data
-   * @returns {Promise<Object>} Creation result
-   */
-  async createGoogleUser(profile, authData) {
-    // Check if registration is allowed
-    if (!config.oauth.google.allowRegistration) {
-      return {
-        success: false,
-        message: 'Registration with Google is not allowed',
-        code: 'REGISTRATION_DISABLED'
-      };
-    }
-    
-    // Check if additional info is required
-    const requiredFields = this.getRequiredFieldsForRegistration();
-    const missingFields = requiredFields.filter(field => !profile[field]);
-    
-    if (missingFields.length > 0) {
-      return {
-        success: false,
-        requiresAdditionalInfo: true,
-        missingFields,
-        profile
-      };
-    }
-    
-    // Create user data
-    const userData = {
-      email: profile.email,
-      firstName: profile.firstName || profile.displayName?.split(' ')[0],
-      lastName: profile.lastName || profile.displayName?.split(' ').slice(1).join(' '),
-      profile: {
-        displayName: profile.displayName,
-        avatar: profile.picture,
-        bio: {
-          short: `Joined via Google`
-        }
-      },
-      preferences: {
-        language: profile.locale?.split('-')[0] || 'en',
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-      },
-      userType: 'hosted_org_user', // Default type
-      role: {
-        primary: 'prospect' // Default role
-      },
-      status: 'active',
-      isEmailVerified: profile.emailVerified
-    };
-    
-    // Handle organization context
-    if (authData.context.organizationId) {
-      userData.organization = {
-        current: authData.context.organizationId,
-        organizations: [authData.context.organizationId]
-      };
-    }
-    
-    // Create user and auth records
-    const result = await UserService.createUserWithOAuth(userData, {
-      provider: 'google',
-      profileId: profile.id,
-      profile: {
-        id: profile.id,
-        email: profile.email,
-        displayName: profile.displayName,
-        picture: profile.picture,
-        accessToken: authData.accessToken,
-        refreshToken: authData.refreshToken
-      }
-    }, authData.context);
-    
-    if (!result.success) {
-      return result;
-    }
-    
-    // Create session
-    const { user, auth } = result;
-    const session = auth.addSession({
-      deviceInfo: {
-        userAgent: authData.context.userAgent,
-        platform: this.extractPlatform(authData.context.userAgent),
-        browser: this.extractBrowser(authData.context.userAgent)
-      },
-      location: {
-        ip: authData.context.ip
-      },
-      expiresAt: new Date(Date.now() + config.auth.sessionDuration)
-    });
-    
-    await auth.save();
-    
-    // Send welcome email
-    await this.sendWelcomeEmail(user, 'google');
-    
-    // Audit log
-    await AuditService.log({
-      type: 'user_registration',
-      action: 'register',
-      category: 'authentication',
-      result: 'success',
-      userId: user._id,
-      target: {
-        type: 'user',
-        id: user._id.toString()
-      },
-      metadata: {
-        ...authData.context,
-        method: 'google',
-        provider: 'google',
-        autoCreated: true
-      }
-    });
-    
-    return {
-      success: true,
-      user: this.prepareUserObject(user, session.sessionId),
-      sessionId: session.sessionId,
-      isNewUser: true
-    };
-  }
-  
-  /**
-   * Login existing Google user
-   * @param {Object} userWithAuth - User with auth record
-   * @param {Object} profile - Google profile
-   * @param {Object} authData - Authentication data
-   * @returns {Promise<Object>} Login result
-   */
-  async loginGoogleUser(userWithAuth, profile, authData) {
-    const { user, auth } = userWithAuth;
-    
-    // Check account status
-    const accountCheck = await this.checkAccountStatus(user, auth);
-    if (!accountCheck.valid) {
-      return accountCheck;
-    }
-    
-    // Update Google auth data
-    const googleAuth = auth.authMethods.oauth.google;
-    googleAuth.lastLogin = new Date();
-    googleAuth.accessToken = authData.accessToken;
-    if (authData.refreshToken) {
-      googleAuth.refreshToken = authData.refreshToken;
-    }
-    googleAuth.tokenExpiry = new Date(Date.now() + 3600000);
-    
-    // Update profile data if changed
-    if (profile.displayName !== googleAuth.displayName) {
-      googleAuth.displayName = profile.displayName;
-    }
-    if (profile.picture !== googleAuth.picture) {
-      googleAuth.picture = profile.picture;
-      // Update user avatar if it's still the Google one
-      if (user.profile.avatar === googleAuth.picture || !user.profile.avatar) {
-        user.profile.avatar = profile.picture;
-      }
-    }
-    
-    // Create session
-    const session = auth.addSession({
-      deviceInfo: {
-        userAgent: authData.context.userAgent,
-        platform: this.extractPlatform(authData.context.userAgent),
-        browser: this.extractBrowser(authData.context.userAgent)
-      },
-      location: {
-        ip: authData.context.ip
-      },
-      expiresAt: new Date(Date.now() + config.auth.sessionDuration)
-    });
-    
-    // Add login history
-    auth.activity.loginHistory.push({
-      timestamp: new Date(),
-      ip: authData.context.ip,
-      userAgent: authData.context.userAgent,
-      method: 'google',
-      success: true
-    });
-    
-    // Clear any failed login attempts
-    auth.security.loginAttempts.count = 0;
-    auth.security.loginAttempts.lockedUntil = null;
-    
-    await auth.save();
-    
-    // Update user activity
-    user.activity.lastLogin = new Date();
-    await user.save();
-    
-    // Check for suspicious activity
-    await this.checkLoginSecurity(auth, authData.context);
-    
-    // Audit log
-    await AuditService.log({
-      type: 'user_login',
-      action: 'authenticate',
-      category: 'authentication',
-      result: 'success',
-      userId: user._id,
-      target: {
-        type: 'user',
-        id: user._id.toString()
-      },
-      metadata: {
-        ...authData.context,
-        method: 'google',
-        provider: 'google',
-        sessionId: session.sessionId
-      }
-    });
-    
-    return {
-      success: true,
-      user: this.prepareUserObject(user, session.sessionId),
-      sessionId: session.sessionId,
-      isNewUser: false
-    };
-  }
-  
-  /**
-   * Check account status
-   * @param {Object} user - User object
-   * @param {Object} auth - Auth object
-   * @returns {Object} Status check result
-   */
-  async checkAccountStatus(user, auth) {
-    if (!user.active) {
-      return {
-        valid: false,
-        success: false,
-        message: 'Account is inactive',
-        code: 'ACCOUNT_INACTIVE'
-      };
-    }
-    
-    if (user.status === 'suspended') {
-      return {
-        valid: false,
-        success: false,
-        message: 'Account has been suspended',
-        code: 'ACCOUNT_SUSPENDED'
-      };
-    }
-    
-    if (user.status === 'deleted') {
-      return {
-        valid: false,
-        success: false,
-        message: 'Account has been deleted',
-        code: 'ACCOUNT_DELETED'
-      };
-    }
-    
-    return { valid: true };
-  }
-  
-  /**
-   * Check login security
-   * @param {Object} auth - Auth object
-   * @param {Object} context - Login context
-   */
-  async checkLoginSecurity(auth, context) {
-    // Check for unusual location
-    const lastLogin = auth.activity.loginHistory
-      .filter(h => h.success && h.method === 'google')
-      .sort((a, b) => b.timestamp - a.timestamp)[1]; // Get second to last
-    
-    if (lastLogin && lastLogin.ip !== context.ip) {
-      // Different IP - could be suspicious
-      const ipDistance = this.calculateIPDistance(lastLogin.ip, context.ip);
-      if (ipDistance > 100) { // Significant geographic distance
-        auth.recordSuspiciousActivity('unusual_location', {
-          previousIP: lastLogin.ip,
-          currentIP: context.ip,
-          method: 'google'
+        logger.error('Google authentication failed', {
+          correlationId,
+          error: error.message,
+          duration: Date.now() - startTime
         });
+
+        return done(error, false);
       }
-    }
-  }
-  
-  /**
-   * Get required fields for registration
-   * @returns {Array} Required fields
-   */
-  getRequiredFieldsForRegistration() {
-    // Can be configured based on business requirements
-    return ['email', 'firstName', 'lastName'];
-  }
-  
-  /**
-   * Prepare user object for session
-   * @param {Object} user - User document
-   * @param {string} sessionId - Session ID
-   * @returns {Object} Prepared user object
-   */
-  prepareUserObject(user, sessionId) {
-    return {
-      _id: user._id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      displayName: user.profile.displayName,
-      avatar: user.profile.avatar,
-      role: user.role,
-      organization: user.organization,
-      userType: user.userType,
-      status: user.status,
-      sessionId
-    };
-  }
-  
-  /**
-   * Send welcome email
-   * @param {Object} user - User object
-   * @param {string} provider - OAuth provider
-   */
-  async sendWelcomeEmail(user, provider) {
-    // This would integrate with your email service
-    logger.info('Sending welcome email', {
-      userId: user._id,
-      email: user.email,
-      provider
     });
   }
-  
+
   /**
-   * Calculate IP distance (simplified)
-   * @param {string} ip1 - First IP
-   * @param {string} ip2 - Second IP
-   * @returns {number} Distance estimate
+   * @private
+   * Validates Google account requirements
    */
-  calculateIPDistance(ip1, ip2) {
-    // Simplified implementation - in production would use GeoIP
-    const parts1 = ip1.split('.');
-    const parts2 = ip2.split('.');
+  async #validateGoogleAccount(profile, correlationId) {
+    const config = this.getConfig();
+
+    // Check email verification
+    if (config.security.validateEmailVerified && !profile._json.email_verified) {
+      throw new AppError(
+        'Google account email not verified',
+        403,
+        ERROR_CODES.EMAIL_NOT_VERIFIED,
+        { correlationId, email: profile._json.email }
+      );
+    }
+
+    // Check for workspace account
+    if (config.security.requireWorkspaceAccount) {
+      const isWorkspaceAccount = profile._json.hd || 
+                                this.#isWorkspaceEmail(profile._json.email);
+      
+      if (!isWorkspaceAccount) {
+        throw new AppError(
+          'Google Workspace account required',
+          403,
+          ERROR_CODES.OAUTH_WORKSPACE_REQUIRED,
+          { correlationId }
+        );
+      }
+    }
+
+    // Block consumer accounts if configured
+    if (config.features.blockConsumerAccounts) {
+      const isConsumerAccount = this.#isConsumerEmail(profile._json.email);
+      
+      if (isConsumerAccount) {
+        throw new AppError(
+          'Consumer Google accounts not allowed',
+          403,
+          ERROR_CODES.OAUTH_CONSUMER_BLOCKED,
+          { correlationId }
+        );
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * @private
+   * Enhances Google profile with additional data
+   */
+  async #enhanceGoogleProfile(profile, accessToken, correlationId) {
+    const enhancedProfile = { ...profile };
+    const config = this.getConfig();
+
+    try {
+      // Add Google-specific data
+      enhancedProfile._json.google_id = profile.id;
+      enhancedProfile._json.is_workspace_account = !!profile._json.hd;
+      enhancedProfile._json.hosted_domain = profile._json.hd;
+      enhancedProfile._json.locale = profile._json.locale;
+      
+      // Parse name components if available
+      if (profile.name) {
+        enhancedProfile._json.full_name = profile.displayName;
+        enhancedProfile._json.formatted_name = `${profile.name.givenName} ${profile.name.familyName}`;
+      }
+
+      // Fetch additional profile data if enabled
+      if (config.features.fetchGoogleProfile) {
+        const additionalData = await this.#fetchAdditionalProfileData(
+          accessToken,
+          correlationId
+        );
+        Object.assign(enhancedProfile._json, additionalData);
+      }
+
+      // Process profile photo
+      if (config.features.syncProfilePhoto && profile.photos?.[0]) {
+        enhancedProfile._json.profile_photo_url = this.#getHighResPhotoUrl(
+          profile.photos[0].value
+        );
+      }
+
+      logger.debug('Google profile enhanced', {
+        correlationId,
+        userId: profile.id,
+        isWorkspace: enhancedProfile._json.is_workspace_account,
+        domain: enhancedProfile._json.hosted_domain
+      });
+
+    } catch (error) {
+      logger.error('Failed to enhance Google profile', {
+        correlationId,
+        error: error.message,
+        userId: profile.id
+      });
+    }
+
+    return enhancedProfile;
+  }
+
+  /**
+   * @private
+   * Validates domain restrictions
+   */
+  async #validateDomainRestrictions(profile, correlationId) {
+    const config = this.getConfig();
+    const allowedDomains = config.features.allowedDomains || [];
+
+    if (allowedDomains.length === 0) {
+      return true;
+    }
+
+    const userDomain = profile._json.hd || 
+                      profile._json.email?.split('@')[1];
+
+    if (!userDomain) {
+      throw new AppError(
+        'Unable to determine user domain',
+        403,
+        ERROR_CODES.OAUTH_DOMAIN_INVALID,
+        { correlationId }
+      );
+    }
+
+    const isDomainAllowed = allowedDomains.some(domain => 
+      domain.toLowerCase() === userDomain.toLowerCase()
+    );
+
+    if (!isDomainAllowed) {
+      throw new AppError(
+        'Email domain not allowed',
+        403,
+        ERROR_CODES.OAUTH_DOMAIN_RESTRICTED,
+        { 
+          correlationId,
+          userDomain,
+          allowedDomains
+        }
+      );
+    }
+
+    return true;
+  }
+
+  /**
+   * @private
+   * Fetches additional profile data from Google
+   */
+  async #fetchAdditionalProfileData(accessToken, correlationId) {
+    try {
+      const profileData = await this.#googleAPI.getUserProfile(accessToken);
+      
+      return {
+        google_plus_url: profileData.url,
+        cover_photo_url: profileData.cover?.coverPhoto?.url,
+        tagline: profileData.tagline,
+        about_me: profileData.aboutMe,
+        occupation: profileData.occupation,
+        skills: profileData.skills,
+        birthday: profileData.birthday,
+        gender: profileData.gender,
+        relationship_status: profileData.relationshipStatus,
+        organizations: profileData.organizations?.map(org => ({
+          name: org.name,
+          title: org.title,
+          type: org.type,
+          primary: org.primary
+        }))
+      };
+    } catch (error) {
+      logger.debug('Could not fetch additional Google profile data', {
+        correlationId,
+        error: error.message
+      });
+      return {};
+    }
+  }
+
+  /**
+   * @private
+   * Checks if email is from Google Workspace
+   */
+  #isWorkspaceEmail(email) {
+    if (!email) return false;
     
-    if (parts1[0] !== parts2[0]) return 1000; // Different country/region
-    if (parts1[1] !== parts2[1]) return 500;  // Different state/area
-    if (parts1[2] !== parts2[2]) return 100;  // Different city/locality
-    return 10; // Same general area
+    const consumerDomains = ['gmail.com', 'googlemail.com'];
+    const domain = email.split('@')[1];
+    
+    return !consumerDomains.includes(domain.toLowerCase());
   }
-  
+
   /**
-   * Extract platform from user agent
-   * @param {string} userAgent - User agent string
-   * @returns {string} Platform
+   * @private
+   * Checks if email is consumer account
    */
-  extractPlatform(userAgent) {
-    if (/Windows/.test(userAgent)) return 'Windows';
-    if (/Mac/.test(userAgent)) return 'macOS';
-    if (/Linux/.test(userAgent)) return 'Linux';
-    if (/Android/.test(userAgent)) return 'Android';
-    if (/iOS|iPhone|iPad/.test(userAgent)) return 'iOS';
-    return 'Unknown';
+  #isConsumerEmail(email) {
+    if (!email) return false;
+    
+    const consumerDomains = ['gmail.com', 'googlemail.com'];
+    const domain = email.split('@')[1];
+    
+    return consumerDomains.includes(domain.toLowerCase());
   }
-  
+
   /**
-   * Extract browser from user agent
-   * @param {string} userAgent - User agent string
-   * @returns {string} Browser
+   * @private
+   * Gets high resolution photo URL
    */
-  extractBrowser(userAgent) {
-    if (/Chrome/.test(userAgent) && !/Edge/.test(userAgent)) return 'Chrome';
-    if (/Firefox/.test(userAgent)) return 'Firefox';
-    if (/Safari/.test(userAgent) && !/Chrome/.test(userAgent)) return 'Safari';
-    if (/Edge/.test(userAgent)) return 'Edge';
-    return 'Unknown';
+  #getHighResPhotoUrl(photoUrl) {
+    if (!photoUrl) return null;
+    
+    // Google photo URLs can have size parameters
+    // Remove size parameter to get original
+    return photoUrl.replace(/\?sz=\d+/, '?sz=400');
+  }
+
+  /**
+   * Extracts provider-specific data from profile
+   * @param {Object} profile - Google profile
+   * @param {string} accessToken - Access token
+   * @returns {Object} Provider-specific data
+   */
+  async extractProviderSpecificData(profile, accessToken) {
+    return {
+      googleId: profile.id,
+      googleEmail: profile._json.email,
+      googleEmailVerified: profile._json.email_verified,
+      googleName: profile.displayName,
+      googleGivenName: profile.name?.givenName,
+      googleFamilyName: profile.name?.familyName,
+      googlePicture: this.#getHighResPhotoUrl(profile._json.picture),
+      googleLocale: profile._json.locale,
+      googleHostedDomain: profile._json.hd,
+      isGoogleWorkspace: !!profile._json.hd,
+      googleProfileUrl: profile._json.link || profile._json.url,
+      additionalData: profile._json.additionalData || {}
+    };
+  }
+
+  /**
+   * Gets configuration
+   * @returns {Object} Strategy configuration
+   */
+  getConfig() {
+    return this._config || GoogleAuthStrategy.#GOOGLE_CONFIG;
+  }
+
+  /**
+   * Generates correlation ID
+   * @returns {string} Correlation ID
+   */
+  generateCorrelationId() {
+    return `google_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * @private
+   * @static
+   * Default handler for new Google users
+   */
+  static async #handleNewGoogleUser(user, profileData, req) {
+    logger.info('New Google user registered', {
+      userId: user._id,
+      googleId: profileData.googleId,
+      email: profileData.googleEmail,
+      isWorkspace: profileData.isGoogleWorkspace,
+      domain: profileData.googleHostedDomain
+    });
+
+    // Handle workspace-specific initialization
+    if (profileData.isGoogleWorkspace && profileData.googleHostedDomain) {
+      // Could trigger workspace-specific workflows
+      logger.debug('Google Workspace user detected', {
+        userId: user._id,
+        domain: profileData.googleHostedDomain
+      });
+    }
   }
 }
 
-module.exports = GoogleAuthStrategy;
+// Export factory function
+module.exports = (config) => {
+  const strategy = new GoogleAuthStrategy(config);
+  return strategy.getStrategy();
+};
+
+// Also export class for testing and extension
+module.exports.GoogleAuthStrategy = GoogleAuthStrategy;

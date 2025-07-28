@@ -1,911 +1,585 @@
-// server/shared/security/passport/strategies/linkedin-strategy.js
+'use strict';
+
 /**
- * @file LinkedIn OAuth Strategy
- * @description LinkedIn authentication using OAuth 2.0
- * @version 3.0.0
+ * @fileoverview LinkedIn OAuth authentication strategy for Passport.js
+ * @module shared/lib/auth/strategies/linkedin-strategy
+ * @requires module:passport-linkedin-oauth2
+ * @requires module:shared/lib/auth/strategies/oauth-strategy
+ * @requires module:shared/lib/utils/logger
+ * @requires module:shared/lib/utils/app-error
+ * @requires module:shared/lib/utils/constants/error-codes
+ * @requires module:shared/lib/integrations/social/linkedin-api
  */
 
 const LinkedInStrategy = require('passport-linkedin-oauth2').Strategy;
-
-const AuthService = require('../../../auth/services/auth-service');
-const config = require('../../../config/config');
-const UserService = require('../../../users/services/user-service');
-const { AuthenticationError } = require('../../../utils/app-error');
-const logger = require('../../../utils/logger');
-const AuditService = require('../../services/audit-service');
+const BaseOAuthStrategy = require('./oauth-strategy');
+const LinkedInAPI = require('../../integrations/social/linkedin-api');
+const logger = require('../../utils/logger');
+const AppError = require('../../utils/app-error');
+const { ERROR_CODES } = require('../../utils/constants/error-codes');
 
 /**
- * LinkedIn OAuth Strategy Class
  * @class LinkedInAuthStrategy
+ * @extends BaseOAuthStrategy
+ * @description LinkedIn OAuth authentication strategy with enterprise features
  */
-class LinkedInAuthStrategy {
-  constructor() {
-    this.strategyOptions = {
-      clientID: config.oauth.linkedin.clientId,
-      clientSecret: config.oauth.linkedin.clientSecret,
-      callbackURL: config.oauth.linkedin.callbackUrl,
-      scope: ['r_emailaddress', 'r_liteprofile', 'w_member_social'],
-      passReqToCallback: true,
-      state: true
-    };
-    
-    this.professionalRoles = [
-      'consultant', 'manager', 'director', 'partner',
-      'client', 'recruitment_partner', 'hiring_manager'
-    ];
-  }
-  
+class LinkedInAuthStrategy extends BaseOAuthStrategy {
   /**
-   * Create and configure the LinkedIn strategy
-   * @returns {LinkedInStrategy} Configured passport strategy
+   * @private
+   * @type {LinkedInAPI}
    */
-  async createStrategy() {
-    return new LinkedInStrategy(this.strategyOptions, async (req, accessToken, refreshToken, profile, done) => {
+  #linkedinAPI;
+
+  /**
+   * @private
+   * @static
+   * @readonly
+   * @type {Object}
+   */
+  static #LINKEDIN_CONFIG = {
+    provider: 'linkedin',
+    authorizationURL: 'https://www.linkedin.com/oauth/v2/authorization',
+    tokenURL: 'https://www.linkedin.com/oauth/v2/accessToken',
+    profileURL: 'https://api.linkedin.com/v2/me',
+    emailURL: 'https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))',
+    scope: [
+      'r_liteprofile',
+      'r_emailaddress',
+      'w_member_social'
+    ],
+    profileFields: [
+      'id',
+      'first-name',
+      'last-name',
+      'email-address',
+      'headline',
+      'picture-url',
+      'picture-urls::(original)',
+      'public-profile-url',
+      'location',
+      'industry',
+      'positions',
+      'summary'
+    ],
+    state: true,
+    features: {
+      fetchFullProfile: true,
+      fetchConnections: false,
+      fetchCompanyInfo: true,
+      syncProfilePhoto: true,
+      trackProfessionalData: true,
+      validateProfessionalEmail: false
+    },
+    professional: {
+      minimumConnections: 0,
+      requiredIndustries: [],
+      requiredPositionKeywords: [],
+      blockRecruiters: false
+    },
+    api: {
+      version: 'v2',
+      format: 'json',
+      headers: {
+        'X-Restli-Protocol-Version': '2.0.0',
+        'Accept': 'application/json'
+      }
+    }
+  };
+
+  /**
+   * Creates LinkedIn strategy instance
+   * @param {Object} [config] - Strategy configuration
+   * @param {Object} [services] - Service instances
+   */
+  constructor(config = {}, services = {}) {
+    const mergedConfig = {
+      ...LinkedInAuthStrategy.#LINKEDIN_CONFIG,
+      ...config,
+      callbacks: {
+        onNewUser: config.callbacks?.onNewUser || LinkedInAuthStrategy.#handleNewLinkedInUser,
+        onExistingUser: config.callbacks?.onExistingUser,
+        onAccountLinked: config.callbacks?.onAccountLinked,
+        onAuthError: config.callbacks?.onAuthError
+      }
+    };
+
+    super(mergedConfig, ...Object.values(services));
+    
+    this.#linkedinAPI = services.linkedinAPI || new LinkedInAPI({
+      apiVersion: mergedConfig.api.version,
+      headers: mergedConfig.api.headers
+    });
+
+    logger.info('LinkedInAuthStrategy initialized', {
+      scope: mergedConfig.scope,
+      fetchFullProfile: mergedConfig.features.fetchFullProfile,
+      trackProfessionalData: mergedConfig.features.trackProfessionalData
+    });
+  }
+
+  /**
+   * Gets Passport.js strategy configuration
+   * @returns {LinkedInStrategy} Configured LinkedIn strategy
+   */
+  getStrategy() {
+    const config = this.getConfig();
+    
+    const options = {
+      clientID: process.env.LINKEDIN_CLIENT_ID || config.clientID,
+      clientSecret: process.env.LINKEDIN_CLIENT_SECRET || config.clientSecret,
+      callbackURL: process.env.LINKEDIN_CALLBACK_URL || config.callbackURL || '/auth/linkedin/callback',
+      scope: config.scope,
+      passReqToCallback: true,
+      state: config.state,
+      profileFields: config.profileFields
+    };
+
+    // Validate required configuration
+    if (!options.clientID || !options.clientSecret) {
+      throw new AppError(
+        'LinkedIn OAuth configuration missing',
+        500,
+        ERROR_CODES.OAUTH_CONFIG_MISSING,
+        { provider: 'linkedin' }
+      );
+    }
+
+    return new LinkedInStrategy(options, async (req, accessToken, refreshToken, profile, done) => {
+      const startTime = Date.now();
+      const correlationId = req.correlationId || this.generateCorrelationId();
+
       try {
-        // Extract authentication context
-        const context = {
-          ip: req.ip,
-          userAgent: req.get('user-agent'),
-          origin: req.get('origin'),
-          organizationId: req.query.organizationId || req.session?.organizationContext,
-          intendedRole: req.query.role || 'consultant',
-          businessContext: req.query.context || 'professional'
-        };
-        
-        // Process LinkedIn profile
-        const linkedinProfile = await this.extractProfileData(profile, accessToken);
-        
-        // Validate profile data
-        const validation = await this.validateProfile(linkedinProfile);
-        if (!validation.valid) {
-          return done(null, false, {
-            message: validation.message,
-            code: 'INVALID_PROFILE'
-          });
-        }
-        
-        // Analyze professional profile
-        const professionalAnalysis = await this.analyzeProfessionalProfile(linkedinProfile, accessToken);
-        
-        // Handle authentication
-        const result = await this.handleLinkedInAuth(linkedinProfile, {
+        // LinkedIn v2 API returns limited data, enhance it
+        const enhancedProfile = await this.#enhanceLinkedInProfile(
+          profile,
           accessToken,
-          refreshToken,
-          context,
-          professionalInfo: professionalAnalysis
-        });
-        
-        if (!result.success) {
-          return done(null, false, {
-            message: result.message,
-            code: result.code
-          });
+          correlationId
+        );
+
+        // Validate professional requirements if configured
+        if (config.professional.minimumConnections > 0) {
+          await this.#validateProfessionalRequirements(
+            enhancedProfile,
+            accessToken,
+            correlationId
+          );
         }
-        
-        // Handle additional requirements
-        if (result.requiresAdditionalInfo) {
-          req.session.pendingAuth = {
-            provider: 'linkedin',
-            profileId: linkedinProfile.id,
-            profile: linkedinProfile,
-            tokens: { accessToken, refreshToken },
-            professionalInfo: professionalAnalysis
-          };
-          
-          return done(null, false, {
-            message: 'Additional information required',
-            code: 'ADDITIONAL_INFO_REQUIRED',
-            redirect: '/auth/complete-profile'
-          });
-        }
-        
-        // Successful authentication
-        done(null, result.user, {
-          method: 'linkedin',
-          sessionId: result.sessionId,
-          isNewUser: result.isNewUser,
-          professionalProfile: professionalAnalysis
+
+        // Use base OAuth strategy callback handler
+        const baseStrategy = super.getStrategy({
+          ...options,
+          skipUserProfile: true
         });
-        
+
+        // Process through base strategy
+        return baseStrategy._verify(req, accessToken, refreshToken, enhancedProfile, done);
+
       } catch (error) {
-        logger.error('LinkedIn authentication error', { error, profileId: profile?.id });
-        done(error);
+        logger.error('LinkedIn authentication failed', {
+          correlationId,
+          error: error.message,
+          duration: Date.now() - startTime
+        });
+
+        return done(error, false);
       }
     });
   }
-  
+
   /**
-   * Extract profile data from LinkedIn profile
-   * @param {Object} profile - LinkedIn profile object
-   * @param {string} accessToken - LinkedIn access token
-   * @returns {Object} Extracted profile data
+   * @private
+   * Enhances LinkedIn profile with additional data
    */
-  async extractProfileData(profile, accessToken) {
-    // LinkedIn API v2 provides structured data
-    const profileData = profile._json;
-    
-    // Extract name components
-    const firstName = profileData.firstName?.localized?.en_US || 
-                     profile.name?.givenName || '';
-    const lastName = profileData.lastName?.localized?.en_US || 
-                    profile.name?.familyName || '';
-    
-    // Extract primary email
-    const email = profile.emails?.[0]?.value || profileData.emailAddress;
-    
-    // Extract profile picture
-    let profilePicture = null;
-    if (profileData.profilePicture?.displayImage) {
-      const elements = profileData.profilePicture['displayImage~']?.elements;
-      if (elements && elements.length > 0) {
-        // Get the highest quality image
-        const bestImage = elements.reduce((prev, current) => 
-          (current.data['com.linkedin.digitalmedia.mediaartifact.StillImage']?.displaySize?.width || 0) >
-          (prev.data['com.linkedin.digitalmedia.mediaartifact.StillImage']?.displaySize?.width || 0) 
-          ? current : prev
-        );
-        profilePicture = bestImage.identifiers?.[0]?.identifier;
-      }
-    }
-    
-    return {
-      id: profile.id,
-      email: email,
-      firstName: firstName,
-      lastName: lastName,
-      displayName: profile.displayName || `${firstName} ${lastName}`.trim(),
-      headline: profileData.headline?.localized?.en_US,
-      summary: profileData.summary?.localized?.en_US,
-      profilePicture: profilePicture || profile.photos?.[0]?.value,
-      profileUrl: profile._raw?.publicProfileUrl,
-      location: {
-        country: profileData.location?.country,
-        countryCode: profileData.location?.countryCode,
-        city: profileData.location?.city
-      },
-      industry: profileData.industry,
-      positions: profileData.positions,
-      educations: profileData.educations,
-      skills: profileData.skills,
-      languages: profileData.languages,
-      provider: 'linkedin',
-      raw: profileData
-    };
-  }
-  
-  /**
-   * Validate LinkedIn profile
-   * @param {Object} profile - Extracted profile data
-   * @returns {Object} Validation result
-   */
-  async validateProfile(profile) {
-    if (!profile.id) {
-      return {
-        valid: false,
-        message: 'LinkedIn ID is required'
-      };
-    }
-    
-    if (!profile.email) {
-      return {
-        valid: false,
-        message: 'Email is required for authentication. Please grant email permissions.'
-      };
-    }
-    
-    // Validate email format
-    if (!config.constants.REGEX.EMAIL.test(profile.email)) {
-      return {
-        valid: false,
-        message: 'Invalid email format from LinkedIn'
-      };
-    }
-    
-    // Check if we have minimum required profile information
-    if (!profile.firstName && !profile.lastName && !profile.displayName) {
-      return {
-        valid: false,
-        message: 'Profile name information is required'
-      };
-    }
-    
-    // Check for business email if required
-    if (config.oauth.linkedin.requireBusinessEmail) {
-      const personalDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com'];
-      const emailDomain = profile.email.split('@')[1].toLowerCase();
+  async #enhanceLinkedInProfile(profile, accessToken, correlationId) {
+    const enhancedProfile = { ...profile };
+    const config = this.getConfig();
+
+    try {
+      // LinkedIn v2 API requires separate calls for different data
       
-      if (personalDomains.includes(emailDomain)) {
-        return {
-          valid: false,
-          message: 'Please use your business email address'
+      // Fetch email if not included
+      if (!enhancedProfile.emails?.length) {
+        const emailData = await this.#fetchLinkedInEmail(accessToken, correlationId);
+        if (emailData) {
+          enhancedProfile.emails = [{
+            value: emailData.email,
+            type: 'primary'
+          }];
+          enhancedProfile._json.email = emailData.email;
+        }
+      }
+
+      // Fetch full profile data if enabled
+      if (config.features.fetchFullProfile) {
+        const fullProfile = await this.#fetchFullProfile(accessToken, correlationId);
+        Object.assign(enhancedProfile._json, fullProfile);
+      }
+
+      // Fetch company information if enabled
+      if (config.features.fetchCompanyInfo && enhancedProfile._json.positions?.values?.length > 0) {
+        enhancedProfile._json.currentCompanies = await this.#extractCompanyInfo(
+          enhancedProfile._json.positions.values
+        );
+      }
+
+      // Process profile photo
+      if (config.features.syncProfilePhoto) {
+        enhancedProfile._json.profilePhotoUrl = this.#extractProfilePhoto(enhancedProfile);
+      }
+
+      // Add professional metadata
+      if (config.features.trackProfessionalData) {
+        enhancedProfile._json.professionalData = {
+          headline: enhancedProfile._json.headline,
+          industry: enhancedProfile._json.industry,
+          currentPosition: this.#getCurrentPosition(enhancedProfile._json.positions),
+          yearsOfExperience: this.#calculateExperience(enhancedProfile._json.positions),
+          skills: enhancedProfile._json.skills?.values?.map(s => s.skill.name) || []
         };
       }
+
+      logger.debug('LinkedIn profile enhanced', {
+        correlationId,
+        userId: profile.id,
+        hasEmail: !!enhancedProfile._json.email,
+        hasCompanyInfo: !!enhancedProfile._json.currentCompanies,
+        hasProfessionalData: !!enhancedProfile._json.professionalData
+      });
+
+    } catch (error) {
+      logger.error('Failed to enhance LinkedIn profile', {
+        correlationId,
+        error: error.message,
+        userId: profile.id
+      });
     }
-    
-    return { valid: true };
+
+    return enhancedProfile;
   }
-  
+
   /**
-   * Analyze professional profile
+   * @private
+   * Fetches LinkedIn email address
+   */
+  async #fetchLinkedInEmail(accessToken, correlationId) {
+    try {
+      const response = await this.#linkedinAPI.getEmailAddress(accessToken);
+      
+      if (response.elements && response.elements.length > 0) {
+        const primaryEmail = response.elements.find(e => e['handle~'].emailAddress);
+        return {
+          email: primaryEmail['handle~'].emailAddress,
+          verified: true // LinkedIn emails are pre-verified
+        };
+      }
+    } catch (error) {
+      logger.error('Failed to fetch LinkedIn email', {
+        correlationId,
+        error: error.message
+      });
+    }
+    return null;
+  }
+
+  /**
+   * @private
+   * Fetches full LinkedIn profile
+   */
+  async #fetchFullProfile(accessToken, correlationId) {
+    try {
+      const profile = await this.#linkedinAPI.getFullProfile(accessToken);
+      
+      return {
+        linkedinId: profile.id,
+        vanityName: profile.vanityName,
+        localizedHeadline: profile.localizedHeadline,
+        localizedFirstName: profile.firstName?.localized?.en_US,
+        localizedLastName: profile.lastName?.localized?.en_US,
+        profilePicture: profile.profilePicture?.displayImage,
+        industry: profile.industryName?.localized?.en_US,
+        summary: profile.summary?.localized?.en_US,
+        locationName: profile.location?.basicLocation?.city,
+        countryCode: profile.location?.basicLocation?.countryCode,
+        publicProfileUrl: `https://www.linkedin.com/in/${profile.vanityName || profile.id}`
+      };
+    } catch (error) {
+      logger.error('Failed to fetch full LinkedIn profile', {
+        correlationId,
+        error: error.message
+      });
+      return {};
+    }
+  }
+
+  /**
+   * @private
+   * Validates professional requirements
+   */
+  async #validateProfessionalRequirements(profile, accessToken, correlationId) {
+    const config = this.getConfig();
+
+    // Check minimum connections
+    if (config.professional.minimumConnections > 0) {
+      const connections = await this.#getConnectionCount(accessToken, correlationId);
+      if (connections < config.professional.minimumConnections) {
+        throw new AppError(
+          'Insufficient LinkedIn connections',
+          403,
+          ERROR_CODES.OAUTH_PROFESSIONAL_REQUIREMENTS,
+          { 
+            correlationId,
+            required: config.professional.minimumConnections,
+            actual: connections
+          }
+        );
+      }
+    }
+
+    // Check required industries
+    if (config.professional.requiredIndustries?.length > 0) {
+      const userIndustry = profile._json.industry?.toLowerCase();
+      const hasRequiredIndustry = config.professional.requiredIndustries.some(
+        industry => industry.toLowerCase() === userIndustry
+      );
+
+      if (!hasRequiredIndustry) {
+        throw new AppError(
+          'Industry requirement not met',
+          403,
+          ERROR_CODES.OAUTH_PROFESSIONAL_REQUIREMENTS,
+          { 
+            correlationId,
+            requiredIndustries: config.professional.requiredIndustries,
+            userIndustry
+          }
+        );
+      }
+    }
+
+    // Check position keywords
+    if (config.professional.requiredPositionKeywords?.length > 0) {
+      const currentPosition = this.#getCurrentPosition(profile._json.positions);
+      const positionText = `${currentPosition?.title} ${currentPosition?.company}`.toLowerCase();
+      
+      const hasRequiredKeyword = config.professional.requiredPositionKeywords.some(
+        keyword => positionText.includes(keyword.toLowerCase())
+      );
+
+      if (!hasRequiredKeyword) {
+        throw new AppError(
+          'Position requirement not met',
+          403,
+          ERROR_CODES.OAUTH_PROFESSIONAL_REQUIREMENTS,
+          { correlationId }
+        );
+      }
+    }
+
+    // Validate professional email if required
+    if (config.features.validateProfessionalEmail) {
+      const email = profile._json.email;
+      if (!email || this.#isPersonalEmail(email)) {
+        throw new AppError(
+          'Professional email required',
+          403,
+          ERROR_CODES.OAUTH_PROFESSIONAL_EMAIL_REQUIRED,
+          { correlationId }
+        );
+      }
+    }
+  }
+
+  /**
+   * @private
+   * Gets connection count
+   */
+  async #getConnectionCount(accessToken, correlationId) {
+    try {
+      const response = await this.#linkedinAPI.getConnectionCount(accessToken);
+      return response.numConnections || 0;
+    } catch (error) {
+      logger.error('Failed to get LinkedIn connection count', {
+        correlationId,
+        error: error.message
+      });
+      return 0;
+    }
+  }
+
+  /**
+   * @private
+   * Extracts company information
+   */
+  async #extractCompanyInfo(positions) {
+    if (!positions || positions.length === 0) return [];
+
+    return positions
+      .filter(p => p.isCurrent)
+      .map(position => ({
+        id: position.company?.id,
+        name: position.company?.name,
+        industry: position.company?.industry,
+        size: position.company?.size,
+        type: position.company?.type,
+        position: position.title,
+        startDate: position.startDate,
+        location: position.location
+      }));
+  }
+
+  /**
+   * @private
+   * Gets current position
+   */
+  #getCurrentPosition(positions) {
+    if (!positions?.values?.length) return null;
+
+    const current = positions.values.find(p => p.isCurrent);
+    if (current) {
+      return {
+        title: current.title,
+        company: current.company?.name,
+        startDate: current.startDate,
+        location: current.location
+      };
+    }
+
+    // Return most recent if no current position
+    return positions.values[0];
+  }
+
+  /**
+   * @private
+   * Calculates years of experience
+   */
+  #calculateExperience(positions) {
+    if (!positions?.values?.length) return 0;
+
+    const sortedPositions = positions.values.sort((a, b) => {
+      const aDate = new Date(a.startDate?.year || 0, a.startDate?.month || 0);
+      const bDate = new Date(b.startDate?.year || 0, b.startDate?.month || 0);
+      return aDate - bDate;
+    });
+
+    const firstPosition = sortedPositions[0];
+    if (!firstPosition?.startDate?.year) return 0;
+
+    const startYear = firstPosition.startDate.year;
+    const currentYear = new Date().getFullYear();
+    
+    return currentYear - startYear;
+  }
+
+  /**
+   * @private
+   * Extracts profile photo URL
+   */
+  #extractProfilePhoto(profile) {
+    // Try different photo sources
+    if (profile.photos?.length > 0) {
+      return profile.photos[0].value;
+    }
+
+    if (profile._json.pictureUrl) {
+      return profile._json.pictureUrl;
+    }
+
+    if (profile._json['picture-urls']?.values?.length > 0) {
+      return profile._json['picture-urls'].values[0];
+    }
+
+    if (profile._json.profilePicture?.displayImage) {
+      return profile._json.profilePicture.displayImage;
+    }
+
+    return null;
+  }
+
+  /**
+   * @private
+   * Checks if email is personal
+   */
+  #isPersonalEmail(email) {
+    const personalDomains = [
+      'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
+      'aol.com', 'icloud.com', 'protonmail.com', 'mail.com'
+    ];
+    
+    const domain = email.split('@')[1]?.toLowerCase();
+    return personalDomains.includes(domain);
+  }
+
+  /**
+   * Extracts provider-specific data from profile
    * @param {Object} profile - LinkedIn profile
    * @param {string} accessToken - Access token
-   * @returns {Promise<Object>} Professional analysis
+   * @returns {Object} Provider-specific data
    */
-  async analyzeProfessionalProfile(profile, accessToken) {
-    const analysis = {
-      verifiedProfessional: false,
-      seniorityLevel: 'unknown',
-      yearsOfExperience: 0,
-      currentPosition: null,
-      currentCompany: null,
-      industries: [],
-      skills: [],
-      recommendations: 0,
-      connections: 0,
-      profileCompleteness: 0,
-      suggestedRole: 'consultant'
+  async extractProviderSpecificData(profile, accessToken) {
+    return {
+      linkedinId: profile.id,
+      linkedinUrl: profile._json.publicProfileUrl,
+      linkedinVanityName: profile._json.vanityName,
+      headline: profile._json.headline || profile._json.localizedHeadline,
+      industry: profile._json.industry,
+      location: profile._json.locationName,
+      countryCode: profile._json.countryCode,
+      summary: profile._json.summary,
+      positions: profile._json.positions,
+      currentCompanies: profile._json.currentCompanies,
+      professionalData: profile._json.professionalData,
+      profilePhotoUrl: profile._json.profilePhotoUrl,
+      connectionCount: profile._json.numConnections,
+      isPremium: profile._json.premiumAccount || false
     };
-    
-    try {
-      // Analyze positions to determine seniority
-      if (profile.positions && profile.positions.length > 0) {
-        const currentPosition = profile.positions.find(p => p.current) || profile.positions[0];
-        analysis.currentPosition = currentPosition?.title;
-        analysis.currentCompany = currentPosition?.company?.name;
-        
-        // Calculate years of experience
-        const firstPosition = profile.positions[profile.positions.length - 1];
-        if (firstPosition?.startDate) {
-          const startYear = firstPosition.startDate.year;
-          analysis.yearsOfExperience = new Date().getFullYear() - startYear;
-        }
-        
-        // Determine seniority level
-        const title = (currentPosition?.title || '').toLowerCase();
-        if (title.includes('ceo') || title.includes('founder') || title.includes('owner')) {
-          analysis.seniorityLevel = 'owner';
-          analysis.suggestedRole = 'partner';
-        } else if (title.includes('vp') || title.includes('vice president') || title.includes('director')) {
-          analysis.seniorityLevel = 'executive';
-          analysis.suggestedRole = 'director';
-        } else if (title.includes('manager') || title.includes('lead')) {
-          analysis.seniorityLevel = 'manager';
-          analysis.suggestedRole = 'manager';
-        } else if (title.includes('senior')) {
-          analysis.seniorityLevel = 'senior';
-          analysis.suggestedRole = 'senior_consultant';
-        } else if (title.includes('junior') || title.includes('associate')) {
-          analysis.seniorityLevel = 'junior';
-          analysis.suggestedRole = 'junior_consultant';
-        } else if (analysis.yearsOfExperience > 5) {
-          analysis.seniorityLevel = 'mid';
-          analysis.suggestedRole = 'consultant';
-        }
-        
-        // Check for recruitment roles
-        if (title.includes('recruiter') || title.includes('talent')) {
-          analysis.suggestedRole = 'recruiter';
-        } else if (title.includes('hr') || title.includes('human resources')) {
-          analysis.suggestedRole = 'hiring_manager';
-        }
-      }
-      
-      // Extract industries
-      if (profile.industry) {
-        analysis.industries.push(profile.industry);
-      }
-      
-      // Extract skills
-      if (profile.skills && Array.isArray(profile.skills)) {
-        analysis.skills = profile.skills.slice(0, 10);
-      }
-      
-      // Calculate profile completeness
-      const fields = [
-        profile.firstName,
-        profile.lastName,
-        profile.email,
-        profile.headline,
-        profile.summary,
-        profile.profilePicture,
-        profile.positions?.length > 0,
-        profile.educations?.length > 0,
-        profile.skills?.length > 0
-      ];
-      
-      analysis.profileCompleteness = Math.round(
-        (fields.filter(Boolean).length / fields.length) * 100
-      );
-      
-      // Mark as verified professional if profile is substantial
-      analysis.verifiedProfessional = 
-        analysis.profileCompleteness >= 70 &&
-        analysis.yearsOfExperience >= 2 &&
-        analysis.currentPosition !== null;
-      
-    } catch (error) {
-      logger.error('Failed to analyze LinkedIn profile', { error });
-    }
-    
-    return analysis;
   }
-  
+
   /**
-   * Handle LinkedIn authentication
-   * @param {Object} profile - LinkedIn profile data
-   * @param {Object} authData - Authentication data
-   * @returns {Promise<Object>} Authentication result
+   * Gets configuration
+   * @returns {Object} Strategy configuration
    */
-  async handleLinkedInAuth(profile, authData) {
-    try {
-      // Check for existing user
-      let userWithAuth = await UserService.getUserByOAuthProvider('linkedin', profile.id);
-      
-      if (!userWithAuth) {
-        // Check if user exists with same email
-        userWithAuth = await UserService.getUserWithAuth(profile.email);
-        
-        if (userWithAuth) {
-          // Link LinkedIn account to existing user
-          return await this.linkLinkedInAccount(userWithAuth, profile, authData);
-        } else {
-          // Create new user
-          return await this.createLinkedInUser(profile, authData);
-        }
-      } else {
-        // Existing LinkedIn user - update and login
-        return await this.loginLinkedInUser(userWithAuth, profile, authData);
-      }
-      
-    } catch (error) {
-      logger.error('LinkedIn auth handling error', { error, profileId: profile.id });
-      throw error;
-    }
+  getConfig() {
+    return this._config || LinkedInAuthStrategy.#LINKEDIN_CONFIG;
   }
-  
+
   /**
-   * Link LinkedIn account to existing user
-   * @param {Object} userWithAuth - Existing user with auth
-   * @param {Object} profile - LinkedIn profile
-   * @param {Object} authData - Authentication data
-   * @returns {Promise<Object>} Link result
+   * Generates correlation ID
+   * @returns {string} Correlation ID
    */
-  async linkLinkedInAccount(userWithAuth, profile, authData) {
-    const { user, auth } = userWithAuth;
-    
-    // Check if account linking is allowed
-    if (!config.oauth.allowAccountLinking) {
-      return {
-        success: false,
-        message: 'An account with this email already exists. Please login with your existing method.',
-        code: 'ACCOUNT_EXISTS'
-      };
-    }
-    
-    // Check account status
-    const accountCheck = await this.checkAccountStatus(user, auth);
-    if (!accountCheck.valid) {
-      return accountCheck;
-    }
-    
-    // Update auth record with LinkedIn info
-    auth.authMethods.oauth.linkedin = {
-      id: profile.id,
-      email: profile.email,
-      firstName: profile.firstName,
-      lastName: profile.lastName,
-      picture: profile.profilePicture,
-      accessToken: authData.accessToken,
-      tokenExpiry: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000) // 60 days
-    };
-    
-    // Update professional profile
-    if (!user.profile.professionalInfo) {
-      user.profile.professionalInfo = {};
-    }
-    
-    user.profile.professionalInfo = {
-      ...user.profile.professionalInfo,
-      headline: profile.headline,
-      summary: profile.summary,
-      linkedinUrl: profile.profileUrl,
-      industry: profile.industry,
-      currentPosition: authData.professionalInfo.currentPosition,
-      currentCompany: authData.professionalInfo.currentCompany,
-      yearsOfExperience: authData.professionalInfo.yearsOfExperience,
-      verified: authData.professionalInfo.verifiedProfessional,
-      lastUpdated: new Date()
-    };
-    
-    // Update user role if suggested role is higher
-    if (authData.professionalInfo.suggestedRole && 
-        this.isHigherRole(authData.professionalInfo.suggestedRole, user.role.primary)) {
-      user.role.previousRoles = user.role.previousRoles || [];
-      user.role.previousRoles.push({
-        role: user.role.primary,
-        changedAt: new Date(),
-        changedFrom: 'linkedin_verification'
+  generateCorrelationId() {
+    return `linkedin_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * @private
+   * @static
+   * Default handler for new LinkedIn users
+   */
+  static async #handleNewLinkedInUser(user, profileData, req) {
+    logger.info('New LinkedIn user registered', {
+      userId: user._id,
+      linkedinId: profileData.linkedinId,
+      industry: profileData.industry,
+      hasCurrentPosition: !!profileData.professionalData?.currentPosition,
+      yearsOfExperience: profileData.professionalData?.yearsOfExperience
+    });
+
+    // Could trigger professional network-specific workflows
+    if (profileData.professionalData?.currentPosition) {
+      logger.debug('Professional user detected', {
+        userId: user._id,
+        position: profileData.professionalData.currentPosition.title,
+        company: profileData.professionalData.currentPosition.company
       });
-      user.role.primary = authData.professionalInfo.suggestedRole;
     }
-    
-    // Create session
-    const session = auth.addSession({
-      deviceInfo: {
-        userAgent: authData.context.userAgent,
-        platform: this.extractPlatform(authData.context.userAgent),
-        browser: this.extractBrowser(authData.context.userAgent)
-      },
-      location: {
-        ip: authData.context.ip
-      },
-      expiresAt: new Date(Date.now() + config.auth.sessionDuration)
-    });
-    
-    // Add login history
-    auth.activity.loginHistory.push({
-      timestamp: new Date(),
-      ip: authData.context.ip,
-      userAgent: authData.context.userAgent,
-      method: 'linkedin',
-      success: true
-    });
-    
-    await auth.save();
-    await user.save();
-    
-    // Audit log
-    await AuditService.log({
-      type: 'oauth_account_linked',
-      action: 'link_account',
-      category: 'authentication',
-      result: 'success',
-      userId: user._id,
-      target: {
-        type: 'oauth_provider',
-        id: 'linkedin'
-      },
-      metadata: {
-        ...authData.context,
-        provider: 'linkedin',
-        linkedinId: profile.id,
-        professionalVerified: authData.professionalInfo.verifiedProfessional,
-        roleUpgraded: authData.professionalInfo.suggestedRole !== user.role.primary
-      }
-    });
-    
-    return {
-      success: true,
-      user: this.prepareUserObject(user, session.sessionId),
-      sessionId: session.sessionId,
-      isNewUser: false
-    };
-  }
-  
-  /**
-   * Create new user with LinkedIn account
-   * @param {Object} profile - LinkedIn profile
-   * @param {Object} authData - Authentication data
-   * @returns {Promise<Object>} Creation result
-   */
-  async createLinkedInUser(profile, authData) {
-    // Check if registration is allowed
-    if (!config.oauth.linkedin.allowRegistration) {
-      return {
-        success: false,
-        message: 'Registration with LinkedIn is not allowed',
-        code: 'REGISTRATION_DISABLED'
-      };
-    }
-    
-    // Determine user type based on context and professional info
-    let userType = 'hosted_org_user';
-    let primaryRole = authData.professionalInfo.suggestedRole || 'consultant';
-    
-    if (authData.context.businessContext === 'recruitment') {
-      if (authData.professionalInfo.currentPosition?.toLowerCase().includes('recruiter')) {
-        userType = 'recruitment_partner';
-        primaryRole = 'recruiter';
-      } else {
-        primaryRole = 'hiring_manager';
-      }
-    } else if (authData.context.businessContext === 'client') {
-      primaryRole = 'client';
-    }
-    
-    // Check if additional info is required
-    const requiredFields = this.getRequiredFieldsForRegistration(primaryRole);
-    const providedData = {
-      email: profile.email,
-      firstName: profile.firstName,
-      lastName: profile.lastName,
-      phone: null, // LinkedIn doesn't provide phone
-      company: authData.professionalInfo.currentCompany
-    };
-    
-    const missingFields = requiredFields.filter(field => !providedData[field]);
-    
-    if (missingFields.length > 0) {
-      return {
-        success: false,
-        requiresAdditionalInfo: true,
-        missingFields,
-        profile,
-        suggestedRole: primaryRole,
-        professionalInfo: authData.professionalInfo
-      };
-    }
-    
-    // Create user data
-    const userData = {
-      email: profile.email,
-      firstName: profile.firstName,
-      lastName: profile.lastName,
-      profile: {
-        displayName: profile.displayName,
-        avatar: profile.profilePicture,
-        bio: {
-          short: profile.headline || `${authData.professionalInfo.currentPosition} at ${authData.professionalInfo.currentCompany}`,
-          full: profile.summary
-        },
-        location: profile.location?.city,
-        professionalInfo: {
-          headline: profile.headline,
-          summary: profile.summary,
-          linkedinUrl: profile.profileUrl,
-          industry: profile.industry,
-          currentPosition: authData.professionalInfo.currentPosition,
-          currentCompany: authData.professionalInfo.currentCompany,
-          yearsOfExperience: authData.professionalInfo.yearsOfExperience,
-          skills: authData.professionalInfo.skills,
-          verified: authData.professionalInfo.verifiedProfessional
-        }
-      },
-      preferences: {
-        language: 'en',
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        communicationPreferences: {
-          professionalUpdates: true,
-          industryNews: true
-        }
-      },
-      userType,
-      role: {
-        primary: primaryRole
-      },
-      status: 'active',
-      isEmailVerified: true // LinkedIn emails are verified
-    };
-    
-    // Handle organization context
-    if (authData.context.organizationId) {
-      userData.organization = {
-        current: authData.context.organizationId,
-        organizations: [authData.context.organizationId]
-      };
-    }
-    
-    // Create user and auth records
-    const result = await UserService.createUserWithOAuth(userData, {
-      provider: 'linkedin',
-      profileId: profile.id,
-      profile: {
-        id: profile.id,
-        email: profile.email,
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        picture: profile.profilePicture,
-        accessToken: authData.accessToken,
-        tokenExpiry: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
-      }
-    }, authData.context);
-    
-    if (!result.success) {
-      return result;
-    }
-    
-    // Create session
-    const { user, auth } = result;
-    const session = auth.addSession({
-      deviceInfo: {
-        userAgent: authData.context.userAgent,
-        platform: this.extractPlatform(authData.context.userAgent),
-        browser: this.extractBrowser(authData.context.userAgent)
-      },
-      location: {
-        ip: authData.context.ip
-      },
-      expiresAt: new Date(Date.now() + config.auth.sessionDuration)
-    });
-    
-    await auth.save();
-    
-    // Send welcome email
-    await this.sendWelcomeEmail(user, 'linkedin', authData.professionalInfo);
-    
-    // Audit log
-    await AuditService.log({
-      type: 'user_registration',
-      action: 'register',
-      category: 'authentication',
-      result: 'success',
-      userId: user._id,
-      target: {
-        type: 'user',
-        id: user._id.toString()
-      },
-      metadata: {
-        ...authData.context,
-        method: 'linkedin',
-        provider: 'linkedin',
-        linkedinId: profile.id,
-        professionalVerified: authData.professionalInfo.verifiedProfessional,
-        autoCreated: true,
-        suggestedRole: primaryRole
-      }
-    });
-    
-    return {
-      success: true,
-      user: this.prepareUserObject(user, session.sessionId),
-      sessionId: session.sessionId,
-      isNewUser: true
-    };
-  }
-  
-  /**
-   * Login existing LinkedIn user
-   * @param {Object} userWithAuth - User with auth record
-   * @param {Object} profile - LinkedIn profile
-   * @param {Object} authData - Authentication data
-   * @returns {Promise<Object>} Login result
-   */
-  async loginLinkedInUser(userWithAuth, profile, authData) {
-    const { user, auth } = userWithAuth;
-    
-    // Check account status
-    const accountCheck = await this.checkAccountStatus(user, auth);
-    if (!accountCheck.valid) {
-      return accountCheck;
-    }
-    
-    // Update LinkedIn auth data
-    const linkedinAuth = auth.authMethods.oauth.linkedin;
-    linkedinAuth.lastLogin = new Date();
-    linkedinAuth.accessToken = authData.accessToken;
-    linkedinAuth.tokenExpiry = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
-    
-    // Update profile data if changed
-    let profileUpdated = false;
-    
-    if (profile.firstName !== linkedinAuth.firstName || profile.lastName !== linkedinAuth.lastName) {
-      linkedinAuth.firstName = profile.firstName;
-      linkedinAuth.lastName = profile.lastName;
-      profileUpdated = true;
-    }
-    
-    if (profile.profilePicture !== linkedinAuth.picture) {
-      linkedinAuth.picture = profile.profilePicture;
-      if (user.profile.avatar === linkedinAuth.picture || !user.profile.avatar) {
-        user.profile.avatar = profile.profilePicture;
-      }
-      profileUpdated = true;
-    }
-    
-    // Update professional info
-    if (authData.professionalInfo.currentPosition || authData.professionalInfo.currentCompany) {
-      user.profile.professionalInfo = {
-        ...user.profile.professionalInfo,
-        headline: profile.headline,
-        currentPosition: authData.professionalInfo.currentPosition,
-        currentCompany: authData.professionalInfo.currentCompany,
-        yearsOfExperience: authData.professionalInfo.yearsOfExperience,
-        lastUpdated: new Date()
-      };
-      profileUpdated = true;
-    }
-    
-    // Create session
-    const session = auth.addSession({
-      deviceInfo: {
-        userAgent: authData.context.userAgent,
-        platform: this.extractPlatform(authData.context.userAgent),
-        browser: this.extractBrowser(authData.context.userAgent)
-      },
-      location: {
-        ip: authData.context.ip
-      },
-      expiresAt: new Date(Date.now() + config.auth.sessionDuration)
-    });
-    
-    // Add login history
-    auth.activity.loginHistory.push({
-      timestamp: new Date(),
-      ip: authData.context.ip,
-      userAgent: authData.context.userAgent,
-      method: 'linkedin',
-      success: true
-    });
-    
-    // Clear any failed login attempts
-    auth.security.loginAttempts.count = 0;
-    auth.security.loginAttempts.lockedUntil = null;
-    
-    await auth.save();
-    
-    if (profileUpdated) {
-      await user.save();
-    }
-    
-    // Update user activity
-    user.activity.lastLogin = new Date();
-    await user.save();
-    
-    // Audit log
-    await AuditService.log({
-      type: 'user_login',
-      action: 'authenticate',
-      category: 'authentication',
-      result: 'success',
-      userId: user._id,
-      target: {
-        type: 'user',
-        id: user._id.toString()
-      },
-      metadata: {
-        ...authData.context,
-        method: 'linkedin',
-        provider: 'linkedin',
-        linkedinId: profile.id,
-        sessionId: session.sessionId,
-        profileUpdated
-      }
-    });
-    
-    return {
-      success: true,
-      user: this.prepareUserObject(user, session.sessionId),
-      sessionId: session.sessionId,
-      isNewUser: false
-    };
-  }
-  
-  /**
-   * Check if one role is higher than another
-   * @param {string} newRole - New role
-   * @param {string} currentRole - Current role
-   * @returns {boolean} Is higher role
-   */
-  isHigherRole(newRole, currentRole) {
-    const roleHierarchy = {
-      prospect: 1,
-      junior_consultant: 2,
-      consultant: 3,
-      senior_consultant: 4,
-      manager: 5,
-      senior_manager: 6,
-      director: 7,
-      partner: 8
-    };
-    
-    return (roleHierarchy[newRole] || 0) > (roleHierarchy[currentRole] || 0);
-  }
-  
-  /**
-   * Check account status
-   * @param {Object} user - User object
-   * @param {Object} auth - Auth object
-   * @returns {Object} Status check result
-   */
-  async checkAccountStatus(user, auth) {
-    if (!user.active) {
-      return {
-        valid: false,
-        success: false,
-        message: 'Account is inactive',
-        code: 'ACCOUNT_INACTIVE'
-      };
-    }
-    
-    if (user.status === 'suspended') {
-      return {
-        valid: false,
-        success: false,
-        message: 'Account has been suspended',
-        code: 'ACCOUNT_SUSPENDED'
-      };
-    }
-    
-    return { valid: true };
-  }
-  
-  /**
-   * Get required fields for registration
-   * @param {string} role - User role
-   * @returns {Array} Required fields
-   */
-  getRequiredFieldsForRegistration(role) {
-    const baseFields = ['email', 'firstName', 'lastName'];
-    
-    if (role === 'recruitment_partner' || role === 'recruiter') {
-      return [...baseFields, 'company', 'phone'];
-    }
-    
-    if (role === 'client' || role === 'hiring_manager') {
-      return [...baseFields, 'company'];
-    }
-    
-    return baseFields;
-  }
-  
-  /**
-   * Prepare user object for session
-   * @param {Object} user - User document
-   * @param {string} sessionId - Session ID
-   * @returns {Object} Prepared user object
-   */
-  prepareUserObject(user, sessionId) {
-    return {
-      _id: user._id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      displayName: user.profile.displayName,
-      avatar: user.profile.avatar,
-      role: user.role,
-      organization: user.organization,
-      userType: user.userType,
-      status: user.status,
-      isProfessional: !!user.profile.professionalInfo?.verified,
-      currentPosition: user.profile.professionalInfo?.currentPosition,
-      currentCompany: user.profile.professionalInfo?.currentCompany,
-      sessionId
-    };
-  }
-  
-  /**
-   * Send welcome email
-   * @param {Object} user - User object
-   * @param {string} provider - OAuth provider
-   * @param {Object} professionalInfo - Professional information
-   */
-  async sendWelcomeEmail(user, provider, professionalInfo) {
-    // This would integrate with your email service
-    logger.info('Sending welcome email', {
-      userId: user._id,
-      email: user.email,
-      provider,
-      isProfessional: professionalInfo?.verifiedProfessional,
-      role: user.role.primary
-    });
-  }
-  
-  /**
-   * Extract platform from user agent
-   * @param {string} userAgent - User agent string
-   * @returns {string} Platform
-   */
-  extractPlatform(userAgent) {
-    if (/Windows/.test(userAgent)) return 'Windows';
-    if (/Mac/.test(userAgent)) return 'macOS';
-    if (/Linux/.test(userAgent)) return 'Linux';
-    if (/Android/.test(userAgent)) return 'Android';
-    if (/iOS|iPhone|iPad/.test(userAgent)) return 'iOS';
-    return 'Unknown';
-  }
-  
-  /**
-   * Extract browser from user agent
-   * @param {string} userAgent - User agent string
-   * @returns {string} Browser
-   */
-  extractBrowser(userAgent) {
-    if (/Chrome/.test(userAgent) && !/Edge/.test(userAgent)) return 'Chrome';
-    if (/Firefox/.test(userAgent)) return 'Firefox';
-    if (/Safari/.test(userAgent) && !/Chrome/.test(userAgent)) return 'Safari';
-    if (/Edge/.test(userAgent)) return 'Edge';
-    return 'Unknown';
   }
 }
 
-module.exports = LinkedInAuthStrategy;
+// Export factory function
+module.exports = (config) => {
+  const strategy = new LinkedInAuthStrategy(config);
+  return strategy.getStrategy();
+};
+
+// Also export class for testing and extension
+module.exports.LinkedInAuthStrategy = LinkedInAuthStrategy;
