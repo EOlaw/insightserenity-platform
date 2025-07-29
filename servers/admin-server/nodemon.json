@@ -1,0 +1,52 @@
+{
+  "name": "admin-server-dev",
+  "script": "server.js",
+  "ext": "js json",
+  "env": {
+    "NODE_ENV": "development",
+    "DEBUG": "admin:*",
+    "FORCE_COLOR": "1"
+  },
+  "ignore": [
+    ".git",
+    "node_modules/**",
+    "coverage/**",
+    "test/**",
+    "logs/**",
+    "temp/**",
+    "uploads/**",
+    "public/uploads/**",
+    "*.test.js",
+    "*.spec.js",
+    ".env.local",
+    ".env.production"
+  ],
+  "watch": [
+    "server.js",
+    "app.js",
+    "config/",
+    "middleware/",
+    "modules/",
+    "routes/",
+    "utils/",
+    "../../shared/lib/",
+    "../../shared/config/"
+  ],
+  "delay": "1000",
+  "verbose": true,
+  "exec": "node --inspect=0.0.0.0:9230",
+  "events": {
+    "restart": "echo '\\n[Admin Server] Restarting due to changes...\\n'",
+    "start": "echo '[Admin Server] Starting in development mode...\\n'",
+    "crash": "echo '\\n[Admin Server] Application crashed! Waiting for file changes...\\n'",
+    "exit": "echo '\\n[Admin Server] Application exited cleanly\\n'"
+  },
+  "colours": true,
+  "signals": {
+    "SIGHUP": "SIGHUP",
+    "SIGTERM": "SIGTERM",
+    "SIGINT": "SIGINT"
+  },
+  "stdin": true,
+  "stdout": true
+}
