@@ -83,6 +83,18 @@ class CommonValidator {
   }
 
   /**
+   * Validates if a value is a valid email address
+   * @static
+   * @param {string} value - Value to validate
+   * @returns {boolean} True if value is a valid email address
+   */
+  static isEmail(value) {
+    if (typeof value !== 'string') return false;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(value.trim().toLowerCase());
+  }
+
+  /**
    * Validates if a value is a valid number
    * @static
    * @param {*} value - Value to validate
@@ -247,6 +259,16 @@ class CommonValidator {
     
     const cleaned = value.replace(/[\s\-\(\)]/g, '');
     return this.#PHONE_REGEX.test(cleaned);
+  }
+
+  /**
+   * Validates if a value is a valid phone number (alias for isValidPhone)
+   * @static
+   * @param {string} value - Value to validate
+   * @returns {boolean} True if value is a valid phone number
+   */
+  static isPhoneNumber(value) {
+    return this.isValidPhone(value);
   }
 
   /**

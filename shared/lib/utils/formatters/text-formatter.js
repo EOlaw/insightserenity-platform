@@ -55,7 +55,7 @@ class TextFormatter {
   };
 
   static #QUOTE_STYLES = {
-    SINGLE: { open: ''', close: ''' },
+    SINGLE: { open: "'", close: "'" },
     DOUBLE: { open: '"', close: '"' },
     ANGLE: { open: '«', close: '»' },
     GERMAN: { open: '„', close: '"' },

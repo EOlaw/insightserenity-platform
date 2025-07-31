@@ -17,11 +17,11 @@
 const EmailService = require('./email-service');
 const SMSService = require('./sms-service');
 const CacheService = require('./cache-service');
-const WebSocketService = require('./websocket-service');
+// const WebSocketService = require('./websocket-service'); // WebSocket service not yet implemented
 const logger = require('../utils/logger');
 const AppError = require('../utils/app-error');
-const NotificationModel = require('../database/models/notification-model');
-const UserModel = require('../database/models/user-model');
+const NotificationModel = require('../database/models/platform/notification-model');
+const UserModel = require('../database/models/users/user-model');
 const OrganizationModel = require('../database/models/organization-model');
 const config = require('../../config');
 const { ERROR_CODES } = require('../utils/constants/error-codes');
@@ -745,7 +745,7 @@ class NotificationService {
           });
 
           // Send real-time update if WebSocket available
-          if (WebSocketService && WebSocketService.isConnected(recipient.id || recipient)) {
+          if (false) { // WebSocketService disabled
             await WebSocketService.emit(recipient.id || recipient, 'notification', {
               id: inAppNotification._id,
               type: notification.type,
@@ -764,7 +764,7 @@ class NotificationService {
           };
         },
         updateStatus: async (userId, notificationId, status) => {
-          if (WebSocketService && WebSocketService.isConnected(userId)) {
+          if (false) { // WebSocketService disabled
             await WebSocketService.emit(userId, 'notification:update', {
               id: notificationId,
               status

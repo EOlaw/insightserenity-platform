@@ -13,6 +13,7 @@ const logger = require('../../utils/logger');
 const AppError = require('../../utils/app-error');
 const EncryptionService = require('../encryption/encryption-service');
 const { AuditEvents, EventMetadata } = require('./audit-events');
+const AuditLogModel = require('../../database/models/security/audit-log-model');
 
 /**
  * @class AuditTrail
@@ -669,8 +670,6 @@ class AuditTrail {
       return { data: [], total: 0, page: 1, pageSize: params.pagination.pageSize };
     }
 
-    const AuditLogModel = require('../../database/models/audit-log-model');
-
     // Build MongoDB query
     const query = this.#buildMongoQuery(params.filters);
 
@@ -1172,9 +1171,6 @@ class AuditTrail {
     if (!this.database) {
       return {};
     }
-
-    const AuditLogModel = require('../../database/models/audit-log-model');
-
     const stats = {
       totalEvents: await AuditLogModel.countDocuments({}),
       uniqueUsers: await AuditLogModel.distinct('userId').length,
@@ -1198,9 +1194,6 @@ class AuditTrail {
     if (!this.database) {
       return {};
     }
-
-    const AuditLogModel = require('../../database/models/audit-log-model');
-
     const distribution = await AuditLogModel.aggregate([
       { $group: { _id: '$eventType', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
@@ -1223,9 +1216,6 @@ class AuditTrail {
     if (!this.database) {
       return {};
     }
-
-    const AuditLogModel = require('../../database/models/audit-log-model');
-
     const topUsers = await AuditLogModel.aggregate([
       { $group: { _id: '$userId', eventCount: { $sum: 1 } } },
       { $sort: { eventCount: -1 } },
@@ -1248,9 +1238,6 @@ class AuditTrail {
     if (!this.database) {
       return {};
     }
-
-    const AuditLogModel = require('../../database/models/audit-log-model');
-
     const topResources = await AuditLogModel.aggregate([
       { $group: { _id: '$resource', accessCount: { $sum: 1 } } },
       { $sort: { accessCount: -1 } },
@@ -1273,9 +1260,6 @@ class AuditTrail {
     if (!this.database) {
       return {};
     }
-
-    const AuditLogModel = require('../../database/models/audit-log-model');
-
     // Get hourly distribution for the last 7 days
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -1309,9 +1293,6 @@ class AuditTrail {
     if (!this.database) {
       return {};
     }
-
-    const AuditLogModel = require('../../database/models/audit-log-model');
-
     const riskDistribution = await AuditLogModel.aggregate([
       { $match: { riskLevel: { $exists: true } } },
       { $group: { _id: '$riskLevel', count: { $sum: 1 } } }

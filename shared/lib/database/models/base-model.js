@@ -12,7 +12,7 @@
 
 const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const QueryBuilder = require('../query-builder');
 const AuditService = require('../../security/audit/audit-service');
 

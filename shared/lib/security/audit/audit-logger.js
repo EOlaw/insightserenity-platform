@@ -502,7 +502,7 @@ class AuditLogger {
       throw new AppError('Database not configured', 500, 'NO_DATABASE');
     }
 
-    const AuditLogModel = require('../../database/models/audit-log-model');
+    const AuditLogModel = require('../../database/models/security/audit-log-model').model;
     await AuditLogModel.create(entry);
   }
 
@@ -517,7 +517,7 @@ class AuditLogger {
       throw new AppError('Database not configured', 500, 'NO_DATABASE');
     }
 
-    const AuditLogModel = require('../../database/models/audit-log-model');
+    const AuditLogModel = require('../../database/models/security/audit-log-model').model;
     await AuditLogModel.insertMany(entries);
   }
 
@@ -693,7 +693,7 @@ class AuditLogger {
       return 0;
     }
 
-    const AuditLogModel = require('../../database/models/audit-log-model');
+    const AuditLogModel = require('../../database/models/security/audit-log-model').model;
     const AuditArchiveModel = require('../../database/models/audit-archive-model');
 
     // Move entries to archive collection
@@ -722,7 +722,7 @@ class AuditLogger {
       throw new AppError('Database not configured', 500, 'NO_DATABASE');
     }
 
-    const AuditLogModel = require('../../database/models/audit-log-model');
+    const AuditLogModel = require('../../database/models/security/audit-log-model').model;
     const query = this.#buildDatabaseQuery(criteria);
     
     return await AuditLogModel.find(query)
@@ -914,7 +914,7 @@ class AuditLogger {
         (this.storageType === AuditLogger.#STORAGE_TYPES.DATABASE || 
          this.storageType === AuditLogger.#STORAGE_TYPES.HYBRID)) {
       try {
-        const AuditLogModel = require('../../database/models/audit-log-model');
+        const AuditLogModel = require('../../database/models/security/audit-log-model').model;
         stats.databaseCount = await AuditLogModel.countDocuments();
       } catch (error) {
         logger.error('Failed to get database stats', error);

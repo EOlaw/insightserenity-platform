@@ -16,9 +16,9 @@
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
-const AppError = require('../../../utils/app-error');
+const { AppError } = require('../../../utils/app-error');
 const HashService = require('../../../security/encryption/hash-service');
-const validators = require('../../../utils/validators/common-validators');
+const CommonValidator = require('../../../utils/validators/common-validators');
 const stringHelper = require('../../../utils/helpers/string-helper');
 const TwoFactorService = require('../../../auth/services/two-factor-service');
 
@@ -47,7 +47,7 @@ const userSchemaDefinition = {
     lowercase: true,
     index: true,
     validate: {
-      validator: validators.isEmail,
+      validator: CommonValidator.isEmail,
       message: 'Invalid email address'
     }
   },
@@ -58,7 +58,7 @@ const userSchemaDefinition = {
       trim: true,
       lowercase: true,
       validate: {
-        validator: validators.isEmail,
+        validator: CommonValidator.isEmail,
         message: 'Invalid email address'
       }
     },
@@ -81,7 +81,7 @@ const userSchemaDefinition = {
     validate: {
       validator: function(value) {
         if (!value) return true;
-        return validators.isPhoneNumber(value);
+        return CommonValidator.isPhoneNumber(value);
       },
       message: 'Invalid phone number'
     }
@@ -403,7 +403,7 @@ const userSchemaDefinition = {
     recoveryEmail: {
       type: String,
       validate: {
-        validator: validators.isEmail,
+        validator: CommonValidator.isEmail,
         message: 'Invalid recovery email'
       }
     },

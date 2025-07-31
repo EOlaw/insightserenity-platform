@@ -14,7 +14,7 @@
 
 const logger = require('../../utils/logger');
 const AuditService = require('../../security/audit/audit-service');
-const AuditLogModel = require('../../database/models/audit-log-model');
+const AuditLogModel = require('../../database/models/security/audit-log-model');
 const CacheService = require('../../services/cache-service');
 const EncryptionService = require('../../security/encryption/encryption-service');
 const config = require('../../config');

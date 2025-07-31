@@ -12,6 +12,7 @@
 
 const logger = require('../../utils/logger');
 const AppError = require('../../utils/app-error');
+const AuditLogModel = require('../../database/models/security/audit-log-model');
 const GDPRCompliance = require('../compliance/gdpr-compliance');
 const HIPAACompliance = require('../compliance/hipaa-compliance');
 const SOXCompliance = require('../compliance/sox-compliance');
@@ -523,7 +524,7 @@ class ComplianceReporter {
       evidence.attestations.push(await this.#generateAttestation(evidence));
 
       // Package evidence
-      const package = await this.#packageEvidence(evidence);
+      const evidencePackage  = await this.#packageEvidence(evidence);
 
       logger.info('Evidence package generated', {
         evidenceId: evidence.id,
@@ -532,7 +533,7 @@ class ComplianceReporter {
         artifactCount: evidence.artifacts.length
       });
 
-      return package;
+      return evidencePackage ;
 
     } catch (error) {
       logger.error('Failed to generate evidence package', error);
@@ -919,8 +920,6 @@ class ComplianceReporter {
     if (!this.database) {
       return [];
     }
-
-    const AuditLogModel = require('../../database/models/audit-log-model');
     
     const query = {
       timestamp: {

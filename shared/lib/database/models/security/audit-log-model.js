@@ -13,10 +13,12 @@
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
-const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
-const { AUDIT_EVENTS, AUDIT_CATEGORIES } = require('../../utils/constants/audit-events');
-const encryptionService = require('../../security/encryption/encryption-service');
+console.log('[DEBUG] BaseModel:', typeof BaseModel, Object.keys(BaseModel));
+console.log('[DEBUG] Resolved BaseModel path:', require.resolve('../../base-model'));
+const logger = require('../../../utils/logger');
+const AppError = require('../../../utils/app-error');
+const { AuditEvents, EventCategories } = require('../../../security/audit/audit-events');
+const encryptionService = require('../../../security/encryption/encryption-service');
 
 /**
  * Audit log schema definition for comprehensive activity tracking
@@ -42,13 +44,13 @@ const auditLogSchemaDefinition = {
     type: {
       type: String,
       required: true,
-      enum: Object.values(AUDIT_EVENTS),
+      enum: Object.values(AuditEvents.AUTH).concat(Object.values(AuditEvents.USER), Object.values(AuditEvents.ORGANIZATION), Object.values(AuditEvents.DATA), Object.values(AuditEvents.SECURITY), Object.values(AuditEvents.SYSTEM), Object.values(AuditEvents.API), Object.values(AuditEvents.CONFIG), Object.values(AuditEvents.COMPLIANCE), Object.values(AuditEvents.BUSINESS), Object.values(AuditEvents.COMMUNICATION)),
       index: true
     },
     category: {
       type: String,
       required: true,
-      enum: Object.values(AUDIT_CATEGORIES),
+      enum: Object.values(EventCategories),
       index: true
     },
     subCategory: String,
