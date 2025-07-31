@@ -13,10 +13,9 @@
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
-console.log('[DEBUG] BaseModel:', typeof BaseModel, Object.keys(BaseModel));
-console.log('[DEBUG] Resolved BaseModel path:', require.resolve('../../base-model'));
+console.log('BaseModel loading...', typeof BaseModel);
 const logger = require('../../../utils/logger');
-const AppError = require('../../../utils/app-error');
+const { AppError } = require('../../../utils/app-error');
 const { AuditEvents, EventCategories } = require('../../../security/audit/audit-events');
 const encryptionService = require('../../../security/encryption/encryption-service');
 
@@ -325,7 +324,7 @@ const auditLogSchemaDefinition = {
   }
 };
 
-// Create schema
+// Create schema using BaseModel
 const auditLogSchema = BaseModel.createSchema(auditLogSchemaDefinition, {
   collection: 'audit_logs',
   timestamps: true,
@@ -374,10 +373,17 @@ auditLogSchema.pre('save', async function(next) {
   try {
     // Encrypt sensitive IP address
     if (this.request?.ip?.address && !this.request.ip.encryptedAddress) {
-      this.request.ip.encryptedAddress = await encryptionService.encryptField(
-        this.request.ip.address,
-        'audit-ip'
-      );
+      try {
+        this.request.ip.encryptedAddress = await encryptionService.encryptField(
+          this.request.ip.address,
+          'audit-ip'
+        );
+      } catch (encryptionError) {
+        logger.warn('Failed to encrypt IP address', {
+          error: encryptionError.message,
+          auditLogId: this._id
+        });
+      }
     }
 
     // Calculate risk score if not set
@@ -413,16 +419,30 @@ auditLogSchema.post('save', async function(doc) {
   try {
     // Check if we need to trigger alerts
     if (doc.isHighRisk || doc.security.anomalyDetected) {
-      const AuditAlert = mongoose.model('AuditAlert');
-      await AuditAlert.createFromAuditLog(doc);
+      try {
+        const AuditAlert = mongoose.model('AuditAlert');
+        await AuditAlert.createFromAuditLog(doc);
+      } catch (alertError) {
+        logger.error('Failed to create audit alert', {
+          auditLogId: doc._id,
+          error: alertError.message
+        });
+      }
     }
 
     // Update organization analytics
-    const Organization = mongoose.model('Organization');
-    await Organization.updateAnalytics(doc.organizationId, {
-      auditEvent: doc.event.type,
-      timestamp: doc.createdAt
-    });
+    try {
+      const Organization = mongoose.model('Organization');
+      await Organization.updateAnalytics(doc.organizationId, {
+        auditEvent: doc.event.type,
+        timestamp: doc.createdAt
+      });
+    } catch (analyticsError) {
+      logger.error('Failed to update organization analytics', {
+        organizationId: doc.organizationId,
+        error: analyticsError.message
+      });
+    }
 
   } catch (error) {
     logger.error('Error in audit log post-save hook', {

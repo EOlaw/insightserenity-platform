@@ -18,8 +18,8 @@
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const TokenService = require('../services/token-service');
 const BlacklistService = require('../services/blacklist-service');
-const UserModel = require('../../database/models/user-model');
-const OrganizationModel = require('../../database/models/organization-model');
+const UserModel = require('../../database/models/users/user-model');
+const OrganizationModel = require('../../database/models/organizations/organization-model');
 const CacheService = require('../../services/cache-service');
 const AuditService = require('../../security/audit/audit-service');
 const logger = require('../../utils/logger');

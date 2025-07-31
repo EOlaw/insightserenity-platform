@@ -18,11 +18,34 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const zxcvbn = require('zxcvbn');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
-const EncryptionService = require('../../security/encryption/encryption-service');
-const CacheService = require('../../services/cache-service');
-const UserModel = require('../../database/models/user-model');
+
+// Lazy load dependencies to avoid circular dependency issues
+let EncryptionService;
+let CacheService;
+let UserModel;
+
+function getEncryptionService() {
+  if (!EncryptionService) {
+    EncryptionService = require('../../security/encryption/encryption-service');
+  }
+  return EncryptionService;
+}
+
+function getCacheService() {
+  if (!CacheService) {
+    CacheService = require('../../services/cache-service');
+  }
+  return CacheService;
+}
+
+function getUserModel() {
+  if (!UserModel) {
+    UserModel = require('../../database/models/users/user-model');
+  }
+  return UserModel;
+}
 
 /**
  * @class PasswordService
@@ -38,13 +61,13 @@ class PasswordService {
 
   /**
    * @private
-   * @type {EncryptionService}
+   * @type {Object}
    */
   #encryptionService;
 
   /**
    * @private
-   * @type {CacheService}
+   * @type {Object}
    */
   #cacheService;
 
@@ -127,19 +150,32 @@ class PasswordService {
   /**
    * Creates a new PasswordService instance
    * @param {Object} [config] - Service configuration
-   * @param {EncryptionService} [encryptionService] - Encryption service instance
-   * @param {CacheService} [cacheService] - Cache service instance
+   * @param {Object} [encryptionService] - Encryption service instance
+   * @param {Object} [cacheService] - Cache service instance
    */
   constructor(config = {}, encryptionService, cacheService) {
     this.#config = { ...PasswordService.#DEFAULT_CONFIG, ...config };
-    this.#encryptionService = encryptionService || new EncryptionService();
-    this.#cacheService = cacheService || new CacheService();
+    
+    if (encryptionService) {
+      this.#encryptionService = encryptionService;
+    } else {
+      const EncryptionServiceClass = getEncryptionService();
+      this.#encryptionService = new EncryptionServiceClass();
+    }
+    
+    if (cacheService) {
+      this.#cacheService = cacheService;
+    } else {
+      const CacheServiceClass = getCacheService();
+      this.#cacheService = new CacheServiceClass();
+    }
+    
     this.#commonPasswords = new Set(PasswordService.#COMMON_PASSWORDS);
     this.#passwordMetrics = new Map();
 
     // Load additional common passwords if configured
     if (config.commonPasswordsList) {
-      this.#loadCommonPasswords(config.commonPasswordsList);
+      this.loadCommonPasswords(config.commonPasswordsList);
     }
 
     logger.info('PasswordService initialized', {
@@ -156,7 +192,7 @@ class PasswordService {
    * @throws {AppError} If hashing fails
    */
   async hashPassword(password) {
-    const correlationId = this.#generateCorrelationId();
+    const correlationId = this.generateCorrelationId();
 
     try {
       logger.debug('Hashing password', { correlationId });
@@ -175,14 +211,14 @@ class PasswordService {
       const hashedPassword = await bcrypt.hash(password, salt);
 
       // Track metrics
-      this.#trackPasswordOperation('hash', true);
+      this.trackPasswordOperation('hash', true);
 
       logger.debug('Password hashed successfully', { correlationId });
 
       return hashedPassword;
 
     } catch (error) {
-      this.#trackPasswordOperation('hash', false);
+      this.trackPasswordOperation('hash', false);
 
       logger.error('Password hashing failed', {
         correlationId,
@@ -206,7 +242,7 @@ class PasswordService {
    * @throws {AppError} If verification fails
    */
   async verifyPassword(password, hash) {
-    const correlationId = this.#generateCorrelationId();
+    const correlationId = this.generateCorrelationId();
 
     try {
       logger.debug('Verifying password', { correlationId });
@@ -218,12 +254,12 @@ class PasswordService {
       const isValid = await bcrypt.compare(password, hash);
 
       // Track metrics
-      this.#trackPasswordOperation('verify', true);
+      this.trackPasswordOperation('verify', true);
 
       return isValid;
 
     } catch (error) {
-      this.#trackPasswordOperation('verify', false);
+      this.trackPasswordOperation('verify', false);
 
       logger.error('Password verification failed', {
         correlationId,
@@ -244,7 +280,7 @@ class PasswordService {
    * @throws {AppError} If validation fails
    */
   async validatePasswordPolicy(password, policy = {}, context = {}) {
-    const correlationId = context.correlationId || this.#generateCorrelationId();
+    const correlationId = context.correlationId || this.generateCorrelationId();
 
     try {
       logger.debug('Validating password policy', { correlationId });
@@ -303,20 +339,20 @@ class PasswordService {
       }
 
       // Common password check
-      if (effectivePolicy.preventCommonPasswords && this.#isCommonPassword(password)) {
+      if (effectivePolicy.preventCommonPasswords && this.isCommonPassword(password)) {
         errors.push('Password is too common');
       }
 
       // User info check
       if (effectivePolicy.preventUserInfo && context.user) {
-        if (this.#containsUserInfo(password, context.user)) {
+        if (this.containsUserInfo(password, context.user)) {
           errors.push('Password must not contain personal information');
         }
       }
 
       // Strength check
       if (effectivePolicy.enablePasswordComplexityCheck) {
-        const strength = await this.#checkPasswordStrength(password);
+        const strength = await this.checkPasswordStrength(password);
         if (strength.score < effectivePolicy.minStrengthScore) {
           errors.push(`Password is too weak (strength: ${strength.score}/${4})`);
           if (strength.feedback) {
@@ -327,7 +363,7 @@ class PasswordService {
 
       // Compromised password check
       if (effectivePolicy.enableCompromisedPasswordCheck) {
-        const isCompromised = await this.#checkCompromisedPassword(password);
+        const isCompromised = await this.checkCompromisedPassword(password);
         if (isCompromised) {
           errors.push('Password has been found in data breaches');
         }
@@ -336,7 +372,7 @@ class PasswordService {
       const valid = errors.length === 0;
 
       // Track metrics
-      this.#trackPasswordOperation('validate', valid);
+      this.trackPasswordOperation('validate', valid);
 
       logger.debug('Password validation completed', {
         correlationId,
@@ -350,7 +386,7 @@ class PasswordService {
         errors,
         warnings,
         strength: effectivePolicy.enablePasswordComplexityCheck ? 
-          await this.#checkPasswordStrength(password) : null
+          await this.checkPasswordStrength(password) : null
       };
 
     } catch (error) {
@@ -507,7 +543,7 @@ class PasswordService {
   async checkPasswordStrength(password, userInputs = []) {
     try {
       // Check cache first
-      const cacheKey = `pwd_strength:${this.#hashForCache(password)}`;
+      const cacheKey = `pwd_strength:${this.hashForCache(password)}`;
       const cached = await this.#cacheService.get(cacheKey);
       
       if (cached) {
@@ -641,10 +677,9 @@ class PasswordService {
   }
 
   /**
-   * @private
    * Loads common passwords list
    */
-  async #loadCommonPasswords(source) {
+  async loadCommonPasswords(source) {
     try {
       // This would load from file or external source
       logger.info('Loading common passwords list', { source });
@@ -654,10 +689,9 @@ class PasswordService {
   }
 
   /**
-   * @private
    * Checks if password is common
    */
-  #isCommonPassword(password) {
+  isCommonPassword(password) {
     const lowerPassword = password.toLowerCase();
     
     // Check exact match
@@ -689,10 +723,9 @@ class PasswordService {
   }
 
   /**
-   * @private
    * Checks if password contains user info
    */
-  #containsUserInfo(password, user) {
+  containsUserInfo(password, user) {
     const lowerPassword = password.toLowerCase();
     const userFields = [
       user.email?.split('@')[0],
@@ -712,13 +745,12 @@ class PasswordService {
   }
 
   /**
-   * @private
    * Checks if password is compromised
    */
-  async #checkCompromisedPassword(password) {
+  async checkCompromisedPassword(password) {
     try {
       // Check cache first
-      const cacheKey = `pwd_compromised:${this.#hashForCache(password)}`;
+      const cacheKey = `pwd_compromised:${this.hashForCache(password)}`;
       const cached = await this.#cacheService.get(cacheKey);
       
       if (cached !== null) {
@@ -727,7 +759,7 @@ class PasswordService {
 
       // In production, integrate with HaveIBeenPwned API or similar
       // For now, just check against extended common passwords
-      const isCompromised = this.#isCommonPassword(password);
+      const isCompromised = this.isCommonPassword(password);
 
       // Cache result
       await this.#cacheService.set(cacheKey, isCompromised, this.#config.cacheTTL.compromisedCheck);
@@ -745,10 +777,9 @@ class PasswordService {
   }
 
   /**
-   * @private
    * Creates hash for cache key
    */
-  #hashForCache(password) {
+  hashForCache(password) {
     return crypto
       .createHash('sha256')
       .update(password)
@@ -757,20 +788,18 @@ class PasswordService {
   }
 
   /**
-   * @private
    * Tracks password operation
    */
-  #trackPasswordOperation(operation, success) {
+  trackPasswordOperation(operation, success) {
     const key = `${operation}:${success ? 'success' : 'failure'}`;
     const current = this.#passwordMetrics.get(key) || 0;
     this.#passwordMetrics.set(key, current + 1);
   }
 
   /**
-   * @private
    * Generates correlation ID
    */
-  #generateCorrelationId() {
+  generateCorrelationId() {
     return `pwd_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 

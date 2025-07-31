@@ -11,60 +11,48 @@
  */
 
 const mongoose = require('mongoose');
-const logger = require('../../utils/logger');
-const { AppError } = require('../../utils/app-error');
-const QueryBuilder = require('../query-builder');
-const AuditService = require('../../security/audit/audit-service');
+
+// Lazy load dependencies to avoid circular dependency issues
+let logger;
+let AppError;
+let QueryBuilder;
+let AuditService;
+
+function getLogger() {
+  if (!logger) {
+    logger = require('../../utils/logger');
+  }
+  return logger;
+}
+
+function getAppError() {
+  if (!AppError) {
+    const appErrorModule = require('../../utils/app-error');
+    AppError = appErrorModule.AppError || appErrorModule;
+  }
+  return AppError;
+}
+
+function getQueryBuilder() {
+  if (!QueryBuilder) {
+    QueryBuilder = require('../query-builder');
+  }
+  return QueryBuilder;
+}
+
+function getAuditService() {
+  if (!AuditService) {
+    AuditService = require('../../security/audit/audit-service');
+  }
+  return AuditService;
+}
 
 /**
  * @class BaseModel
  * @description Abstract base model with common functionality
  */
 class BaseModel {
-  /**
-   * @private
-   * @static
-   * @readonly
-   */
-  static #DEFAULT_OPTIONS = {
-    timestamps: true,
-    versionKey: '__v',
-    collection: null,
-    strict: true,
-    strictQuery: true,
-    runSettersOnQuery: true,
-    toJSON: {
-      virtuals: true,
-      transform: (doc, ret) => {
-        delete ret.__v;
-        return ret;
-      }
-    },
-    toObject: {
-      virtuals: true,
-      transform: (doc, ret) => {
-        delete ret.__v;
-        return ret;
-      }
-    }
-  };
-
-  static #HOOK_TYPES = {
-    PRE: 'pre',
-    POST: 'post'
-  };
-
-  static #MIDDLEWARE_TYPES = {
-    DOCUMENT: ['save', 'remove', 'updateOne', 'deleteOne'],
-    QUERY: ['find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete', 'update', 'updateMany', 'deleteMany'],
-    AGGREGATE: ['aggregate'],
-    MODEL: ['insertMany']
-  };
-
-  static #auditService = null;
-  static #modelRegistry = new Map();
-  static #schemaCache = new Map();
-
+  
   /**
    * Creates model schema with base functionality
    * @static
@@ -74,9 +62,35 @@ class BaseModel {
    */
   static createSchema(schemaDefinition, options = {}) {
     try {
+      const logger = getLogger();
+      
+      // Default options
+      const DEFAULT_OPTIONS = {
+        timestamps: true,
+        versionKey: '__v',
+        collection: null,
+        strict: true,
+        strictQuery: true,
+        runSettersOnQuery: true,
+        toJSON: {
+          virtuals: true,
+          transform: (doc, ret) => {
+            delete ret.__v;
+            return ret;
+          }
+        },
+        toObject: {
+          virtuals: true,
+          transform: (doc, ret) => {
+            delete ret.__v;
+            return ret;
+          }
+        }
+      };
+
       // Merge options with defaults
       const schemaOptions = {
-        ...BaseModel.#DEFAULT_OPTIONS,
+        ...DEFAULT_OPTIONS,
         ...options
       };
 
@@ -111,22 +125,22 @@ class BaseModel {
       const schema = new mongoose.Schema(enhancedDefinition, schemaOptions);
 
       // Add indexes
-      BaseModel.#addDefaultIndexes(schema);
+      BaseModel.addDefaultIndexes(schema);
 
       // Add virtual fields
-      BaseModel.#addVirtualFields(schema);
+      BaseModel.addVirtualFields(schema);
 
       // Add instance methods
-      BaseModel.#addInstanceMethods(schema);
+      BaseModel.addInstanceMethods(schema);
 
       // Add static methods
-      BaseModel.#addStaticMethods(schema);
+      BaseModel.addStaticMethods(schema);
 
       // Add middleware
-      BaseModel.#addMiddleware(schema);
+      BaseModel.addMiddleware(schema);
 
       // Add plugins
-      BaseModel.#addPlugins(schema, options);
+      BaseModel.addPlugins(schema, options);
 
       logger.debug('Schema created', {
         collection: schemaOptions.collection,
@@ -136,6 +150,9 @@ class BaseModel {
       return schema;
 
     } catch (error) {
+      const logger = getLogger();
+      const AppError = getAppError();
+      
       logger.error('Failed to create schema', error);
 
       throw new AppError(
@@ -157,31 +174,42 @@ class BaseModel {
    */
   static createModel(modelName, schema, options = {}) {
     try {
+      const logger = getLogger();
+      const AppError = getAppError();
+      
       if (!modelName || !schema) {
         throw new AppError('Model name and schema are required', 400, 'INVALID_MODEL_PARAMS');
       }
 
       // Check if model already exists
-      if (BaseModel.#modelRegistry.has(modelName)) {
-        return BaseModel.#modelRegistry.get(modelName);
+      if (BaseModel.modelRegistry && BaseModel.modelRegistry.has(modelName)) {
+        return BaseModel.modelRegistry.get(modelName);
+      }
+
+      // Initialize registries if not exists
+      if (!BaseModel.modelRegistry) {
+        BaseModel.modelRegistry = new Map();
+      }
+      if (!BaseModel.schemaCache) {
+        BaseModel.schemaCache = new Map();
       }
 
       // Set collection name if not specified
       if (!schema.options.collection) {
-        schema.options.collection = BaseModel.#getCollectionName(modelName);
+        schema.options.collection = BaseModel.getCollectionName(modelName);
       }
 
       // Create model
       const Model = mongoose.model(modelName, schema);
 
       // Enhance model with base functionality
-      BaseModel.#enhanceModel(Model, options);
+      BaseModel.enhanceModel(Model, options);
 
       // Register model
-      BaseModel.#modelRegistry.set(modelName, Model);
+      BaseModel.modelRegistry.set(modelName, Model);
 
       // Cache schema
-      BaseModel.#schemaCache.set(modelName, schema);
+      BaseModel.schemaCache.set(modelName, schema);
 
       logger.info('Model created and registered', {
         modelName,
@@ -191,9 +219,12 @@ class BaseModel {
       return Model;
 
     } catch (error) {
+      const logger = getLogger();
+      const AppError = getAppError();
+      
       logger.error('Failed to create model', error);
 
-      if (error instanceof AppError) {
+      if (error instanceof AppError || (error.constructor && error.constructor.name === 'AppError')) {
         throw error;
       }
 
@@ -212,24 +243,26 @@ class BaseModel {
    * @param {Object} [options={}] - Initialization options
    */
   static initialize(options = {}) {
+    const logger = getLogger();
+    const AuditService = getAuditService();
+    
     const { auditService } = options;
 
     if (auditService) {
-      BaseModel.#auditService = auditService;
+      BaseModel.auditService = auditService;
     } else {
-      BaseModel.#auditService = new AuditService();
+      BaseModel.auditService = new AuditService();
     }
 
     logger.info('BaseModel initialized');
   }
 
   /**
-   * @private
    * Adds default indexes to schema
    * @static
    * @param {mongoose.Schema} schema - Schema instance
    */
-  static #addDefaultIndexes(schema) {
+  static addDefaultIndexes(schema) {
     // Compound index for multi-tenant queries
     schema.index({ _tenantId: 1, _deleted: 1 });
     
@@ -250,12 +283,11 @@ class BaseModel {
   }
 
   /**
-   * @private
    * Adds virtual fields to schema
    * @static
    * @param {mongoose.Schema} schema - Schema instance
    */
-  static #addVirtualFields(schema) {
+  static addVirtualFields(schema) {
     // Virtual for document age
     schema.virtual('age').get(function() {
       if (this.createdAt) {
@@ -276,12 +308,11 @@ class BaseModel {
   }
 
   /**
-   * @private
    * Adds instance methods to schema
    * @static
    * @param {mongoose.Schema} schema - Schema instance
    */
-  static #addInstanceMethods(schema) {
+  static addInstanceMethods(schema) {
     /**
      * Soft deletes the document
      * @param {Object} [options={}] - Delete options
@@ -344,17 +375,22 @@ class BaseModel {
      * @returns {Promise<void>}
      */
     schema.methods.audit = async function(action, details = {}) {
-      if (BaseModel.#auditService) {
-        await BaseModel.#auditService.logActivity({
-          action,
-          category: 'DATABASE',
-          entityType: this.constructor.modelName,
-          entityId: this._id,
-          details: {
-            ...details,
-            collection: this.constructor.collection.name
-          }
-        });
+      if (BaseModel.auditService) {
+        try {
+          await BaseModel.auditService.logActivity({
+            action,
+            category: 'DATABASE',
+            entityType: this.constructor.modelName,
+            entityId: this._id,
+            details: {
+              ...details,
+              collection: this.constructor.collection.name
+            }
+          });
+        } catch (error) {
+          const logger = getLogger();
+          logger.error('Audit logging failed', error);
+        }
       }
     };
 
@@ -411,18 +447,18 @@ class BaseModel {
   }
 
   /**
-   * @private
    * Adds static methods to schema
    * @static
    * @param {mongoose.Schema} schema - Schema instance
    */
-  static #addStaticMethods(schema) {
+  static addStaticMethods(schema) {
     /**
      * Creates query builder instance
      * @param {Object} [options={}] - Query builder options
      * @returns {QueryBuilder} Query builder instance
      */
     schema.statics.query = function(options = {}) {
+      const QueryBuilder = getQueryBuilder();
       return new QueryBuilder(this, options);
     };
 
@@ -508,6 +544,8 @@ class BaseModel {
      * @returns {Promise<Object>} Bulk result
      */
     schema.statics.bulkOps = async function(operations, options = {}) {
+      const AppError = getAppError();
+      
       if (!Array.isArray(operations) || operations.length === 0) {
         throw new AppError('Operations array is required', 400, 'INVALID_BULK_OPS');
       }
@@ -629,12 +667,13 @@ class BaseModel {
   }
 
   /**
-   * @private
    * Adds middleware to schema
    * @static
    * @param {mongoose.Schema} schema - Schema instance
    */
-  static #addMiddleware(schema) {
+  static addMiddleware(schema) {
+    const logger = getLogger();
+    
     // Pre-save middleware
     schema.pre('save', async function(next) {
       try {
@@ -658,7 +697,7 @@ class BaseModel {
     schema.post('save', async function(doc) {
       try {
         // Audit creation or update
-        if (BaseModel.#auditService) {
+        if (BaseModel.auditService) {
           const action = doc.wasNew ? 'DOCUMENT_CREATED' : 'DOCUMENT_UPDATED';
           await doc.audit(action);
         }
@@ -691,7 +730,7 @@ class BaseModel {
     schema.pre('remove', async function(next) {
       try {
         // Audit deletion
-        if (BaseModel.#auditService) {
+        if (BaseModel.auditService) {
           await this.audit('DOCUMENT_DELETED');
         }
         next();
@@ -713,13 +752,12 @@ class BaseModel {
   }
 
   /**
-   * @private
    * Adds plugins to schema
    * @static
    * @param {mongoose.Schema} schema - Schema instance
    * @param {Object} options - Schema options
    */
-  static #addPlugins(schema, options) {
+  static addPlugins(schema, options) {
     // Timestamp plugin is handled by mongoose timestamps option
     
     // Add custom plugins if specified
@@ -735,20 +773,21 @@ class BaseModel {
   }
 
   /**
-   * @private
    * Enhances model with additional functionality
    * @static
    * @param {mongoose.Model} Model - Mongoose model
    * @param {Object} options - Enhancement options
    */
-  static #enhanceModel(Model, options) {
+  static enhanceModel(Model, options) {
     // Add model-level query builder
     Model.queryBuilder = function() {
+      const QueryBuilder = getQueryBuilder();
       return new QueryBuilder(this);
     };
 
     // Add tenant-specific query builder
     Model.forTenant = function(tenantId) {
+      const QueryBuilder = getQueryBuilder();
       return new QueryBuilder(this, { tenantId });
     };
 
@@ -785,13 +824,12 @@ class BaseModel {
   }
 
   /**
-   * @private
    * Gets collection name from model name
    * @static
    * @param {string} modelName - Model name
    * @returns {string} Collection name
    */
-  static #getCollectionName(modelName) {
+  static getCollectionName(modelName) {
     // Convert PascalCase to snake_case plural
     return modelName
       .replace(/([A-Z])/g, '_$1')
@@ -806,7 +844,7 @@ class BaseModel {
    * @returns {mongoose.Model|null} Registered model
    */
   static getModel(modelName) {
-    return BaseModel.#modelRegistry.get(modelName) || null;
+    return (BaseModel.modelRegistry && BaseModel.modelRegistry.get(modelName)) || null;
   }
 
   /**
@@ -815,7 +853,7 @@ class BaseModel {
    * @returns {Map<string, mongoose.Model>} All registered models
    */
   static getAllModels() {
-    return new Map(BaseModel.#modelRegistry);
+    return BaseModel.modelRegistry ? new Map(BaseModel.modelRegistry) : new Map();
   }
 
   /**
@@ -823,9 +861,18 @@ class BaseModel {
    * @static
    */
   static clearRegistry() {
-    BaseModel.#modelRegistry.clear();
-    BaseModel.#schemaCache.clear();
+    if (BaseModel.modelRegistry) {
+      BaseModel.modelRegistry.clear();
+    }
+    if (BaseModel.schemaCache) {
+      BaseModel.schemaCache.clear();
+    }
   }
 }
+
+// Initialize static properties
+BaseModel.modelRegistry = new Map();
+BaseModel.schemaCache = new Map();
+BaseModel.auditService = null;
 
 module.exports = BaseModel;

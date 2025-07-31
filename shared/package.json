@@ -32,12 +32,14 @@
     "nodemailer": "^7.0.5",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "passport-local": "^1.0.0",
     "qrcode": "^1.5.4",
     "redis": "^4.6.11",
     "speakeasy": "^2.0.0",
     "stripe": "^18.4.0",
     "twilio": "^5.8.0",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "zxcvbn": "^4.4.2"
   },
   "author": "InsightSerenity Platform Team",
   "license": "PROPRIETARY"
