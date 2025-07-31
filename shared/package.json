@@ -1,0 +1,24 @@
+{
+  "name": "@insightserenity/shared",
+  "version": "1.0.0",
+  "description": "Shared utilities and configurations for InsightSerenity Platform",
+  "main": "index.js",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "scripts": {
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "lodash": "^4.17.21",
+    "winston": "^3.11.0",
+    "mongoose": "^8.0.3",
+    "redis": "^4.6.11",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "author": "InsightSerenity Platform Team",
+  "license": "PROPRIETARY"
+}

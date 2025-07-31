@@ -95,7 +95,7 @@ const config = mergeConfigs();
 // Validate the configuration
 validateConfig(config);
 
-// Deep freeze the configuration to ensure immutability
+// Deep freeze helper function
 const deepFreeze = (obj) => {
   Object.freeze(obj);
   Object.getOwnPropertyNames(obj).forEach((prop) => {
@@ -108,30 +108,36 @@ const deepFreeze = (obj) => {
   return obj;
 };
 
-// Export the frozen configuration
-module.exports = deepFreeze(config);
+// Create the complete export object with all properties BEFORE freezing
+const exportObject = {
+  // Main configuration
+  ...config,
+  
+  // Individual configs for specific imports
+  base: config.base,
+  database: config.database,
+  security: config.security,
+  redis: config.redis,
+  email: config.email,
+  payment: config.payment,
+  constants: config.constants,
+  swagger: config.swagger,
+  environment: config.environment,
 
-// Export individual configs for specific imports
-module.exports.base = config.base;
-module.exports.database = config.database;
-module.exports.security = config.security;
-module.exports.redis = config.redis;
-module.exports.email = config.email;
-module.exports.payment = config.payment;
-module.exports.constants = config.constants;
-module.exports.swagger = config.swagger;
-module.exports.environment = config.environment;
+  // Utility function for getting config values with dot notation
+  get: (path, defaultValue = undefined) => {
+    return path.split('.').reduce((acc, part) => acc && acc[part], config) || defaultValue;
+  },
 
-// Export utility function for getting config values with dot notation
-module.exports.get = (path, defaultValue = undefined) => {
-  return path.split('.').reduce((acc, part) => acc && acc[part], config) || defaultValue;
+  // Environment check helpers
+  isDevelopment: () => environment === 'development',
+  isStaging: () => environment === 'staging',
+  isProduction: () => environment === 'production',
+  isTest: () => environment === 'test'
 };
 
-// Export environment check helpers
-module.exports.isDevelopment = () => environment === 'development';
-module.exports.isStaging = () => environment === 'staging';
-module.exports.isProduction = () => environment === 'production';
-module.exports.isTest = () => environment === 'test';
+// Export the frozen configuration object
+module.exports = deepFreeze(exportObject);
 
 // Log configuration summary (excluding sensitive data)
 if (environment !== 'test') {
