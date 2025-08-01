@@ -26,7 +26,7 @@ const CacheService = require('../../services/cache-service');
 const FileService = require('../../services/file-service');
 const MalwareScanner = require('../../security/services/malware-scanner');
 const FileRestrictionModel = require('../../database/models/file-restriction-model');
-const config = require('../../config');
+const config = require('..\helmet-config');
 
 /**
  * @class FileValidator

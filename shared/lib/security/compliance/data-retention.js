@@ -203,7 +203,7 @@ class DataRetention {
 
       // Store policy
       if (this.database) {
-        const RetentionPolicyModel = require('../../database/models/retention-policy-model');
+        const RetentionPolicyModel = require('..\..\database\models\security\audit-retention-policy-model');
         await RetentionPolicyModel.create(policy);
       } else {
         this.policyRegistry.set(policyId, policy);
@@ -1079,7 +1079,7 @@ class DataRetention {
    */
   async #getPolicy(policyId) {
     if (this.database) {
-      const RetentionPolicyModel = require('../../database/models/retention-policy-model');
+      const RetentionPolicyModel = require('..\..\database\models\security\audit-retention-policy-model');
       return await RetentionPolicyModel.findOne({ id: policyId });
     }
     
@@ -1355,7 +1355,7 @@ class DataRetention {
    */
   async #getActivePolicies() {
     if (this.database) {
-      const RetentionPolicyModel = require('../../database/models/retention-policy-model');
+      const RetentionPolicyModel = require('..\..\database\models\security\audit-retention-policy-model');
       return await RetentionPolicyModel.find({ active: true });
     }
     

@@ -2,28 +2,28 @@
 
 /**
  * @fileoverview Authentication strategies module exports
- * @module shared/lib/auth/strategies
+ * @module shared/lib/auth/index
  * @description Exports all authentication strategies for the platform
  */
 
-const jwtStrategy = require('./jwt-strategy');
-const localStrategy = require('./local-strategy');
-const oauthStrategy = require('./oauth-strategy');
-const githubStrategy = require('./github-strategy');
-const googleStrategy = require('./google-strategy');
-const linkedinStrategy = require('./linkedin-strategy');
-const passkeyStrategy = require('./passkey-strategy');
-const organizationStrategy = require('./organization-strategy');
+const jwtStrategy = require('./strategies/jwt-strategy');
+const localStrategy = require('./strategies/local-strategy');
+const oauthStrategy = require('./strategies/oauth-strategy');
+const githubStrategy = require('./strategies/github-strategy');
+const googleStrategy = require('./strategies/google-strategy');
+const linkedinStrategy = require('./strategies/linkedin-strategy');
+const passkeyStrategy = require('./strategies/passkey-strategy');
+const organizationStrategy = require('./strategies/organization-strategy');
 
 // Import strategy classes for advanced usage
-const { JWTAuthStrategy } = require('./jwt-strategy');
-const { LocalAuthStrategy } = require('./local-strategy');
-const BaseOAuthStrategy = require('./oauth-strategy');
-const { GitHubAuthStrategy } = require('./github-strategy');
-const { GoogleAuthStrategy } = require('./google-strategy');
-const { LinkedInAuthStrategy } = require('./linkedin-strategy');
-const { PasskeyAuthStrategy } = require('./passkey-strategy');
-const { OrganizationAuthStrategy } = require('./organization-strategy');
+const { JWTAuthStrategy } = require('./strategies/jwt-strategy');
+const { LocalAuthStrategy } = require('./strategies/local-strategy');
+const BaseOAuthStrategy = require('./strategies/oauth-strategy');
+const { GitHubAuthStrategy } = require('./strategies/github-strategy');
+const { GoogleAuthStrategy } = require('./strategies/google-strategy');
+const { LinkedInAuthStrategy } = require('./strategies/linkedin-strategy');
+const { PasskeyAuthStrategy } = require('./strategies/passkey-strategy');
+const { OrganizationAuthStrategy } = require('./strategies/organization-strategy');
 
 /**
  * Strategy factory functions

@@ -22,7 +22,7 @@ const AppError = require('../../../utils/app-error');
 const webhookService = require('../../../services/webhook-service');
 const hashService = require('../../../security/encryption/hash-service');
 const stringHelper = require('../../../utils/helpers/string-helper');
-const validators = require('../../../utils/validators/common-validators');
+const CommonValidator = require('../../../utils/validators/common-validators');
 const auditService = require('../../../security/audit/audit-service');
 const cryptoHelper = require('../../../utils/helpers/crypto-helper');
 
@@ -63,7 +63,7 @@ const webhookSchemaDefinition = {
     required: true,
     trim: true,
     validate: {
-      validator: validators.isURL,
+      validator: CommonValidator.isValidURL,
       message: 'Invalid webhook URL'
     }
   },

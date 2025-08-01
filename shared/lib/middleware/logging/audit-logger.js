@@ -17,7 +17,7 @@ const AuditService = require('../../security/audit/audit-service');
 const AuditLogModel = require('../../database/models/security/audit-log-model');
 const CacheService = require('../../services/cache-service');
 const EncryptionService = require('../../security/encryption/encryption-service');
-const config = require('../../config');
+const config = require('..\helmet-config');
 const crypto = require('crypto');
 
 /**
@@ -794,16 +794,26 @@ class AuditLogger {
   /**
    * @private
    * Flushes audit queue
+   * @returns {Promise<void>}
    */
   async #flushQueue() {
-    if (this.#auditQueue.size === 0) return;
+    if (this.#auditQueue.size === 0) {
+      return; // Exit silently for empty queue
+    }
 
     const batches = Array.from(this.#auditQueue.entries());
     this.#auditQueue.clear();
 
+    let totalProcessed = 0;
+    let processedBatches = 0;
+
     for (const [batchKey, records] of batches) {
+      if (records.length === 0) continue; // Skip empty batches
+      
       try {
         await this.#processBatch(records);
+        totalProcessed += records.length;
+        processedBatches++;
       } catch (error) {
         logger.error('Failed to process audit batch', {
           batchKey,
@@ -814,6 +824,14 @@ class AuditLogger {
         // Re-queue failed records
         records.forEach(record => this.#queueAuditRecord(record));
       }
+    }
+
+    // Only log when batches were actually processed
+    if (totalProcessed > 0) {
+      logger.info('All audit batches flushed', { 
+        batchCount: processedBatches,
+        totalRecords: totalProcessed 
+      });
     }
   }
 

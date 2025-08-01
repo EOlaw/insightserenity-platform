@@ -7,7 +7,7 @@
  */
 
 // Security Middleware
-const { HelmetConfig, getHelmetConfig } = require('./security/helmet-config');
+const { HelmetConfig, getHelmetConfig } = require('./helmet-config');
 const { SecurityHeaders, getSecurityHeaders } = require('./security/security-headers');
 const { CSRFProtection, getCSRFProtection } = require('./security/csrf-protection');
 const { XSSProtection, getXSSProtection } = require('./security/xss-protection');

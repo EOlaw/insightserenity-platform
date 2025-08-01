@@ -10,9 +10,17 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const EncryptionService = require('../encryption/encryption-service');
 const AuditService = require('../audit/audit-service');
+const UserModel = require('../../database/models/users/user-model');
+
+const ConsentModel = require('../../database/models/consent-model');
+const AnonymizedUserModel = require('../../database/models/anonymized-user-model');
+const ProcessingActivityModel = require('../../database/models/processing-activity-model');
+const ErasureLogModel = require('../../database/models/erasure-log-model');
+const DataBreachModel = require('../../database/models/data-breach-model');
+const PaymentModel = require('../../database/models/billing/payment-model');
 
 /**
  * @class GDPRCompliance
@@ -159,7 +167,6 @@ class GDPRCompliance {
 
       // Store consent
       if (this.database) {
-        const ConsentModel = require('../../database/models/consent-model');
         await ConsentModel.create(consent);
       } else {
         if (!this.consentStore.has(userId)) {
@@ -222,7 +229,6 @@ class GDPRCompliance {
       let consent;
       
       if (this.database) {
-        const ConsentModel = require('../../database/models/consent-model');
         consent = await ConsentModel.findOne({
           userId,
           type: consentType,
@@ -251,7 +257,6 @@ class GDPRCompliance {
       };
 
       if (this.database) {
-        const ConsentModel = require('../../database/models/consent-model');
         await ConsentModel.updateOne(
           { id: consent.id },
           { 
@@ -344,7 +349,6 @@ class GDPRCompliance {
       // Get user data
       let userData;
       if (this.database) {
-        const UserModel = require('../../database/models/user-model');
         userData = await UserModel.findOne({ id: userId });
       } else {
         // Simulate user data retrieval
@@ -361,11 +365,9 @@ class GDPRCompliance {
 
       // Store anonymized data
       if (this.database) {
-        const UserModel = require('../../database/models/user-model');
         
         if (deleteOriginal) {
           await UserModel.deleteOne({ id: userId });
-          const AnonymizedUserModel = require('../../database/models/anonymized-user-model');
           await AnonymizedUserModel.create({
             ...anonymizedData.result,
             originalUserId: userId,
@@ -459,7 +461,6 @@ class GDPRCompliance {
 
       // Get personal data
       if (this.database) {
-        const UserModel = require('../../database/models/user-model');
         const user = await UserModel.findOne({ id: userId });
         
         if (user) {
@@ -467,11 +468,9 @@ class GDPRCompliance {
         }
 
         // Get consent records
-        const ConsentModel = require('../../database/models/consent-model');
         userData.consentRecords = await ConsentModel.find({ userId });
 
         // Get processing activities
-        const ProcessingActivityModel = require('../../database/models/processing-activity-model');
         userData.processingActivities = await ProcessingActivityModel.find({ userId });
       }
 
@@ -591,7 +590,6 @@ class GDPRCompliance {
 
       // Store erasure record
       if (this.database) {
-        const ErasureLogModel = require('../../database/models/erasure-log-model');
         await ErasureLogModel.create(erasureLog);
       }
 
@@ -764,7 +762,6 @@ class GDPRCompliance {
 
       // Store breach report
       if (this.database) {
-        const DataBreachModel = require('../../database/models/data-breach-model');
         await DataBreachModel.create(breach);
       } else {
         this.breachRegistry.set(breachId, breach);
@@ -918,7 +915,6 @@ class GDPRCompliance {
       let consents;
       
       if (this.database) {
-        const ConsentModel = require('../../database/models/consent-model');
         const query = { userId };
         
         if (consentType) {
@@ -1280,7 +1276,6 @@ class GDPRCompliance {
 
     // Check financial obligations
     if (this.database) {
-      const PaymentModel = require('../../database/models/payment-model');
       const hasPayments = await PaymentModel.exists({ userId });
       
       if (hasPayments) {
@@ -1497,7 +1492,7 @@ class GDPRCompliance {
   #getModelForCategory(category) {
     try {
       const modelMap = {
-        [GDPRCompliance.#DATA_CATEGORIES.PERSONAL]: require('../../database/models/user-model'),
+        [GDPRCompliance.#DATA_CATEGORIES.PERSONAL]: require('../../database/models/users/user-model'),
         [GDPRCompliance.#DATA_CATEGORIES.SENSITIVE]: require('../../database/models/sensitive-data-model'),
         [GDPRCompliance.#DATA_CATEGORIES.HEALTH]: require('../../database/models/health-data-model')
       };

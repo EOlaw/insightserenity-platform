@@ -15,7 +15,7 @@
 const logger = require('../../utils/logger');
 const CacheService = require('../../services/cache-service');
 const NotificationService = require('../../services/notification-service');
-const config = require('../../config');
+const config = require('..\helmet-config');
 const { performance, PerformanceObserver } = require('perf_hooks');
 const v8 = require('v8');
 const os = require('os');

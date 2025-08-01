@@ -614,7 +614,7 @@ class AuditLogger {
    */
   async #flushBuffer() {
     if (this.isWriting || this.writeBuffer.length === 0) {
-      return;
+      return; // Exit silently for empty buffers
     }
 
     try {
@@ -625,6 +625,7 @@ class AuditLogger {
       if (entries.length > 0) {
         await this.#batchLogToFile(entries);
         
+        // Only log when there are actual entries processed
         logger.debug('Write buffer flushed', { count: entries.length });
       }
 

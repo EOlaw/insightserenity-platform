@@ -21,8 +21,8 @@ const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const DateHelper = require('../../utils/helpers/date-helper');
 const StringHelper = require('../../utils/helpers/string-helper');
 const CacheService = require('../../services/cache-service');
-const TenantModel = require('../../database/models/tenant-model');
-const config = require('../../config');
+const TenantModel = require('..\..\database\models\organizations\tenant-model');
+const config = require('..\helmet-config');
 
 /**
  * @class ParamValidator

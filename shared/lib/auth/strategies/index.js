@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * @fileoverview Authentication strategies module exports
- * @module shared/lib/auth/strategies
- * @description Exports all authentication strategies for the platform
+ * @fileoverview Authentication strategies module exports with AuthStrategiesManager class
+ * @module shared/lib/auth/strategies/index
+ * @description Exports all authentication strategies for the platform with class-based manager
  */
 
 const jwtStrategy = require('./jwt-strategy');
@@ -272,8 +272,301 @@ function getAvailableStrategies() {
   return Object.keys(strategies).filter(isStrategyAvailable);
 }
 
+/**
+ * AuthStrategiesManager Class
+ * Provides a class-based interface for managing authentication strategies
+ */
+class AuthStrategiesManager {
+  /**
+   * Creates an instance of AuthStrategiesManager
+   * @param {Object} [config] - Initial configuration
+   */
+  constructor(config = {}) {
+    this.config = {
+      enableSessions: true,
+      adminMode: false,
+      requireMFA: false,
+      sessionTimeout: 3600000, // 1 hour default
+      ...config
+    };
+    
+    this.passport = null;
+    this.initialized = false;
+    this.enabledStrategies = [];
+    this.registeredStrategies = new Map();
+  }
+
+  /**
+   * Initialize the authentication strategies manager
+   * @param {Object} app - Express application instance
+   * @param {Object} [config] - Configuration overrides
+   * @returns {Object} Configured passport instance
+   * @throws {Error} If initialization fails
+   */
+  async initialize(app, config = {}) {
+    try {
+      // Merge configuration
+      this.config = {
+        ...this.config,
+        ...config
+      };
+
+      // Get passport instance
+      const passport = require('passport');
+      this.passport = passport;
+
+      // Validate configuration for enabled strategies
+      await this.validateConfiguration();
+
+      // Register strategies based on configuration
+      this.passport = registerAllStrategies(this.passport, this.config, this.config.strategies || {});
+
+      // Track enabled strategies
+      this.enabledStrategies = getAvailableStrategies();
+
+      // Configure passport serialization
+      this.configurePassportSerialization();
+
+      this.initialized = true;
+      
+      return this.passport;
+    } catch (error) {
+      throw new Error(`Failed to initialize AuthStrategiesManager: ${error.message}`);
+    }
+  }
+
+  /**
+   * Configure passport user serialization/deserialization
+   * @private
+   */
+  configurePassportSerialization() {
+    if (!this.passport) {
+      throw new Error('Passport not initialized');
+    }
+
+    this.passport.serializeUser((user, done) => {
+      done(null, {
+        id: user.id,
+        tenantId: user.tenantId,
+        role: user.role,
+        permissions: user.permissions
+      });
+    });
+
+    this.passport.deserializeUser(async (serializedUser, done) => {
+      try {
+        // In a real implementation, you would fetch the user from database
+        // For now, return the serialized user data
+        done(null, serializedUser);
+      } catch (error) {
+        done(error, null);
+      }
+    });
+  }
+
+  /**
+   * Validate the current configuration
+   * @private
+   * @returns {Promise<void>}
+   */
+  async validateConfiguration() {
+    const availableStrategies = getAvailableStrategies();
+    const validationResults = [];
+
+    for (const strategyName of availableStrategies) {
+      const strategyConfig = this.config.strategies?.[strategyName] || this.config[strategyName] || {};
+      const validation = helpers.validateConfig(strategyName, strategyConfig);
+      
+      if (!validation.valid) {
+        validationResults.push({
+          strategy: strategyName,
+          errors: validation.errors,
+          warnings: validation.warnings
+        });
+      }
+    }
+
+    // Log warnings but don't fail initialization
+    validationResults.forEach(result => {
+      if (result.warnings.length > 0) {
+        console.warn(`AuthStrategiesManager: Warnings for ${result.strategy}:`, result.warnings);
+      }
+    });
+
+    // Only fail if there are critical errors
+    const criticalErrors = validationResults.filter(result => result.errors.length > 0);
+    if (criticalErrors.length > 0) {
+      const errorMessage = criticalErrors.map(result => 
+        `${result.strategy}: ${result.errors.join(', ')}`
+      ).join('; ');
+      throw new Error(`Strategy validation failed: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Get list of enabled strategies
+   * @returns {string[]} Array of enabled strategy names
+   */
+  getEnabledStrategies() {
+    return this.enabledStrategies;
+  }
+
+  /**
+   * Check if a strategy is enabled
+   * @param {string} strategyName - Strategy name to check
+   * @returns {boolean} Whether the strategy is enabled
+   */
+  isStrategyEnabled(strategyName) {
+    return this.enabledStrategies.includes(strategyName);
+  }
+
+  /**
+   * Get strategy configuration
+   * @param {string} strategyName - Strategy name
+   * @returns {Object} Strategy configuration
+   */
+  getStrategyConfig(strategyName) {
+    return this.config.strategies?.[strategyName] || this.config[strategyName] || {};
+  }
+
+  /**
+   * Verify MFA token for a user
+   * @param {string} userId - User ID
+   * @param {string} token - MFA token to verify
+   * @param {Object} [options] - Additional verification options
+   * @returns {Promise<boolean>} Whether the MFA token is valid
+   */
+  async verifyMFA(userId, token, options = {}) {
+    try {
+      // This is a placeholder implementation
+      // In a real system, you would:
+      // 1. Fetch user's MFA settings from database
+      // 2. Verify the token against the user's MFA device/app
+      // 3. Check for replay attacks, time windows, etc.
+      
+      if (!userId || !token) {
+        return false;
+      }
+
+      // For admin mode, require stricter MFA validation
+      if (this.config.adminMode) {
+        // Implement admin-specific MFA validation
+        return this.verifyAdminMFA(userId, token, options);
+      }
+
+      // Basic MFA validation (implement based on your MFA provider)
+      // This could integrate with TOTP, SMS, email, or hardware tokens
+      return this.validateMFAToken(userId, token, options);
+    } catch (error) {
+      console.error('MFA verification failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Verify admin-specific MFA
+   * @private
+   * @param {string} userId - User ID
+   * @param {string} token - MFA token
+   * @param {Object} options - Verification options
+   * @returns {Promise<boolean>} Whether admin MFA is valid
+   */
+  async verifyAdminMFA(userId, token, options) {
+    // Implement stricter admin MFA verification
+    // This might require hardware tokens, longer codes, etc.
+    return this.validateMFAToken(userId, token, { ...options, adminMode: true });
+  }
+
+  /**
+   * Validate MFA token implementation
+   * @private
+   * @param {string} userId - User ID
+   * @param {string} token - MFA token
+   * @param {Object} options - Validation options
+   * @returns {Promise<boolean>} Whether token is valid
+   */
+  async validateMFAToken(userId, token, options) {
+    // Placeholder for actual MFA validation logic
+    // Integrate with your chosen MFA provider (Google Authenticator, Authy, etc.)
+    
+    // For development/testing, accept any 6-digit numeric token
+    if (process.env.NODE_ENV === 'development') {
+      return /^\d{6}$/.test(token);
+    }
+
+    // Production implementation would validate against actual MFA service
+    return false;
+  }
+
+  /**
+   * Register a custom strategy
+   * @param {string} name - Strategy name
+   * @param {Object} strategy - Passport strategy instance
+   * @param {Object} [config] - Strategy configuration
+   */
+  registerCustomStrategy(name, strategy, config = {}) {
+    if (!this.passport) {
+      throw new Error('AuthStrategiesManager not initialized');
+    }
+
+    this.passport.use(name, strategy);
+    this.registeredStrategies.set(name, { strategy, config });
+    
+    if (!this.enabledStrategies.includes(name)) {
+      this.enabledStrategies.push(name);
+    }
+  }
+
+  /**
+   * Create a custom OAuth strategy
+   * @param {string} provider - OAuth provider name
+   * @param {Object} config - OAuth configuration
+   * @returns {Object} Configured OAuth strategy
+   */
+  createCustomOAuthStrategy(provider, config) {
+    return createCustomOAuthStrategy(provider, config);
+  }
+
+  /**
+   * Get manager status and configuration
+   * @returns {Object} Manager status information
+   */
+  getStatus() {
+    return {
+      initialized: this.initialized,
+      enabledStrategies: this.enabledStrategies,
+      config: {
+        adminMode: this.config.adminMode,
+        requireMFA: this.config.requireMFA,
+        enableSessions: this.config.enableSessions,
+        sessionTimeout: this.config.sessionTimeout
+      },
+      registeredStrategies: Array.from(this.registeredStrategies.keys())
+    };
+  }
+
+  /**
+   * Reset and reinitialize the manager
+   * @param {Object} [newConfig] - New configuration
+   * @returns {Promise<void>}
+   */
+  async reset(newConfig = {}) {
+    this.initialized = false;
+    this.enabledStrategies = [];
+    this.registeredStrategies.clear();
+    this.passport = null;
+    
+    if (Object.keys(newConfig).length > 0) {
+      this.config = { ...this.config, ...newConfig };
+    }
+  }
+}
+
 // Main exports
 module.exports = {
+  // Class-based manager (primary export)
+  AuthStrategiesManager,
+  
   // Individual strategy factories
   ...strategies,
   

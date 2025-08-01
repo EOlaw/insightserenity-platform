@@ -16,10 +16,10 @@
  * @requires module:shared/lib/utils/constants/error-codes
  */
 
-const RoleModel = require('../../database/models/role-model');
-const PermissionModel = require('../../database/models/permission-model');
-const UserModel = require('../../database/models/user-model');
-const OrganizationModel = require('../../database/models/organization-model');
+const RoleModel = require('../../database/models/users/role-model');
+const PermissionModel = require('../../database/models/users/permission-model');
+const UserModel = require('../../database/models/users/user-model');
+const OrganizationModel = require('../../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model');
 const CacheService = require('../../services/cache-service');
 const RBACService = require('../../security/access-control/rbac-service');
 const PermissionService = require('../../security/access-control/permission-service');

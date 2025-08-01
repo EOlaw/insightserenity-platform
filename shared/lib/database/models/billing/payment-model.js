@@ -14,7 +14,7 @@
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
-const AppError = require('../../../utils/app-error');
+const { AppError } = require('../../../utils/app-error');
 const validators = require('../../../utils/validators/common-validators');
 const encryptionService = require('../../../security/encryption/encryption-service');
 
@@ -264,7 +264,7 @@ const paymentSchemaDefinition = {
   },
 
   // ==================== Refund Information ====================
-  refund: {
+  refundInfo: {
     reason: {
       type: String,
       enum: ['duplicate', 'fraudulent', 'requested_by_customer', 'not_received', 'defective', 'other']
@@ -280,7 +280,7 @@ const paymentSchemaDefinition = {
   },
 
   // ==================== Dispute Information ====================
-  dispute: {
+  disputeInfo: {
     status: {
       type: String,
       enum: ['warning_needs_response', 'warning_under_review', 'warning_closed', 'needs_response', 'under_review', 'charge_refunded', 'won', 'lost']
@@ -632,7 +632,7 @@ paymentSchema.methods.refund = async function(amount, reason, userId) {
       name: this.provider.name,
       customerId: this.provider.customerId
     },
-    refund: {
+    refundInfo: {
       reason,
       description: `Refund for payment ${this.paymentId}`,
       processedBy: userId,
@@ -679,7 +679,7 @@ paymentSchema.methods.dispute = async function(disputeData) {
   }
 
   this.status = 'disputed';
-  this.dispute = {
+  this.disputeInfo = {
     ...disputeData,
     status: 'needs_response'
   };
@@ -699,16 +699,16 @@ paymentSchema.methods.submitEvidence = async function(evidence) {
     throw new AppError('Payment is not disputed', 400, 'NOT_DISPUTED');
   }
 
-  if (!this.dispute.evidence) {
+  if (!this.disputeInfo.evidence) {
     this.dispute.evidence = {
       documents: []
     };
   }
 
-  this.dispute.evidence.documents.push(...evidence.documents);
-  this.dispute.evidence.submitted = true;
-  this.dispute.evidence.submittedAt = new Date();
-  this.dispute.status = 'under_review';
+  this.disputeInfo.evidence.documents.push(...evidence.documents);
+  this.disputeInfo.vidence.submitted = true;
+  this.disputeInfo.evidence.submittedAt = new Date();
+  this.disputeInfo.status = 'under_review';
 
   await this.save();
 

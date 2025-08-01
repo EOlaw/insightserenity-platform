@@ -6,17 +6,57 @@
 
 'use strict';
 
+// =============================================================================
+// ENVIRONMENT LOADING - MUST BE FIRST
+// =============================================================================
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Enhanced environment variable loading with explicit path resolution
+const envPath = path.resolve(__dirname, '.env');
+const envResult = dotenv.config({ path: envPath });
+
+if (envResult.error) {
+  console.warn(`Warning: Could not load .env file from ${envPath}:`, envResult.error.message);
+  // Fallback to default .env loading
+  dotenv.config();
+}
+
+// Validate critical environment variables before proceeding
+const requiredEnvVars = ['NODE_ENV', 'ADMIN_PORT', 'DB_URI'];
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+  console.error('Missing required environment variables:', missingVars);
+  process.exit(1);
+}
+
+// Log environment loading status for debugging
+console.log('Admin Server Environment Configuration:');
+console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
+console.log(`ADMIN_PORT: ${process.env.ADMIN_PORT}`);
+console.log(`REDIS_ENABLED: ${process.env.REDIS_ENABLED}`);
+console.log(`SESSION_STORE: ${process.env.SESSION_STORE}`);
+console.log(`Cache Fallback: ${process.env.CACHE_FALLBACK_TO_MEMORY}`);
+console.log(`Environment file loaded from: ${envPath}`);
+
+// =============================================================================
+// MODULE IMPORTS - AFTER ENVIRONMENT LOADING
+// =============================================================================
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
-const path = require('path');
 
 const app = require('./app');
 const config = require('../../shared/config');
 const Database = require('../../shared/lib/database');
 const logger = require('../../shared/lib/utils/logger');
-const AuditService = require('../../shared/lib/security/audit/audit-service');
-const { AuditEventTypes } = require('../../shared/lib/security/audit/audit-event-types');
+
+// Import enterprise audit configuration and factory
+const auditConfig = require('./config/audit-config');
+const AuditServiceFactory = require('../../shared/lib/security/audit/audit-service-factory');
+const { AuditEventTypes } = require('../../shared/lib/security/audit/audit-events');
+
 const HealthMonitor = require('../../shared/lib/utils/health-monitor');
 const SecurityManager = require('../../shared/lib/security/security-manager');
 
@@ -32,6 +72,7 @@ class AdminServer {
         this.securityManager = null;
         this.adminConnections = new Map();
         this.startTime = null;
+        this.auditService = null;
     }
 
     /**
@@ -42,6 +83,34 @@ class AdminServer {
     async start() {
         try {
             this.startTime = new Date();
+            
+            // Initialize enterprise audit system FIRST
+            await this.initializeAuditSystem();
+            
+            // Log detailed configuration status
+            logger.info('Admin Server Configuration Status', {
+                environment: config.app.env,
+                redis: {
+                    enabled: process.env.REDIS_ENABLED === 'true',
+                    fallbackToMemory: process.env.CACHE_FALLBACK_TO_MEMORY === 'true',
+                    maxReconnectAttempts: process.env.CACHE_MAX_RECONNECT_ATTEMPTS
+                },
+                session: {
+                    store: process.env.SESSION_STORE,
+                    secure: process.env.SESSION_SECURE === 'true'
+                },
+                database: {
+                    host: config.database.host,
+                    multiTenant: config.database.multiTenant.enabled
+                },
+                audit: {
+                    enabled: auditConfig.enabled,
+                    storageType: auditConfig.storage.type,
+                    batchSize: auditConfig.processing.batchSize,
+                    flushInterval: auditConfig.processing.flushInterval,
+                    environment: auditConfig.environment
+                }
+            });
             
             // Initialize security manager first
             this.securityManager = new SecurityManager({
@@ -57,16 +126,18 @@ class AdminServer {
                 platform: process.platform,
                 adminFeatures: {
                     multiTenant: config.database.multiTenant.enabled,
-                    auditLogging: config.features.auditLogs,
+                    auditLogging: auditConfig.enabled,
                     realTimeMonitoring: config.admin.features.realTimeMonitoring,
-                    advancedSecurity: config.admin.security.advanced
+                    advancedSecurity: config.admin.security.advanced,
+                    redisEnabled: process.env.REDIS_ENABLED === 'true',
+                    memoryFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true'
                 }
             });
 
             // Verify admin security prerequisites
             await this.verifySecurityPrerequisites();
             
-            // Initialize the Express application
+            // Initialize the Express application with audit system
             const expressApp = await app.start();
             
             if (!expressApp) {
@@ -79,7 +150,9 @@ class AdminServer {
                 services: ['database', 'redis', 'auth', 'audit'],
                 customChecks: {
                     adminSessions: () => this.checkAdminSessions(),
-                    securityStatus: () => this.checkSecurityStatus()
+                    securityStatus: () => this.checkSecurityStatus(),
+                    environmentConfig: () => this.checkEnvironmentConfig(),
+                    auditSystem: () => this.checkAuditSystemHealth()
                 }
             });
             
@@ -117,21 +190,22 @@ class AdminServer {
             this.setupSecurityMonitoring();
 
             // Log successful startup to audit
-            await AuditService.log({
-                type: AuditEventTypes.ADMIN_SERVER_START,
-                action: 'admin_server_startup',
-                category: 'system',
-                severity: 'info',
-                systemGenerated: true,
-                target: {
-                    type: 'admin_server',
-                    id: config.admin.serverId || 'admin-primary',
-                    metadata: {
-                        version: config.app.version,
-                        environment: config.app.env,
-                        features: Object.keys(config.admin.features || {}),
-                        securityLevel: config.admin.security.level || 'high'
-                    }
+            await this.auditService.logEvent({
+                eventType: AuditEventTypes.ADMIN_SERVER_START,
+                userId: 'system',
+                tenantId: 'admin',
+                resource: 'admin_server',
+                action: 'startup',
+                result: 'success',
+                metadata: {
+                    version: config.app.version,
+                    environment: config.app.env,
+                    features: Object.keys(config.admin.features || {}),
+                    securityLevel: config.admin.security.level || 'high',
+                    cacheStrategy: process.env.REDIS_ENABLED === 'true' ? 'redis' : 'memory',
+                    sessionStore: process.env.SESSION_STORE || 'memory',
+                    auditEnabled: auditConfig.enabled,
+                    auditStorageType: auditConfig.storage.type
                 }
             });
 
@@ -142,25 +216,116 @@ class AdminServer {
                 stack: error.stack,
                 config: {
                     port: config.admin.port,
-                    ssl: config.admin.security.forceSSL
+                    ssl: config.admin.security.forceSSL,
+                    redis: process.env.REDIS_ENABLED,
+                    environment: process.env.NODE_ENV
                 }
             });
             
-            // Log startup failure
-            await AuditService.log({
-                type: AuditEventTypes.ADMIN_SERVER_START,
-                action: 'admin_server_startup',
-                category: 'system',
-                result: 'failure',
-                severity: 'critical',
-                systemGenerated: true,
-                error: {
-                    message: error.message,
-                    code: error.code
+            // Log startup failure to audit if service is available
+            if (this.auditService) {
+                try {
+                    await this.auditService.logEvent({
+                        eventType: AuditEventTypes.ADMIN_SERVER_START,
+                        userId: 'system',
+                        tenantId: 'admin',
+                        resource: 'admin_server',
+                        action: 'startup',
+                        result: 'failure',
+                        metadata: {
+                            error: error.message,
+                            errorCode: error.code
+                        }
+                    });
+                } catch (auditError) {
+                    logger.error('Failed to log startup failure to audit', { error: auditError.message });
                 }
-            });
+            }
             
             throw error;
+        }
+    }
+
+    /**
+     * Initialize enterprise audit system
+     * @private
+     * @returns {Promise<void>}
+     */
+    async initializeAuditSystem() {
+        try {
+            // Validate enterprise audit configuration
+            AuditServiceFactory.validateConfig(auditConfig);
+            
+            // Initialize audit service factory with enterprise configuration
+            AuditServiceFactory.initialize(auditConfig);
+            
+            // Get configured audit service instance
+            this.auditService = AuditServiceFactory.getInstance();
+            
+            logger.info('Enterprise audit system initialized', {
+                enabled: auditConfig.enabled,
+                environment: auditConfig.environment,
+                storageType: auditConfig.storage.type,
+                batchSize: auditConfig.processing.batchSize,
+                flushInterval: auditConfig.processing.flushInterval,
+                logEmptyFlushes: auditConfig.processing.logEmptyFlushes,
+                complianceStandards: Object.keys(auditConfig.compliance.standards)
+                    .filter(standard => auditConfig.compliance.standards[standard]),
+                encryptionEnabled: auditConfig.security.enableEncryption,
+                riskScoringEnabled: auditConfig.riskScoring.enabled
+            });
+
+            // Test audit system with a startup event
+            if (auditConfig.enabled) {
+                await this.auditService.logEvent({
+                    eventType: 'system.startup',
+                    userId: 'system',
+                    tenantId: 'admin',
+                    resource: 'audit_system',
+                    action: 'initialize',
+                    result: 'success',
+                    metadata: {
+                        message: 'Enterprise audit system initialization completed',
+                        configVersion: auditConfig.version || '1.0.0'
+                    }
+                });
+            }
+
+        } catch (error) {
+            logger.error('Failed to initialize enterprise audit system', {
+                error: error.message,
+                stack: error.stack
+            });
+            throw new Error(`Audit system initialization failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Check audit system health
+     * @private
+     * @returns {Object} Audit system health status
+     */
+    async checkAuditSystemHealth() {
+        try {
+            const factoryStatus = AuditServiceFactory.getStatus();
+            const auditServiceConfig = this.auditService?.getConfig() || {};
+            
+            return {
+                healthy: factoryStatus.initialized && factoryStatus.enabled,
+                factoryStatus,
+                serviceEnabled: this.auditService?.isEnabled() || false,
+                queueSize: this.auditService?.auditQueue?.length || 0,
+                isProcessing: this.auditService?.isProcessing || false,
+                storageType: auditServiceConfig.storage?.type,
+                lastCheck: new Date().toISOString()
+            };
+        } catch (error) {
+            logger.error('Audit system health check failed', { error: error.message });
+            return {
+                healthy: false,
+                error: error.message,
+                lastCheck: new Date().toISOString()
+            };
         }
     }
 
@@ -186,6 +351,9 @@ class AdminServer {
         // Check admin database permissions
         checks.push(this.verifyDatabasePermissions());
         
+        // Check environment configuration
+        checks.push(this.verifyEnvironmentConfiguration());
+        
         const results = await Promise.allSettled(checks);
         const failures = results.filter(r => r.status === 'rejected');
         
@@ -194,6 +362,47 @@ class AdminServer {
         }
         
         logger.info('All security prerequisites verified successfully');
+    }
+
+    /**
+     * Verify environment configuration is properly loaded
+     */
+    async verifyEnvironmentConfiguration() {
+        const requiredConfigs = [
+            { key: 'NODE_ENV', value: process.env.NODE_ENV },
+            { key: 'ADMIN_PORT', value: process.env.ADMIN_PORT },
+            { key: 'DB_URI', value: process.env.DB_URI },
+            { key: 'SESSION_SECRET', value: process.env.SESSION_SECRET }
+        ];
+
+        const missing = requiredConfigs.filter(config => !config.value);
+        
+        if (missing.length > 0) {
+            throw new Error(`Missing critical environment variables: ${missing.map(c => c.key).join(', ')}`);
+        }
+
+        // Validate environment-specific requirements
+        if (process.env.NODE_ENV === 'production') {
+            const prodRequired = [
+                { key: 'JWT_SECRET', value: process.env.JWT_SECRET },
+                { key: 'ENCRYPTION_KEY', value: process.env.ENCRYPTION_KEY }
+            ];
+
+            const prodMissing = prodRequired.filter(config => !config.value);
+            if (prodMissing.length > 0) {
+                throw new Error(`Missing production environment variables: ${prodMissing.map(c => c.key).join(', ')}`);
+            }
+        }
+
+        logger.info('Environment configuration verified successfully', {
+            nodeEnv: process.env.NODE_ENV,
+            redisEnabled: process.env.REDIS_ENABLED === 'true',
+            sessionStore: process.env.SESSION_STORE,
+            cacheFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true',
+            auditEnabled: auditConfig.enabled
+        });
+        
+        return true;
     }
 
     /**
@@ -263,7 +472,6 @@ class AdminServer {
             throw new Error(`Admin SSL certificate not found: ${certPath}`);
         }
         
-        // TODO: Add certificate expiration check
         logger.info('SSL certificates verified', { keyPath, certPath });
         return true;
     }
@@ -289,8 +497,31 @@ class AdminServer {
      */
     async verifyAuditLogSystem() {
         try {
-            await AuditService.verify();
-            logger.info('Audit log system verified');
+            if (!this.auditService) {
+                throw new Error('Audit service not initialized');
+            }
+
+            const isEnabled = this.auditService.isEnabled();
+            if (!isEnabled) {
+                logger.warn('Audit system is disabled');
+                return true; // Not an error if intentionally disabled
+            }
+
+            // Test audit service functionality
+            await this.auditService.logEvent({
+                eventType: 'system.test',
+                userId: 'system',
+                tenantId: 'admin',
+                resource: 'audit_system',
+                action: 'verification_test',
+                result: 'success',
+                metadata: {
+                    message: 'Audit system verification test',
+                    timestamp: new Date().toISOString()
+                }
+            });
+
+            logger.info('Audit log system verified successfully');
             return true;
         } catch (error) {
             throw new Error(`Audit system not operational: ${error.message}`);
@@ -303,7 +534,6 @@ class AdminServer {
     async verifyDatabasePermissions() {
         try {
             const db = await Database.getConnection();
-            // Test admin permissions by checking collections
             const collections = await db.db.listCollections().toArray();
             logger.info('Database permissions verified', { collections: collections.length });
             return true;
@@ -317,8 +547,12 @@ class AdminServer {
      */
     listen() {
         return new Promise((resolve, reject) => {
-            const port = config.admin.port || 5001;
-            const host = config.admin.host || '127.0.0.1'; // Admin defaults to localhost only
+            const port = parseInt(process.env.ADMIN_PORT) || 
+            (config.admin && config.admin.port) || 
+            5001;
+            const host = process.env.ADMIN_HOST || 
+            (config.admin && config.admin.host) || 
+            '127.0.0.1';
             
             this.server.listen(port, host, () => {
                 const protocol = this.server instanceof https.Server ? 'HTTPS' : 'HTTP';
@@ -331,8 +565,31 @@ class AdminServer {
                     environment: config.app.env,
                     adminDashboard: `${protocol.toLowerCase()}://${host}:${port}/admin/dashboard`,
                     apiDocs: `${protocol.toLowerCase()}://${host}:${port}/admin/api-docs`,
-                    healthCheck: `${protocol.toLowerCase()}://${host}:${port}/health`
+                    healthCheck: `${protocol.toLowerCase()}://${host}:${port}/health`,
+                    redis: process.env.REDIS_ENABLED === 'true' ? 'enabled' : 'disabled (memory fallback)',
+                    sessionStore: process.env.SESSION_STORE || 'memory',
+                    auditSystem: {
+                        enabled: auditConfig.enabled,
+                        storageType: auditConfig.storage.type,
+                        environment: auditConfig.environment
+                    }
                 });
+                
+                // Console output for development
+                console.log(`\n🚀 InsightSerenity Admin Server Started`);
+                console.log(`📍 URL: ${protocol.toLowerCase()}://${host}:${port}`);
+                console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
+                console.log(`🗄️  Database: Connected`);
+                console.log(`💾 Cache: ${process.env.REDIS_ENABLED === 'true' ? 'Redis' : 'Memory'}`);
+                console.log(`🛡️  Security: ${protocol} ${config.admin.security.ipWhitelist?.enabled ? '+ IP Whitelist' : ''}`);
+                console.log(`📊 Admin Dashboard: ${protocol.toLowerCase()}://${host}:${port}/admin/dashboard`);
+                console.log(`🔍 Health Check: ${protocol.toLowerCase()}://${host}:${port}/health`);
+                console.log(`📋 Audit System: ${auditConfig.enabled ? 'Enabled' : 'Disabled'} (${auditConfig.storage.type})`);
+                
+                if (process.env.NODE_ENV === 'development') {
+                    console.log(`🐛 Debugger: ws://${host}:9230`);
+                    console.log(`📚 API Docs: ${protocol.toLowerCase()}://${host}:${port}/admin/api-docs`);
+                }
                 
                 resolve();
             });
@@ -375,7 +632,7 @@ class AdminServer {
                     addresses: Array.from(this.adminConnections.values()).map(c => c.remoteAddress)
                 });
             }
-        }, 60000); // Every minute
+        }, 60000);
     }
 
     /**
@@ -383,40 +640,47 @@ class AdminServer {
      */
     setupSecurityMonitoring() {
         // Monitor failed login attempts
-        this.app.on('admin:login:failed', async (data) => {
-            await AuditService.log({
-                type: AuditEventTypes.ADMIN_LOGIN_FAILED,
-                action: 'admin_login_failed',
-                category: 'security',
-                severity: 'warning',
-                actor: {
-                    ip: data.ip,
-                    userAgent: data.userAgent
-                },
-                target: {
-                    type: 'admin_account',
-                    id: data.username
-                }
-            });
+        app.on('admin:login:failed', async (data) => {
+            if (this.auditService) {
+                await this.auditService.logEvent({
+                    eventType: 'auth.failed',
+                    userId: data.username || 'unknown',
+                    tenantId: 'admin',
+                    resource: 'admin_portal',
+                    action: 'login_attempt',
+                    result: 'failure',
+                    metadata: {
+                        attempts: data.attempts,
+                        reason: data.reason
+                    },
+                    context: {
+                        ip: data.ip,
+                        userAgent: data.userAgent
+                    }
+                });
+            }
             
-            // Check for brute force attempts
             if (data.attempts > 5) {
                 logger.warn('Potential brute force attack on admin', data);
-                // TODO: Implement IP blocking
             }
         });
         
         // Monitor privilege escalations
-        this.app.on('admin:privilege:changed', async (data) => {
-            await AuditService.log({
-                type: AuditEventTypes.PRIVILEGE_ESCALATION,
-                action: 'privilege_changed',
-                category: 'security',
-                severity: 'high',
-                actor: data.actor,
-                target: data.target,
-                changes: data.changes
-            });
+        app.on('admin:privilege:changed', async (data) => {
+            if (this.auditService) {
+                await this.auditService.logEvent({
+                    eventType: 'authz.privilege_escalation',
+                    userId: data.actor?.id || 'unknown',
+                    tenantId: 'admin',
+                    resource: data.target?.type || 'user_account',
+                    action: 'privilege_changed',
+                    result: 'success',
+                    metadata: {
+                        changes: data.changes,
+                        target: data.target
+                    }
+                });
+            }
         });
     }
 
@@ -424,11 +688,11 @@ class AdminServer {
      * Check admin sessions health
      */
     async checkAdminSessions() {
-        // Implementation would check Redis session store
         return {
             healthy: true,
-            activeSessions: 0, // Would query Redis
-            expiredToday: 0
+            activeSessions: 0,
+            expiredToday: 0,
+            store: process.env.SESSION_STORE || 'memory'
         };
     }
 
@@ -442,6 +706,20 @@ class AdminServer {
             ipWhitelistActive: config.admin.security.ipWhitelist?.enabled,
             mfaRequired: config.admin.security.requireMFA,
             lastSecurityScan: new Date().toISOString()
+        };
+    }
+
+    /**
+     * Check environment configuration health
+     */
+    async checkEnvironmentConfig() {
+        return {
+            healthy: true,
+            redisEnabled: process.env.REDIS_ENABLED === 'true',
+            fallbackToMemory: process.env.CACHE_FALLBACK_TO_MEMORY === 'true',
+            sessionStore: process.env.SESSION_STORE || 'memory',
+            environment: process.env.NODE_ENV,
+            auditEnabled: auditConfig.enabled
         };
     }
 
@@ -460,22 +738,22 @@ class AdminServer {
 
             try {
                 // Log shutdown event
-                await AuditService.log({
-                    type: AuditEventTypes.ADMIN_SERVER_SHUTDOWN,
-                    action: 'admin_server_shutdown',
-                    category: 'system',
-                    severity: 'info',
-                    systemGenerated: true,
-                    target: {
-                        type: 'admin_server',
-                        id: config.admin.serverId || 'admin-primary',
+                if (this.auditService) {
+                    await this.auditService.logEvent({
+                        eventType: 'system.shutdown',
+                        userId: 'system',
+                        tenantId: 'admin',
+                        resource: 'admin_server',
+                        action: 'graceful_shutdown',
+                        result: 'success',
                         metadata: {
                             signal,
                             uptime: process.uptime(),
-                            activeConnections: this.adminConnections.size
+                            activeConnections: this.adminConnections.size,
+                            shutdownInitiated: new Date().toISOString()
                         }
-                    }
-                });
+                    });
+                }
 
                 // Stop health monitoring
                 if (this.healthMonitor) {
@@ -498,8 +776,10 @@ class AdminServer {
                     await app.stop();
                 }
 
-                // Flush audit logs
-                await AuditService.flush();
+                // Flush audit logs and cleanup audit system
+                if (this.auditService) {
+                    await this.auditService.cleanup();
+                }
 
                 logger.info('Admin server graceful shutdown completed', {
                     signal,
@@ -521,25 +801,66 @@ class AdminServer {
      * Setup error handlers
      */
     setupErrorHandlers() {
-        process.on('uncaughtException', (error) => {
+        process.on('uncaughtException', async (error) => {
             logger.error('Admin Server: Uncaught Exception', { 
                 error: error.message,
                 stack: error.stack,
                 severity: 'critical'
             });
+
+            // Log critical error to audit if available
+            if (this.auditService) {
+                try {
+                    await this.auditService.logEvent({
+                        eventType: 'system.error',
+                        userId: 'system',
+                        tenantId: 'admin',
+                        resource: 'admin_server',
+                        action: 'uncaught_exception',
+                        result: 'failure',
+                        metadata: {
+                            error: error.message,
+                            stack: error.stack,
+                            severity: 'critical'
+                        }
+                    });
+                } catch (auditError) {
+                    logger.error('Failed to log uncaught exception to audit', { error: auditError.message });
+                }
+            }
             
-            // Admin server must exit on uncaught exceptions
             setTimeout(() => {
                 process.exit(1);
             }, 1000);
         });
 
-        process.on('unhandledRejection', (reason, promise) => {
+        process.on('unhandledRejection', async (reason, promise) => {
             logger.error('Admin Server: Unhandled Promise Rejection', { 
                 reason: reason instanceof Error ? reason.message : reason,
                 stack: reason instanceof Error ? reason.stack : undefined,
                 severity: 'high'
             });
+
+            // Log unhandled rejection to audit if available
+            if (this.auditService) {
+                try {
+                    await this.auditService.logEvent({
+                        eventType: 'system.error',
+                        userId: 'system',
+                        tenantId: 'admin',
+                        resource: 'admin_server',
+                        action: 'unhandled_rejection',
+                        result: 'failure',
+                        metadata: {
+                            reason: reason instanceof Error ? reason.message : reason,
+                            stack: reason instanceof Error ? reason.stack : undefined,
+                            severity: 'high'
+                        }
+                    });
+                } catch (auditError) {
+                    logger.error('Failed to log unhandled rejection to audit', { error: auditError.message });
+                }
+            }
         });
     }
 
@@ -578,6 +899,11 @@ class AdminServer {
     getStatus() {
         const dbHealth = Database.getHealthStatus();
         const uptime = this.startTime ? (new Date() - this.startTime) / 1000 : 0;
+        const auditStatus = this.auditService ? {
+            enabled: this.auditService.isEnabled(),
+            config: this.auditService.getConfig(),
+            factoryStatus: AuditServiceFactory.getStatus()
+        } : null;
         
         return {
             server: {
@@ -600,6 +926,12 @@ class AdminServer {
                 ipWhitelist: config.admin.security.ipWhitelist?.enabled,
                 mfa: config.admin.security.requireMFA
             },
+            configuration: {
+                redis: process.env.REDIS_ENABLED === 'true',
+                sessionStore: process.env.SESSION_STORE || 'memory',
+                cacheFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true'
+            },
+            audit: auditStatus,
             database: dbHealth,
             health: this.healthMonitor?.getStatus() || {},
             timestamp: new Date().toISOString()

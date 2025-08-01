@@ -12,14 +12,16 @@
  * @requires module:servers/admin-server/config
  */
 
-const { authenticate, authorize } = require('../../../shared/lib/auth/middleware');
+const { authenticate, authorize } = require('../../../shared/lib/auth/middleware/authenticate');
 const logger = require('../../../shared/lib/utils/logger');
 const AppError = require('../../../shared/lib/utils/app-error');
-const AdminUserModel = require('../../../shared/lib/database/models/admin-user-model');
-const AuditLogModel = require('../../../shared/lib/database/models/audit-log-model');
+const AdminUserModel = require('../modules/user-management/models/admin-user-model');
+const AuditLogModel = require('../../../shared/lib/database/models/security/audit-log-model');
 const config = require('../config');
 const { ERROR_CODES } = require('../../../shared/lib/utils/constants/error-codes');
 const { ROLES, PERMISSIONS } = require('../../../shared/lib/utils/constants');
+// const { ROLES } = require('../../../shared/lib/utils/constants/roles');
+// const { PERMISSIONS } = require('../../../shared/lib/utils/constants/permissions');
 
 /**
  * @class AdminAuthMiddleware

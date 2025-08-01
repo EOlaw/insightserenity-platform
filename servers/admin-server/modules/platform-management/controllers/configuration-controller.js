@@ -14,7 +14,7 @@
 const logger = require('../../../../../shared/lib/utils/logger');
 const AppError = require('../../../../../shared/lib/utils/app-error');
 const ResponseFormatter = require('../../../../../shared/lib/utils/response-formatter');
-const asyncHandler = require('../../../../../shared/lib/utils/async-handler');
+const { asyncHandler } = require('../../../../../shared/lib/utils/async-handler');
 const ConfigurationService = require('../services/configuration-service');
 const {
   validateConfiguration,

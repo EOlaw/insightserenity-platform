@@ -15,7 +15,7 @@
 
 const logger = require('../../utils/logger');
 const AppError = require('../../utils/app-error');
-const UserModel = require('../models/user-model');
+const UserModel = require('..\models\users\user-model');
 const PasswordService = require('../../auth/services/password-service');
 const { validateEmail, validatePassword } = require('../../utils/validators/auth-validators');
 const { validateUserData } = require('../../utils/validators/user-validators');

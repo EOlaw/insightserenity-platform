@@ -18,7 +18,7 @@ const logger = require('../utils/logger');
 const AppError = require('../utils/app-error');
 const { ERROR_CODES } = require('../utils/constants/error-codes');
 const AuditService = require('../security/audit/audit-service');
-const config = require('../config');
+const config = require('./helmet-config');
 
 /**
  * @class CorsMiddleware

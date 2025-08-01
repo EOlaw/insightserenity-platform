@@ -3,8 +3,8 @@
 const express = require('express');
 const router = express.Router();
 const systemController = require('../controllers/system-controller');
-const { authenticate, authorize } = require('../../../../shared/lib/auth/middleware');
-const { validateRequest } = require('../../../../shared/lib/middleware/validation/request-validator');
+const { authenticate, authorize } = require('../../../../../shared/lib/auth/middleware/authenticate');
+const { validateRequest } = require('../../../../../shared/lib/middleware/validation/request-validator');
 const { systemValidators } = require('../validators/system-validators');
 
 // System Information Routes

@@ -672,7 +672,7 @@ class MultiTenantManager {
       logger.info('Loading tenant configurations');
 
       // Example: Load from a tenant configuration collection
-      const TenantModel = require('./models/tenant-model');
+      const TenantModel = require('./models\organizations\tenant-model');
       if (TenantModel) {
         const tenants = await TenantModel.find({ status: 'active' });
         
@@ -703,7 +703,7 @@ class MultiTenantManager {
     if (!config) {
       // Try to load from database
       try {
-        const TenantModel = require('./models/tenant-model');
+        const TenantModel = require('./models\organizations\tenant-model');
         config = await TenantModel.findOne({ tenantId });
         
         if (config) {
@@ -949,7 +949,7 @@ class MultiTenantManager {
   static async #persistTenantConfiguration(tenant) {
     try {
       // In production, save to database
-      const TenantModel = require('./models/tenant-model');
+      const TenantModel = require('./models\organizations\tenant-model');
       if (TenantModel) {
         await TenantModel.findOneAndUpdate(
           { tenantId: tenant.tenantId },

@@ -13,9 +13,9 @@
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
-const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
-const notificationService = require('../../services/notification-service');
+const logger = require('..\..\..\utils\logger');
+const AppError = require('..\..\..\utils\app-error');
+const notificationService = require('..\..\..\services\notification-service');
 const { ALERT_TYPES, ALERT_CHANNELS } = require('../../utils/constants/alert-types');
 
 /**

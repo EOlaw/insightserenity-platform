@@ -3,8 +3,8 @@
 const express = require('express');
 const router = express.Router();
 const configurationController = require('../controllers/configuration-controller');
-const { authenticate, authorize } = require('../../../../shared/lib/auth/middleware');
-const { validateRequest } = require('../../../../shared/lib/middleware/validation/request-validator');
+const { authenticate, authorize } = require('../../../../../shared/lib/auth/middleware/authenticate');
+const { validateRequest } = require('../../../../../shared/lib/middleware/validation/request-validator');
 const { configurationValidators } = require('../validators/configuration-validators');
 
 // Configuration Overview Routes

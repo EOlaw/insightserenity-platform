@@ -14,8 +14,8 @@
 
 const logger = require('../../utils/logger');
 const AppError = require('../../utils/app-error');
-const OrganizationModel = require('../models/organization-model');
-const TenantModel = require('../models/tenant-model');
+const OrganizationModel = require('..\..\..\..\servers\customer-services\modules\hosted-organizations\organizations\models\organization-model');
+const TenantModel = require('..\models\organizations\tenant-model');
 const { validateOrganizationData } = require('../../utils/validators/organization-validators');
 const { generateSlug } = require('../../utils/helpers/slug-helper');
 const { STATUS_CODES } = require('../../utils/constants/status-codes');

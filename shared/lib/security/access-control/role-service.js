@@ -167,7 +167,7 @@ class RoleService {
 
       // Store role
       if (this.database) {
-        const RoleModel = require('../../database/models/role-model');
+        const RoleModel = require('..\..\database\models\users\role-model');
         await RoleModel.create(role);
       } else {
         this.inMemoryRoles.set(role.id, role);
@@ -229,7 +229,7 @@ class RoleService {
       let role;
 
       if (this.database) {
-        const RoleModel = require('../../database/models/role-model');
+        const RoleModel = require('..\..\database\models\users\role-model');
         role = await RoleModel.findOne({
           $or: [
             { id: roleIdentifier },
@@ -338,7 +338,7 @@ class RoleService {
 
       // Update storage
       if (this.database) {
-        const RoleModel = require('../../database/models/role-model');
+        const RoleModel = require('..\..\database\models\users\role-model');
         await RoleModel.updateOne({ id: role.id }, updatedRole);
       } else {
         // Update both ID and name indexes
@@ -430,7 +430,7 @@ class RoleService {
 
       // Delete role
       if (this.database) {
-        const RoleModel = require('../../database/models/role-model');
+        const RoleModel = require('..\..\database\models\users\role-model');
         await RoleModel.deleteOne({ id: role.id });
       } else {
         this.inMemoryRoles.delete(role.id);
@@ -487,7 +487,7 @@ class RoleService {
       let total;
 
       if (this.database) {
-        const RoleModel = require('../../database/models/role-model');
+        const RoleModel = require('..\..\database\models\users\role-model');
         const query = {};
 
         if (type) query.type = type;

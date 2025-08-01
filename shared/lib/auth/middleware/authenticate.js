@@ -22,7 +22,7 @@ const TokenService = require('../services/token-service');
 const SessionService = require('../services/session-service');
 const BlacklistService = require('../services/blacklist-service');
 const UserModel = require('../../database/models/users/user-model');
-const OrganizationModel = require('../../database/models/organization-model');
+const OrganizationModel = require('../../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model');
 const SessionModel = require('../../database/models/session-model');
 const logger = require('../../utils/logger');
 const AppError = require('../../utils/app-error');
@@ -913,6 +913,91 @@ const getAuthenticationMiddleware = (config) => {
   return instance;
 };
 
+/**
+ * Simple authorization middleware for development
+ * Add this to the end of your authenticate.js file before the module.exports
+ */
+
+/**
+ * Authorization middleware for role-based access control
+ * @param {Array<string>} requiredRoles - Array of required roles
+ * @param {Object} [options] - Authorization options
+ * @returns {Function} Express middleware function
+ */
+const authorize = (requiredRoles = [], options = {}) => {
+  return async (req, res, next) => {
+    try {
+      // Check if user is authenticated
+      if (!req.auth || !req.auth.user) {
+        return next(new AppError(
+          'Authentication required',
+          401,
+          ERROR_CODES.AUTHENTICATION_REQUIRED
+        ));
+      }
+
+      const user = req.auth.user;
+      
+      // Development bypass - allow all authenticated users
+      if (process.env.NODE_ENV === 'development' && options.bypassInDev !== false) {
+        logger.debug('Authorization bypassed in development mode', {
+          userId: user._id,
+          requiredRoles,
+          userRoles: user.roles?.map(r => r.name || r) || []
+        });
+        return next();
+      }
+
+      // Get user roles
+      const userRoles = user.roles?.map(role => 
+        typeof role === 'string' ? role : role.name
+      ) || [];
+
+      // Check if user has any of the required roles
+      const hasRequiredRole = requiredRoles.length === 0 || 
+        requiredRoles.some(role => userRoles.includes(role));
+
+      if (!hasRequiredRole) {
+        logger.warn('Access denied - insufficient permissions', {
+          userId: user._id,
+          userRoles,
+          requiredRoles,
+          path: req.path
+        });
+
+        return next(new AppError(
+          'Insufficient permissions',
+          403,
+          ERROR_CODES.INSUFFICIENT_PERMISSIONS,
+          {
+            requiredRoles,
+            userRoles
+          }
+        ));
+      }
+
+      // Authorization successful
+      logger.debug('Authorization successful', {
+        userId: user._id,
+        userRoles,
+        requiredRoles
+      });
+
+      next();
+
+    } catch (error) {
+      logger.error('Authorization error', { error: error.message });
+      next(new AppError(
+        'Authorization failed',
+        500,
+        ERROR_CODES.AUTHORIZATION_ERROR,
+        { originalError: error.message }
+      ));
+    }
+  };
+};
+
+// Update the module.exports to include authorize
 module.exports = {
   AuthenticationMiddleware,
   getAuthenticationMiddleware,
@@ -921,5 +1006,7 @@ module.exports = {
   authenticateSession: (options) => getAuthenticationMiddleware().authenticateSession(options),
   authenticatePassport: (strategy, options) => getAuthenticationMiddleware().authenticatePassport(strategy, options),
   authenticateAPIKey: (options) => getAuthenticationMiddleware().authenticateAPIKey(options),
-  authenticate: (strategies, options) => getAuthenticationMiddleware().authenticate(strategies, options)
+  authenticate: (strategies, options) => getAuthenticationMiddleware().authenticate(strategies, options),
+  // Add the authorize function
+  authorize
 };

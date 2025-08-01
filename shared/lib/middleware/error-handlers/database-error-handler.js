@@ -18,7 +18,7 @@ const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const AuditService = require('../../security/audit/audit-service');
 const NotificationService = require('../../services/notification-service');
 const ConnectionManager = require('../../database/connection-manager');
-const config = require('../../config');
+const config = require('../helmet-config');
 
 /**
  * @class DatabaseErrorHandler

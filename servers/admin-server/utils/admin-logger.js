@@ -9,7 +9,7 @@
  */
 
 const Logger = require('../../../shared/lib/utils/logger');
-const AuditLogModel = require('../../../shared/lib/database/models/audit-log-model');
+const AuditLogModel = require('../../../shared/lib/database/models/security/audit-log-model');
 const config = require('../config');
 const crypto = require('crypto');
 

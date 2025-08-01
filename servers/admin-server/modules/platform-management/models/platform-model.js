@@ -13,7 +13,7 @@
 const mongoose = require('mongoose');
 const BaseModel = require('../../../../../shared/lib/database/models/base-model');
 const logger = require('../../../../../shared/lib/utils/logger');
-const AppError = require('../../../../../shared/lib/utils/app-error');
+const { AppError } = require('../../../../../shared/lib/utils/app-error');
 const EncryptionService = require('../../../../../shared/lib/security/encryption/encryption-service');
 
 /**

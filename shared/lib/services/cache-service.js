@@ -14,7 +14,7 @@
 const Redis = require('ioredis');
 const NodeCache = require('node-cache');
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const EncryptionService = require('../security/encryption/encryption-service');
 const config = require('../../config');
 const { ERROR_CODES } = require('../utils/constants/error-codes');
@@ -102,6 +102,7 @@ class CacheService {
    * @param {string} [options.namespace=''] - Cache key namespace
    */
   constructor(options = {}) {
+    // Initialize main configuration object first
     this.#config = {
       redis: {
         host: config.redis?.host || 'localhost',
@@ -112,6 +113,7 @@ class CacheService {
         enableOfflineQueue: true,
         maxRetriesPerRequest: 3,
         connectTimeout: 10000,
+        enabled: true, // Default to enabled
         ...options.redis
       },
       memory: {
@@ -129,15 +131,31 @@ class CacheService {
       statsInterval: options.statsInterval || 60000 // 1 minute
     };
 
+    // Initialize other private properties
     this.#isConnected = false;
     this.#refreshHandlers = new Map();
     this.#refreshTimers = new Map();
     this.#cacheStats = new Map();
 
+    // Initialize encryption service if needed
     if (this.#config.encryption) {
       this.#encryptionService = new EncryptionService();
     }
 
+    // Check global Redis configuration and override if disabled
+    try {
+      const globalRedisConfig = require('../../config/redis-config');
+      if (!globalRedisConfig.config.enabled) {
+        this.#config.redis = { ...this.#config.redis, enabled: false };
+        logger.info('Redis globally disabled, cache service will use memory-only mode');
+      }
+    } catch (error) {
+      logger.warn('Unable to load global Redis configuration, proceeding with default settings', {
+        error: error.message
+      });
+    }
+
+    // Initialize the cache service
     this.#initialize();
   }
 
@@ -657,7 +675,18 @@ class CacheService {
     // Initialize memory cache
     this.#memoryCache = new NodeCache(this.#config.memory);
 
-    // Initialize Redis
+    // Check if Redis is enabled before attempting connection
+    if (!this.#config.redis.enabled) {
+      logger.info('Redis disabled, using memory cache only', {
+        redisEnabled: this.#config.redis.enabled,
+        fallbackEnabled: this.#config.fallbackToMemory
+      });
+      this.#isConnected = false;
+      this.#startStatsCollection();
+      return;
+    }
+
+    // Initialize Redis only if enabled
     try {
       this.#redisClient = new Redis({
         ...this.#config.redis,
@@ -700,18 +729,35 @@ class CacheService {
    * Set up Redis event handlers
    */
   #setupRedisEventHandlers() {
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 3;
+
     this.#redisClient.on('error', (error) => {
       logger.error('Redis client error', { error: error.message });
       this.#isConnected = false;
+      
+      // Stop reconnection attempts if max attempts reached
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        logger.warn('Stopping Redis reconnection attempts', {
+          attempts: reconnectAttempts,
+          maxAttempts: maxReconnectAttempts
+        });
+        this.#redisClient.disconnect();
+        return;
+      }
+      
+      reconnectAttempts++;
     });
 
     this.#redisClient.on('connect', () => {
       logger.info('Redis client connected');
       this.#isConnected = true;
+      reconnectAttempts = 0; // Reset counter on successful connection
     });
 
     this.#redisClient.on('ready', () => {
       logger.info('Redis client ready');
+      reconnectAttempts = 0; // Reset counter when ready
     });
 
     this.#redisClient.on('close', () => {
@@ -720,7 +766,12 @@ class CacheService {
     });
 
     this.#redisClient.on('reconnecting', () => {
-      logger.info('Redis client reconnecting');
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        logger.warn('Preventing Redis reconnection - max attempts reached');
+        this.#redisClient.disconnect();
+        return;
+      }
+      logger.info('Redis client reconnecting', { attempt: reconnectAttempts + 1 });
     });
   }
 

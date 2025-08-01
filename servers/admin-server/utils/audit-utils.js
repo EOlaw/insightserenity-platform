@@ -9,7 +9,7 @@
  * @requires module:servers/admin-server/config
  */
 
-const AuditLogModel = require('../../../shared/lib/database/models/audit-log-model');
+const AuditLogModel = require('../../../shared/lib/database/models/security/audit-log-model');
 const AuditService = require('../../../shared/lib/security/audit/audit-service');
 const { CryptoHelper } = require('../../../shared/lib/utils/helpers');
 const config = require('../config');

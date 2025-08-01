@@ -27,10 +27,10 @@ const logger = require('../../shared/lib/utils/logger');
 const SessionManager = require('../../shared/lib/security/session-manager');
 const Database = require('../../shared/lib/database');
 const { AppError } = require('../../shared/lib/utils/app-error');
-const AuthStrategiesManager = require('../../shared/lib/auth/strategies');
-const { auditMiddleware } = require('../../shared/lib/security/audit/middleware/audit-middleware');
+const { AuthStrategiesManager } = require('../../shared/lib/auth/strategies');
+const { auditMiddleware } = require('../../shared/lib/security/audit/audit-middleware');
 const AuditService = require('../../shared/lib/security/audit/audit-service');
-const { AuditEventTypes } = require('../../shared/lib/security/audit/audit-event-types');
+const { AuditEventTypes } = require('../../shared/lib/security/audit/audit-events');
 
 // Admin-specific middleware
 const adminAuth = require('./middleware/admin-auth');
@@ -40,18 +40,18 @@ const sessionValidation = require('./middleware/session-validation');
 const securityHeaders = require('./middleware/security-headers');
 
 // Import admin modules
-const platformManagementRoutes = require('./modules/platform-management/routes');
-const userManagementRoutes = require('./modules/user-management/routes');
-const organizationManagementRoutes = require('./modules/organization-management/routes');
-const securityAdministrationRoutes = require('./modules/security-administration/routes');
-const billingAdministrationRoutes = require('./modules/billing-administration/routes');
-const systemMonitoringRoutes = require('./modules/system-monitoring/routes');
-const supportAdministrationRoutes = require('./modules/support-administration/routes');
-const reportsAnalyticsRoutes = require('./modules/reports-analytics/routes');
+// const platformManagementRoutes = require('./modules/platform-management/routes');
+// const userManagementRoutes = require('./modules/user-management/routes');
+// const organizationManagementRoutes = require('./modules/organization-management/routes');
+// const securityAdministrationRoutes = require('./modules/security-administration/routes');
+// const billingAdministrationRoutes = require('./modules/billing-administration/routes');
+// const systemMonitoringRoutes = require('./modules/system-monitoring/routes');
+// const supportAdministrationRoutes = require('./modules/support-administration/routes');
+// const reportsAnalyticsRoutes = require('./modules/reports-analytics/routes');
 
 // Shared middleware imports
-const errorHandler = require('../../shared/middleware/error-handler');
-const notFoundHandler = require('../../shared/middleware/not-found-handler');
+const errorHandler = require('../../shared/lib/middleware/error-handlers/error-handler');
+const notFoundHandler = require('../../shared/lib/middleware/error-handlers/not-found-handler');
 
 /**
  * Admin Application class
@@ -391,19 +391,19 @@ class AdminApplication {
         });
 
         // Admin API routes (all require authentication)
-        this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutes);
-        this.app.use(`${apiPrefix}/users`, adminAuth, userManagementRoutes);
-        this.app.use(`${apiPrefix}/organizations`, adminAuth, organizationManagementRoutes);
-        this.app.use(`${apiPrefix}/security`, adminAuth, securityAdministrationRoutes);
-        this.app.use(`${apiPrefix}/billing`, adminAuth, billingAdministrationRoutes);
-        this.app.use(`${apiPrefix}/monitoring`, adminAuth, systemMonitoringRoutes);
-        this.app.use(`${apiPrefix}/support`, adminAuth, supportAdministrationRoutes);
-        this.app.use(`${apiPrefix}/analytics`, adminAuth, reportsAnalyticsRoutes);
+        // this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutes);
+        // this.app.use(`${apiPrefix}/users`, adminAuth, userManagementRoutes);
+        // this.app.use(`${apiPrefix}/organizations`, adminAuth, organizationManagementRoutes);
+        // this.app.use(`${apiPrefix}/security`, adminAuth, securityAdministrationRoutes);
+        // this.app.use(`${apiPrefix}/billing`, adminAuth, billingAdministrationRoutes);
+        // this.app.use(`${apiPrefix}/monitoring`, adminAuth, systemMonitoringRoutes);
+        // this.app.use(`${apiPrefix}/support`, adminAuth, supportAdministrationRoutes);
+        // this.app.use(`${apiPrefix}/analytics`, adminAuth, reportsAnalyticsRoutes);
 
-        // Admin authentication routes
-        this.app.post(`${adminBase}/login`, this.handleAdminLogin.bind(this));
-        this.app.post(`${adminBase}/logout`, adminAuth, this.handleAdminLogout.bind(this));
-        this.app.get(`${adminBase}/session`, adminAuth, this.handleSessionCheck.bind(this));
+        // // Admin authentication routes
+        // this.app.post(`${adminBase}/login`, this.handleAdminLogin.bind(this));
+        // this.app.post(`${adminBase}/logout`, adminAuth, this.handleAdminLogout.bind(this));
+        // this.app.get(`${adminBase}/session`, adminAuth, this.handleSessionCheck.bind(this));
 
         // Root admin redirect
         this.app.get(adminBase, (req, res) => {

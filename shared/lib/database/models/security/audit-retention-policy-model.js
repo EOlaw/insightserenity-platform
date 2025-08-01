@@ -12,8 +12,8 @@
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
-const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const logger = require('..\..\..\utils\logger');
+const AppError = require('..\..\..\utils\app-error');
 const { COMPLIANCE_FRAMEWORKS, RETENTION_PERIODS } = require('../../utils/constants/compliance-frameworks');
 
 /**

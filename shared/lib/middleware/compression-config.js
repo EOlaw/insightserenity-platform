@@ -14,7 +14,7 @@ const compression = require('compression');
 const logger = require('../utils/logger');
 const CacheService = require('../services/cache-service');
 const CompressionRuleModel = require('../database/models/compression-rule-model');
-const config = require('../config');
+const config = require('./helmet-config');
 
 /**
  * @class CompressionConfig

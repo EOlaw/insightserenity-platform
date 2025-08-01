@@ -200,7 +200,7 @@ class PolicyEngine {
 
       // Store policy
       if (this.database) {
-        const PolicyModel = require('../../database/models/policy-model');
+        const PolicyModel = require('..\..\database\models\security\audit-retention-policy-model');
         await PolicyModel.create(policy);
       } else {
         this.inMemoryPolicies.set(policy.id, policy);
@@ -353,7 +353,7 @@ class PolicyEngine {
       let policy;
 
       if (this.database) {
-        const PolicyModel = require('../../database/models/policy-model');
+        const PolicyModel = require('..\..\database\models\security\audit-retention-policy-model');
         policy = await PolicyModel.findOne({
           $or: [
             { id: policyIdentifier },
@@ -430,7 +430,7 @@ class PolicyEngine {
 
       // Update storage
       if (this.database) {
-        const PolicyModel = require('../../database/models/policy-model');
+        const PolicyModel = require('..\..\database\models\security\audit-retention-policy-model');
         await PolicyModel.updateOne({ id: policy.id }, updatedPolicy);
       } else {
         this.inMemoryPolicies.set(updatedPolicy.id, updatedPolicy);
@@ -496,7 +496,7 @@ class PolicyEngine {
 
       // Delete policy
       if (this.database) {
-        const PolicyModel = require('../../database/models/policy-model');
+        const PolicyModel = require('..\..\database\models\security\audit-retention-policy-model');
         await PolicyModel.deleteOne({ id: policy.id });
       } else {
         this.inMemoryPolicies.delete(policy.id);
@@ -553,7 +553,7 @@ class PolicyEngine {
       let total;
 
       if (this.database) {
-        const PolicyModel = require('../../database/models/policy-model');
+        const PolicyModel = require('..\..\database\models\security\audit-retention-policy-model');
         const query = {};
 
         if (type) query.type = type;

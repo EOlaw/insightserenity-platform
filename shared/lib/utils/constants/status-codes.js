@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview HTTP status codes and response utilities
+ * @fileoverview HTTP status codes and response utilities with platform-specific constants
  * @module shared/lib/utils/constants/status-codes
  */
 
@@ -96,6 +96,48 @@ const STATUS_CATEGORIES = Object.freeze({
 });
 
 /**
+ * Platform operational modes
+ * @namespace PLATFORM_MODES
+ */
+const PLATFORM_MODES = Object.freeze({
+  NORMAL: 'normal',
+  MAINTENANCE: 'maintenance',
+  READ_ONLY: 'read_only',
+  EMERGENCY: 'emergency',
+  DEGRADED: 'degraded',
+  SETUP: 'setup',
+  MIGRATION: 'migration',
+  SCALING: 'scaling'
+});
+
+/**
+ * Platform status states
+ * @namespace PLATFORM_STATUS
+ */
+const PLATFORM_STATUS = Object.freeze({
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+  INITIALIZING: 'initializing',
+  UPGRADING: 'upgrading',
+  MIGRATING: 'migrating',
+  SUSPENDED: 'suspended',
+  ERROR: 'error',
+  UNKNOWN: 'unknown'
+});
+
+/**
+ * System health status levels
+ * @namespace HEALTH_STATUS
+ */
+const HEALTH_STATUS = Object.freeze({
+  HEALTHY: 'healthy',
+  WARNING: 'warning',
+  CRITICAL: 'critical',
+  DOWN: 'down',
+  UNKNOWN: 'unknown'
+});
+
+/**
  * Standard status messages
  * @namespace STATUS_MESSAGES
  */
@@ -147,7 +189,7 @@ const STATUS_MESSAGES = Object.freeze({
   [HTTP_STATUS.UNSUPPORTED_MEDIA_TYPE]: 'Unsupported Media Type',
   [HTTP_STATUS.RANGE_NOT_SATISFIABLE]: 'Range Not Satisfiable',
   [HTTP_STATUS.EXPECTATION_FAILED]: 'Expectation Failed',
-  [HTTP_STATUS.IM_A_TEAPOT]: 'I\'m a teapot',
+  [HTTP_STATUS.IM_A_TEAPOT]: "I'm a teapot",
   [HTTP_STATUS.MISDIRECTED_REQUEST]: 'Misdirected Request',
   [HTTP_STATUS.UNPROCESSABLE_ENTITY]: 'Unprocessable Entity',
   [HTTP_STATUS.LOCKED]: 'Locked',
@@ -174,19 +216,18 @@ const STATUS_MESSAGES = Object.freeze({
 });
 
 /**
- * Common response status patterns
+ * Response status types
  * @namespace RESPONSE_STATUS
  */
 const RESPONSE_STATUS = Object.freeze({
   SUCCESS: 'success',
   ERROR: 'error',
-  FAIL: 'fail',
-  PENDING: 'pending',
-  WARNING: 'warning'
+  WARNING: 'warning',
+  INFO: 'info'
 });
 
 /**
- * API response codes for custom statuses
+ * API response status codes
  * @namespace API_STATUS
  */
 const API_STATUS = Object.freeze({
@@ -212,6 +253,21 @@ const API_STATUS = Object.freeze({
   // Rate limiting
   RATE_LIMITED: 'API_RATE_LIMITED',
   QUOTA_EXCEEDED: 'API_QUOTA_EXCEEDED'
+});
+
+/**
+ * Platform mode descriptions
+ * @namespace PLATFORM_MODE_DESCRIPTIONS
+ */
+const PLATFORM_MODE_DESCRIPTIONS = Object.freeze({
+  [PLATFORM_MODES.NORMAL]: 'Normal operation with all features available',
+  [PLATFORM_MODES.MAINTENANCE]: 'Maintenance mode - limited access for updates',
+  [PLATFORM_MODES.READ_ONLY]: 'Read-only mode - no data modifications allowed',
+  [PLATFORM_MODES.EMERGENCY]: 'Emergency mode - critical operations only',
+  [PLATFORM_MODES.DEGRADED]: 'Degraded performance - some features may be limited',
+  [PLATFORM_MODES.SETUP]: 'Initial setup mode - platform configuration in progress',
+  [PLATFORM_MODES.MIGRATION]: 'Data migration in progress',
+  [PLATFORM_MODES.SCALING]: 'Scaling operations in progress'
 });
 
 /**
@@ -277,6 +333,44 @@ const isServerError = (statusCode) => {
  */
 const getStatusMessage = (statusCode) => {
   return STATUS_MESSAGES[statusCode] || 'Unknown Status';
+};
+
+/**
+ * Get platform mode description
+ * @param {string} mode - Platform mode
+ * @returns {string} Mode description
+ */
+const getPlatformModeDescription = (mode) => {
+  return PLATFORM_MODE_DESCRIPTIONS[mode] || 'Unknown platform mode';
+};
+
+/**
+ * Check if platform mode allows write operations
+ * @param {string} mode - Platform mode
+ * @returns {boolean} True if write operations are allowed
+ */
+const allowsWriteOperations = (mode) => {
+  const readOnlyModes = [
+    PLATFORM_MODES.READ_ONLY,
+    PLATFORM_MODES.MAINTENANCE,
+    PLATFORM_MODES.MIGRATION
+  ];
+  return !readOnlyModes.includes(mode);
+};
+
+/**
+ * Check if platform mode allows user access
+ * @param {string} mode - Platform mode
+ * @returns {boolean} True if user access is allowed
+ */
+const allowsUserAccess = (mode) => {
+  const restrictedModes = [
+    PLATFORM_MODES.MAINTENANCE,
+    PLATFORM_MODES.EMERGENCY,
+    PLATFORM_MODES.SETUP,
+    PLATFORM_MODES.MIGRATION
+  ];
+  return !restrictedModes.includes(mode);
 };
 
 /**
@@ -347,6 +441,10 @@ module.exports = Object.freeze({
   STATUS_MESSAGES,
   RESPONSE_STATUS,
   API_STATUS,
+  PLATFORM_MODES,
+  PLATFORM_STATUS,
+  HEALTH_STATUS,
+  PLATFORM_MODE_DESCRIPTIONS,
   
   // Utility functions
   getStatusCategory,
@@ -355,6 +453,9 @@ module.exports = Object.freeze({
   isClientError,
   isServerError,
   getStatusMessage,
+  getPlatformModeDescription,
+  allowsWriteOperations,
+  allowsUserAccess,
   createApiResponse,
   successResponse,
   errorResponse

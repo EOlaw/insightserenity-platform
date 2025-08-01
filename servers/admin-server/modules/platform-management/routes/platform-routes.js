@@ -3,11 +3,127 @@
 const express = require('express');
 const router = express.Router();
 const platformController = require('../controllers/platform-controller');
-const { authenticate, authorize } = require('../../../../shared/lib/auth/middleware');
-const { validateRequest } = require('../../../../shared/lib/middleware/validation/request-validator');
+const { authenticate, authorize } = require('../../../../../shared/lib/auth/middleware/authenticate');
+const { validateRequest } = require('../../../../../shared/lib/middleware/validation/request-validator');
 const { platformValidators } = require('../validators/platform-validators');
 
-// Platform Overview Routes
+// Platform Configuration Routes
+router.get('/',
+  authenticate,
+  authorize(['admin', 'super-admin']),
+  platformController.getPlatformConfig
+);
+
+router.patch('/',
+  authenticate,
+  authorize(['super-admin']),
+  platformController.updatePlatformConfig
+);
+
+// Platform Version Management
+router.post('/version',
+  authenticate,
+  authorize(['super-admin']),
+  platformController.updateVersion
+);
+
+// Maintenance Mode Routes
+router.post('/maintenance/enable',
+  authenticate,
+  authorize(['super-admin']),
+  platformController.enableMaintenanceMode
+);
+
+router.post('/maintenance/disable',
+  authenticate,
+  authorize(['super-admin']),
+  platformController.disableMaintenanceMode
+);
+
+// Feature Flags Routes
+router.get('/features',
+  authenticate,
+  authorize(['admin', 'super-admin']),
+  platformController.getFeatureFlags
+);
+
+router.put('/features/:featureName',
+  authenticate,
+  authorize(['super-admin']),
+  platformController.updateFeatureFlag
+);
+
+router.get('/features/:featureName/check',
+  authenticate,
+  authorize(['admin', 'super-admin']),
+  platformController.checkFeatureFlag
+);
+
+// Integration Routes
+router.get('/integrations',
+  authenticate,
+  authorize(['admin', 'super-admin']),
+  platformController.getIntegrations
+);
+
+router.post('/integrations',
+  authenticate,
+  authorize(['super-admin']),
+  platformController.addIntegration
+);
+
+router.put('/integrations/:integrationId',
+  authenticate,
+  authorize(['super-admin']),
+  platformController.updateIntegration
+);
+
+router.delete('/integrations/:integrationId',
+  authenticate,
+  authorize(['super-admin']),
+  platformController.deleteIntegration
+);
+
+// Platform Status Routes
+router.get('/status',
+  authenticate,
+  authorize(['admin', 'super-admin']),
+  platformController.getPlatformStatus
+);
+
+router.post('/status',
+  authenticate,
+  authorize(['super-admin']),
+  platformController.updatePlatformStatus
+);
+
+// Incident Management
+router.post('/incidents',
+  authenticate,
+  authorize(['super-admin']),
+  platformController.recordIncident
+);
+
+// Resource Limits
+router.get('/limits/:resource',
+  authenticate,
+  authorize(['admin', 'super-admin']),
+  platformController.checkResourceLimit
+);
+
+// Health Check
+router.get('/health',
+  authenticate,
+  authorize(['admin', 'super-admin']),
+  platformController.performHealthCheck
+);
+
+// Public Configuration
+router.get('/public',
+  platformController.getPublicConfig
+);
+
+// Platform Overview Routes (to be implemented)
 router.get('/overview',
   authenticate,
   authorize(['admin', 'super-admin']),
@@ -17,16 +133,11 @@ router.get('/overview',
 router.get('/statistics',
   authenticate,
   authorize(['admin', 'super-admin']),
+  validateRequest(platformValidators.validatePlatformStats),
   platformController.getPlatformStatistics
 );
 
-router.get('/health',
-  authenticate,
-  authorize(['admin', 'super-admin']),
-  platformController.getPlatformHealth
-);
-
-// Platform Settings Management
+// Platform Settings Management (to be implemented)
 router.get('/settings',
   authenticate,
   authorize(['admin', 'super-admin']),
@@ -36,7 +147,6 @@ router.get('/settings',
 router.put('/settings',
   authenticate,
   authorize(['super-admin']),
-  validateRequest(platformValidators.updatePlatformSettings),
   platformController.updatePlatformSettings
 );
 
@@ -46,27 +156,7 @@ router.post('/settings/reset',
   platformController.resetPlatformSettings
 );
 
-// Platform Features Management
-router.get('/features',
-  authenticate,
-  authorize(['admin', 'super-admin']),
-  platformController.getPlatformFeatures
-);
-
-router.put('/features/:featureId',
-  authenticate,
-  authorize(['super-admin']),
-  validateRequest(platformValidators.updateFeature),
-  platformController.updatePlatformFeature
-);
-
-router.post('/features/:featureId/toggle',
-  authenticate,
-  authorize(['super-admin']),
-  platformController.togglePlatformFeature
-);
-
-// Platform Modules Management
+// Platform Modules Management (to be implemented)
 router.get('/modules',
   authenticate,
   authorize(['admin', 'super-admin']),
@@ -76,7 +166,6 @@ router.get('/modules',
 router.put('/modules/:moduleId',
   authenticate,
   authorize(['super-admin']),
-  validateRequest(platformValidators.updateModule),
   platformController.updatePlatformModule
 );
 
@@ -92,7 +181,7 @@ router.post('/modules/:moduleId/disable',
   platformController.disablePlatformModule
 );
 
-// Platform Deployment Management
+// Platform Deployment Management (to be implemented)
 router.get('/deployments',
   authenticate,
   authorize(['admin', 'super-admin']),
@@ -102,7 +191,6 @@ router.get('/deployments',
 router.post('/deployments',
   authenticate,
   authorize(['super-admin']),
-  validateRequest(platformValidators.createDeployment),
   platformController.createPlatformDeployment
 );
 
@@ -118,7 +206,7 @@ router.post('/deployments/:deploymentId/rollback',
   platformController.rollbackPlatformDeployment
 );
 
-// Platform Resource Management
+// Platform Resource Management (to be implemented)
 router.get('/resources',
   authenticate,
   authorize(['admin', 'super-admin']),
@@ -134,11 +222,10 @@ router.get('/resources/usage',
 router.put('/resources/limits',
   authenticate,
   authorize(['super-admin']),
-  validateRequest(platformValidators.updateResourceLimits),
   platformController.updatePlatformResourceLimits
 );
 
-// Platform API Management
+// Platform API Management (to be implemented)
 router.get('/api/endpoints',
   authenticate,
   authorize(['admin', 'super-admin']),
@@ -154,38 +241,10 @@ router.get('/api/usage',
 router.put('/api/rate-limits',
   authenticate,
   authorize(['super-admin']),
-  validateRequest(platformValidators.updateAPIRateLimits),
   platformController.updatePlatformAPIRateLimits
 );
 
-// Platform Integration Management
-router.get('/integrations',
-  authenticate,
-  authorize(['admin', 'super-admin']),
-  platformController.getPlatformIntegrations
-);
-
-router.post('/integrations',
-  authenticate,
-  authorize(['super-admin']),
-  validateRequest(platformValidators.createIntegration),
-  platformController.createPlatformIntegration
-);
-
-router.put('/integrations/:integrationId',
-  authenticate,
-  authorize(['super-admin']),
-  validateRequest(platformValidators.updateIntegration),
-  platformController.updatePlatformIntegration
-);
-
-router.delete('/integrations/:integrationId',
-  authenticate,
-  authorize(['super-admin']),
-  platformController.deletePlatformIntegration
-);
-
-// Platform Analytics
+// Platform Analytics (to be implemented)
 router.get('/analytics/dashboard',
   authenticate,
   authorize(['admin', 'super-admin']),
@@ -201,7 +260,6 @@ router.get('/analytics/trends',
 router.post('/analytics/export',
   authenticate,
   authorize(['admin', 'super-admin']),
-  validateRequest(platformValidators.exportAnalytics),
   platformController.exportPlatformAnalytics
 );
 

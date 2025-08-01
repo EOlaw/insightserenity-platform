@@ -16,11 +16,11 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const CacheService = require('./cache-service');
 const CryptoUtils = require('../security/encryption/crypto-utils');
-const WebhookModel = require('../database/models/webhook-model');
-const AuditLogModel = require('../database/models/audit-log-model');
+const WebhookModel = require('../database/models/platform/webhook-model');
+const AuditLogModel = require('../database/models/security/audit-log-model');
 const config = require('../../config');
 const { ERROR_CODES } = require('../utils/constants/error-codes');
 
@@ -91,7 +91,7 @@ class WebhookService {
    * @readonly
    * @type {Object}
    */
-  static #WEBHOOK_EVENTS = {
+  static WEBHOOK_EVENTS = {
     // User events
     USER_CREATED: 'user.created',
     USER_UPDATED: 'user.updated',
@@ -408,7 +408,7 @@ class WebhookService {
 
     try {
       // Validate event
-      if (!Object.values(this.#WEBHOOK_EVENTS).includes(event) && event !== this.#WEBHOOK_EVENTS.CUSTOM) {
+      if (!Object.values(this.WEBHOOK_EVENTS).includes(event) && event !== this.WEBHOOK_EVENTS.CUSTOM) {
         throw new AppError(
           'Invalid webhook event',
           400,
@@ -826,7 +826,7 @@ class WebhookService {
 
     // Validate event names
     validated.events = validated.events.filter(event => 
-      Object.values(this.#WEBHOOK_EVENTS).includes(event) || 
+      Object.values(this.WEBHOOK_EVENTS).includes(event) || 
       event.startsWith('custom.')
     );
 
@@ -1349,6 +1349,6 @@ class WebhookService {
 }
 
 // Export webhook events
-WebhookService.EVENTS = WebhookService.#WEBHOOK_EVENTS;
+WebhookService.EVENTS = WebhookService.WEBHOOK_EVENTS;
 
 module.exports = WebhookService;

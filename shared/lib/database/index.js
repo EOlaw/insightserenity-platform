@@ -451,13 +451,14 @@ class Database {
     try {
       // Load core models
       const models = [
-        { name: 'User', module: require('./models/user-model') },
-        { name: 'Organization', module: require('./models/organization-model') },
-        { name: 'Tenant', module: require('./models/tenant-model') },
+        { name: 'User', module: require('./models/users/user-model') },
+        // { name: 'Organization', module: require('../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model') },
+        { name: 'Organization', module: require('./models/organizations/organization-model') },
+        { name: 'Tenant', module: require('./models/organizations/tenant-model') },
         { name: 'Session', module: require('./models/session-model') },
-        { name: 'AuditLog', module: require('./models/audit-log-model') },
-        { name: 'Notification', module: require('./models/notification-model') },
-        { name: 'Webhook', module: require('./models/webhook-model') }
+        { name: 'AuditLog', module: require('./models/security/audit-log-model') },
+        { name: 'Notification', module: require('./models/platform/notification-model') },
+        { name: 'Webhook', module: require('./models/platform/webhook-model') }
       ];
 
       for (const { name, module } of models) {

@@ -1,30 +1,26 @@
 'use strict';
 
 /**
- * @fileoverview Request validation middleware for comprehensive input validation
+ * @fileoverview Simplified request validation middleware for development
  * @module shared/lib/middleware/validation/request-validator
  * @requires module:joi
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
  * @requires module:shared/lib/utils/constants/error-codes
  * @requires module:shared/lib/services/cache-service
- * @requires module:shared/lib/security/audit/audit-service
- * @requires module:shared/lib/database/models/validation-rule-model
  * @requires module:shared/lib/config
  */
 
 const Joi = require('joi');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const CacheService = require('../../services/cache-service');
-const AuditService = require('../../security/audit/audit-service');
-const ValidationRuleModel = require('../../database/models/validation-rule-model');
-const config = require('../../config');
+const config = require('../../../config');
 
 /**
  * @class RequestValidator
- * @description Comprehensive request validation middleware with enterprise features
+ * @description Simplified request validation middleware for development environments
  */
 class RequestValidator {
   /**
@@ -32,12 +28,6 @@ class RequestValidator {
    * @type {CacheService}
    */
   #cacheService;
-
-  /**
-   * @private
-   * @type {AuditService}
-   */
-  #auditService;
 
   /**
    * @private
@@ -73,11 +63,6 @@ class RequestValidator {
       ttl: 3600, // 1 hour
       maxSize: 1000
     },
-    audit: {
-      enabled: true,
-      logValidationErrors: true,
-      logSensitiveFields: false
-    },
     errorResponse: {
       includeDetails: process.env.NODE_ENV !== 'production',
       formatError: true,
@@ -95,11 +80,6 @@ class RequestValidator {
       trimStrings: true,
       normalizeEmail: true,
       escapeHtml: true
-    },
-    rateLimit: {
-      enabled: true,
-      maxFailures: 10,
-      windowMs: 900000 // 15 minutes
     }
   };
 
@@ -122,19 +102,17 @@ class RequestValidator {
    * Creates RequestValidator instance
    * @param {Object} [options] - Validator configuration
    * @param {CacheService} [cacheService] - Cache service instance
-   * @param {AuditService} [auditService] - Audit service instance
    */
-  constructor(options = {}, cacheService, auditService) {
+  constructor(options = {}, cacheService) {
     this.#config = this.#mergeConfig(options);
     this.#cacheService = cacheService || new CacheService();
-    this.#auditService = auditService || new AuditService();
     this.#schemaCache = new Map();
     this.#validationMetrics = new Map();
 
-    logger.info('RequestValidator initialized', {
+    logger.info('RequestValidator initialized (simplified)', {
       cacheEnabled: this.#config.cache.enabled,
-      auditEnabled: this.#config.audit.enabled,
-      targets: Object.values(RequestValidator.#VALIDATION_TARGETS)
+      targets: Object.values(RequestValidator.#VALIDATION_TARGETS),
+      environment: process.env.NODE_ENV
     });
   }
 
@@ -150,11 +128,6 @@ class RequestValidator {
       const startTime = Date.now();
 
       try {
-        // Check rate limiting
-        if (this.#config.rateLimit.enabled) {
-          await this.#checkRateLimit(req);
-        }
-
         // Get or build schema
         const validationSchema = await this.#getValidationSchema(schema, req);
 
@@ -192,11 +165,6 @@ class RequestValidator {
 
         // Update metrics
         this.#updateMetrics('failure', req.route?.path, duration);
-
-        // Audit validation failure
-        if (this.#config.audit.enabled && this.#config.audit.logValidationErrors) {
-          await this.#auditValidationFailure(req, error, correlationId);
-        }
 
         logger.error('Request validation failed', {
           correlationId,
@@ -325,29 +293,18 @@ class RequestValidator {
   }
 
   /**
-   * Creates dynamic validator based on database rules
-   * @param {string} ruleSetName - Name of the rule set
+   * Creates static validator (replaces database rule functionality)
+   * @param {Object} staticSchema - Static Joi schema object
    * @param {Object} [options] - Validation options
    * @returns {Function} Express middleware function
    */
-  validateWithRules(ruleSetName, options = {}) {
+  validateWithStaticRules(staticSchema, options = {}) {
     return async (req, res, next) => {
       const correlationId = req.correlationId || this.#generateCorrelationId();
 
       try {
-        // Get validation rules from database
-        const rules = await this.#getValidationRules(ruleSetName);
-        if (!rules) {
-          throw new AppError(
-            'Validation rules not found',
-            500,
-            ERROR_CODES.CONFIGURATION_ERROR,
-            { correlationId, ruleSetName }
-          );
-        }
-
-        // Build schema from rules
-        const schema = this.#buildSchemaFromRules(rules);
+        // Use static schema directly
+        const schema = this.#buildJoiSchema(staticSchema);
 
         // Validate using built schema
         await new Promise((resolve, reject) => {
@@ -360,9 +317,8 @@ class RequestValidator {
         next();
 
       } catch (error) {
-        logger.error('Rule-based validation failed', {
+        logger.error('Static rule validation failed', {
           correlationId,
-          ruleSetName,
           error: error.message
         });
 
@@ -611,25 +567,6 @@ class RequestValidator {
 
   /**
    * @private
-   * Checks rate limiting for validation failures
-   */
-  async #checkRateLimit(req) {
-    const identifier = req.ip || req.auth?.user?._id || 'anonymous';
-    const key = `validation_rate_limit:${identifier}`;
-
-    const failures = await this.#cacheService.get(key) || 0;
-
-    if (failures >= this.#config.rateLimit.maxFailures) {
-      throw new AppError(
-        'Too many validation failures',
-        429,
-        ERROR_CODES.RATE_LIMIT_ERROR
-      );
-    }
-  }
-
-  /**
-   * @private
    * Updates validation metrics
    */
   #updateMetrics(result, path, duration) {
@@ -645,41 +582,6 @@ class RequestValidator {
     metrics.avgDuration = metrics.totalDuration / metrics.count;
 
     this.#validationMetrics.set(key, metrics);
-  }
-
-  /**
-   * @private
-   * Audits validation failure
-   */
-  async #auditValidationFailure(req, error, correlationId) {
-    try {
-      const sanitizedError = { ...error };
-      
-      // Remove sensitive data if configured
-      if (!this.#config.audit.logSensitiveFields && sanitizedError.details) {
-        sanitizedError.details = sanitizedError.details.map(detail => ({
-          field: detail.field,
-          type: detail.type,
-          message: detail.message
-        }));
-      }
-
-      await this.#auditService.logEvent({
-        event: 'validation.failed',
-        userId: req.auth?.user?._id,
-        organizationId: req.auth?.user?.organizationId,
-        ipAddress: req.ip || req.connection.remoteAddress,
-        userAgent: req.headers['user-agent'],
-        correlationId,
-        metadata: {
-          path: req.path,
-          method: req.method,
-          error: sanitizedError
-        }
-      });
-    } catch (err) {
-      logger.error('Failed to audit validation failure', { error: err.message });
-    }
   }
 
   /**
@@ -710,78 +612,6 @@ class RequestValidator {
     }
 
     return formatted;
-  }
-
-  /**
-   * @private
-   * Gets validation rules from database
-   */
-  async #getValidationRules(ruleSetName) {
-    const cacheKey = `validation_rules:${ruleSetName}`;
-    
-    // Check cache
-    const cached = await this.#cacheService.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    // Get from database
-    const rules = await ValidationRuleModel.findOne({
-      name: ruleSetName,
-      isActive: true
-    });
-
-    if (rules) {
-      // Cache rules
-      await this.#cacheService.set(cacheKey, rules, this.#config.cache.ttl);
-    }
-
-    return rules;
-  }
-
-  /**
-   * @private
-   * Builds schema from database rules
-   */
-  #buildSchemaFromRules(rules) {
-    const schema = {};
-
-    rules.fields.forEach(field => {
-      let fieldSchema = Joi;
-
-      // Apply type
-      switch (field.type) {
-        case 'string':
-          fieldSchema = fieldSchema.string();
-          break;
-        case 'number':
-          fieldSchema = fieldSchema.number();
-          break;
-        case 'boolean':
-          fieldSchema = fieldSchema.boolean();
-          break;
-        case 'date':
-          fieldSchema = fieldSchema.date();
-          break;
-        case 'array':
-          fieldSchema = fieldSchema.array();
-          break;
-        case 'object':
-          fieldSchema = fieldSchema.object();
-          break;
-      }
-
-      // Apply constraints
-      field.constraints.forEach(constraint => {
-        if (fieldSchema[constraint.rule]) {
-          fieldSchema = fieldSchema[constraint.rule](...(constraint.params || []));
-        }
-      });
-
-      schema[field.name] = fieldSchema;
-    });
-
-    return Joi.object(schema);
   }
 
   /**
@@ -836,7 +666,6 @@ class RequestValidator {
    */
   async clearCache() {
     this.#schemaCache.clear();
-    await this.#cacheService.clear('validation_rules:*');
     logger.info('Validation cache cleared');
   }
 }
@@ -866,5 +695,5 @@ module.exports = {
   validateParams: (schema, options) => getRequestValidator().validateParams(schema, options),
   validateHeaders: (schema, options) => getRequestValidator().validateHeaders(schema, options),
   validateMultiple: (schemas, options) => getRequestValidator().validateMultiple(schemas, options),
-  validateWithRules: (ruleSet, options) => getRequestValidator().validateWithRules(ruleSet, options)
+  validateWithRules: (staticSchema, options) => getRequestValidator().validateWithStaticRules(staticSchema, options)
 };

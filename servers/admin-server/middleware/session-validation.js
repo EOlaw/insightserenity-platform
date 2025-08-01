@@ -12,9 +12,9 @@
 
 const SessionService = require('../../../shared/lib/auth/services/session-service');
 const logger = require('../../../shared/lib/utils/logger');
-const AppError = require('../../../shared/lib/utils/app-error');
-const { CacheService } = require('../../../shared/lib/services/cache-service');
-const config = require('../config');
+const { AppError } = require('../../../shared/lib/utils/app-error');
+const CacheService = require('../../../shared/lib/services/cache-service');
+const config = require('../../../shared/config');
 const { ERROR_CODES } = require('../../../shared/lib/utils/constants/error-codes');
 const crypto = require('crypto');
 

@@ -9,10 +9,10 @@
  * @requires module:servers/admin-server/config
  */
 
-const AuditLogModel = require('../../../shared/lib/database/models/audit-log-model');
+const AuditLogModel = require('../../../shared/lib/database/models/security/audit-log-model');
 const logger = require('../../../shared/lib/utils/logger');
 const NotificationService = require('../../../shared/lib/services/notification-service');
-const config = require('../config');
+const config = require('../../../shared/config');
 const crypto = require('crypto');
 
 /**

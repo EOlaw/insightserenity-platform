@@ -1,609 +1,665 @@
 'use strict';
 
 /**
- * @fileoverview IP whitelist middleware for restricting admin access
- * @module servers/admin-server/middleware/ip-whitelist
+ * @fileoverview IP Whitelist model for admin access control
+ * @module shared/lib/database/models/ip-whitelist-model
+ * @requires mongoose
+ * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
- * @requires module:shared/lib/services/cache-service
- * @requires module:shared/lib/database/models/ip-whitelist-model
- * @requires module:servers/admin-server/config
+ * @requires module:shared/lib/utils/validators/common-validators
  */
 
+const mongoose = require('mongoose');
+const BaseModel = require('../../../shared/lib/database/models/base-model');
 const logger = require('../../../shared/lib/utils/logger');
-const AppError = require('../../../shared/lib/utils/app-error');
-const { CacheService } = require('../../../shared/lib/services/cache-service');
-const IpWhitelistModel = require('../../../shared/lib/database/models/ip-whitelist-model');
-const config = require('../config');
-const { ERROR_CODES } = require('../../../shared/lib/utils/constants/error-codes');
-const ipaddr = require('ipaddr.js');
-const crypto = require('crypto');
+const { AppError } = require('../../../shared/lib/utils/app-error');
+const { validateIP, validateCIDR } = require('../../../shared/lib/utils/validators/common-validators');
 
 /**
- * @class IpWhitelistMiddleware
- * @description IP-based access control for admin panel
+ * IP Whitelist schema definition for admin access control
  */
-class IpWhitelistMiddleware {
-  /**
-   * @private
-   * @static
-   * @type {CacheService}
-   */
-  static #cacheService = new CacheService();
+const ipWhitelistSchemaDefinition = {
+  // ==================== Multi-Tenant Context ====================
+  tenantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tenant',
+    required: false, // IP whitelist can be global or tenant-specific
+    index: true
+  },
 
-  /**
-   * @private
-   * @static
-   * @type {Object}
-   */
-  static #config = {
-    enabled: config.security?.ipWhitelist?.enabled !== false,
-    allowPrivateNetworks: config.security?.ipWhitelist?.allowPrivateNetworks || false,
-    allowedIPs: config.security?.ipWhitelist?.allowedIPs || [],
-    allowedRanges: config.security?.ipWhitelist?.allowedRanges || [],
-    bypassForSuperAdmin: config.security?.ipWhitelist?.bypassForSuperAdmin || false,
-    cache: {
-      enabled: true,
-      ttl: 300, // 5 minutes
-      prefix: 'ip_whitelist:'
-    },
-    geoBlocking: {
-      enabled: config.security?.geoBlocking?.enabled || false,
-      allowedCountries: config.security?.geoBlocking?.allowedCountries || [],
-      blockedCountries: config.security?.geoBlocking?.blockedCountries || []
-    },
-    temporaryAccess: {
-      enabled: true,
-      defaultDuration: 3600000 // 1 hour
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    required: false, // IP whitelist can be global or organization-specific
+    index: true
+  },
+
+  // ==================== IP Information ====================
+  ip: {
+    type: String,
+    required: true,
+    index: true,
+    validate: {
+      validator: function(value) {
+        // Validate either single IP or CIDR range
+        return validateIP(value) || validateCIDR(value);
+      },
+      message: 'Invalid IP address or CIDR range format'
     }
+  },
+
+  type: {
+    type: String,
+    required: true,
+    enum: ['single', 'range', 'wildcard'],
+    default: 'single',
+    index: true
+  },
+
+  // ==================== Access Control ====================
+  isActive: {
+    type: Boolean,
+    required: true,
+    default: true,
+    index: true
+  },
+
+  priority: {
+    type: Number,
+    required: true,
+    default: 100,
+    min: 1,
+    max: 1000,
+    index: true
+  },
+
+  // ==================== Metadata ====================
+  description: {
+    type: String,
+    maxlength: 500,
+    trim: true
+  },
+
+  tags: [{
+    type: String,
+    trim: true,
+    maxlength: 50
+  }],
+
+  // ==================== Access Patterns ====================
+  accessLevel: {
+    type: String,
+    enum: ['admin', 'read-only', 'limited'],
+    default: 'admin',
+    index: true
+  },
+
+  allowedPaths: [{
+    type: String,
+    trim: true
+  }],
+
+  restrictedPaths: [{
+    type: String,
+    trim: true
+  }],
+
+  // ==================== Time-based Access ====================
+  validFrom: {
+    type: Date,
+    default: Date.now,
+    index: true
+  },
+
+  validUntil: {
+    type: Date,
+    index: true,
+    validate: {
+      validator: function(value) {
+        return !value || value > this.validFrom;
+      },
+      message: 'Valid until date must be after valid from date'
+    }
+  },
+
+  // ==================== Usage Tracking ====================
+  lastUsedAt: {
+    type: Date,
+    index: true
+  },
+
+  usageCount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+
+  maxUsage: {
+    type: Number,
+    min: 1
+  },
+
+  // ==================== Geographic Information ====================
+  country: {
+    type: String,
+    length: 2, // ISO country code
+    uppercase: true
+  },
+
+  region: {
+    type: String,
+    maxlength: 100
+  },
+
+  city: {
+    type: String,
+    maxlength: 100
+  },
+
+  // ==================== Administration ====================
+  addedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
+
+  modifiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    index: true
+  },
+
+  approvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    index: true
+  },
+
+  approvalRequired: {
+    type: Boolean,
+    default: false
+  },
+
+  approvedAt: {
+    type: Date,
+    index: true
+  },
+
+  // ==================== Security Context ====================
+  source: {
+    type: String,
+    enum: ['manual', 'automated', 'emergency', 'bulk_import'],
+    default: 'manual',
+    index: true
+  },
+
+  riskLevel: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'critical'],
+    default: 'medium',
+    index: true
+  },
+
+  securityFlags: [{
+    type: String,
+    enum: [
+      'suspicious_activity',
+      'multiple_attempts',
+      'unusual_location',
+      'tor_exit_node',
+      'vpn_detected',
+      'cloud_provider',
+      'data_center'
+    ]
+  }],
+
+  // ==================== Audit Trail ====================
+  auditLog: [{
+    action: {
+      type: String,
+      enum: ['created', 'modified', 'activated', 'deactivated', 'used', 'expired'],
+      required: true
+    },
+    performedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    performedAt: {
+      type: Date,
+      default: Date.now
+    },
+    details: {
+      type: mongoose.Schema.Types.Mixed
+    },
+    ipAddress: {
+      type: String
+    }
+  }],
+
+  // ==================== Emergency Access ====================
+  isEmergencyAccess: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+
+  emergencyContact: {
+    type: String,
+    maxlength: 100
+  },
+
+  emergencyReason: {
+    type: String,
+    maxlength: 500
+  }
+};
+
+/**
+ * Create IP Whitelist schema with proper indexes and validation
+ */
+const ipWhitelistSchema = new mongoose.Schema(ipWhitelistSchemaDefinition, {
+  timestamps: true,
+  versionKey: false,
+  collection: 'ip_whitelist'
+});
+
+// ==================== Indexes ====================
+ipWhitelistSchema.index({ ip: 1, isActive: 1 });
+ipWhitelistSchema.index({ tenantId: 1, isActive: 1 });
+ipWhitelistSchema.index({ organizationId: 1, isActive: 1 });
+ipWhitelistSchema.index({ type: 1, isActive: 1 });
+ipWhitelistSchema.index({ validFrom: 1, validUntil: 1 });
+ipWhitelistSchema.index({ addedBy: 1 });
+ipWhitelistSchema.index({ lastUsedAt: -1 });
+ipWhitelistSchema.index({ priority: -1 });
+
+// Compound indexes for common queries
+ipWhitelistSchema.index({ 
+  ip: 1, 
+  isActive: 1, 
+  validFrom: 1, 
+  validUntil: 1 
+});
+
+ipWhitelistSchema.index({
+  organizationId: 1,
+  tenantId: 1,
+  isActive: 1
+});
+
+// ==================== Instance Methods ====================
+
+/**
+ * Check if IP whitelist entry is currently valid
+ * @returns {boolean} True if entry is valid
+ */
+ipWhitelistSchema.methods.isValid = function() {
+  const now = new Date();
+  
+  if (!this.isActive) {
+    return false;
+  }
+  
+  if (this.validFrom && this.validFrom > now) {
+    return false;
+  }
+  
+  if (this.validUntil && this.validUntil < now) {
+    return false;
+  }
+  
+  if (this.maxUsage && this.usageCount >= this.maxUsage) {
+    return false;
+  }
+  
+  return true;
+};
+
+/**
+ * Record usage of this IP whitelist entry
+ * @returns {Promise<void>}
+ */
+ipWhitelistSchema.methods.recordUsage = async function() {
+  this.lastUsedAt = new Date();
+  this.usageCount += 1;
+  
+  // Add to audit log
+  this.auditLog.push({
+    action: 'used',
+    performedBy: this.addedBy,
+    performedAt: new Date(),
+    details: {
+      usageCount: this.usageCount,
+      lastUsedAt: this.lastUsedAt
+    }
+  });
+  
+  await this.save();
+};
+
+/**
+ * Deactivate the IP whitelist entry
+ * @param {ObjectId} userId - User performing the action
+ * @param {string} reason - Reason for deactivation
+ * @returns {Promise<void>}
+ */
+ipWhitelistSchema.methods.deactivate = async function(userId, reason = null) {
+  this.isActive = false;
+  this.modifiedBy = userId;
+  
+  // Add to audit log
+  this.auditLog.push({
+    action: 'deactivated',
+    performedBy: userId,
+    performedAt: new Date(),
+    details: {
+      reason,
+      previousState: 'active'
+    }
+  });
+  
+  await this.save();
+};
+
+/**
+ * Extend the validity period of the IP whitelist entry
+ * @param {Date} newValidUntil - New expiration date
+ * @param {ObjectId} userId - User performing the action
+ * @returns {Promise<void>}
+ */
+ipWhitelistSchema.methods.extendValidity = async function(newValidUntil, userId) {
+  const previousValidUntil = this.validUntil;
+  this.validUntil = newValidUntil;
+  this.modifiedBy = userId;
+  
+  // Add to audit log
+  this.auditLog.push({
+    action: 'modified',
+    performedBy: userId,
+    performedAt: new Date(),
+    details: {
+      field: 'validUntil',
+      previousValue: previousValidUntil,
+      newValue: newValidUntil
+    }
+  });
+  
+  await this.save();
+};
+
+// ==================== Static Methods ====================
+
+/**
+ * Find active IP whitelist entries for an IP address
+ * @param {string} ip - IP address to check
+ * @param {Object} [options] - Query options
+ * @returns {Promise<Array>} Matching entries
+ */
+ipWhitelistSchema.statics.findActiveByIP = function(ip, options = {}) {
+  const query = {
+    ip: ip,
+    isActive: true
   };
-
-  /**
-   * @private
-   * @static
-   * @type {Set<string>}
-   */
-  static #whitelistedIPs = new Set();
-
-  /**
-   * @private
-   * @static
-   * @type {Array<Object>}
-   */
-  static #whitelistedRanges = [];
-
-  /**
-   * @private
-   * @static
-   * @type {Map<string, Object>}
-   */
-  static #temporaryAccess = new Map();
-
-  /**
-   * Initialize IP whitelist
-   * @static
-   */
-  static async initialize() {
-    try {
-      // Load static IPs
-      this.#config.allowedIPs.forEach(ip => {
-        if (this.#isValidIP(ip)) {
-          this.#whitelistedIPs.add(ip);
-        }
-      });
-
-      // Load IP ranges
-      this.#config.allowedRanges.forEach(range => {
-        const parsed = this.#parseIPRange(range);
-        if (parsed) {
-          this.#whitelistedRanges.push(parsed);
-        }
-      });
-
-      // Load from database
-      if (this.#config.enabled) {
-        await this.#loadDatabaseWhitelist();
-      }
-
-      logger.info('IP whitelist initialized', {
-        staticIPs: this.#whitelistedIPs.size,
-        ranges: this.#whitelistedRanges.length,
-        enabled: this.#config.enabled
-      });
-    } catch (error) {
-      logger.error('Failed to initialize IP whitelist', { error: error.message });
-      throw error;
+  
+  // Add time-based filtering
+  const now = new Date();
+  query.$or = [
+    { validFrom: { $lte: now } },
+    { validFrom: { $exists: false } }
+  ];
+  
+  query.$and = [
+    {
+      $or: [
+        { validUntil: { $gte: now } },
+        { validUntil: { $exists: false } }
+      ]
     }
+  ];
+  
+  // Add tenant/organization filtering if provided
+  if (options.tenantId) {
+    query.tenantId = options.tenantId;
   }
-
-  /**
-   * Main IP whitelist middleware
-   * @static
-   * @returns {Function} Express middleware
-   */
-  static middleware() {
-    return async (req, res, next) => {
-      // Skip if disabled
-      if (!this.#config.enabled) {
-        return next();
-      }
-
-      try {
-        const clientIP = this.#getClientIP(req);
-        const isAllowed = await this.#checkIPAccess(clientIP, req);
-
-        if (!isAllowed) {
-          logger.warn('IP access denied', {
-            ip: clientIP,
-            path: req.path,
-            user: req.admin?._id
-          });
-
-          throw new AppError(
-            'Access denied from this IP address',
-            403,
-            ERROR_CODES.IP_NOT_WHITELISTED,
-            { ip: clientIP }
-          );
-        }
-
-        // Add IP info to request
-        req.clientIP = {
-          address: clientIP,
-          whitelisted: true,
-          temporary: this.#temporaryAccess.has(clientIP)
-        };
-
-        next();
-      } catch (error) {
-        next(error);
-      }
-    };
+  
+  if (options.organizationId) {
+    query.organizationId = options.organizationId;
   }
+  
+  return this.find(query).sort({ priority: -1 });
+};
 
-  /**
-   * Add IP to whitelist
-   * @static
-   * @param {string} ip - IP address
-   * @param {Object} [options] - Options
-   * @returns {Promise<void>}
-   */
-  static async addIP(ip, options = {}) {
-    try {
-      if (!this.#isValidIP(ip)) {
-        throw new AppError(
-          'Invalid IP address format',
-          400,
-          ERROR_CODES.VALIDATION_ERROR
-        );
-      }
+/**
+ * Find expired entries that need cleanup
+ * @returns {Promise<Array>} Expired entries
+ */
+ipWhitelistSchema.statics.findExpired = function() {
+  const now = new Date();
+  
+  return this.find({
+    isActive: true,
+    validUntil: { $lt: now }
+  });
+};
 
-      const {
-        description,
-        expiresAt,
-        userId,
-        organizationId,
-        temporary = false
-      } = options;
-
-      if (temporary || expiresAt) {
-        // Add temporary access
-        const accessId = this.#generateAccessId();
-        const expiry = expiresAt || new Date(Date.now() + this.#config.temporaryAccess.defaultDuration);
-
-        this.#temporaryAccess.set(ip, {
-          id: accessId,
-          ip,
-          expiresAt: expiry,
-          addedAt: new Date(),
-          addedBy: userId,
-          description
-        });
-
-        // Set expiry timer
-        const timeout = expiry.getTime() - Date.now();
-        if (timeout > 0) {
-          setTimeout(() => this.#temporaryAccess.delete(ip), timeout);
-        }
-
-        logger.info('Temporary IP access granted', {
-          ip,
-          expiresAt: expiry,
-          addedBy: userId
-        });
-      } else {
-        // Add permanent access
-        this.#whitelistedIPs.add(ip);
-
-        // Persist to database
-        await IpWhitelistModel.create({
-          ip,
-          type: 'single',
-          description,
-          isActive: true,
-          addedBy: userId,
-          organizationId
-        });
-
-        logger.info('IP added to whitelist', {
-          ip,
-          addedBy: userId
-        });
-      }
-
-      // Clear cache
-      await this.#clearIPCache(ip);
-
-    } catch (error) {
-      logger.error('Failed to add IP to whitelist', {
-        ip,
-        error: error.message
-      });
-      throw error;
-    }
+/**
+ * Clean up expired entries
+ * @returns {Promise<Object>} Cleanup result
+ */
+ipWhitelistSchema.statics.cleanupExpired = async function() {
+  const expiredEntries = await this.findExpired();
+  
+  if (expiredEntries.length === 0) {
+    return { cleaned: 0 };
   }
-
-  /**
-   * Remove IP from whitelist
-   * @static
-   * @param {string} ip - IP address
-   * @returns {Promise<void>}
-   */
-  static async removeIP(ip) {
-    try {
-      // Remove from memory
-      this.#whitelistedIPs.delete(ip);
-      this.#temporaryAccess.delete(ip);
-
-      // Remove from database
-      await IpWhitelistModel.deleteOne({ ip });
-
-      // Clear cache
-      await this.#clearIPCache(ip);
-
-      logger.info('IP removed from whitelist', { ip });
-
-    } catch (error) {
-      logger.error('Failed to remove IP from whitelist', {
-        ip,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Add IP range to whitelist
-   * @static
-   * @param {string} range - CIDR range
-   * @param {Object} [options] - Options
-   * @returns {Promise<void>}
-   */
-  static async addIPRange(range, options = {}) {
-    try {
-      const parsed = this.#parseIPRange(range);
-      if (!parsed) {
-        throw new AppError(
-          'Invalid IP range format',
-          400,
-          ERROR_CODES.VALIDATION_ERROR
-        );
-      }
-
-      this.#whitelistedRanges.push(parsed);
-
-      // Persist to database
-      await IpWhitelistModel.create({
-        ip: range,
-        type: 'range',
-        description: options.description,
-        isActive: true,
-        addedBy: options.userId,
-        organizationId: options.organizationId
-      });
-
-      logger.info('IP range added to whitelist', {
-        range,
-        addedBy: options.userId
-      });
-
-    } catch (error) {
-      logger.error('Failed to add IP range', {
-        range,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * List all whitelisted IPs and ranges
-   * @static
-   * @returns {Promise<Object>} Whitelist data
-   */
-  static async listWhitelist() {
-    const list = {
-      ips: Array.from(this.#whitelistedIPs),
-      ranges: this.#whitelistedRanges.map(r => r.original),
-      temporary: Array.from(this.#temporaryAccess.values()),
-      database: []
-    };
-
-    // Get database entries
-    const dbEntries = await IpWhitelistModel.find({ isActive: true });
-    list.database = dbEntries.map(entry => ({
-      ip: entry.ip,
-      type: entry.type,
-      description: entry.description,
-      addedAt: entry.createdAt,
-      addedBy: entry.addedBy
-    }));
-
-    return list;
-  }
-
-  /**
-   * Check if IP has access
-   * @static
-   * @param {string} ip - IP address
-   * @returns {Promise<boolean>} Access allowed
-   */
-  static async checkAccess(ip) {
-    return this.#checkIPAccess(ip);
-  }
-
-  /**
-   * @private
-   * Check if IP is allowed
-   */
-  static async #checkIPAccess(ip, req = null) {
-    // Check cache first
-    const cacheKey = `${this.#config.cache.prefix}${ip}`;
-    const cached = await this.#cacheService.get(cacheKey);
-    if (cached !== null) {
-      return cached;
-    }
-
-    let allowed = false;
-
-    // Check super admin bypass
-    if (this.#config.bypassForSuperAdmin && req?.admin?.role === 'SUPER_ADMIN') {
-      allowed = true;
-    }
-
-    // Check private networks
-    if (!allowed && this.#config.allowPrivateNetworks && this.#isPrivateIP(ip)) {
-      allowed = true;
-    }
-
-    // Check static whitelist
-    if (!allowed && this.#whitelistedIPs.has(ip)) {
-      allowed = true;
-    }
-
-    // Check temporary access
-    if (!allowed && this.#temporaryAccess.has(ip)) {
-      const access = this.#temporaryAccess.get(ip);
-      if (new Date() < access.expiresAt) {
-        allowed = true;
-      } else {
-        // Remove expired access
-        this.#temporaryAccess.delete(ip);
-      }
-    }
-
-    // Check IP ranges
-    if (!allowed) {
-      allowed = this.#checkIPInRanges(ip);
-    }
-
-    // Check database whitelist
-    if (!allowed) {
-      const dbEntry = await IpWhitelistModel.findOne({
-        ip,
-        isActive: true
-      });
-      allowed = !!dbEntry;
-    }
-
-    // Check geo-blocking
-    if (allowed && this.#config.geoBlocking.enabled) {
-      allowed = await this.#checkGeoLocation(ip);
-    }
-
-    // Cache result
-    await this.#cacheService.set(cacheKey, allowed, this.#config.cache.ttl);
-
-    return allowed;
-  }
-
-  /**
-   * @private
-   * Load whitelist from database
-   */
-  static async #loadDatabaseWhitelist() {
-    try {
-      const entries = await IpWhitelistModel.find({ isActive: true });
-
-      entries.forEach(entry => {
-        if (entry.type === 'single') {
-          this.#whitelistedIPs.add(entry.ip);
-        } else if (entry.type === 'range') {
-          const parsed = this.#parseIPRange(entry.ip);
-          if (parsed) {
-            this.#whitelistedRanges.push(parsed);
+  
+  // Deactivate expired entries
+  const result = await this.updateMany(
+    {
+      isActive: true,
+      validUntil: { $lt: new Date() }
+    },
+    {
+      $set: { isActive: false },
+      $push: {
+        auditLog: {
+          action: 'expired',
+          performedBy: null,
+          performedAt: new Date(),
+          details: {
+            reason: 'automatic_cleanup',
+            expiredAt: new Date()
           }
         }
-      });
-
-      logger.info('Database whitelist loaded', { count: entries.length });
-
-    } catch (error) {
-      logger.error('Failed to load database whitelist', {
-        error: error.message
-      });
-    }
-  }
-
-  /**
-   * @private
-   * Get client IP from request
-   */
-  static #getClientIP(req) {
-    // Check various headers for real IP
-    const forwardedFor = req.headers['x-forwarded-for'];
-    if (forwardedFor) {
-      return forwardedFor.split(',')[0].trim();
-    }
-
-    const realIP = req.headers['x-real-ip'];
-    if (realIP) {
-      return realIP;
-    }
-
-    return req.ip || req.connection?.remoteAddress || 'unknown';
-  }
-
-  /**
-   * @private
-   * Check if IP is valid
-   */
-  static #isValidIP(ip) {
-    return ipaddr.isValid(ip);
-  }
-
-  /**
-   * @private
-   * Check if IP is private
-   */
-  static #isPrivateIP(ip) {
-    try {
-      const addr = ipaddr.process(ip);
-      
-      if (addr.kind() === 'ipv4') {
-        return addr.range() === 'private' || 
-               addr.range() === 'loopback' ||
-               addr.range() === 'linkLocal';
-      } else if (addr.kind() === 'ipv6') {
-        return addr.range() === 'uniqueLocal' ||
-               addr.range() === 'loopback' ||
-               addr.range() === 'linkLocal';
       }
-      
-      return false;
-    } catch {
-      return false;
     }
-  }
-
-  /**
-   * @private
-   * Parse IP range (CIDR notation)
-   */
-  static #parseIPRange(range) {
-    try {
-      const [ip, prefixLength] = range.split('/');
-      
-      if (!this.#isValidIP(ip)) {
-        return null;
-      }
-
-      const addr = ipaddr.process(ip);
-      
-      return {
-        original: range,
-        type: addr.kind(),
-        address: addr,
-        prefixLength: parseInt(prefixLength) || (addr.kind() === 'ipv4' ? 32 : 128)
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * @private
-   * Check if IP is in any whitelisted range
-   */
-  static #checkIPInRanges(ip) {
-    try {
-      const addr = ipaddr.process(ip);
-      
-      return this.#whitelistedRanges.some(range => {
-        if (range.type !== addr.kind()) {
-          return false;
-        }
-        
-        return addr.match(range.address, range.prefixLength);
-      });
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * @private
-   * Check geo-location restrictions
-   */
-  static async #checkGeoLocation(ip) {
-    try {
-      // This would integrate with a geo-IP service
-      // For now, returning true
-      return true;
-    } catch (error) {
-      logger.error('Geo-location check failed', {
-        ip,
-        error: error.message
-      });
-      // Fail open - allow access if geo check fails
-      return true;
-    }
-  }
-
-  /**
-   * @private
-   * Clear IP from cache
-   */
-  static async #clearIPCache(ip) {
-    const cacheKey = `${this.#config.cache.prefix}${ip}`;
-    await this.#cacheService.delete(cacheKey);
-  }
-
-  /**
-   * @private
-   * Generate unique access ID
-   */
-  static #generateAccessId() {
-    return `access_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
-  }
-
-  /**
-   * Get configuration
-   * @static
-   * @returns {Object} Current configuration
-   */
-  static getConfig() {
-    return {
-      ...this.#config,
-      whitelistedIPs: this.#whitelistedIPs.size,
-      whitelistedRanges: this.#whitelistedRanges.length,
-      temporaryAccess: this.#temporaryAccess.size
-    };
-  }
-}
-
-// Initialize on module load
-IpWhitelistMiddleware.initialize().catch(err => 
-  logger.error('IP whitelist initialization failed', { error: err.message })
-);
-
-// Export middleware and management functions
-module.exports = {
-  middleware: IpWhitelistMiddleware.middleware.bind(IpWhitelistMiddleware),
-  addIP: IpWhitelistMiddleware.addIP.bind(IpWhitelistMiddleware),
-  removeIP: IpWhitelistMiddleware.removeIP.bind(IpWhitelistMiddleware),
-  addIPRange: IpWhitelistMiddleware.addIPRange.bind(IpWhitelistMiddleware),
-  listWhitelist: IpWhitelistMiddleware.listWhitelist.bind(IpWhitelistMiddleware),
-  checkAccess: IpWhitelistMiddleware.checkAccess.bind(IpWhitelistMiddleware),
-  getConfig: IpWhitelistMiddleware.getConfig.bind(IpWhitelistMiddleware)
+  );
+  
+  logger.info('IP whitelist cleanup completed', {
+    expiredEntries: expiredEntries.length,
+    cleaned: result.modifiedCount
+  });
+  
+  return {
+    expired: expiredEntries.length,
+    cleaned: result.modifiedCount
+  };
 };
+
+/**
+ * Get usage statistics
+ * @param {Object} [filters] - Optional filters
+ * @returns {Promise<Object>} Usage statistics
+ */
+ipWhitelistSchema.statics.getUsageStats = async function(filters = {}) {
+  const pipeline = [
+    {
+      $match: {
+        isActive: true,
+        ...filters
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        totalEntries: { $sum: 1 },
+        totalUsage: { $sum: '$usageCount' },
+        activeEntries: {
+          $sum: {
+            $cond: [
+              { $ne: ['$lastUsedAt', null] },
+              1,
+              0
+            ]
+          }
+        },
+        emergencyEntries: {
+          $sum: {
+            $cond: [
+              { $eq: ['$isEmergencyAccess', true] },
+              1,
+              0
+            ]
+          }
+        }
+      }
+    }
+  ];
+  
+  const results = await this.aggregate(pipeline);
+  return results[0] || {
+    totalEntries: 0,
+    totalUsage: 0,
+    activeEntries: 0,
+    emergencyEntries: 0
+  };
+};
+
+// ==================== Middleware ====================
+
+/**
+ * Pre-save middleware for validation and audit
+ */
+ipWhitelistSchema.pre('save', function(next) {
+  // Validate IP format based on type
+  if (this.type === 'single' && !validateIP(this.ip)) {
+    return next(new AppError('Invalid IP address format', 400));
+  }
+  
+  if (this.type === 'range' && !validateCIDR(this.ip)) {
+    return next(new AppError('Invalid CIDR range format', 400));
+  }
+  
+  // Set default priority based on type
+  if (!this.priority) {
+    this.priority = this.type === 'single' ? 100 : 200;
+  }
+  
+  // Ensure audit log entry for new documents
+  if (this.isNew && this.addedBy) {
+    this.auditLog.push({
+      action: 'created',
+      performedBy: this.addedBy,
+      performedAt: new Date(),
+      details: {
+        ip: this.ip,
+        type: this.type,
+        description: this.description
+      }
+    });
+  }
+  
+  next();
+});
+
+/**
+ * Post-save middleware for cache invalidation
+ */
+ipWhitelistSchema.post('save', function(doc) {
+  // Clear relevant caches
+  logger.debug('IP whitelist entry saved', {
+    id: doc._id,
+    ip: doc.ip,
+    type: doc.type,
+    isActive: doc.isActive
+  });
+});
+
+/**
+ * Pre-remove middleware for audit trail
+ */
+ipWhitelistSchema.pre('deleteOne', { document: true, query: false }, function(next) {
+  logger.info('IP whitelist entry being removed', {
+    id: this._id,
+    ip: this.ip,
+    type: this.type
+  });
+  next();
+});
+
+// ==================== Virtual Properties ====================
+
+/**
+ * Virtual property for entry status
+ */
+ipWhitelistSchema.virtual('status').get(function() {
+  const now = new Date();
+  
+  if (!this.isActive) {
+    return 'inactive';
+  }
+  
+  if (this.validFrom && this.validFrom > now) {
+    return 'pending';
+  }
+  
+  if (this.validUntil && this.validUntil < now) {
+    return 'expired';
+  }
+  
+  if (this.maxUsage && this.usageCount >= this.maxUsage) {
+    return 'exhausted';
+  }
+  
+  return 'active';
+});
+
+/**
+ * Virtual property for remaining usage
+ */
+ipWhitelistSchema.virtual('remainingUsage').get(function() {
+  if (!this.maxUsage) {
+    return null;
+  }
+  
+  return Math.max(0, this.maxUsage - this.usageCount);
+});
+
+// ==================== JSON Transform ====================
+
+/**
+ * Transform function for JSON serialization
+ */
+ipWhitelistSchema.set('toJSON', {
+  transform: function(doc, ret) {
+    // Include virtual fields
+    ret.status = doc.status;
+    ret.remainingUsage = doc.remainingUsage;
+    
+    // Remove sensitive fields in some contexts
+    if (!doc.$includeAuditLog) {
+      delete ret.auditLog;
+    }
+    
+    return ret;
+  },
+  virtuals: true
+});
+
+// Create and export the model
+const IpWhitelistModel = BaseModel.createModel('IpWhitelist', ipWhitelistSchema);
+
+module.exports = IpWhitelistModel;

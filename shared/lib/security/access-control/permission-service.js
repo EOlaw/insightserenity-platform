@@ -147,7 +147,7 @@ class PermissionService {
 
       // Store permission
       if (this.database) {
-        const PermissionModel = require('../../database/models/permission-model');
+        const PermissionModel = require('..\..\database\models\users\permission-model');
         await PermissionModel.create(permission);
       } else {
         this.inMemoryPermissions.set(permission.id, permission);
@@ -203,7 +203,7 @@ class PermissionService {
       let permission;
 
       if (this.database) {
-        const PermissionModel = require('../../database/models/permission-model');
+        const PermissionModel = require('..\..\database\models\users\permission-model');
         permission = await PermissionModel.findOne({ id: permissionId });
       } else {
         permission = this.inMemoryPermissions.get(permissionId);
@@ -273,7 +273,7 @@ class PermissionService {
 
       // Update storage
       if (this.database) {
-        const PermissionModel = require('../../database/models/permission-model');
+        const PermissionModel = require('..\..\database\models\users\permission-model');
         await PermissionModel.updateOne(
           { id: permissionId },
           updatedPermission
@@ -338,7 +338,7 @@ class PermissionService {
 
       // Delete permission
       if (this.database) {
-        const PermissionModel = require('../../database/models/permission-model');
+        const PermissionModel = require('..\..\database\models\users\permission-model');
         await PermissionModel.deleteOne({ id: permissionId });
       } else {
         this.inMemoryPermissions.delete(permissionId);
@@ -396,7 +396,7 @@ class PermissionService {
       let total;
 
       if (this.database) {
-        const PermissionModel = require('../../database/models/permission-model');
+        const PermissionModel = require('..\..\database\models\users\permission-model');
         const query = {};
 
         if (resource) query.resource = resource;
@@ -694,7 +694,7 @@ class PermissionService {
       }
 
       if (this.database) {
-        const UserPermissionModel = require('../../database/models/user-permission-model');
+        const UserPermissionModel = require('..\..\..\..\servers\admin-server\modules\user-management\models\user-permission-model');
         const existing = await UserPermissionModel.findOne({ userId, permissionId });
         
         if (existing) {
@@ -762,7 +762,7 @@ class PermissionService {
       let permissions = [];
 
       if (this.database) {
-        const UserPermissionModel = require('../../database/models/user-permission-model');
+        const UserPermissionModel = require('..\..\..\..\servers\admin-server\modules\user-management\models\user-permission-model');
         const assignments = await UserPermissionModel.find({ 
           userId,
           $or: [
@@ -903,7 +903,7 @@ class PermissionService {
   async permissionExists(permissionIdOrKey) {
     try {
       if (this.database) {
-        const PermissionModel = require('../../database/models/permission-model');
+        const PermissionModel = require('..\..\database\models\users\permission-model');
         const exists = await PermissionModel.exists({
           $or: [
             { id: permissionIdOrKey },
@@ -1056,7 +1056,7 @@ class PermissionService {
 
     if (this.database) {
       const RolePermissionModel = require('../../database/models/role-permission-model');
-      const UserPermissionModel = require('../../database/models/user-permission-model');
+      const UserPermissionModel = require('..\..\..\..\servers\admin-server\modules\user-management\models\user-permission-model');
 
       const roleAssignments = await RolePermissionModel.find({ permissionId });
       const userAssignments = await UserPermissionModel.find({ permissionId });

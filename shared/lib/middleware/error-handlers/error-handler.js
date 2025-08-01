@@ -13,12 +13,12 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const { STATUS_CODES } = require('../../utils/constants/status-codes');
 const AuditService = require('../../security/audit/audit-service');
 const NotificationService = require('../../services/notification-service');
-const config = require('../../config');
+const config = require('../helmet-config');
 
 /**
  * @class ErrorHandler

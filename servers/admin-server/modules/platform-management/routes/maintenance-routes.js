@@ -3,8 +3,8 @@
 const express = require('express');
 const router = express.Router();
 const maintenanceController = require('../controllers/maintenance-controller');
-const { authenticate, authorize } = require('../../../../shared/lib/auth/middleware');
-const { validateRequest } = require('../../../../shared/lib/middleware/validation/request-validator');
+const { authenticate, authorize } = require('../../../../../shared/lib/auth/middleware/authenticate');
+const { validateRequest } = require('../../../../../shared/lib/middleware/validation/request-validator');
 const { maintenanceValidators } = require('../validators/maintenance-validators');
 
 // Maintenance Mode Routes

@@ -1303,7 +1303,7 @@ class SOXCompliance {
     retentionDate.setFullYear(retentionDate.getFullYear() + retentionPeriod);
 
     if (this.database) {
-      const DocumentModel = require('../../database/models/document-model');
+      const DocumentModel = require('..\..\..\..\servers\customer-services\modules\core-business\clients\models\client-document-model');
       await DocumentModel.updateOne(
         { id: doc.id },
         { 
@@ -1353,7 +1353,7 @@ class SOXCompliance {
       await DestructionModel.create(certificate);
       
       // Mark document as destroyed
-      const DocumentModel = require('../../database/models/document-model');
+      const DocumentModel = require('..\..\..\..\servers\customer-services\modules\core-business\clients\models\client-document-model');
       await DocumentModel.updateOne(
         { id: doc.id },
         { destroyed: true, destroyedAt: certificate.destroyedAt }

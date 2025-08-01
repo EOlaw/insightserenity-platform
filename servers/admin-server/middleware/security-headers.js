@@ -9,7 +9,7 @@
  */
 
 const logger = require('../../../shared/lib/utils/logger');
-const { CacheService } = require('../../../shared/lib/services/cache-service');
+const CacheService = require('../../../shared/lib/services/cache-service');
 const config = require('../config');
 const crypto = require('crypto');
 
