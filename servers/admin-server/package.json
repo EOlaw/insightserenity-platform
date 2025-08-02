@@ -11,7 +11,7 @@
   "scripts": {
     "start": "NODE_ENV=production node server.js",
     "dev": "cross-env NODE_ENV=development nodemon server.js",
-    "dev:debug": "NODE_ENV=development nodemon --inspect server.js",
+    "dev:debug": "cross-env NODE_ENV=development nodemon --inspect server.js",
     "test": "NODE_ENV=test jest --runInBand --detectOpenHandles",
     "test:watch": "NODE_ENV=test jest --watch",
     "test:coverage": "NODE_ENV=test jest --coverage --runInBand",
@@ -24,8 +24,8 @@
     "validate": "npm run lint && npm run test:unit",
     "build": "npm run validate",
     "security:check": "npm audit --audit-level=high",
-    "db:seed": "NODE_ENV=development node ../../scripts/seed-admin-data.js",
-    "db:migrate": "NODE_ENV=development node ../../scripts/run-migrations.js --server=admin",
+    "db:seed": "cross-env NODE_ENV=development node ../../shared/lib/database/seeders/001-seed-initial-data.js",
+    "db:migrate": "cross-env NODE_ENV=development node ../../scripts/run-migrations.js --server=admin",
     "db:rollback": "NODE_ENV=development node ../../scripts/rollback-migrations.js --server=admin",
     "health:check": "curl -f http://localhost:5001/health || exit 1"
   },

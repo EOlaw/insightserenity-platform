@@ -1,5 +1,5 @@
 /**
- * @file Admin Server Entry Point
+ * @file Admin Server Entry Point - FIXED VERSION
  * @description Enterprise administration server with enhanced security and monitoring
  * @version 3.0.0
  */
@@ -11,15 +11,16 @@
 // =============================================================================
 const path = require('path');
 const dotenv = require('dotenv');
+const EventEmitter = require('events');
 
 // Enhanced environment variable loading with explicit path resolution
 const envPath = path.resolve(__dirname, '.env');
 const envResult = dotenv.config({ path: envPath });
 
 if (envResult.error) {
-  console.warn(`Warning: Could not load .env file from ${envPath}:`, envResult.error.message);
-  // Fallback to default .env loading
-  dotenv.config();
+    console.warn(`Warning: Could not load .env file from ${envPath}:`, envResult.error.message);
+    // Fallback to default .env loading
+    dotenv.config();
 }
 
 // Validate critical environment variables before proceeding
@@ -30,8 +31,8 @@ console.log(`Database URI that will be used: ${process.env.DB_URI || process.env
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingVars.length > 0) {
-  console.error('Missing required environment variables:', missingVars);
-  process.exit(1);
+    console.error('Missing required environment variables:', missingVars);
+    process.exit(1);
 }
 
 // Log environment loading status for debugging
@@ -73,8 +74,9 @@ const SecurityManager = require('../../shared/lib/security/security-manager');
  * Admin Server class for platform administration
  * @class AdminServer
  */
-class AdminServer {
+class AdminServer extends EventEmitter {
     constructor() {
+        super(); // Initialize EventEmitter
         this.server = null;
         this.isShuttingDown = false;
         this.healthMonitor = null;
@@ -93,26 +95,29 @@ class AdminServer {
      */
     async start() {
         try {
-            // Temporary fix to ensure config.app exists
-            // if (!config.app) {
-            //     config.app = {
-            //         env: process.env.NODE_ENV || 'development',
-            //         version: '1.0.0',
-            //         name: 'InsightSerenity Admin Server'
-            //     };
-            // }
-
             this.startTime = new Date();
-            
+
+            // Ensure critical environment variables are set with defaults
+            process.env.PASSKEY_ENABLED = process.env.PASSKEY_ENABLED || 'false';
+            process.env.PASSKEY_RP_ID = process.env.PASSKEY_RP_ID || process.env.RELYING_PARTY_ID || 'localhost';
+            process.env.PASSKEY_RP_NAME = process.env.PASSKEY_RP_NAME || process.env.RELYING_PARTY_NAME || 'InsightSerenity Platform';
+            process.env.LOCAL_AUTH_ENABLED = process.env.LOCAL_AUTH_ENABLED || 'true';
+            process.env.OAUTH_GOOGLE_ENABLED = process.env.OAUTH_GOOGLE_ENABLED || 'false';
+            process.env.OAUTH_GITHUB_ENABLED = process.env.OAUTH_GITHUB_ENABLED || 'false';
+            process.env.OAUTH_LINKEDIN_ENABLED = process.env.OAUTH_LINKEDIN_ENABLED || 'false';
+            process.env.OAUTH_MICROSOFT_ENABLED = process.env.OAUTH_MICROSOFT_ENABLED || 'false';
+
+            logger.info('Environment variables validated and defaults applied');
+
             // Ensure admin configuration structure exists BEFORE audit system initialization
             this.validateAndSetupAdminConfiguration();
 
             // Initialize database connection EARLY - before security verification
             await Database.initialize();
-            
+
             // Initialize enterprise audit system FIRST
             await this.initializeAuditSystem();
-            
+
             // Log detailed configuration status
             logger.info('Admin Server Configuration Status', {
                 environment: config.app?.env || process.env.NODE_ENV || 'development',
@@ -126,8 +131,8 @@ class AdminServer {
                     secure: process.env.SESSION_SECURE === 'true'
                 },
                 database: {
-                    host: config.database.host,
-                    multiTenant: config.database.multiTenant.enabled
+                    host: config.database?.host,
+                    multiTenant: config.database?.multiTenant?.enabled
                 },
                 audit: {
                     enabled: auditConfig.enabled,
@@ -137,24 +142,24 @@ class AdminServer {
                     environment: auditConfig.environment
                 }
             });
-            
+
             // Initialize security manager first
             this.securityManager = new SecurityManager({
                 enforceIPWhitelist: true,
                 requireMFA: this.adminConfig.security.requireMFA,
                 sessionTimeout: this.adminConfig.security.sessionTimeout
             });
-            
+
             logger.info('Starting InsightSerenity Admin Server', {
                 environment: config.app?.env || process.env.NODE_ENV || 'development',
-                version: config.app.version,
+                version: config.app?.version || '1.0.0',
                 nodeVersion: process.version,
                 platform: process.platform,
                 adminFeatures: {
-                    multiTenant: config.database.multiTenant.enabled,
-                    auditLogging: auditConfig.enabled,
-                    realTimeMonitoring: this.adminConfig.features.realTimeMonitoring,
-                    advancedSecurity: this.adminConfig.security.advanced,
+                    multiTenant: String(config.database?.multiTenant?.enabled || false),
+                    auditLogging: String(auditConfig?.enabled || false),
+                    realTimeMonitoring: String(this.adminConfig?.features?.realTimeMonitoring || false),
+                    advancedSecurity: String(this.adminConfig?.security?.advanced || false),
                     redisEnabled: process.env.REDIS_ENABLED === 'true',
                     memoryFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true'
                 }
@@ -162,10 +167,10 @@ class AdminServer {
 
             // Verify admin security prerequisites
             await this.verifySecurityPrerequisites();
-            
+
             // Initialize the Express application with audit system
             const expressApp = await app.start();
-            
+
             if (!expressApp) {
                 throw new Error('Failed to initialize Admin Express application');
             }
@@ -181,7 +186,7 @@ class AdminServer {
                     auditSystem: () => this.checkAuditSystemHealth()
                 }
             });
-            
+
             await this.healthMonitor.start();
 
             // Log database health for admin visibility
@@ -190,16 +195,14 @@ class AdminServer {
                 isConnected: dbHealth.isConnected,
                 totalConnections: dbHealth.totalConnections,
                 multiTenantEnabled: dbHealth.multiTenantEnabled,
-                strategy: dbHealth.strategy,
-                tenantsActive: dbHealth.activeConnections.filter(c => c.name.includes('tenant')).length,
-                masterConnection: dbHealth.activeConnections.find(c => c.name === 'master')?.state
+                strategy: dbHealth.strategy
             });
 
-            // Create server with enhanced security for admin
-            if (this.adminConfig.security.forceSSL || config.security.ssl.enabled) {
+            // FIXED: Create server with proper SSL configuration check
+            if (this.shouldUseSSL()) {
                 this.server = await this.createSecureHttpsServer(expressApp);
             } else {
-                if (config.app.env === 'production') {
+                if (config.app?.env === 'production') {
                     throw new Error('Admin server must use HTTPS in production');
                 }
                 logger.warn('Admin server running without SSL - NOT RECOMMENDED');
@@ -208,7 +211,7 @@ class AdminServer {
 
             // Start listening
             await this.listen();
-            
+
             // Setup admin-specific handlers
             this.setupAdminHandlers();
             this.setupGracefulShutdown();
@@ -224,30 +227,30 @@ class AdminServer {
                 action: 'startup',
                 result: 'success',
                 metadata: {
-                    version: config.app.version,
-                    environment: config.app.env,
-                    features: Object.keys(this.adminConfig.features || {}),
-                    securityLevel: this.adminConfig.security.level || 'high',
+                    version: config.app?.version || '1.0.0',
+                    environment: config.app?.env || 'development',
+                    features: this.getEnabledFeatures(),
+                    securityLevel: this.adminConfig?.security?.level || 'high',
                     cacheStrategy: process.env.REDIS_ENABLED === 'true' ? 'redis' : 'memory',
                     sessionStore: process.env.SESSION_STORE || 'memory',
-                    auditEnabled: auditConfig.enabled,
-                    auditStorageType: auditConfig.storage.type
+                    auditEnabled: auditConfig?.enabled || false,
+                    auditStorageType: auditConfig?.storage?.type || 'hybrid'
                 }
             });
 
             return this.server;
         } catch (error) {
-            logger.error('Failed to start admin server', { 
+            logger.error('Failed to start admin server', {
                 error: error.message,
                 stack: error.stack,
                 config: {
                     port: this.adminConfig?.port || 'undefined',
-                    ssl: this.adminConfig?.security?.forceSSL || 'undefined',
+                    ssl: this.shouldUseSSL() ? 'enabled' : 'disabled',
                     redis: process.env.REDIS_ENABLED,
                     environment: process.env.NODE_ENV
                 }
             });
-            
+
             // Log startup failure to audit if service is available
             if (this.auditService) {
                 try {
@@ -267,9 +270,44 @@ class AdminServer {
                     logger.error('Failed to log startup failure to audit', { error: auditError.message });
                 }
             }
-            
+
             throw error;
         }
+    }
+
+    /**
+     * FIXED: Determine if SSL should be used
+     * @private
+     * @returns {boolean} Whether SSL should be used
+     */
+    shouldUseSSL() {
+        // Check admin-specific SSL configuration first
+        if (this.adminConfig?.security?.forceSSL === true) {
+            return true;
+        }
+
+        // Check if SSL is explicitly disabled
+        if (this.adminConfig?.security?.forceSSL === false) {
+            return false;
+        }
+
+        // Check environment variable
+        if (process.env.ADMIN_FORCE_SSL === 'true') {
+            return true;
+        }
+
+        // Check for SSL certificates existence
+        if (this.adminConfig?.security?.ssl?.keyPath && this.adminConfig?.security?.ssl?.certPath) {
+            const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl.keyPath);
+            const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl.certPath);
+            
+            if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+                return true;
+            }
+        }
+
+        // Default to false for development
+        return false;
     }
 
     /**
@@ -285,7 +323,7 @@ class AdminServer {
                 host: process.env.ADMIN_HOST || '127.0.0.1',
                 security: {
                     forceSSL: process.env.ADMIN_FORCE_SSL === 'true' || false,
-                    ipWhitelist: { 
+                    ipWhitelist: {
                         enabled: process.env.ADMIN_IP_WHITELIST_ENABLED === 'true' || false,
                         addresses: process.env.ADMIN_IP_WHITELIST ? process.env.ADMIN_IP_WHITELIST.split(',') : []
                     },
@@ -307,8 +345,8 @@ class AdminServer {
                 monitoring: {
                     healthCheckInterval: parseInt(process.env.ADMIN_HEALTH_CHECK_INTERVAL, 10) || 30000,
                     metricsEnabled: process.env.ADMIN_METRICS_ENABLED !== 'false',
-                    alerting: { 
-                        enabled: process.env.ADMIN_ALERTING_ENABLED === 'true' || false 
+                    alerting: {
+                        enabled: process.env.ADMIN_ALERTING_ENABLED === 'true' || false
                     }
                 }
             };
@@ -322,7 +360,7 @@ class AdminServer {
             logger.info('Admin configuration structure validated and initialized', {
                 port: this.adminConfig.port,
                 host: this.adminConfig.host,
-                sslEnabled: this.adminConfig.security.forceSSL,
+                sslEnabled: this.shouldUseSSL(),
                 ipWhitelistEnabled: this.adminConfig.security.ipWhitelist.enabled,
                 mfaRequired: this.adminConfig.security.requireMFA,
                 featuresEnabled: Object.keys(this.adminConfig.features).length,
@@ -334,14 +372,14 @@ class AdminServer {
                 error: error.message,
                 stack: error.stack
             });
-            
-            // Set minimal working configuration as fallback
+
+            // Set minimal working configuration as fallback with proper features object
             this.adminConfig = {
                 port: parseInt(process.env.ADMIN_PORT, 10) || 5001,
                 host: process.env.ADMIN_HOST || '127.0.0.1',
                 security: {
                     forceSSL: false,
-                    ipWhitelist: { enabled: false },
+                    ipWhitelist: { enabled: false, addresses: [] },
                     requireMFA: false,
                     sessionTimeout: 3600000,
                     ssl: {},
@@ -378,13 +416,13 @@ class AdminServer {
         try {
             // Validate enterprise audit configuration
             AuditServiceFactory.validateConfig(auditConfig);
-            
+
             // Initialize audit service factory with enterprise configuration
             AuditServiceFactory.initialize(auditConfig);
-            
+
             // Get configured audit service instance
             this.auditService = AuditServiceFactory.getInstance();
-            
+
             logger.info('Enterprise audit system initialized', {
                 enabled: auditConfig.enabled,
                 environment: auditConfig.environment,
@@ -438,7 +476,7 @@ class AdminServer {
         try {
             const factoryStatus = AuditServiceFactory.getStatus();
             const auditServiceConfig = this.auditService?.getConfig() || {};
-            
+
             return {
                 healthy: factoryStatus.initialized && factoryStatus.enabled,
                 factoryStatus,
@@ -470,7 +508,7 @@ class AdminServer {
         ];
 
         const missing = requiredConfigs.filter(config => !config.value);
-        
+
         if (missing.length > 0) {
             throw new Error(`Missing critical environment variables: ${missing.map(c => c.key).join(', ')}`);
         }
@@ -495,8 +533,37 @@ class AdminServer {
             cacheFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true',
             auditEnabled: auditConfig.enabled
         });
-        
+
         return true;
+    }
+
+    /**
+     * Get enabled admin features safely
+     * @private
+     * @returns {Array} Array of enabled feature names
+     */
+    getEnabledFeatures() {
+        try {
+            if (!this.adminConfig || !this.adminConfig.features || typeof this.adminConfig.features !== 'object') {
+                logger.warn('Admin config features not properly initialized, returning empty array');
+                return [];
+            }
+
+            const features = this.adminConfig.features;
+            const enabledFeatures = Object.keys(features).filter(key => {
+                try {
+                    return features[key] === true;
+                } catch (filterError) {
+                    logger.warn(`Error checking feature ${key}`, { error: filterError.message });
+                    return false;
+                }
+            });
+
+            return enabledFeatures;
+        } catch (error) {
+            logger.warn('Error getting enabled features', { error: error.message });
+            return [];
+        }
     }
 
     /**
@@ -512,63 +579,63 @@ class AdminServer {
      */
     async verifySecurityPrerequisites() {
         const checks = [];
-        
-        // Check SSL certificates - FIXED: Use only admin config for SSL settings
-        if (this.adminConfig.security.forceSSL || this.adminConfig.security.ssl?.enabled) {
+
+        // Check SSL certificates only if SSL is required
+        if (this.shouldUseSSL()) {
             checks.push(this.verifySslCertificates());
         }
-        
+
         // Check IP whitelist configuration
         if (this.adminConfig.security.ipWhitelist?.enabled) {
             checks.push(this.verifyIpWhitelist());
         }
-        
+
         // Check audit log availability
         checks.push(this.verifyAuditLogSystem());
-        
+
         // Check admin database permissions
         checks.push(this.verifyDatabasePermissions());
-        
+
         // Check environment configuration
         checks.push(this.verifyEnvironmentConfiguration());
-        
+
         const results = await Promise.allSettled(checks);
         const failures = results.filter(r => r.status === 'rejected');
-        
+
         if (failures.length > 0) {
             throw new Error(`Security prerequisites failed: ${failures.map(f => f.reason).join(', ')}`);
         }
-        
+
         logger.info('All security prerequisites verified successfully');
     }
 
     /**
-     * Verify SSL certificates exist and are valid - FIXED: Use admin config consistently
+     * Verify SSL certificates exist and are valid
      */
     async verifySslCertificates() {
         const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.keyPath || './certs/key.pem');
         const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.certPath || './certs/cert.pem');
-        
+
         if (!fs.existsSync(keyPath)) {
             throw new Error(`Admin SSL key not found: ${keyPath}`);
         }
-        
+
         if (!fs.existsSync(certPath)) {
             throw new Error(`Admin SSL certificate not found: ${certPath}`);
         }
-        
+
         logger.info('SSL certificates verified', { keyPath, certPath });
         return true;
     }
 
     /**
-     * Create HTTPS server with enhanced security - FIXED: Use admin config consistently
+     * Create HTTPS server with enhanced security
      */
     async createSecureHttpsServer(app) {
         try {
             const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.keyPath || './certs/key.pem');
             const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.certPath || './certs/cert.pem');
-            
+
             if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
                 throw new Error(`SSL certificates not found: key=${keyPath}, cert=${certPath}`);
             }
@@ -584,7 +651,7 @@ class AdminServer {
                 rejectUnauthorized: this.adminConfig.security.ssl?.rejectUnauthorized || false
             };
 
-            // Add CA if configured - FIXED: Use admin config consistently
+            // Add CA if configured
             if (this.adminConfig.security.ssl?.ca) {
                 const caPath = path.resolve(process.cwd(), this.adminConfig.security.ssl.ca);
                 if (fs.existsSync(caPath)) {
@@ -613,8 +680,8 @@ class AdminServer {
         if (whitelist.length === 0) {
             throw new Error('Admin IP whitelist is empty - no access will be allowed');
         }
-        
-        logger.info('IP whitelist configured', { 
+
+        logger.info('IP whitelist configured', {
             addresses: whitelist.length,
             ranges: whitelist.filter(ip => ip.includes('/')).length
         });
@@ -679,16 +746,16 @@ class AdminServer {
             // Use adminConfig values
             const port = this.adminConfig.port;
             const host = this.adminConfig.host;
-            
+
             this.server.listen(port, host, () => {
                 const protocol = this.server instanceof https.Server ? 'HTTPS' : 'HTTP';
-                
+
                 logger.info(`InsightSerenity Admin Server started`, {
                     protocol,
                     host,
                     port,
                     url: `${protocol.toLowerCase()}://${host}:${port}`,
-                    environment: config.app.env,
+                    environment: config.app?.env || process.env.NODE_ENV,
                     adminDashboard: `${protocol.toLowerCase()}://${host}:${port}/admin/dashboard`,
                     apiDocs: `${protocol.toLowerCase()}://${host}:${port}/admin/api-docs`,
                     healthCheck: `${protocol.toLowerCase()}://${host}:${port}/health`,
@@ -700,7 +767,7 @@ class AdminServer {
                         environment: auditConfig.environment
                     }
                 });
-                
+
                 // Console output for development
                 console.log(`\n🚀 InsightSerenity Admin Server Started`);
                 console.log(`📍 URL: ${protocol.toLowerCase()}://${host}:${port}`);
@@ -711,12 +778,12 @@ class AdminServer {
                 console.log(`📊 Admin Dashboard: ${protocol.toLowerCase()}://${host}:${port}/admin/dashboard`);
                 console.log(`🔍 Health Check: ${protocol.toLowerCase()}://${host}:${port}/health`);
                 console.log(`📋 Audit System: ${auditConfig.enabled ? 'Enabled' : 'Disabled'} (${auditConfig.storage.type})`);
-                
+
                 if (process.env.NODE_ENV === 'development') {
                     console.log(`🐛 Debugger: ws://${host}:9230`);
                     console.log(`📚 API Docs: ${protocol.toLowerCase()}://${host}:${port}/admin/api-docs`);
                 }
-                
+
                 resolve();
             });
 
@@ -744,12 +811,12 @@ class AdminServer {
                 connectedAt: new Date(),
                 remoteAddress: socket.remoteAddress
             });
-            
+
             socket.on('close', () => {
                 this.adminConnections.delete(connectionId);
             });
         });
-        
+
         // Monitor admin connections
         setInterval(() => {
             if (this.adminConnections.size > 0) {
@@ -762,11 +829,13 @@ class AdminServer {
     }
 
     /**
-     * Setup security monitoring for admin activities
+     * FIXED: Setup security monitoring for admin activities
      */
     setupSecurityMonitoring() {
+        // FIXED: Use 'this' (EventEmitter) instead of 'app'
+        
         // Monitor failed login attempts
-        app.on('admin:login:failed', async (data) => {
+        this.on('admin:login:failed', async (data) => {
             if (this.auditService) {
                 await this.auditService.logEvent({
                     eventType: AuditEvents.AUTH.LOGIN_FAILURE,
@@ -785,14 +854,14 @@ class AdminServer {
                     }
                 });
             }
-            
+
             if (data.attempts > 5) {
                 logger.warn('Potential brute force attack on admin', data);
             }
         });
-        
+
         // Monitor privilege escalations
-        app.on('admin:privilege:changed', async (data) => {
+        this.on('admin:privilege:changed', async (data) => {
             if (this.auditService) {
                 await this.auditService.logEvent({
                     eventType: AuditEvents.AUTH.PRIVILEGE_ESCALATION,
@@ -911,7 +980,7 @@ class AdminServer {
                     signal,
                     uptime: process.uptime()
                 });
-                
+
                 process.exit(0);
             } catch (error) {
                 logger.error('Error during admin shutdown', { error: error.message });
@@ -928,7 +997,7 @@ class AdminServer {
      */
     setupErrorHandlers() {
         process.on('uncaughtException', async (error) => {
-            logger.error('Admin Server: Uncaught Exception', { 
+            logger.error('Admin Server: Uncaught Exception', {
                 error: error.message,
                 stack: error.stack,
                 severity: 'critical'
@@ -954,14 +1023,14 @@ class AdminServer {
                     logger.error('Failed to log uncaught exception to audit', { error: auditError.message });
                 }
             }
-            
+
             setTimeout(() => {
                 process.exit(1);
             }, 1000);
         });
 
         process.on('unhandledRejection', async (reason, promise) => {
-            logger.error('Admin Server: Unhandled Promise Rejection', { 
+            logger.error('Admin Server: Unhandled Promise Rejection', {
                 reason: reason instanceof Error ? reason.message : reason,
                 stack: reason instanceof Error ? reason.stack : undefined,
                 severity: 'high'
@@ -1007,7 +1076,7 @@ class AdminServer {
 
             this.server.close((error) => {
                 clearTimeout(timeout);
-                
+
                 if (error) {
                     logger.error('Error closing admin server', { error: error.message });
                     reject(error);
@@ -1030,14 +1099,14 @@ class AdminServer {
             config: this.auditService.getConfig(),
             factoryStatus: AuditServiceFactory.getStatus()
         } : null;
-        
+
         return {
             server: {
                 running: !!this.server,
                 uptime,
                 startTime: this.startTime,
-                environment: config.app.env,
-                version: config.app.version,
+                environment: config.app?.env,
+                version: config.app?.version,
                 nodeVersion: process.version
             },
             connections: {
@@ -1071,9 +1140,9 @@ const adminServer = new AdminServer();
 // Start server if run directly
 if (require.main === module) {
     adminServer.start().catch((error) => {
-        logger.error('Failed to start admin server', { 
+        logger.error('Failed to start admin server', {
             error: error.message,
-            stack: error.stack 
+            stack: error.stack
         });
         process.exit(1);
     });
