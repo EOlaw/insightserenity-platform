@@ -118,6 +118,9 @@ try {
     logger.warn('Not found handler not available, using fallback');
 }
 
+// Import the debug helper at the top of app.js
+const DatabaseDebugHelper = require('./utils/database-debug-helper');
+
 /**
  * Admin Application class
  * Handles Express app setup for administrative functions with enhanced security
@@ -581,6 +584,14 @@ class AdminApplication {
      */
     setupAdminRoutes() {
         try {
+            // Add this BEFORE any other middleware in app.js
+            this.app.get('/test-simple', (req, res) => {
+                res.json({
+                    message: 'Simple test works',
+                    timestamp: new Date().toISOString()
+                });
+            });
+            
             const adminBase = this.config.admin.basePath || '/admin';
             const apiPrefix = `${adminBase}/api`;
 
@@ -669,6 +680,283 @@ class AdminApplication {
                     stats: {} // Would be populated with real stats
                 });
             });
+
+
+            // Enhanced database debug endpoint
+            this.app.get('/admin/debug/database-detailed', async (req, res) => {
+                try {
+                    const connection = Database.getConnection();
+                    if (!connection) {
+                        return res.status(500).json({
+                            error: 'No database connection available',
+                            message: 'Database connection is not established'
+                        });
+                    }
+
+                    const debugInfo = await DatabaseDebugHelper.debugDatabaseState(connection);
+
+                    res.json({
+                        success: true,
+                        message: 'Database debug information retrieved',
+                        data: debugInfo,
+                        timestamp: new Date().toISOString()
+                    });
+
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            });
+
+            // Database repair and initialization endpoint
+            this.app.post('/admin/debug/repair-database', async (req, res) => {
+                try {
+                    const connection = Database.getConnection();
+                    if (!connection) {
+                        return res.status(500).json({
+                            error: 'No database connection available',
+                            message: 'Database connection is not established'
+                        });
+                    }
+
+                    const repairResult = await DatabaseDebugHelper.repairAndInitialize(connection);
+
+                    res.json({
+                        success: true,
+                        message: 'Database repair and initialization completed successfully',
+                        data: repairResult,
+                        timestamp: new Date().toISOString()
+                    });
+
+                } catch (error) {
+                    logger.error('Database repair failed', { error: error.message });
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        message: 'Database repair failed',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            });
+
+            // Initialize collections only
+            this.app.post('/admin/debug/initialize-collections', async (req, res) => {
+                try {
+                    const connection = Database.getConnection();
+                    if (!connection) {
+                        return res.status(500).json({
+                            error: 'No database connection available'
+                        });
+                    }
+
+                    const result = await DatabaseDebugHelper.initializeEssentialCollections(connection);
+
+                    res.json({
+                        success: true,
+                        message: 'Collections initialized successfully',
+                        data: result,
+                        timestamp: new Date().toISOString()
+                    });
+
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            });
+
+            // Create sample data only
+            this.app.post('/admin/debug/create-sample-data', async (req, res) => {
+                try {
+                    const connection = Database.getConnection();
+                    if (!connection) {
+                        return res.status(500).json({
+                            error: 'No database connection available'
+                        });
+                    }
+
+                    const result = await DatabaseDebugHelper.createSampleData(connection);
+
+                    res.json({
+                        success: true,
+                        message: 'Sample data created successfully',
+                        data: result,
+                        timestamp: new Date().toISOString()
+                    });
+
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            });
+
+            // Check models and collections status
+            this.app.get('/admin/debug/models-status', async (req, res) => {
+                try {
+                    const connection = Database.getConnection();
+                    if (!connection) {
+                        return res.status(500).json({
+                            error: 'No database connection available'
+                        });
+                    }
+
+                    const status = {
+                        connectionState: connection.readyState,
+                        databaseName: connection.db ? connection.db.databaseName : 'No database',
+                        registeredModels: Object.keys(connection.models || {}),
+                        modelCount: Object.keys(connection.models || {}).length
+                    };
+
+                    // Get collections from database
+                    if (connection.db) {
+                        try {
+                            const collections = await connection.db.listCollections().toArray();
+                            status.collections = collections.map(col => col.name);
+                            status.collectionCount = collections.length;
+                        } catch (error) {
+                            status.collectionsError = error.message;
+                        }
+                    }
+
+                    res.json({
+                        success: true,
+                        message: 'Models and collections status retrieved',
+                        data: status,
+                        timestamp: new Date().toISOString()
+                    });
+
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            });
+
+
+            // Temporary database debug route (bypasses security middleware)
+            this.app.get('/admin/temp-db-debug', async (req, res) => {
+                try {
+                    const connection = Database.getConnection();
+
+                    if (!connection) {
+                        return res.json({
+                            error: 'No database connection',
+                            status: 'connection_missing'
+                        });
+                    }
+
+                    const result = {
+                        connection: {
+                            readyState: connection.readyState,
+                            name: connection.name || 'Unknown',
+                            host: connection.host || 'Unknown',
+                            db: connection.db ? connection.db.databaseName : 'No database'
+                        },
+                        models: Object.keys(connection.models || {}),
+                        modelCount: Object.keys(connection.models || {}).length,
+                        collections: [],
+                        collectionCount: 0
+                    };
+
+                    // Get collections if database is available
+                    if (connection.db) {
+                        try {
+                            const collections = await connection.db.listCollections().toArray();
+                            result.collections = collections.map(col => col.name);
+                            result.collectionCount = collections.length;
+                        } catch (error) {
+                            result.collectionsError = error.message;
+                        }
+                    }
+
+                    res.json({
+                        success: true,
+                        timestamp: new Date().toISOString(),
+                        data: result
+                    });
+
+                } catch (error) {
+                    res.json({
+                        success: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            });
+
+            // Quick database repair route
+            this.app.post('/admin/temp-db-repair', async (req, res) => {
+                try {
+                    const connection = Database.getConnection();
+
+                    if (!connection) {
+                        return res.json({
+                            error: 'No database connection available'
+                        });
+                    }
+
+                    // Quick collection creation without complex schemas
+                    const basicCollections = ['users', 'organizations', 'sessions', 'audit_logs'];
+                    const results = [];
+
+                    for (const collectionName of basicCollections) {
+                        try {
+                            // Check if collection exists
+                            const exists = await connection.db.listCollections({ name: collectionName }).hasNext();
+
+                            if (!exists) {
+                                // Create collection with a simple document
+                                await connection.db.createCollection(collectionName);
+
+                                // Insert a placeholder document to make the collection visible
+                                await connection.db.collection(collectionName).insertOne({
+                                    _placeholder: true,
+                                    createdAt: new Date(),
+                                    message: `Placeholder for ${collectionName} collection`
+                                });
+                            }
+
+                            results.push({
+                                collection: collectionName,
+                                status: exists ? 'existed' : 'created',
+                                action: exists ? 'verified' : 'created_with_placeholder'
+                            });
+
+                        } catch (error) {
+                            results.push({
+                                collection: collectionName,
+                                status: 'error',
+                                error: error.message
+                            });
+                        }
+                    }
+
+                    res.json({
+                        success: true,
+                        message: 'Quick database repair completed',
+                        results: results,
+                        timestamp: new Date().toISOString()
+                    });
+
+                } catch (error) {
+                    res.json({
+                        success: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            });
+
 
             // Admin API routes (all require authentication when available)
             // this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutes);

@@ -7,7 +7,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
-const logger = require('../../shared/lib/utils/logger');
+const logger = require('../../../shared/lib/utils/logger');
 
 /**
  * @class DatabaseDebugHelper
