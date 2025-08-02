@@ -87,7 +87,7 @@ class GDPRCompliance {
    * @param {Object} [options={}] - Configuration options
    * @param {Object} [options.database] - Database connection
    * @param {Object} [options.encryptionService] - Encryption service instance
-   * @param {Object} [options.auditService] - Audit service instance
+   * @param {Object} [options.auditService] - Audit service instance (REQUIRED)
    * @param {boolean} [options.strictMode=true] - Enforce strict GDPR compliance
    * @param {Object} [options.retentionPeriods={}] - Custom retention periods
    * @param {Array<string>} [options.euCountries] - List of EU country codes
@@ -96,7 +96,7 @@ class GDPRCompliance {
     const {
       database,
       encryptionService,
-      auditService,
+      auditService, // This is now required, not optional
       strictMode = true,
       retentionPeriods = {},
       euCountries = this.#getDefaultEUCountries()
@@ -104,7 +104,14 @@ class GDPRCompliance {
 
     this.database = database;
     this.encryptionService = encryptionService || new EncryptionService();
-    this.auditService = auditService || new AuditService({ database });
+    
+    // FIXED: No longer creates new AuditService instance
+    // Instead, requires auditService to be passed in
+    if (!auditService) {
+      throw new Error('AuditService instance is required for GDPRCompliance');
+    }
+    this.auditService = auditService;
+    
     this.strictMode = strictMode;
     this.euCountries = new Set(euCountries);
 
@@ -121,7 +128,8 @@ class GDPRCompliance {
 
     logger.info('GDPRCompliance service initialized', {
       strictMode,
-      euCountriesCount: this.euCountries.size
+      euCountriesCount: this.euCountries.size,
+      hasAuditService: !!this.auditService
     });
   }
 

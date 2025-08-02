@@ -110,9 +110,11 @@ class AuditService {
       enableEncryption
     });
 
+    // FIXED: Pass 'this' (self-reference) to ComplianceReporter to break circular dependency
     if (enableCompliance) {
       this.complianceReporter = new ComplianceReporter({
         database,
+        auditService: this, // Pass self-reference instead of creating new instance
         ...complianceConfig
       });
     }

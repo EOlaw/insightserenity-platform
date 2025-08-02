@@ -55,7 +55,7 @@ const logger = require('../../shared/lib/utils/logger');
 // Import enterprise audit configuration and factory
 const auditConfig = require('./config/audit-config');
 const AuditServiceFactory = require('../../shared/lib/security/audit/audit-service-factory');
-const { AuditEventTypes } = require('../../shared/lib/security/audit/audit-events');
+const { AuditEvents } = require('../../shared/lib/security/audit/audit-events');
 
 const HealthMonitor = require('../../shared/lib/utils/health-monitor');
 const SecurityManager = require('../../shared/lib/security/security-manager');
@@ -73,6 +73,8 @@ class AdminServer {
         this.adminConnections = new Map();
         this.startTime = null;
         this.auditService = null;
+        this.adminConfig = null;
+        this.mergedConfig = null;
     }
 
     /**
@@ -83,6 +85,9 @@ class AdminServer {
     async start() {
         try {
             this.startTime = new Date();
+            
+            // Ensure admin configuration structure exists BEFORE audit system initialization
+            this.validateAndSetupAdminConfiguration();
             
             // Initialize enterprise audit system FIRST
             await this.initializeAuditSystem();
@@ -115,8 +120,8 @@ class AdminServer {
             // Initialize security manager first
             this.securityManager = new SecurityManager({
                 enforceIPWhitelist: true,
-                requireMFA: config.admin.security.requireMFA,
-                sessionTimeout: config.admin.security.sessionTimeout
+                requireMFA: this.adminConfig.security.requireMFA,
+                sessionTimeout: this.adminConfig.security.sessionTimeout
             });
             
             logger.info('Starting InsightSerenity Admin Server', {
@@ -127,8 +132,8 @@ class AdminServer {
                 adminFeatures: {
                     multiTenant: config.database.multiTenant.enabled,
                     auditLogging: auditConfig.enabled,
-                    realTimeMonitoring: config.admin.features.realTimeMonitoring,
-                    advancedSecurity: config.admin.security.advanced,
+                    realTimeMonitoring: this.adminConfig.features.realTimeMonitoring,
+                    advancedSecurity: this.adminConfig.security.advanced,
                     redisEnabled: process.env.REDIS_ENABLED === 'true',
                     memoryFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true'
                 }
@@ -146,7 +151,7 @@ class AdminServer {
 
             // Initialize health monitoring
             this.healthMonitor = new HealthMonitor({
-                checkInterval: config.admin.monitoring.healthCheckInterval || 30000,
+                checkInterval: this.adminConfig.monitoring.healthCheckInterval || 30000,
                 services: ['database', 'redis', 'auth', 'audit'],
                 customChecks: {
                     adminSessions: () => this.checkAdminSessions(),
@@ -170,7 +175,7 @@ class AdminServer {
             });
 
             // Create server with enhanced security for admin
-            if (config.admin.security.forceSSL || config.security.ssl.enabled) {
+            if (this.adminConfig.security.forceSSL || config.security.ssl.enabled) {
                 this.server = await this.createSecureHttpsServer(expressApp);
             } else {
                 if (config.app.env === 'production') {
@@ -191,7 +196,7 @@ class AdminServer {
 
             // Log successful startup to audit
             await this.auditService.logEvent({
-                eventType: AuditEventTypes.ADMIN_SERVER_START,
+                eventType: AuditEvents.SYSTEM.CONFIG_CHANGE,
                 userId: 'system',
                 tenantId: 'admin',
                 resource: 'admin_server',
@@ -200,8 +205,8 @@ class AdminServer {
                 metadata: {
                     version: config.app.version,
                     environment: config.app.env,
-                    features: Object.keys(config.admin.features || {}),
-                    securityLevel: config.admin.security.level || 'high',
+                    features: Object.keys(this.adminConfig.features || {}),
+                    securityLevel: this.adminConfig.security.level || 'high',
                     cacheStrategy: process.env.REDIS_ENABLED === 'true' ? 'redis' : 'memory',
                     sessionStore: process.env.SESSION_STORE || 'memory',
                     auditEnabled: auditConfig.enabled,
@@ -215,8 +220,8 @@ class AdminServer {
                 error: error.message,
                 stack: error.stack,
                 config: {
-                    port: config.admin.port,
-                    ssl: config.admin.security.forceSSL,
+                    port: this.adminConfig?.port || 'undefined',
+                    ssl: this.adminConfig?.security?.forceSSL || 'undefined',
                     redis: process.env.REDIS_ENABLED,
                     environment: process.env.NODE_ENV
                 }
@@ -226,7 +231,7 @@ class AdminServer {
             if (this.auditService) {
                 try {
                     await this.auditService.logEvent({
-                        eventType: AuditEventTypes.ADMIN_SERVER_START,
+                        eventType: AuditEvents.SYSTEM.CONFIG_CHANGE,
                         userId: 'system',
                         tenantId: 'admin',
                         resource: 'admin_server',
@@ -243,6 +248,103 @@ class AdminServer {
             }
             
             throw error;
+        }
+    }
+
+    /**
+     * Validate and setup admin configuration structure
+     * @private
+     * @returns {void}
+     */
+    validateAndSetupAdminConfiguration() {
+        try {
+            // Create a local admin configuration object instead of modifying the frozen config
+            this.adminConfig = {
+                port: parseInt(process.env.ADMIN_PORT, 10) || 5001,
+                host: process.env.ADMIN_HOST || '127.0.0.1',
+                security: {
+                    forceSSL: process.env.ADMIN_FORCE_SSL === 'true' || false,
+                    ipWhitelist: { 
+                        enabled: process.env.ADMIN_IP_WHITELIST_ENABLED === 'true' || false,
+                        addresses: process.env.ADMIN_IP_WHITELIST ? process.env.ADMIN_IP_WHITELIST.split(',') : []
+                    },
+                    requireMFA: process.env.ADMIN_REQUIRE_MFA === 'true' || false,
+                    sessionTimeout: parseInt(process.env.ADMIN_SESSION_TIMEOUT, 10) || 3600000,
+                    ssl: {
+                        keyPath: process.env.ADMIN_SSL_KEY_PATH || process.env.SSL_KEY_PATH || './certs/key.pem',
+                        certPath: process.env.ADMIN_SSL_CERT_PATH || process.env.SSL_CERT_PATH || './certs/cert.pem',
+                        ca: process.env.ADMIN_SSL_CA_PATH || process.env.SSL_CA_PATH
+                    },
+                    level: process.env.ADMIN_SECURITY_LEVEL || 'high',
+                    advanced: process.env.ADMIN_ADVANCED_SECURITY === 'true' || false
+                },
+                features: {
+                    realTimeMonitoring: process.env.ADMIN_REAL_TIME_MONITORING !== 'false',
+                    advancedAnalytics: process.env.ADMIN_ADVANCED_ANALYTICS !== 'false',
+                    bulkOperations: process.env.ADMIN_BULK_OPERATIONS !== 'false'
+                },
+                monitoring: {
+                    healthCheckInterval: parseInt(process.env.ADMIN_HEALTH_CHECK_INTERVAL, 10) || 30000,
+                    metricsEnabled: process.env.ADMIN_METRICS_ENABLED !== 'false',
+                    alerting: { 
+                        enabled: process.env.ADMIN_ALERTING_ENABLED === 'true' || false 
+                    }
+                }
+            };
+
+            // Create a merged configuration that includes both shared and admin config
+            this.mergedConfig = {
+                ...config,
+                admin: this.adminConfig
+            };
+
+            logger.info('Admin configuration structure validated and initialized', {
+                port: this.adminConfig.port,
+                host: this.adminConfig.host,
+                sslEnabled: this.adminConfig.security.forceSSL,
+                ipWhitelistEnabled: this.adminConfig.security.ipWhitelist.enabled,
+                mfaRequired: this.adminConfig.security.requireMFA,
+                featuresEnabled: Object.keys(this.adminConfig.features).length,
+                monitoringEnabled: this.adminConfig.monitoring.metricsEnabled
+            });
+
+        } catch (error) {
+            logger.error('Failed to validate admin configuration structure', {
+                error: error.message,
+                stack: error.stack
+            });
+            
+            // Set minimal working configuration as fallback
+            this.adminConfig = {
+                port: parseInt(process.env.ADMIN_PORT, 10) || 5001,
+                host: process.env.ADMIN_HOST || '127.0.0.1',
+                security: {
+                    forceSSL: false,
+                    ipWhitelist: { enabled: false },
+                    requireMFA: false,
+                    sessionTimeout: 3600000,
+                    ssl: {},
+                    level: 'medium',
+                    advanced: false
+                },
+                features: {
+                    realTimeMonitoring: true,
+                    advancedAnalytics: false,
+                    bulkOperations: false
+                },
+                monitoring: {
+                    healthCheckInterval: 30000,
+                    metricsEnabled: false,
+                    alerting: { enabled: false }
+                }
+            };
+
+            this.mergedConfig = {
+                ...config,
+                admin: this.adminConfig
+            };
+
+            logger.warn('Applied minimal admin configuration due to validation error');
         }
     }
 
@@ -275,20 +377,26 @@ class AdminServer {
                 riskScoringEnabled: auditConfig.riskScoring.enabled
             });
 
-            // Test audit system with a startup event
+            // Test audit system with a startup event using valid event type
             if (auditConfig.enabled) {
-                await this.auditService.logEvent({
-                    eventType: 'system.startup',
-                    userId: 'system',
-                    tenantId: 'admin',
-                    resource: 'audit_system',
-                    action: 'initialize',
-                    result: 'success',
-                    metadata: {
-                        message: 'Enterprise audit system initialization completed',
-                        configVersion: auditConfig.version || '1.0.0'
-                    }
-                });
+                try {
+                    await this.auditService.logEvent({
+                        eventType: AuditEvents.SYSTEM.CONFIG_CHANGE,
+                        userId: 'system',
+                        tenantId: 'admin',
+                        resource: 'audit_system',
+                        action: 'initialize',
+                        result: 'success',
+                        metadata: {
+                            message: 'Enterprise audit system initialization completed',
+                            configVersion: auditConfig.version || '1.0.0'
+                        }
+                    });
+                } catch (testError) {
+                    logger.warn('Audit test event failed, but system will continue', {
+                        error: testError.message
+                    });
+                }
             }
 
         } catch (error) {
@@ -336,12 +444,12 @@ class AdminServer {
         const checks = [];
         
         // Check SSL certificates
-        if (config.admin.security.forceSSL || config.security.ssl.enabled) {
+        if (this.adminConfig.security.forceSSL || config.security.ssl.enabled) {
             checks.push(this.verifySslCertificates());
         }
         
         // Check IP whitelist configuration
-        if (config.admin.security.ipWhitelist?.enabled) {
+        if (this.adminConfig.security.ipWhitelist?.enabled) {
             checks.push(this.verifyIpWhitelist());
         }
         
@@ -418,8 +526,8 @@ class AdminServer {
      */
     async createSecureHttpsServer(app) {
         try {
-            const keyPath = path.resolve(process.cwd(), config.admin.security.ssl?.keyPath || config.security.ssl.keyPath);
-            const certPath = path.resolve(process.cwd(), config.admin.security.ssl?.certPath || config.security.ssl.certPath);
+            const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.keyPath || config.security.ssl.keyPath);
+            const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.certPath || config.security.ssl.certPath);
             
             if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
                 throw new Error(`SSL certificates not found: key=${keyPath}, cert=${certPath}`);
@@ -430,15 +538,15 @@ class AdminServer {
                 cert: fs.readFileSync(certPath),
                 // Enhanced security options for admin
                 secureOptions: require('constants').SSL_OP_NO_TLSv1 | require('constants').SSL_OP_NO_TLSv1_1,
-                ciphers: config.admin.security.ssl?.ciphers || 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256',
+                ciphers: this.adminConfig.security.ssl?.ciphers || 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256',
                 honorCipherOrder: true,
-                requestCert: config.admin.security.ssl?.requestClientCert || false,
-                rejectUnauthorized: config.admin.security.ssl?.rejectUnauthorized || false
+                requestCert: this.adminConfig.security.ssl?.requestClientCert || false,
+                rejectUnauthorized: this.adminConfig.security.ssl?.rejectUnauthorized || false
             };
 
             // Add CA if configured
-            if (config.admin.security.ssl?.ca || config.security.ssl.ca) {
-                const caPath = path.resolve(process.cwd(), config.admin.security.ssl?.ca || config.security.ssl.ca);
+            if (this.adminConfig.security.ssl?.ca || config.security.ssl.ca) {
+                const caPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.ca || config.security.ssl.ca);
                 if (fs.existsSync(caPath)) {
                     sslOptions.ca = fs.readFileSync(caPath);
                 }
@@ -461,8 +569,8 @@ class AdminServer {
      * Verify SSL certificates exist and are valid
      */
     async verifySslCertificates() {
-        const keyPath = path.resolve(process.cwd(), config.admin.security.ssl?.keyPath || config.security.ssl.keyPath);
-        const certPath = path.resolve(process.cwd(), config.admin.security.ssl?.certPath || config.security.ssl.certPath);
+        const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.keyPath || config.security.ssl.keyPath);
+        const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.certPath || config.security.ssl.certPath);
         
         if (!fs.existsSync(keyPath)) {
             throw new Error(`Admin SSL key not found: ${keyPath}`);
@@ -480,7 +588,7 @@ class AdminServer {
      * Verify IP whitelist configuration
      */
     async verifyIpWhitelist() {
-        const whitelist = config.admin.security.ipWhitelist?.addresses || [];
+        const whitelist = this.adminConfig.security.ipWhitelist?.addresses || [];
         if (whitelist.length === 0) {
             throw new Error('Admin IP whitelist is empty - no access will be allowed');
         }
@@ -507,9 +615,9 @@ class AdminServer {
                 return true; // Not an error if intentionally disabled
             }
 
-            // Test audit service functionality
+            // Test audit service functionality with a valid event type
             await this.auditService.logEvent({
-                eventType: 'system.test',
+                eventType: AuditEvents.SYSTEM.CONFIG_CHANGE,
                 userId: 'system',
                 tenantId: 'admin',
                 resource: 'audit_system',
@@ -547,12 +655,9 @@ class AdminServer {
      */
     listen() {
         return new Promise((resolve, reject) => {
-            const port = parseInt(process.env.ADMIN_PORT) || 
-            (config.admin && config.admin.port) || 
-            5001;
-            const host = process.env.ADMIN_HOST || 
-            (config.admin && config.admin.host) || 
-            '127.0.0.1';
+            // Use adminConfig values
+            const port = this.adminConfig.port;
+            const host = this.adminConfig.host;
             
             this.server.listen(port, host, () => {
                 const protocol = this.server instanceof https.Server ? 'HTTPS' : 'HTTP';
@@ -581,7 +686,7 @@ class AdminServer {
                 console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
                 console.log(`🗄️  Database: Connected`);
                 console.log(`💾 Cache: ${process.env.REDIS_ENABLED === 'true' ? 'Redis' : 'Memory'}`);
-                console.log(`🛡️  Security: ${protocol} ${config.admin.security.ipWhitelist?.enabled ? '+ IP Whitelist' : ''}`);
+                console.log(`🛡️  Security: ${protocol} ${this.adminConfig.security.ipWhitelist?.enabled ? '+ IP Whitelist' : ''}`);
                 console.log(`📊 Admin Dashboard: ${protocol.toLowerCase()}://${host}:${port}/admin/dashboard`);
                 console.log(`🔍 Health Check: ${protocol.toLowerCase()}://${host}:${port}/health`);
                 console.log(`📋 Audit System: ${auditConfig.enabled ? 'Enabled' : 'Disabled'} (${auditConfig.storage.type})`);
@@ -643,7 +748,7 @@ class AdminServer {
         app.on('admin:login:failed', async (data) => {
             if (this.auditService) {
                 await this.auditService.logEvent({
-                    eventType: 'auth.failed',
+                    eventType: AuditEvents.AUTH.LOGIN_FAILURE,
                     userId: data.username || 'unknown',
                     tenantId: 'admin',
                     resource: 'admin_portal',
@@ -669,7 +774,7 @@ class AdminServer {
         app.on('admin:privilege:changed', async (data) => {
             if (this.auditService) {
                 await this.auditService.logEvent({
-                    eventType: 'authz.privilege_escalation',
+                    eventType: AuditEvents.AUTH.PRIVILEGE_ESCALATION,
                     userId: data.actor?.id || 'unknown',
                     tenantId: 'admin',
                     resource: data.target?.type || 'user_account',
@@ -703,8 +808,8 @@ class AdminServer {
         return {
             healthy: true,
             sslEnabled: this.server instanceof https.Server,
-            ipWhitelistActive: config.admin.security.ipWhitelist?.enabled,
-            mfaRequired: config.admin.security.requireMFA,
+            ipWhitelistActive: this.adminConfig.security.ipWhitelist?.enabled,
+            mfaRequired: this.adminConfig.security.requireMFA,
             lastSecurityScan: new Date().toISOString()
         };
     }
@@ -740,7 +845,7 @@ class AdminServer {
                 // Log shutdown event
                 if (this.auditService) {
                     await this.auditService.logEvent({
-                        eventType: 'system.shutdown',
+                        eventType: AuditEvents.SYSTEM.CONFIG_CHANGE,
                         userId: 'system',
                         tenantId: 'admin',
                         resource: 'admin_server',
@@ -812,7 +917,7 @@ class AdminServer {
             if (this.auditService) {
                 try {
                     await this.auditService.logEvent({
-                        eventType: 'system.error',
+                        eventType: AuditEvents.SECURITY.THREAT_DETECTED,
                         userId: 'system',
                         tenantId: 'admin',
                         resource: 'admin_server',
@@ -845,7 +950,7 @@ class AdminServer {
             if (this.auditService) {
                 try {
                     await this.auditService.logEvent({
-                        eventType: 'system.error',
+                        eventType: AuditEvents.SECURITY.THREAT_DETECTED,
                         userId: 'system',
                         tenantId: 'admin',
                         resource: 'admin_server',
@@ -923,8 +1028,8 @@ class AdminServer {
             },
             security: {
                 ssl: this.server instanceof https.Server,
-                ipWhitelist: config.admin.security.ipWhitelist?.enabled,
-                mfa: config.admin.security.requireMFA
+                ipWhitelist: this.adminConfig.security.ipWhitelist?.enabled,
+                mfa: this.adminConfig.security.requireMFA
             },
             configuration: {
                 redis: process.env.REDIS_ENABLED === 'true',

@@ -3,7 +3,7 @@
 # dependencies
 /node_modules
 /servers/admin-server/node_modules
-/servers/custoner-services/node_modules
+/servers/customer-services/node_modules
 /servers/gateway/node_modules
 /.pnp
 .pnp.*

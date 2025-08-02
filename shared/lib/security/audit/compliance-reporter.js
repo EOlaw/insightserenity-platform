@@ -11,7 +11,7 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError }= require('../../utils/app-error');
 const AuditLogModel = require('../../database/models/security/audit-log-model');
 const GDPRCompliance = require('../compliance/gdpr-compliance');
 const HIPAACompliance = require('../compliance/hipaa-compliance');
@@ -57,6 +57,7 @@ class ComplianceReporter {
    * @constructor
    * @param {Object} [options={}] - Configuration options
    * @param {Object} [options.database] - Database connection
+   * @param {Object} [options.auditService] - Audit service instance (REQUIRED)
    * @param {Array<string>} [options.frameworks=['gdpr', 'hipaa', 'sox']] - Compliance frameworks
    * @param {boolean} [options.autoReport=true] - Enable automatic reporting
    * @param {Object} [options.reportingSchedule] - Reporting schedule configuration
@@ -66,6 +67,7 @@ class ComplianceReporter {
   constructor(options = {}) {
     const {
       database,
+      auditService, // Now required parameter
       frameworks = ['gdpr', 'hipaa', 'sox'],
       autoReport = true,
       reportingSchedule = {},
@@ -73,18 +75,33 @@ class ComplianceReporter {
       enableEncryption = true
     } = options;
 
+    // Validate that auditService is provided
+    if (!auditService) {
+      throw new Error('AuditService instance is required for ComplianceReporter');
+    }
+
     this.database = database;
+    this.auditService = auditService; // Store the passed audit service
     this.frameworks = frameworks;
     this.autoReport = autoReport;
     this.reportingSchedule = this.#initializeSchedule(reportingSchedule);
     this.notificationSettings = notificationSettings;
     this.enableEncryption = enableEncryption;
 
-    // Initialize compliance modules
+    // FIXED: Pass auditService to compliance modules instead of letting them create their own
     this.complianceModules = {
-      gdpr: new GDPRCompliance({ database }),
-      hipaa: new HIPAACompliance({ database }),
-      sox: new SOXCompliance({ database })
+      gdpr: new GDPRCompliance({ 
+        database, 
+        auditService: this.auditService 
+      }),
+      hipaa: new HIPAACompliance({ 
+        database, 
+        auditService: this.auditService 
+      }),
+      sox: new SOXCompliance({ 
+        database, 
+        auditService: this.auditService 
+      })
     };
 
     // Initialize report tracking
@@ -100,7 +117,8 @@ class ComplianceReporter {
     logger.info('ComplianceReporter initialized', {
       frameworks,
       autoReport,
-      enableEncryption
+      enableEncryption,
+      hasAuditService: !!this.auditService
     });
   }
 
