@@ -23,7 +23,7 @@ const BaseModel = require('./models/base-model');
 const SeedManager = require('./seeders/seed-manager');
 const MigrationRunner = require('./migrations/migration-runner');
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const config = require('../../config');
 
 /**

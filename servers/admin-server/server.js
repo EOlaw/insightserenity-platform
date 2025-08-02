@@ -48,9 +48,10 @@ const http = require('http');
 const https = require('https');
 
 const app = require('./app');
-const config = require('../../shared/config');
+const config = require('./config');
 const Database = require('../../shared/lib/database');
 const logger = require('../../shared/lib/utils/logger');
+const { AppError } = require('../../shared/lib/utils/app-error');
 
 // Import enterprise audit configuration and factory
 const auditConfig = require('./config/audit-config');
@@ -84,17 +85,29 @@ class AdminServer {
      */
     async start() {
         try {
+            // Temporary fix to ensure config.app exists
+            // if (!config.app) {
+            //     config.app = {
+            //         env: process.env.NODE_ENV || 'development',
+            //         version: '1.0.0',
+            //         name: 'InsightSerenity Admin Server'
+            //     };
+            // }
+
             this.startTime = new Date();
             
             // Ensure admin configuration structure exists BEFORE audit system initialization
             this.validateAndSetupAdminConfiguration();
+
+            // Initialize database connection EARLY - before security verification
+            await Database.initialize();
             
             // Initialize enterprise audit system FIRST
             await this.initializeAuditSystem();
             
             // Log detailed configuration status
             logger.info('Admin Server Configuration Status', {
-                environment: config.app.env,
+                environment: config.app?.env || process.env.NODE_ENV || 'development',
                 redis: {
                     enabled: process.env.REDIS_ENABLED === 'true',
                     fallbackToMemory: process.env.CACHE_FALLBACK_TO_MEMORY === 'true',
@@ -125,7 +138,7 @@ class AdminServer {
             });
             
             logger.info('Starting InsightSerenity Admin Server', {
-                environment: config.app.env,
+                environment: config.app?.env || process.env.NODE_ENV || 'development',
                 version: config.app.version,
                 nodeVersion: process.version,
                 platform: process.platform,
@@ -438,41 +451,6 @@ class AdminServer {
     }
 
     /**
-     * Verify security prerequisites for admin server
-     */
-    async verifySecurityPrerequisites() {
-        const checks = [];
-        
-        // Check SSL certificates
-        if (this.adminConfig.security.forceSSL || config.security.ssl.enabled) {
-            checks.push(this.verifySslCertificates());
-        }
-        
-        // Check IP whitelist configuration
-        if (this.adminConfig.security.ipWhitelist?.enabled) {
-            checks.push(this.verifyIpWhitelist());
-        }
-        
-        // Check audit log availability
-        checks.push(this.verifyAuditLogSystem());
-        
-        // Check admin database permissions
-        checks.push(this.verifyDatabasePermissions());
-        
-        // Check environment configuration
-        checks.push(this.verifyEnvironmentConfiguration());
-        
-        const results = await Promise.allSettled(checks);
-        const failures = results.filter(r => r.status === 'rejected');
-        
-        if (failures.length > 0) {
-            throw new Error(`Security prerequisites failed: ${failures.map(f => f.reason).join(', ')}`);
-        }
-        
-        logger.info('All security prerequisites verified successfully');
-    }
-
-    /**
      * Verify environment configuration is properly loaded
      */
     async verifyEnvironmentConfiguration() {
@@ -522,12 +500,66 @@ class AdminServer {
     }
 
     /**
-     * Create HTTPS server with enhanced security
+     * Verify security prerequisites for admin server
+     */
+    async verifySecurityPrerequisites() {
+        const checks = [];
+        
+        // Check SSL certificates - FIXED: Use only admin config for SSL settings
+        if (this.adminConfig.security.forceSSL || this.adminConfig.security.ssl?.enabled) {
+            checks.push(this.verifySslCertificates());
+        }
+        
+        // Check IP whitelist configuration
+        if (this.adminConfig.security.ipWhitelist?.enabled) {
+            checks.push(this.verifyIpWhitelist());
+        }
+        
+        // Check audit log availability
+        checks.push(this.verifyAuditLogSystem());
+        
+        // Check admin database permissions
+        checks.push(this.verifyDatabasePermissions());
+        
+        // Check environment configuration
+        checks.push(this.verifyEnvironmentConfiguration());
+        
+        const results = await Promise.allSettled(checks);
+        const failures = results.filter(r => r.status === 'rejected');
+        
+        if (failures.length > 0) {
+            throw new Error(`Security prerequisites failed: ${failures.map(f => f.reason).join(', ')}`);
+        }
+        
+        logger.info('All security prerequisites verified successfully');
+    }
+
+    /**
+     * Verify SSL certificates exist and are valid - FIXED: Use admin config consistently
+     */
+    async verifySslCertificates() {
+        const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.keyPath || './certs/key.pem');
+        const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.certPath || './certs/cert.pem');
+        
+        if (!fs.existsSync(keyPath)) {
+            throw new Error(`Admin SSL key not found: ${keyPath}`);
+        }
+        
+        if (!fs.existsSync(certPath)) {
+            throw new Error(`Admin SSL certificate not found: ${certPath}`);
+        }
+        
+        logger.info('SSL certificates verified', { keyPath, certPath });
+        return true;
+    }
+
+    /**
+     * Create HTTPS server with enhanced security - FIXED: Use admin config consistently
      */
     async createSecureHttpsServer(app) {
         try {
-            const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.keyPath || config.security.ssl.keyPath);
-            const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.certPath || config.security.ssl.certPath);
+            const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.keyPath || './certs/key.pem');
+            const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.certPath || './certs/cert.pem');
             
             if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
                 throw new Error(`SSL certificates not found: key=${keyPath}, cert=${certPath}`);
@@ -544,9 +576,9 @@ class AdminServer {
                 rejectUnauthorized: this.adminConfig.security.ssl?.rejectUnauthorized || false
             };
 
-            // Add CA if configured
-            if (this.adminConfig.security.ssl?.ca || config.security.ssl.ca) {
-                const caPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.ca || config.security.ssl.ca);
+            // Add CA if configured - FIXED: Use admin config consistently
+            if (this.adminConfig.security.ssl?.ca) {
+                const caPath = path.resolve(process.cwd(), this.adminConfig.security.ssl.ca);
                 if (fs.existsSync(caPath)) {
                     sslOptions.ca = fs.readFileSync(caPath);
                 }
@@ -563,25 +595,6 @@ class AdminServer {
             logger.error('Failed to create secure HTTPS server', { error: error.message });
             throw error;
         }
-    }
-
-    /**
-     * Verify SSL certificates exist and are valid
-     */
-    async verifySslCertificates() {
-        const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.keyPath || config.security.ssl.keyPath);
-        const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.certPath || config.security.ssl.certPath);
-        
-        if (!fs.existsSync(keyPath)) {
-            throw new Error(`Admin SSL key not found: ${keyPath}`);
-        }
-        
-        if (!fs.existsSync(certPath)) {
-            throw new Error(`Admin SSL certificate not found: ${certPath}`);
-        }
-        
-        logger.info('SSL certificates verified', { keyPath, certPath });
-        return true;
     }
 
     /**
@@ -646,7 +659,7 @@ class AdminServer {
             logger.info('Database permissions verified', { collections: collections.length });
             return true;
         } catch (error) {
-            throw new Error(`Database permission check failed: ${error.message}`);
+            throw new AppError(`Database permission check failed: ${error.message}`, 500, 'DATABASE_PERMISSION_ERROR');
         }
     }
 

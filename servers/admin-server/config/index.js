@@ -1,6 +1,7 @@
 /**
  * @file Admin Configuration Index
  * @description Central configuration aggregator for admin server
+ * @module servers/admin-server/config/index
  * @version 3.0.0
  */
 
@@ -53,7 +54,8 @@ class AdminConfiguration {
             
             // Override app settings for admin
             app: {
-                ...sharedConfig.app,
+                ...sharedConfig.base, // Use 'base' instead of 'app'
+                env: sharedConfig.environment?.name || process.env.NODE_ENV || 'development', // Add explicit env property
                 name: process.env.APP_NAME || 'InsightSerenity Admin Server',
                 type: 'admin',
                 port: parseInt(process.env.ADMIN_PORT, 10) || 5001,
@@ -63,7 +65,8 @@ class AdminConfiguration {
                 apiPrefix: process.env.ADMIN_API_PREFIX || '/admin/api',
                 uploadLimit: process.env.ADMIN_UPLOAD_LIMIT || '50mb',
                 behindProxy: process.env.ADMIN_BEHIND_PROXY === 'true',
-                trustProxyLevel: parseInt(process.env.ADMIN_TRUST_PROXY_LEVEL, 10) || 1
+                trustProxyLevel: parseInt(process.env.ADMIN_TRUST_PROXY_LEVEL, 10) || 1,
+                version: sharedConfig.constants?.VERSION || '1.0.0' // Add version from constants
             }
         };
 

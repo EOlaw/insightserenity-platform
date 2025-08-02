@@ -15,7 +15,7 @@
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/app-error');
 const AuditLogger = require('./audit-logger');
-const AuditEvents = require('./audit-events');
+const { AuditEvents } = require('./audit-events');
 const ComplianceReporter = require('./compliance-reporter');
 const AuditTrail = require('./audit-trail');
 const EncryptionService = require('../encryption/encryption-service');

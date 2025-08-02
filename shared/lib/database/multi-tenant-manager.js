@@ -11,7 +11,7 @@
 
 const ConnectionManager = require('./connection-manager');
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const config = require('../../config');
 
 /**
