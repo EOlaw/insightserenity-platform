@@ -27,99 +27,31 @@ const logger = require('../../shared/lib/utils/logger');
 const SessionManager = require('../../shared/lib/security/session-manager');
 const Database = require('../../shared/lib/database');
 const { AppError } = require('../../shared/lib/utils/app-error');
+const { AuthStrategiesManager } = require('../../shared/lib/auth/strategies');
+const { auditMiddleware } = require('../../shared/lib/security/audit/audit-middleware');
+const AuditService = require('../../shared/lib/security/audit/audit-service');
+const { AuditEventTypes } = require('../../shared/lib/security/audit/audit-events');
 
-// Safely import AuthStrategiesManager with fallback
-let AuthStrategiesManager = null;
-try {
-    const authModule = require('../../shared/lib/auth/strategies');
-    AuthStrategiesManager = authModule.AuthStrategiesManager;
-} catch (error) {
-    logger.warn('AuthStrategiesManager not available', { error: error.message });
-}
+// Admin-specific middleware
+const adminAuth = require('./middleware/admin-auth');
+const ipWhitelist = require('./middleware/ip-whitelist');
+const adminRateLimit = require('./middleware/admin-rate-limit');
+const sessionValidation = require('./middleware/session-validation');
+const securityHeaders = require('./middleware/security-headers');
 
-// Safely import audit middleware with fallback
-let auditMiddleware = null;
-let AuditService = null;
-let AuditEventTypes = null;
-try {
-    const auditMid = require('../../shared/lib/security/audit/audit-middleware');
-    auditMiddleware = auditMid.auditMiddleware;
-} catch (error) {
-    logger.warn('Audit middleware not available', { error: error.message });
-}
+// Import admin modules
+// const platformManagementRoutes = require('./modules/platform-management/routes');
+// const userManagementRoutes = require('./modules/user-management/routes');
+// const organizationManagementRoutes = require('./modules/organization-management/routes');
+// const securityAdministrationRoutes = require('./modules/security-administration/routes');
+// const billingAdministrationRoutes = require('./modules/billing-administration/routes');
+// const systemMonitoringRoutes = require('./modules/system-monitoring/routes');
+// const supportAdministrationRoutes = require('./modules/support-administration/routes');
+// const reportsAnalyticsRoutes = require('./modules/reports-analytics/routes');
 
-try {
-    AuditService = require('../../shared/lib/security/audit/audit-service');
-} catch (error) {
-    logger.warn('AuditService not available', { error: error.message });
-}
-
-try {
-    const auditEvents = require('../../shared/lib/security/audit/audit-events');
-    AuditEventTypes = auditEvents.AuditEventTypes;
-} catch (error) {
-    logger.warn('AuditEventTypes not available', { error: error.message });
-}
-
-// Admin-specific middleware - with safe imports
-let adminAuth, ipWhitelist, adminRateLimit, sessionValidation, securityHeaders;
-
-try {
-    adminAuth = require('./middleware/admin-auth');
-} catch (error) {
-    logger.warn('Admin auth middleware not available');
-    adminAuth = (req, res, next) => next();
-}
-
-try {
-    ipWhitelist = require('./middleware/ip-whitelist');
-} catch (error) {
-    logger.warn('IP whitelist middleware not available');
-    ipWhitelist = (req, res, next) => next();
-}
-
-try {
-    adminRateLimit = require('./middleware/admin-rate-limit');
-} catch (error) {
-    logger.warn('Admin rate limit middleware not available');
-    adminRateLimit = rateLimit({
-        windowMs: 15 * 60 * 1000,
-        max: 1000,
-        message: 'Too many requests from this IP'
-    });
-}
-
-try {
-    sessionValidation = require('./middleware/session-validation');
-} catch (error) {
-    logger.warn('Session validation middleware not available');
-    sessionValidation = (req, res, next) => next();
-}
-
-try {
-    securityHeaders = require('./middleware/security-headers');
-} catch (error) {
-    logger.warn('Security headers middleware not available');
-    securityHeaders = { middleware: () => (req, res, next) => next() };
-}
-
-// Shared middleware imports with fallbacks
-let errorHandler, notFoundHandler;
-
-try {
-    errorHandler = require('../../shared/lib/middleware/error-handlers/error-handler');
-} catch (error) {
-    logger.warn('Error handler not available, using fallback');
-}
-
-try {
-    notFoundHandler = require('../../shared/lib/middleware/error-handlers/not-found-handler');
-} catch (error) {
-    logger.warn('Not found handler not available, using fallback');
-}
-
-// Import the debug helper at the top of app.js
-const DatabaseDebugHelper = require('./utils/database-debug-helper');
+// Shared middleware imports
+const errorHandler = require('../../shared/lib/middleware/error-handlers/error-handler');
+const notFoundHandler = require('../../shared/lib/middleware/error-handlers/not-found-handler');
 
 /**
  * Admin Application class
@@ -128,7 +60,7 @@ const DatabaseDebugHelper = require('./utils/database-debug-helper');
 class AdminApplication {
     constructor() {
         this.app = express();
-        this.authManager = AuthStrategiesManager ? new AuthStrategiesManager() : null;
+        this.authManager = new AuthStrategiesManager();
         this.sessionManager = null;
         this.isShuttingDown = false;
 
@@ -265,9 +197,7 @@ class AdminApplication {
     setupSecurityMiddleware() {
         try {
             // Apply security headers first
-            if (securityHeaders && typeof securityHeaders.middleware === 'function') {
-                this.app.use(securityHeaders.middleware());
-            }
+            this.app.use(securityHeaders.middleware());
 
             // Enhanced Helmet configuration for admin
             if (this.config.security.helmet && this.config.security.helmet.enabled) {
@@ -312,40 +242,30 @@ class AdminApplication {
                 logger.info('IP whitelist middleware enabled for admin');
             }
 
-            // SIMPLIFIED CORS configuration - no complex callbacks
+            
+            // Admin-specific CORS configuration
             if (this.config.security.cors && this.config.security.cors.enabled) {
-                const corsOptions = {
-                    origin: function (origin, callback) {
-                        // Allow requests with no origin (like mobile apps or curl requests)
-                        if (!origin) return callback(null, true);
+                const adminCorsOptions = {
+                    origin: (origin, callback) => {
+                        const allowedOrigins = this.config.admin.security.cors?.origins ||
+                            this.config.security.cors.origins || [];
 
-                        // For development, allow all origins
-                        if (process.env.NODE_ENV === 'development') {
-                            return callback(null, true);
-                        }
-
-                        // For production, you can add specific origin checking here
-                        const allowedOrigins = [
-                            'http://localhost:3000',
-                            'http://localhost:5001',
-                            'http://127.0.0.1:3000',
-                            'http://127.0.0.1:5001'
-                        ];
-
-                        if (allowedOrigins.includes(origin)) {
+                        if (!origin || allowedOrigins.includes(origin)) {
+                            callback(null, true);
+                        } else if (this.config.app.env === 'development' && origin?.includes('localhost')) {
                             callback(null, true);
                         } else {
-                            callback(null, true); // Allow all for now - you can restrict later
+                            callback(new Error('Admin: Not allowed by CORS'));
                         }
                     },
                     credentials: true,
-                    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+                    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
                     allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Token', 'X-CSRF-Token'],
                     exposedHeaders: ['X-Total-Count', 'X-Page-Count', 'X-Request-ID'],
                     maxAge: 86400 // 24 hours
                 };
 
-                this.app.use(cors(corsOptions));
+                this.app.use(cors(adminCorsOptions));
             }
 
             // Apply rate limiting for admin endpoints
@@ -473,6 +393,7 @@ class AdminApplication {
      * EMERGENCY FIX: Replace the setupAuthentication method in app.js
      * This bypasses the failing AuthStrategiesManager for development
      */
+
     async setupAuthentication() {
         try {
             logger.info('Setting up authentication with development bypass');
@@ -532,32 +453,30 @@ class AdminApplication {
      */
     setupAuditMiddleware() {
         try {
-            if (auditMiddleware) {
-                // Enhanced audit configuration for admin
-                this.app.use(auditMiddleware({
-                    enabled: true, // Always enabled for admin
-                    skipRoutes: [
-                        '/health',
-                        '/admin/public',
-                        '/favicon.ico'
-                    ],
-                    sensitiveFields: [
-                        'password',
-                        'token',
-                        'secret',
-                        'key',
-                        'authorization',
-                        'cookie',
-                        'apiKey',
-                        'privateKey',
-                        'accessToken',
-                        'refreshToken'
-                    ],
-                    includeRequestBody: true, // Always log request body for admin
-                    includeResponseBody: this.config.app.env !== 'production',
-                    severity: 'high' // All admin actions are high severity
-                }));
-            }
+            // Enhanced audit configuration for admin
+            this.app.use(auditMiddleware({
+                enabled: true, // Always enabled for admin
+                skipRoutes: [
+                    '/health',
+                    '/admin/public',
+                    '/favicon.ico'
+                ],
+                sensitiveFields: [
+                    'password',
+                    'token',
+                    'secret',
+                    'key',
+                    'authorization',
+                    'cookie',
+                    'apiKey',
+                    'privateKey',
+                    'accessToken',
+                    'refreshToken'
+                ],
+                includeRequestBody: true, // Always log request body for admin
+                includeResponseBody: this.config.app.env !== 'production',
+                severity: 'high' // All admin actions are high severity
+            }));
 
             // Admin-specific audit context
             this.app.use((req, res, next) => {
@@ -584,90 +503,27 @@ class AdminApplication {
      */
     setupAdminRoutes() {
         try {
-            // Add this BEFORE any other middleware in app.js
-            this.app.get('/test-simple', (req, res) => {
-                res.json({
-                    message: 'Simple test works',
-                    timestamp: new Date().toISOString()
-                });
-            });
-            
             const adminBase = this.config.admin.basePath || '/admin';
             const apiPrefix = `${adminBase}/api`;
 
             // Health check (no auth required)
-            this.app.get('/health', async (req, res) => {
-                try {
-                    const dbHealth = Database.getHealthStatus ? await Database.getHealthStatus() : { status: 'unknown' };
-
-                    res.status(200).json({
-                        status: 'ok',
-                        server: 'admin',
-                        timestamp: new Date().toISOString(),
-                        uptime: process.uptime(),
-                        environment: this.config.app.env,
-                        version: this.config.app.version,
-                        database: dbHealth,
-                        features: {
-                            multiTenant: this.config.database.multiTenant?.enabled || false,
-                            auditLogging: true,
-                            ipWhitelist: this.config.admin.security?.ipWhitelist?.enabled || false,
-                            mfa: this.config.admin.security?.requireMFA || false
-                        }
-                    });
-                } catch (error) {
-                    res.status(500).json({
-                        status: 'error',
-                        error: error.message,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-            });
-
-            // Database debug endpoint
-            this.app.get('/admin/debug/database', async (req, res) => {
-                try {
-                    const connection = Database.getConnection();
-                    if (!connection) {
-                        return res.json({ error: 'No database connection' });
+            this.app.get('/health', (req, res) => {
+                const dbHealth = Database.getHealthStatus ? Database.getHealthStatus() : { status: 'unknown' };
+                res.status(200).json({
+                    status: 'ok',
+                    server: 'admin',
+                    timestamp: new Date().toISOString(),
+                    uptime: process.uptime(),
+                    environment: this.config.app.env,
+                    version: this.config.app.version,
+                    database: dbHealth,
+                    features: {
+                        multiTenant: this.config.database.multiTenant?.enabled || false,
+                        auditLogging: true,
+                        ipWhitelist: this.config.admin.security?.ipWhitelist?.enabled || false,
+                        mfa: this.config.admin.security?.requireMFA || false
                     }
-
-                    const admin = connection.db.admin();
-                    const databases = await admin.listDatabases();
-                    const collections = await connection.db.listCollections().toArray();
-                    const stats = await connection.db.stats();
-
-                    res.json({
-                        currentDatabase: connection.db.databaseName,
-                        databases: databases.databases,
-                        collections: collections.map(c => c.name),
-                        stats: {
-                            collections: stats.collections,
-                            dataSize: stats.dataSize,
-                            storageSize: stats.storageSize
-                        },
-                        connectionString: process.env.DB_URI ? process.env.DB_URI.replace(/\/\/[^:]+:[^@]+@/, '//***:***@') : 'Not set'
-                    });
-                } catch (error) {
-                    res.status(500).json({ error: error.message });
-                }
-            });
-
-            // Database initialization endpoint
-            this.app.post('/admin/debug/initialize-database', async (req, res) => {
-                try {
-                    const result = await Database.createTestCollections();
-                    res.json({
-                        success: true,
-                        message: 'Database initialization completed',
-                        results: result
-                    });
-                } catch (error) {
-                    res.status(500).json({
-                        success: false,
-                        error: error.message
-                    });
-                }
+                });
             });
 
             // Admin dashboard (requires auth when available)
@@ -681,282 +537,39 @@ class AdminApplication {
                 });
             });
 
-
-            // Enhanced database debug endpoint
-            this.app.get('/admin/debug/database-detailed', async (req, res) => {
+            // Add this temporary diagnostic endpoint to your admin routes
+            this.app.get('/admin/debug/database', async (req, res) => {
                 try {
                     const connection = Database.getConnection();
                     if (!connection) {
-                        return res.status(500).json({
-                            error: 'No database connection available',
-                            message: 'Database connection is not established'
-                        });
+                        return res.json({ error: 'No database connection' });
                     }
 
-                    const debugInfo = await DatabaseDebugHelper.debugDatabaseState(connection);
+                    // List databases
+                    const admin = connection.db.admin();
+                    const databases = await admin.listDatabases();
+
+                    // List collections in current database
+                    const collections = await connection.db.listCollections().toArray();
+
+                    // Get database stats
+                    const stats = await connection.db.stats();
 
                     res.json({
-                        success: true,
-                        message: 'Database debug information retrieved',
-                        data: debugInfo,
-                        timestamp: new Date().toISOString()
-                    });
-
-                } catch (error) {
-                    res.status(500).json({
-                        success: false,
-                        error: error.message,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-            });
-
-            // Database repair and initialization endpoint
-            this.app.post('/admin/debug/repair-database', async (req, res) => {
-                try {
-                    const connection = Database.getConnection();
-                    if (!connection) {
-                        return res.status(500).json({
-                            error: 'No database connection available',
-                            message: 'Database connection is not established'
-                        });
-                    }
-
-                    const repairResult = await DatabaseDebugHelper.repairAndInitialize(connection);
-
-                    res.json({
-                        success: true,
-                        message: 'Database repair and initialization completed successfully',
-                        data: repairResult,
-                        timestamp: new Date().toISOString()
-                    });
-
-                } catch (error) {
-                    logger.error('Database repair failed', { error: error.message });
-                    res.status(500).json({
-                        success: false,
-                        error: error.message,
-                        message: 'Database repair failed',
-                        timestamp: new Date().toISOString()
-                    });
-                }
-            });
-
-            // Initialize collections only
-            this.app.post('/admin/debug/initialize-collections', async (req, res) => {
-                try {
-                    const connection = Database.getConnection();
-                    if (!connection) {
-                        return res.status(500).json({
-                            error: 'No database connection available'
-                        });
-                    }
-
-                    const result = await DatabaseDebugHelper.initializeEssentialCollections(connection);
-
-                    res.json({
-                        success: true,
-                        message: 'Collections initialized successfully',
-                        data: result,
-                        timestamp: new Date().toISOString()
-                    });
-
-                } catch (error) {
-                    res.status(500).json({
-                        success: false,
-                        error: error.message,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-            });
-
-            // Create sample data only
-            this.app.post('/admin/debug/create-sample-data', async (req, res) => {
-                try {
-                    const connection = Database.getConnection();
-                    if (!connection) {
-                        return res.status(500).json({
-                            error: 'No database connection available'
-                        });
-                    }
-
-                    const result = await DatabaseDebugHelper.createSampleData(connection);
-
-                    res.json({
-                        success: true,
-                        message: 'Sample data created successfully',
-                        data: result,
-                        timestamp: new Date().toISOString()
-                    });
-
-                } catch (error) {
-                    res.status(500).json({
-                        success: false,
-                        error: error.message,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-            });
-
-            // Check models and collections status
-            this.app.get('/admin/debug/models-status', async (req, res) => {
-                try {
-                    const connection = Database.getConnection();
-                    if (!connection) {
-                        return res.status(500).json({
-                            error: 'No database connection available'
-                        });
-                    }
-
-                    const status = {
-                        connectionState: connection.readyState,
-                        databaseName: connection.db ? connection.db.databaseName : 'No database',
-                        registeredModels: Object.keys(connection.models || {}),
-                        modelCount: Object.keys(connection.models || {}).length
-                    };
-
-                    // Get collections from database
-                    if (connection.db) {
-                        try {
-                            const collections = await connection.db.listCollections().toArray();
-                            status.collections = collections.map(col => col.name);
-                            status.collectionCount = collections.length;
-                        } catch (error) {
-                            status.collectionsError = error.message;
-                        }
-                    }
-
-                    res.json({
-                        success: true,
-                        message: 'Models and collections status retrieved',
-                        data: status,
-                        timestamp: new Date().toISOString()
-                    });
-
-                } catch (error) {
-                    res.status(500).json({
-                        success: false,
-                        error: error.message,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-            });
-
-
-            // Temporary database debug route (bypasses security middleware)
-            this.app.get('/admin/temp-db-debug', async (req, res) => {
-                try {
-                    const connection = Database.getConnection();
-
-                    if (!connection) {
-                        return res.json({
-                            error: 'No database connection',
-                            status: 'connection_missing'
-                        });
-                    }
-
-                    const result = {
-                        connection: {
-                            readyState: connection.readyState,
-                            name: connection.name || 'Unknown',
-                            host: connection.host || 'Unknown',
-                            db: connection.db ? connection.db.databaseName : 'No database'
+                        currentDatabase: connection.db.databaseName,
+                        databases: databases.databases,
+                        collections: collections.map(c => c.name),
+                        stats: {
+                            collections: stats.collections,
+                            dataSize: stats.dataSize,
+                            storageSize: stats.storageSize
                         },
-                        models: Object.keys(connection.models || {}),
-                        modelCount: Object.keys(connection.models || {}).length,
-                        collections: [],
-                        collectionCount: 0
-                    };
-
-                    // Get collections if database is available
-                    if (connection.db) {
-                        try {
-                            const collections = await connection.db.listCollections().toArray();
-                            result.collections = collections.map(col => col.name);
-                            result.collectionCount = collections.length;
-                        } catch (error) {
-                            result.collectionsError = error.message;
-                        }
-                    }
-
-                    res.json({
-                        success: true,
-                        timestamp: new Date().toISOString(),
-                        data: result
+                        connectionString: process.env.DB_URI.replace(/\/\/[^:]+:[^@]+@/, '//***:***@') // Hide credentials
                     });
-
                 } catch (error) {
-                    res.json({
-                        success: false,
-                        error: error.message,
-                        timestamp: new Date().toISOString()
-                    });
+                    res.status(500).json({ error: error.message });
                 }
             });
-
-            // Quick database repair route
-            this.app.post('/admin/temp-db-repair', async (req, res) => {
-                try {
-                    const connection = Database.getConnection();
-
-                    if (!connection) {
-                        return res.json({
-                            error: 'No database connection available'
-                        });
-                    }
-
-                    // Quick collection creation without complex schemas
-                    const basicCollections = ['users', 'organizations', 'sessions', 'audit_logs'];
-                    const results = [];
-
-                    for (const collectionName of basicCollections) {
-                        try {
-                            // Check if collection exists
-                            const exists = await connection.db.listCollections({ name: collectionName }).hasNext();
-
-                            if (!exists) {
-                                // Create collection with a simple document
-                                await connection.db.createCollection(collectionName);
-
-                                // Insert a placeholder document to make the collection visible
-                                await connection.db.collection(collectionName).insertOne({
-                                    _placeholder: true,
-                                    createdAt: new Date(),
-                                    message: `Placeholder for ${collectionName} collection`
-                                });
-                            }
-
-                            results.push({
-                                collection: collectionName,
-                                status: exists ? 'existed' : 'created',
-                                action: exists ? 'verified' : 'created_with_placeholder'
-                            });
-
-                        } catch (error) {
-                            results.push({
-                                collection: collectionName,
-                                status: 'error',
-                                error: error.message
-                            });
-                        }
-                    }
-
-                    res.json({
-                        success: true,
-                        message: 'Quick database repair completed',
-                        results: results,
-                        timestamp: new Date().toISOString()
-                    });
-
-                } catch (error) {
-                    res.json({
-                        success: false,
-                        error: error.message,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-            });
-
 
             // Admin API routes (all require authentication when available)
             // this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutes);
