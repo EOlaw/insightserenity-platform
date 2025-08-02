@@ -94,7 +94,7 @@ class DevelopmentConfig {
 
     // Database configuration overrides
     this.database = {
-      uri: 'mongodb://localhost:27017/insightserenity_dev',
+      uri: process.env.DB_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/insightserenity_dev',
       options: {
         maxPoolSize: 10,
         minPoolSize: 2,

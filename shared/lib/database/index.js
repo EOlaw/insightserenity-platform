@@ -8,8 +8,6 @@
  * @requires module:shared/lib/database/query-builder
  * @requires module:shared/lib/database/transaction-manager
  * @requires module:shared/lib/database/models/base-model
- * @requires module:shared/lib/database/seeders/seed-manager
- * @requires module:shared/lib/database/migrations/migration-runner
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
  * @requires module:shared/config
@@ -20,11 +18,26 @@ const MultiTenantManager = require('./multi-tenant-manager');
 const QueryBuilder = require('./query-builder');
 const TransactionManager = require('./transaction-manager');
 const BaseModel = require('./models/base-model');
-const SeedManager = require('./seeders/seed-manager');
-const MigrationRunner = require('./migrations/migration-runner');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/app-error');
 const config = require('../../config');
+
+// Optional imports - these may not exist in all environments
+let SeedManager = null;
+let MigrationRunner = null;
+
+// Safely import optional modules
+try {
+  SeedManager = require('./seeders/seed-manager');
+} catch (error) {
+  logger.warn('SeedManager not available', { error: error.message });
+}
+
+try {
+  MigrationRunner = require('./migrations/migration-runner');
+} catch (error) {
+  logger.warn('MigrationRunner not available', { error: error.message });
+}
 
 /**
  * @class Database
@@ -54,7 +67,7 @@ class Database {
    * @param {Object} [options.transaction] - Transaction options
    * @param {Object} [options.seed] - Seed options
    * @param {Object} [options.migration] - Migration options
-   * @param {boolean} [options.runMigrations=true] - Auto-run migrations
+   * @param {boolean} [options.runMigrations=false] - Auto-run migrations (disabled by default)
    * @param {boolean} [options.runSeeds=false] - Auto-run seeds
    * @returns {Promise<void>}
    * @throws {AppError} If initialization fails
@@ -72,7 +85,7 @@ class Database {
         transaction = {},
         seed = {},
         migration = {},
-        runMigrations = true,
+        runMigrations = false, // Disabled by default to prevent issues
         runSeeds = false
       } = options;
 
@@ -107,42 +120,68 @@ class Database {
         auditService: options.auditService
       });
 
-      // Initialize migration runner
-      Database.#migrationRunner = new MigrationRunner({
-        ...config.database.migration,
-        ...migration,
-        transactionManager: Database.#transactionManager
-      });
+      // Initialize migration runner if available
+      if (MigrationRunner) {
+        try {
+          Database.#migrationRunner = new MigrationRunner({
+            ...config.database.migration,
+            ...migration,
+            transactionManager: Database.#transactionManager
+          });
 
-      await Database.#migrationRunner.initialize();
+          if (Database.#migrationRunner.initialize) {
+            await Database.#migrationRunner.initialize();
+          }
 
-      // Run migrations if enabled
-      if (runMigrations) {
-        const migrationResult = await Database.#migrationRunner.migrate();
-        logger.info('Migrations completed', {
-          successful: migrationResult.successful,
-          failed: migrationResult.failed
-        });
+          // Run migrations if enabled and safe to do so
+          if (runMigrations && Database.#migrationRunner.migrate) {
+            const migrationResult = await Database.#migrationRunner.migrate();
+            logger.info('Migrations completed', {
+              successful: migrationResult.successful || 0,
+              failed: migrationResult.failed || 0
+            });
+          }
+        } catch (migrationError) {
+          logger.warn('Migration runner initialization failed', {
+            error: migrationError.message
+          });
+          // Continue without migrations - not critical for basic operation
+        }
+      } else {
+        logger.info('Migration runner not available - skipping migration initialization');
       }
 
-      // Initialize seed manager
-      Database.#seedManager = new SeedManager({
-        ...config.database.seed,
-        ...seed,
-        transactionManager: Database.#transactionManager
-      });
+      // Initialize seed manager if available
+      if (SeedManager) {
+        try {
+          Database.#seedManager = new SeedManager({
+            ...config.database.seed,
+            ...seed,
+            transactionManager: Database.#transactionManager
+          });
 
-      await Database.#seedManager.initialize();
+          if (Database.#seedManager.initialize) {
+            await Database.#seedManager.initialize();
+          }
 
-      // Run seeds if enabled
-      if (runSeeds && config.env !== 'production') {
-        const seedResult = await Database.#seedManager.seed({
-          type: config.env
-        });
-        logger.info('Seeds completed', {
-          successful: seedResult.successful,
-          failed: seedResult.failed
-        });
+          // Run seeds if enabled
+          if (runSeeds && config.app.env !== 'production' && Database.#seedManager.seed) {
+            const seedResult = await Database.#seedManager.seed({
+              type: config.app.env
+            });
+            logger.info('Seeds completed', {
+              successful: seedResult.successful || 0,
+              failed: seedResult.failed || 0
+            });
+          }
+        } catch (seedError) {
+          logger.warn('Seed manager initialization failed', {
+            error: seedError.message
+          });
+          // Continue without seeds - not critical for basic operation
+        }
+      } else {
+        logger.info('Seed manager not available - skipping seed initialization');
       }
 
       // Load models
@@ -153,6 +192,8 @@ class Database {
       logger.info('Database module initialized successfully', {
         connection: connectionOptions.uri ? 'Connected' : 'Not configured',
         multiTenant: config.database.multiTenant?.enabled ? 'Enabled' : 'Disabled',
+        migrationRunner: Database.#migrationRunner ? 'Available' : 'Not available',
+        seedManager: Database.#seedManager ? 'Available' : 'Not available',
         modelsLoaded: Database.#models.size
       });
 
@@ -342,6 +383,11 @@ class Database {
       throw new AppError('Database not initialized', 500, 'DATABASE_NOT_INITIALIZED');
     }
 
+    if (!Database.#migrationRunner || !Database.#migrationRunner.migrate) {
+      logger.warn('Migration runner not available');
+      return { successful: 0, failed: 0, message: 'Migration runner not available' };
+    }
+
     return await Database.#migrationRunner.migrate(options);
   }
 
@@ -357,6 +403,11 @@ class Database {
       throw new AppError('Database not initialized', 500, 'DATABASE_NOT_INITIALIZED');
     }
 
+    if (!Database.#seedManager || !Database.#seedManager.seed) {
+      logger.warn('Seed manager not available');
+      return { successful: 0, failed: 0, message: 'Seed manager not available' };
+    }
+
     return await Database.#seedManager.seed(options);
   }
 
@@ -366,14 +417,15 @@ class Database {
    * @async
    * @returns {Promise<Object>} Health status
    */
-  static async getHealth() {
+  static async getHealthStatus() {
     try {
       const health = {
         status: 'healthy',
         initialized: Database.#initialized,
         connections: {},
         models: Database.#models.size,
-        metrics: {}
+        metrics: {},
+        timestamp: new Date().toISOString()
       };
 
       if (!Database.#initialized) {
@@ -398,8 +450,8 @@ class Database {
         health.metrics.transactions = Database.#transactionManager.getMetrics();
       }
 
-      // Get migration status
-      if (Database.#migrationRunner) {
+      // Get migration status if available
+      if (Database.#migrationRunner && Database.#migrationRunner.status) {
         health.metrics.migrations = await Database.#migrationRunner.status();
       }
 
@@ -411,7 +463,8 @@ class Database {
       return {
         status: 'error',
         error: error.message,
-        initialized: Database.#initialized
+        initialized: Database.#initialized,
+        timestamp: new Date().toISOString()
       };
     }
   }
@@ -449,30 +502,50 @@ class Database {
    */
   static async #loadModels() {
     try {
-      // Load core models
-      const models = [
-        { name: 'User', module: require('./models/users/user-model') },
-        // { name: 'Organization', module: require('../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model') },
-        { name: 'Organization', module: require('./models/organizations/organization-model') },
-        { name: 'Tenant', module: require('./models/organizations/tenant-model') },
-        { name: 'Session', module: require('./models/session-model') },
-        { name: 'AuditLog', module: require('./models/security/audit-log-model') },
-        { name: 'Notification', module: require('./models/platform/notification-model') },
-        { name: 'Webhook', module: require('./models/platform/webhook-model') }
+      // Load core models with safe imports
+      const modelDefinitions = [
+        { name: 'Session', path: './models/session-model' },
+        { name: 'User', path: './models/users/user-model' },
+        { name: 'Organization', path: './models/organizations/organization-model' },
+        { name: 'Tenant', path: './models/organizations/tenant-model' },
+        { name: 'AuditLog', path: './models/security/audit-log-model' },
+        { name: 'Notification', path: './models/platform/notification-model' },
+        { name: 'Webhook', path: './models/platform/webhook-model' }
       ];
 
-      for (const { name, module } of models) {
-        if (module.schema) {
-          Database.#schemas.set(name, module.schema);
-        }
-        
-        if (module.model) {
-          Database.#models.set(name, module.model);
+      let loadedCount = 0;
+      let failedCount = 0;
+
+      for (const { name, path } of modelDefinitions) {
+        try {
+          const modelModule = require(path);
+          
+          if (modelModule.schema) {
+            Database.#schemas.set(name, modelModule.schema);
+          }
+          
+          if (modelModule.model) {
+            Database.#models.set(name, modelModule.model);
+            loadedCount++;
+          } else if (modelModule.schema) {
+            // Create model from schema if no model exported
+            const model = BaseModel.createModel(name, modelModule.schema);
+            Database.#models.set(name, model);
+            loadedCount++;
+          }
+        } catch (modelError) {
+          logger.warn(`Failed to load model: ${name}`, {
+            error: modelError.message,
+            path
+          });
+          failedCount++;
         }
       }
 
-      logger.info('Built-in models loaded', {
-        count: Database.#models.size
+      logger.info('Model loading completed', {
+        loaded: loadedCount,
+        failed: failedCount,
+        total: modelDefinitions.length
       });
 
     } catch (error) {
@@ -498,7 +571,9 @@ class Database {
 
       for (const [modelName, model] of Database.#models) {
         try {
-          await model.createIndexes();
+          if (model.createIndexes) {
+            await model.createIndexes();
+          }
           results.successful++;
           results.models.push({
             name: modelName,
@@ -569,8 +644,8 @@ class Database {
         }
       }
 
-      // Validate migrations
-      if (Database.#migrationRunner) {
+      // Validate migrations if available
+      if (Database.#migrationRunner && Database.#migrationRunner.validate) {
         const migrationValidation = await Database.#migrationRunner.validate();
         
         if (!migrationValidation.valid) {
@@ -604,6 +679,16 @@ class Database {
       };
     }
   }
+
+  /**
+   * Gets comprehensive health status
+   * @static
+   * @async
+   * @returns {Promise<Object>} Comprehensive health status
+   */
+  static async getHealth() {
+    return await Database.getHealthStatus();
+  }
 }
 
 // Export main class and utilities
@@ -615,8 +700,6 @@ module.exports.MultiTenantManager = MultiTenantManager;
 module.exports.QueryBuilder = QueryBuilder;
 module.exports.TransactionManager = TransactionManager;
 module.exports.BaseModel = BaseModel;
-module.exports.SeedManager = SeedManager;
-module.exports.MigrationRunner = MigrationRunner;
 
 // Export convenience methods
 module.exports.connect = Database.initialize;

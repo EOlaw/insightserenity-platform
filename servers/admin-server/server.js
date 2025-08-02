@@ -24,6 +24,9 @@ if (envResult.error) {
 
 // Validate critical environment variables before proceeding
 const requiredEnvVars = ['NODE_ENV', 'ADMIN_PORT', 'DB_URI'];
+// Add this verification after the existing console.log statements:
+console.log(`DB_URI loaded: ${process.env.DB_URI ? 'Yes' : 'No'}`);
+console.log(`Database URI that will be used: ${process.env.DB_URI || process.env.MONGODB_URI || 'localhost fallback'}`);
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingVars.length > 0) {
@@ -39,6 +42,11 @@ console.log(`REDIS_ENABLED: ${process.env.REDIS_ENABLED}`);
 console.log(`SESSION_STORE: ${process.env.SESSION_STORE}`);
 console.log(`Cache Fallback: ${process.env.CACHE_FALLBACK_TO_MEMORY}`);
 console.log(`Environment file loaded from: ${envPath}`);
+
+// Add this after the existing console.log statements
+console.log(`DB_URI: ${process.env.DB_URI ? 'Set' : 'Not set'}`);
+console.log(`MONGODB_URI: ${process.env.MONGODB_URI ? 'Set' : 'Not set'}`);
+console.log(`Database URI being used: ${process.env.DB_URI || process.env.MONGODB_URI || 'localhost fallback'}`);
 
 // =============================================================================
 // MODULE IMPORTS - AFTER ENVIRONMENT LOADING

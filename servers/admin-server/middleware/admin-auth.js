@@ -14,7 +14,7 @@
 
 const { authenticate, authorize } = require('../../../shared/lib/auth/middleware/authenticate');
 const logger = require('../../../shared/lib/utils/logger');
-const AppError = require('../../../shared/lib/utils/app-error');
+const { AppError } = require('../../../shared/lib/utils/app-error');
 const AdminUserModel = require('../modules/user-management/models/admin-user-model');
 const AuditLogModel = require('../../../shared/lib/database/models/security/audit-log-model');
 const config = require('../config');

@@ -183,7 +183,7 @@ class ProductionConfig {
 
     // Database configuration overrides
     this.database = {
-      uri: process.env.MONGODB_URI,
+      uri: process.env.DB_URI,
       options: {
         maxPoolSize: 100,
         minPoolSize: 10,
@@ -906,7 +906,7 @@ class ProductionConfig {
     
     // Check critical production environment variables
     const requiredEnvVars = [
-      'MONGODB_URI',
+      'DB_URI',
       'DB_USERNAME',
       'DB_PASSWORD',
       'JWT_SECRET',

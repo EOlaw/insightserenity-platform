@@ -2,7 +2,7 @@
 
 /**
  * @fileoverview Enterprise-grade caching service with Redis and in-memory fallback
- * @module shared/lib/services/cache-service
+ * @module servers/admin-server/middleware/admin-rate-limit
  * @requires module:ioredis
  * @requires module:node-cache
  * @requires module:shared/lib/utils/logger

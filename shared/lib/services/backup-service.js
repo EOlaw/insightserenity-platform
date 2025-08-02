@@ -23,7 +23,7 @@ const FileService = require('./file-service');
 const CacheService = require('./cache-service');
 const EncryptionService = require('../security/encryption/encryption-service');
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const AuditLogModel = require('../database/models/security/audit-log-model');
 const config = require('../../config');
 const { ERROR_CODES } = require('../utils/constants/error-codes');
@@ -126,7 +126,7 @@ class BackupService {
           ...options.paths
         },
         database: {
-          uri: config.database?.uri || process.env.MONGODB_URI,
+          uri: config.database?.uri || process.env.DB_URI,
           name: config.database?.name || 'insightserenity',
           ...options.database
         },

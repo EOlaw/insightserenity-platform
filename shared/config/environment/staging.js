@@ -115,7 +115,7 @@ class StagingConfig {
 
     // Database configuration overrides
     this.database = {
-      uri: process.env.MONGODB_URI || 'mongodb+srv://staging-cluster.mongodb.net/insightserenity_staging',
+      uri: process.env.DB_URI || 'mongodb+srv://staging-cluster.mongodb.net/insightserenity_staging',
       options: {
         maxPoolSize: 50,
         minPoolSize: 5,
