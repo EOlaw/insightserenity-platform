@@ -7,7 +7,6 @@
  * @requires module:node-cache
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
- * @requires module:shared/lib/security/encryption/encryption-service
  * @requires module:shared/config
  */
 
@@ -15,10 +14,15 @@ const Redis = require('ioredis');
 const NodeCache = require('node-cache');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/app-error');
-const EncryptionService = require('../security/encryption/encryption-service');
 const config = require('../../config');
-const { ERROR_CODES } = require('../utils/constants/error-codes');
 const crypto = require('crypto');
+
+// Define error codes if not available
+const ERROR_CODES = {
+  CACHE_SET_ERROR: 'CACHE_SET_ERROR',
+  CACHE_INCREMENT_ERROR: 'CACHE_INCREMENT_ERROR',
+  LOCK_ACQUISITION_FAILED: 'LOCK_ACQUISITION_FAILED'
+};
 
 /**
  * @class CacheService
@@ -81,16 +85,28 @@ class CacheService {
 
   /**
    * @private
-   * @type {EncryptionService}
+   * @type {Object|null}
    */
   #encryptionService;
 
   /**
    * @private
-   * @static
-   * @type {WeakMap<Object, CacheService>}
+   * @type {number}
    */
-  static #instances = new WeakMap();
+  #reconnectAttempts;
+
+  /**
+   * @private
+   * @type {boolean}
+   */
+  #redisEnabled;
+
+  /**
+   * @private
+   * @static
+   * @type {Map<string, CacheService>}
+   */
+  static #instances = new Map();
 
   /**
    * Creates cache service instance
@@ -102,6 +118,9 @@ class CacheService {
    * @param {string} [options.namespace=''] - Cache key namespace
    */
   constructor(options = {}) {
+    // Check if Redis is globally disabled first
+    const redisGloballyEnabled = this.#checkGlobalRedisConfig();
+    
     // Initialize main configuration object first
     this.#config = {
       redis: {
@@ -110,10 +129,16 @@ class CacheService {
         password: config.redis?.password,
         db: config.redis?.db || 0,
         keyPrefix: config.redis?.keyPrefix || 'cache:',
-        enableOfflineQueue: true,
+        enableOfflineQueue: false,
         maxRetriesPerRequest: 3,
-        connectTimeout: 10000,
-        enabled: true, // Default to enabled
+        connectTimeout: 5000,
+        commandTimeout: 3000,
+        retryConnectOnFailover: false,
+        retryDelay: function(times) {
+          return Math.min(times * 1000, 3000);
+        },
+        maxRetryTime: 15000,
+        enabled: redisGloballyEnabled && (options.redis?.enabled !== false),
         ...options.redis
       },
       memory: {
@@ -128,35 +153,60 @@ class CacheService {
       namespace: options.namespace || '',
       fallbackToMemory: options.fallbackToMemory ?? true,
       syncToMemory: options.syncToMemory ?? true,
-      statsInterval: options.statsInterval || 60000 // 1 minute
+      statsInterval: options.statsInterval || 60000, // 1 minute
+      maxReconnectAttempts: options.maxReconnectAttempts || 3
     };
 
     // Initialize other private properties
     this.#isConnected = false;
+    this.#reconnectAttempts = 0;
+    this.#redisEnabled = this.#config.redis.enabled;
     this.#refreshHandlers = new Map();
     this.#refreshTimers = new Map();
     this.#cacheStats = new Map();
+    this.#encryptionService = null;
 
     // Initialize encryption service if needed
     if (this.#config.encryption) {
-      this.#encryptionService = new EncryptionService();
-    }
-
-    // Check global Redis configuration and override if disabled
-    try {
-      const globalRedisConfig = require('../../config/redis-config');
-      if (!globalRedisConfig.config.enabled) {
-        this.#config.redis = { ...this.#config.redis, enabled: false };
-        logger.info('Redis globally disabled, cache service will use memory-only mode');
+      try {
+        const EncryptionService = require('../security/encryption/encryption-service');
+        this.#encryptionService = new EncryptionService();
+      } catch (error) {
+        logger.warn('Encryption service not available, proceeding without encryption', {
+          error: error.message
+        });
+        this.#config.encryption = false;
       }
-    } catch (error) {
-      logger.warn('Unable to load global Redis configuration, proceeding with default settings', {
-        error: error.message
-      });
     }
 
     // Initialize the cache service
     this.#initialize();
+  }
+
+  /**
+   * Check global Redis configuration
+   * @private
+   * @returns {boolean} Whether Redis is globally enabled
+   */
+  #checkGlobalRedisConfig() {
+    try {
+      // Check environment variable first
+      if (process.env.REDIS_ENABLED === 'false') {
+        return false;
+      }
+
+      // Try to check config
+      if (config.redis?.enabled === false) {
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      logger.warn('Unable to determine Redis global config, defaulting to enabled', {
+        error: error.message
+      });
+      return true;
+    }
   }
 
   /**
@@ -176,6 +226,30 @@ class CacheService {
   }
 
   /**
+   * Get underlying Redis client for advanced operations
+   * @returns {Redis|null} Redis client or null if not connected
+   */
+  getClient() {
+    return this.#isConnected && this.#redisClient ? this.#redisClient : null;
+  }
+
+  /**
+   * Check if Redis is connected
+   * @returns {boolean} Connection status
+   */
+  isConnected() {
+    return this.#isConnected;
+  }
+
+  /**
+   * Check if Redis is enabled in configuration
+   * @returns {boolean} Redis enabled status
+   */
+  isRedisEnabled() {
+    return this.#redisEnabled;
+  }
+
+  /**
    * Set cache value
    * @param {string} key - Cache key
    * @param {*} value - Value to cache
@@ -192,12 +266,19 @@ class CacheService {
       const expiry = ttl || this.#config.memory.stdTTL;
 
       // Set in Redis if connected
-      if (this.#isConnected) {
-        await this.#redisClient.setex(fullKey, expiry, serialized);
-        
-        // Publish change event for distributed cache invalidation
-        if (options.publish !== false) {
-          await this.#publishChange('set', fullKey, { ttl: expiry });
+      if (this.#isConnected && this.#redisEnabled) {
+        try {
+          await this.#redisClient.setex(fullKey, expiry, serialized);
+          
+          // Publish change event for distributed cache invalidation
+          if (options.publish !== false) {
+            await this.#publishChange('set', fullKey, { ttl: expiry });
+          }
+        } catch (redisError) {
+          logger.warn('Redis set operation failed, using memory fallback', {
+            key: fullKey,
+            error: redisError.message
+          });
         }
       }
 
@@ -221,17 +302,19 @@ class CacheService {
       this.#updateStats('set', Date.now() - startTime, false);
       logger.error('Cache set error', { key: fullKey, error: error.message });
       
-      if (this.#config.fallbackToMemory && !this.#isConnected) {
-        this.#memoryCache.set(fullKey, value, ttl);
-        return true;
+      if (this.#config.fallbackToMemory) {
+        try {
+          this.#memoryCache.set(fullKey, value, ttl);
+          return true;
+        } catch (memoryError) {
+          logger.error('Memory cache set also failed', {
+            key: fullKey,
+            error: memoryError.message
+          });
+        }
       }
       
-      throw new AppError(
-        'Failed to set cache',
-        500,
-        ERROR_CODES.CACHE_SET_ERROR,
-        { key, error: error.message }
-      );
+      return false;
     }
   }
 
@@ -258,19 +341,26 @@ class CacheService {
       }
 
       // Try Redis if not found in memory
-      if (value === undefined && this.#isConnected) {
-        const serialized = await this.#redisClient.get(fullKey);
-        if (serialized) {
-          value = await this.#deserialize(serialized, options);
-          source = 'redis';
-          
-          // Sync to memory if enabled
-          if (this.#config.syncToMemory && value !== null) {
-            const ttl = await this.#redisClient.ttl(fullKey);
-            if (ttl > 0) {
-              this.#memoryCache.set(fullKey, value, ttl);
+      if (value === undefined && this.#isConnected && this.#redisEnabled) {
+        try {
+          const serialized = await this.#redisClient.get(fullKey);
+          if (serialized) {
+            value = await this.#deserialize(serialized, options);
+            source = 'redis';
+            
+            // Sync to memory if enabled
+            if (this.#config.syncToMemory && value !== null) {
+              const ttl = await this.#redisClient.ttl(fullKey);
+              if (ttl > 0) {
+                this.#memoryCache.set(fullKey, value, ttl);
+              }
             }
           }
+        } catch (redisError) {
+          logger.warn('Redis get operation failed', {
+            key: fullKey,
+            error: redisError.message
+          });
         }
       }
 
@@ -327,15 +417,22 @@ class CacheService {
       });
 
       // Get missing keys from Redis
-      if (missingKeys.length > 0 && this.#isConnected) {
-        const redisValues = await this.#redisClient.mget(...missingKeys);
-        
-        for (let i = 0; i < missingKeys.length; i++) {
-          if (redisValues[i]) {
-            const originalKey = keys[fullKeys.indexOf(missingKeys[i])];
-            const value = await this.#deserialize(redisValues[i], options);
-            results[originalKey] = value;
+      if (missingKeys.length > 0 && this.#isConnected && this.#redisEnabled) {
+        try {
+          const redisValues = await this.#redisClient.mget(...missingKeys);
+          
+          for (let i = 0; i < missingKeys.length; i++) {
+            if (redisValues[i]) {
+              const originalKey = keys[fullKeys.indexOf(missingKeys[i])];
+              const value = await this.#deserialize(redisValues[i], options);
+              results[originalKey] = value;
+            }
           }
+        } catch (redisError) {
+          logger.warn('Redis mget operation failed', {
+            keys: missingKeys,
+            error: redisError.message
+          });
         }
       }
 
@@ -366,12 +463,19 @@ class CacheService {
       let deleted = false;
 
       // Delete from Redis
-      if (this.#isConnected) {
-        deleted = await this.#redisClient.del(fullKey) > 0;
-        
-        // Publish change event
-        if (options.publish !== false) {
-          await this.#publishChange('delete', fullKey);
+      if (this.#isConnected && this.#redisEnabled) {
+        try {
+          deleted = await this.#redisClient.del(fullKey) > 0;
+          
+          // Publish change event
+          if (options.publish !== false) {
+            await this.#publishChange('delete', fullKey);
+          }
+        } catch (redisError) {
+          logger.warn('Redis delete operation failed', {
+            key: fullKey,
+            error: redisError.message
+          });
         }
       }
 
@@ -395,56 +499,6 @@ class CacheService {
   }
 
   /**
-   * Delete multiple cache values by pattern
-   * @param {string} pattern - Key pattern (supports wildcards)
-   * @param {Object} [options] - Additional options
-   * @returns {Promise<number>} Number of deleted keys
-   */
-  async deletePattern(pattern, options = {}) {
-    const fullPattern = this.#buildKey(pattern);
-    const startTime = Date.now();
-    let totalDeleted = 0;
-
-    try {
-      // Delete from Redis
-      if (this.#isConnected) {
-        const keys = await this.#scanKeys(fullPattern);
-        if (keys.length > 0) {
-          totalDeleted = await this.#redisClient.del(...keys);
-          
-          // Publish change events
-          if (options.publish !== false) {
-            for (const key of keys) {
-              await this.#publishChange('delete', key);
-            }
-          }
-        }
-      }
-
-      // Delete from memory
-      const memoryKeys = this.#memoryCache.keys();
-      const regex = new RegExp(fullPattern.replace(/\*/g, '.*'));
-      
-      memoryKeys.forEach(key => {
-        if (regex.test(key)) {
-          this.#memoryCache.del(key);
-          totalDeleted++;
-        }
-      });
-
-      this.#updateStats('deletePattern', Date.now() - startTime, true);
-      logger.debug('Cache delete pattern', { pattern: fullPattern, deleted: totalDeleted });
-      
-      return totalDeleted;
-
-    } catch (error) {
-      this.#updateStats('deletePattern', Date.now() - startTime, false);
-      logger.error('Cache delete pattern error', { pattern: fullPattern, error: error.message });
-      return 0;
-    }
-  }
-
-  /**
    * Clear all cache
    * @param {Object} [options] - Additional options
    * @returns {Promise<boolean>} Success status
@@ -454,19 +508,25 @@ class CacheService {
 
     try {
       // Clear Redis
-      if (this.#isConnected) {
-        if (this.#config.redis.keyPrefix) {
-          const keys = await this.#scanKeys('*');
-          if (keys.length > 0) {
-            await this.#redisClient.del(...keys);
+      if (this.#isConnected && this.#redisEnabled) {
+        try {
+          if (this.#config.redis.keyPrefix) {
+            const keys = await this.#scanKeys('*');
+            if (keys.length > 0) {
+              await this.#redisClient.del(...keys);
+            }
+          } else {
+            await this.#redisClient.flushdb();
           }
-        } else {
-          await this.#redisClient.flushdb();
-        }
-        
-        // Publish clear event
-        if (options.publish !== false) {
-          await this.#publishChange('clear', '*');
+          
+          // Publish clear event
+          if (options.publish !== false) {
+            await this.#publishChange('clear', '*');
+          }
+        } catch (redisError) {
+          logger.warn('Redis clear operation failed', {
+            error: redisError.message
+          });
         }
       }
 
@@ -505,8 +565,15 @@ class CacheService {
       }
 
       // Check Redis
-      if (this.#isConnected) {
-        return await this.#redisClient.exists(fullKey) > 0;
+      if (this.#isConnected && this.#redisEnabled) {
+        try {
+          return await this.#redisClient.exists(fullKey) > 0;
+        } catch (redisError) {
+          logger.warn('Redis exists operation failed', {
+            key: fullKey,
+            error: redisError.message
+          });
+        }
       }
 
       return false;
@@ -527,8 +594,15 @@ class CacheService {
 
     try {
       // Check Redis first
-      if (this.#isConnected) {
-        return await this.#redisClient.ttl(fullKey);
+      if (this.#isConnected && this.#redisEnabled) {
+        try {
+          return await this.#redisClient.ttl(fullKey);
+        } catch (redisError) {
+          logger.warn('Redis TTL operation failed', {
+            key: fullKey,
+            error: redisError.message
+          });
+        }
       }
 
       // Check memory
@@ -558,12 +632,22 @@ class CacheService {
     try {
       let newValue;
 
-      if (this.#isConnected) {
-        newValue = await this.#redisClient.incrby(fullKey, amount);
-        if (ttl) {
-          await this.#redisClient.expire(fullKey, ttl);
+      if (this.#isConnected && this.#redisEnabled) {
+        try {
+          newValue = await this.#redisClient.incrby(fullKey, amount);
+          if (ttl) {
+            await this.#redisClient.expire(fullKey, ttl);
+          }
+        } catch (redisError) {
+          logger.warn('Redis increment operation failed, using memory fallback', {
+            key: fullKey,
+            error: redisError.message
+          });
+          // Fall through to memory implementation
         }
-      } else {
+      }
+
+      if (newValue === undefined) {
         const current = this.#memoryCache.get(fullKey) || 0;
         newValue = current + amount;
         this.#memoryCache.set(fullKey, newValue, ttl);
@@ -606,7 +690,9 @@ class CacheService {
         hitRate: this.#calculateHitRate(this.#memoryCache.getStats())
       },
       redis: {
-        connected: this.#isConnected
+        connected: this.#isConnected,
+        enabled: this.#redisEnabled,
+        reconnectAttempts: this.#reconnectAttempts
       },
       operations: {}
     };
@@ -626,48 +712,6 @@ class CacheService {
   }
 
   /**
-   * Lock a key for exclusive access
-   * @param {string} key - Lock key
-   * @param {number} [ttl=10] - Lock TTL in seconds
-   * @param {Object} [options] - Lock options
-   * @returns {Promise<Object>} Lock object with release method
-   */
-  async lock(key, ttl = 10, options = {}) {
-    const lockKey = `lock:${this.#buildKey(key)}`;
-    const lockId = crypto.randomBytes(16).toString('hex');
-    const maxRetries = options.maxRetries || 10;
-    const retryDelay = options.retryDelay || 100;
-
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        const acquired = await this.#acquireLock(lockKey, lockId, ttl);
-        
-        if (acquired) {
-          return {
-            key: lockKey,
-            id: lockId,
-            release: async () => {
-              await this.#releaseLock(lockKey, lockId);
-            }
-          };
-        }
-
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-
-      } catch (error) {
-        logger.error('Lock acquisition error', { key: lockKey, error: error.message });
-      }
-    }
-
-    throw new AppError(
-      'Failed to acquire lock',
-      423,
-      ERROR_CODES.LOCK_ACQUISITION_FAILED,
-      { key, maxRetries }
-    );
-  }
-
-  /**
    * @private
    * Initialize cache connections
    */
@@ -675,18 +719,16 @@ class CacheService {
     // Initialize memory cache
     this.#memoryCache = new NodeCache(this.#config.memory);
 
-    // Check if Redis is enabled before attempting connection
-    if (!this.#config.redis.enabled) {
+    // Initialize Redis only if enabled
+    if (!this.#redisEnabled) {
       logger.info('Redis disabled, using memory cache only', {
-        redisEnabled: this.#config.redis.enabled,
+        redisEnabled: this.#redisEnabled,
         fallbackEnabled: this.#config.fallbackToMemory
       });
-      this.#isConnected = false;
       this.#startStatsCollection();
       return;
     }
 
-    // Initialize Redis only if enabled
     try {
       this.#redisClient = new Redis({
         ...this.#config.redis,
@@ -699,10 +741,19 @@ class CacheService {
       // Set up event handlers
       this.#setupRedisEventHandlers();
 
-      // Connect
-      await this.#redisClient.connect();
-      await this.#redisSubscriber.connect();
-      await this.#redisPublisher.connect();
+      // Connect with timeout
+      const connectPromise = Promise.all([
+        this.#redisClient.connect(),
+        this.#redisSubscriber.connect(),
+        this.#redisPublisher.connect()
+      ]);
+
+      await Promise.race([
+        connectPromise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Redis connection timeout')), 5000)
+        )
+      ]);
 
       // Subscribe to cache changes
       await this.#subscribeToChanges();
@@ -718,6 +769,7 @@ class CacheService {
         error: error.message
       });
       this.#isConnected = false;
+      this.#redisEnabled = false;
     }
 
     // Start stats collection
@@ -726,38 +778,22 @@ class CacheService {
 
   /**
    * @private
-   * Set up Redis event handlers
+   * Set up Redis event handlers with reconnection limits
    */
   #setupRedisEventHandlers() {
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 3;
-
     this.#redisClient.on('error', (error) => {
       logger.error('Redis client error', { error: error.message });
       this.#isConnected = false;
-      
-      // Stop reconnection attempts if max attempts reached
-      if (reconnectAttempts >= maxReconnectAttempts) {
-        logger.warn('Stopping Redis reconnection attempts', {
-          attempts: reconnectAttempts,
-          maxAttempts: maxReconnectAttempts
-        });
-        this.#redisClient.disconnect();
-        return;
-      }
-      
-      reconnectAttempts++;
     });
 
     this.#redisClient.on('connect', () => {
       logger.info('Redis client connected');
       this.#isConnected = true;
-      reconnectAttempts = 0; // Reset counter on successful connection
+      this.#reconnectAttempts = 0; // Reset counter on successful connection
     });
 
     this.#redisClient.on('ready', () => {
       logger.info('Redis client ready');
-      reconnectAttempts = 0; // Reset counter when ready
     });
 
     this.#redisClient.on('close', () => {
@@ -765,13 +801,63 @@ class CacheService {
       this.#isConnected = false;
     });
 
-    this.#redisClient.on('reconnecting', () => {
-      if (reconnectAttempts >= maxReconnectAttempts) {
-        logger.warn('Preventing Redis reconnection - max attempts reached');
-        this.#redisClient.disconnect();
+    this.#redisClient.on('reconnecting', (ms) => {
+      this.#reconnectAttempts++;
+      
+      if (this.#reconnectAttempts >= this.#config.maxReconnectAttempts) {
+        logger.error('Maximum Redis reconnection attempts reached, disabling Redis', {
+          attempts: this.#reconnectAttempts,
+          maxAttempts: this.#config.maxReconnectAttempts
+        });
+        
+        // Disconnect to stop further attempts
+        try {
+          this.#redisClient.disconnect();
+          this.#redisSubscriber.disconnect();
+          this.#redisPublisher.disconnect();
+        } catch (disconnectError) {
+          logger.error('Error disconnecting Redis clients', {
+            error: disconnectError.message
+          });
+        }
+        
+        this.#redisEnabled = false;
+        this.#isConnected = false;
         return;
       }
-      logger.info('Redis client reconnecting', { attempt: reconnectAttempts + 1 });
+      
+      logger.info('Redis client reconnecting', {
+        attempt: this.#reconnectAttempts,
+        delay: ms,
+        maxAttempts: this.#config.maxReconnectAttempts
+      });
+    });
+
+    this.#redisClient.on('end', () => {
+      logger.warn('Redis connection ended');
+      this.#isConnected = false;
+    });
+
+    // Set up similar handlers for subscriber and publisher
+    this.#setupRedisClientHandlers(this.#redisSubscriber, 'subscriber');
+    this.#setupRedisClientHandlers(this.#redisPublisher, 'publisher');
+  }
+
+  /**
+   * @private
+   * Set up event handlers for Redis client instances
+   */
+  #setupRedisClientHandlers(client, type) {
+    client.on('error', (error) => {
+      logger.error(`Redis ${type} error`, { error: error.message });
+    });
+
+    client.on('connect', () => {
+      logger.debug(`Redis ${type} connected`);
+    });
+
+    client.on('close', () => {
+      logger.debug(`Redis ${type} connection closed`);
     });
   }
 
@@ -780,18 +866,24 @@ class CacheService {
    * Subscribe to cache change events
    */
   async #subscribeToChanges() {
-    const channel = `${this.#config.redis.keyPrefix}changes`;
-    
-    await this.#redisSubscriber.subscribe(channel);
-    
-    this.#redisSubscriber.on('message', (channel, message) => {
-      try {
-        const { action, key } = JSON.parse(message);
-        this.#handleCacheChange(action, key);
-      } catch (error) {
-        logger.error('Error handling cache change message', { error: error.message });
-      }
-    });
+    if (!this.#isConnected || !this.#redisSubscriber) return;
+
+    try {
+      const channel = `${this.#config.redis.keyPrefix}changes`;
+      
+      await this.#redisSubscriber.subscribe(channel);
+      
+      this.#redisSubscriber.on('message', (channel, message) => {
+        try {
+          const { action, key } = JSON.parse(message);
+          this.#handleCacheChange(action, key);
+        } catch (error) {
+          logger.error('Error handling cache change message', { error: error.message });
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to subscribe to cache changes', { error: error.message });
+    }
   }
 
   /**
@@ -799,7 +891,7 @@ class CacheService {
    * Publish cache change event
    */
   async #publishChange(action, key, data = {}) {
-    if (!this.#isConnected) return;
+    if (!this.#isConnected || !this.#redisPublisher) return;
 
     const channel = `${this.#config.redis.keyPrefix}changes`;
     const message = JSON.stringify({ action, key, ...data });
@@ -850,15 +942,27 @@ class CacheService {
     
     // Compress if enabled
     if (this.#config.compression && serialized.length > 1024) {
-      const zlib = require('zlib');
-      serialized = zlib.gzipSync(serialized).toString('base64');
-      serialized = `gzip:${serialized}`;
+      try {
+        const zlib = require('zlib');
+        serialized = zlib.gzipSync(serialized).toString('base64');
+        serialized = `gzip:${serialized}`;
+      } catch (error) {
+        logger.warn('Compression failed, storing uncompressed', {
+          error: error.message
+        });
+      }
     }
     
     // Encrypt if enabled
-    if (this.#config.encryption && options.encrypt !== false) {
-      serialized = await this.#encryptionService.encrypt(serialized);
-      serialized = `enc:${serialized}`;
+    if (this.#config.encryption && options.encrypt !== false && this.#encryptionService) {
+      try {
+        serialized = await this.#encryptionService.encrypt(serialized);
+        serialized = `enc:${serialized}`;
+      } catch (error) {
+        logger.warn('Encryption failed, storing unencrypted', {
+          error: error.message
+        });
+      }
     }
     
     return serialized;
@@ -873,15 +977,29 @@ class CacheService {
     
     // Decrypt if encrypted
     if (deserialized.startsWith('enc:')) {
-      deserialized = deserialized.substring(4);
-      deserialized = await this.#encryptionService.decrypt(deserialized);
+      if (this.#encryptionService) {
+        try {
+          deserialized = deserialized.substring(4);
+          deserialized = await this.#encryptionService.decrypt(deserialized);
+        } catch (error) {
+          logger.error('Decryption failed', { error: error.message });
+          throw error;
+        }
+      } else {
+        throw new Error('Encrypted data found but encryption service not available');
+      }
     }
     
     // Decompress if compressed
     if (deserialized.startsWith('gzip:')) {
-      const zlib = require('zlib');
-      deserialized = deserialized.substring(5);
-      deserialized = zlib.gunzipSync(Buffer.from(deserialized, 'base64')).toString();
+      try {
+        const zlib = require('zlib');
+        deserialized = deserialized.substring(5);
+        deserialized = zlib.gunzipSync(Buffer.from(deserialized, 'base64')).toString();
+      } catch (error) {
+        logger.error('Decompression failed', { error: error.message });
+        throw error;
+      }
     }
     
     return JSON.parse(deserialized);
@@ -912,25 +1030,32 @@ class CacheService {
    * Scan Redis keys by pattern
    */
   async #scanKeys(pattern) {
-    const keys = [];
-    const stream = this.#redisClient.scanStream({
-      match: this.#config.redis.keyPrefix + pattern,
-      count: 100
-    });
+    if (!this.#isConnected || !this.#redisClient) return [];
 
-    return new Promise((resolve, reject) => {
-      stream.on('data', (resultKeys) => {
-        keys.push(...resultKeys);
+    const keys = [];
+    try {
+      const stream = this.#redisClient.scanStream({
+        match: this.#config.redis.keyPrefix + pattern,
+        count: 100
       });
-      
-      stream.on('end', () => {
-        resolve(keys);
+
+      return new Promise((resolve, reject) => {
+        stream.on('data', (resultKeys) => {
+          keys.push(...resultKeys);
+        });
+        
+        stream.on('end', () => {
+          resolve(keys);
+        });
+        
+        stream.on('error', (error) => {
+          reject(error);
+        });
       });
-      
-      stream.on('error', (error) => {
-        reject(error);
-      });
-    });
+    } catch (error) {
+      logger.error('Redis scan failed', { error: error.message });
+      return [];
+    }
   }
 
   /**
@@ -972,51 +1097,6 @@ class CacheService {
       this.#refreshTimers.delete(key);
       this.#refreshHandlers.delete(key);
     }
-  }
-
-  /**
-   * @private
-   * Acquire distributed lock
-   */
-  async #acquireLock(key, id, ttl) {
-    if (!this.#isConnected) {
-      // Use memory-based lock
-      const existingLock = this.#memoryCache.get(key);
-      if (!existingLock) {
-        this.#memoryCache.set(key, id, ttl);
-        return true;
-      }
-      return false;
-    }
-
-    // Use Redis SET NX with TTL
-    const result = await this.#redisClient.set(key, id, 'EX', ttl, 'NX');
-    return result === 'OK';
-  }
-
-  /**
-   * @private
-   * Release distributed lock
-   */
-  async #releaseLock(key, id) {
-    if (!this.#isConnected) {
-      const existingLock = this.#memoryCache.get(key);
-      if (existingLock === id) {
-        this.#memoryCache.del(key);
-      }
-      return;
-    }
-
-    // Use Lua script for atomic check and delete
-    const script = `
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("del", KEYS[1])
-      else
-        return 0
-      end
-    `;
-    
-    await this.#redisClient.eval(script, 1, key, id);
   }
 
   /**
@@ -1081,13 +1161,27 @@ class CacheService {
 
     // Close Redis connections
     if (this.#redisClient) {
-      await this.#redisClient.quit();
+      try {
+        await this.#redisClient.quit();
+      } catch (error) {
+        logger.error('Error closing Redis client', { error: error.message });
+      }
     }
+    
     if (this.#redisSubscriber) {
-      await this.#redisSubscriber.quit();
+      try {
+        await this.#redisSubscriber.quit();
+      } catch (error) {
+        logger.error('Error closing Redis subscriber', { error: error.message });
+      }
     }
+    
     if (this.#redisPublisher) {
-      await this.#redisPublisher.quit();
+      try {
+        await this.#redisPublisher.quit();
+      } catch (error) {
+        logger.error('Error closing Redis publisher', { error: error.message });
+      }
     }
 
     // Clear memory cache
@@ -1095,6 +1189,7 @@ class CacheService {
     this.#memoryCache.close();
 
     this.#isConnected = false;
+    this.#redisEnabled = false;
     logger.info('CacheService shutdown complete');
   }
 }

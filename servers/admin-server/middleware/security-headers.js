@@ -4,12 +4,10 @@
  * @fileoverview Comprehensive security headers middleware for admin protection
  * @module servers/admin-server/middleware/security-headers
  * @requires module:shared/lib/utils/logger
- * @requires module:shared/lib/services/cache-service
  * @requires module:servers/admin-server/config
  */
 
 const logger = require('../../../shared/lib/utils/logger');
-const CacheService = require('../../../shared/lib/services/cache-service');
 const config = require('../config');
 const crypto = require('crypto');
 
@@ -21,9 +19,9 @@ class SecurityHeadersMiddleware {
   /**
    * @private
    * @static
-   * @type {CacheService}
+   * @type {Object|null}
    */
-  static #cacheService = new CacheService();
+  static #cacheService = null;
 
   /**
    * @private
@@ -138,6 +136,40 @@ class SecurityHeadersMiddleware {
    * @type {Set<string>}
    */
   static #reportedViolations = new Set();
+
+  /**
+   * Get or initialize cache service
+   * @private
+   * @static
+   * @returns {Object|null} Cache service instance
+   */
+  static #getCacheService() {
+    if (!this.#cacheService) {
+      try {
+        // Safely require and instantiate CacheService
+        const CacheService = require('../../../shared/lib/services/cache-service');
+        
+        // Use singleton pattern if available, otherwise create new instance
+        if (typeof CacheService.getInstance === 'function') {
+          this.#cacheService = CacheService.getInstance({
+            namespace: 'security_headers',
+            fallbackToMemory: true
+          });
+        } else {
+          this.#cacheService = new CacheService({
+            namespace: 'security_headers',
+            fallbackToMemory: true
+          });
+        }
+      } catch (error) {
+        logger.warn('CacheService not available, proceeding without cache', {
+          error: error.message
+        });
+        this.#cacheService = null;
+      }
+    }
+    return this.#cacheService;
+  }
 
   /**
    * Initialize security headers middleware
@@ -471,6 +503,16 @@ class SecurityHeadersMiddleware {
    */
   static async #storeViolation(violation, req) {
     try {
+      const cacheService = this.#getCacheService();
+      if (!cacheService) {
+        // Log violation without caching if cache service unavailable
+        logger.warn('CSP violation logged (cache unavailable)', {
+          violation: violation['violated-directive'],
+          uri: violation['blocked-uri']
+        });
+        return;
+      }
+
       const violationData = {
         timestamp: new Date(),
         documentUri: violation['document-uri'],
@@ -488,7 +530,7 @@ class SecurityHeadersMiddleware {
       
       // Store in cache for aggregation
       const cacheKey = `${this.#config.cache.prefix}violations:${Date.now()}`;
-      await this.#cacheService.set(cacheKey, violationData, 86400); // 24 hours
+      await cacheService.set(cacheKey, violationData, 86400); // 24 hours
       
     } catch (error) {
       logger.error('Failed to store CSP violation', {
@@ -558,11 +600,16 @@ class SecurityHeadersMiddleware {
    */
   static async getViolationsReport() {
     try {
-      const keys = await this.#cacheService.keys(`${this.#config.cache.prefix}violations:*`);
+      const cacheService = this.#getCacheService();
+      if (!cacheService) {
+        return [];
+      }
+
+      const keys = await cacheService.keys(`${this.#config.cache.prefix}violations:*`);
       const violations = [];
       
       for (const key of keys) {
-        const violation = await this.#cacheService.get(key);
+        const violation = await cacheService.get(key);
         if (violation) {
           violations.push(violation);
         }
