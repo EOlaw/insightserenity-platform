@@ -2,9 +2,14 @@
 
 # dependencies
 /node_modules
+/package-lock.json
 /servers/admin-server/node_modules
+/server/admin-server/package-lock.json
 /servers/customer-services/node_modules
+/server/customer-services/package-lock.json
 /servers/gateway/node_modules
+/server/gateway/package-lock.json
+
 /.pnp
 .pnp.*
 .yarn/*
