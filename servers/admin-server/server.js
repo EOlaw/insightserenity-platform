@@ -594,8 +594,8 @@ class AdminServer extends EventEmitter {
      */
     async createSecureHttpsServer(app) {
         try {
-            const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.keyPath || './certs/key.pem');
-            const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.certPath || './certs/cert.pem');
+            const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.keyPath || './key.pem');
+            const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl?.certPath || './cert.pem');
 
             if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
                 throw new Error(`SSL certificates not found: key=${keyPath}, cert=${certPath}`);
