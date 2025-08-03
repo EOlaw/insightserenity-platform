@@ -15,7 +15,7 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const BaseOAuthStrategy = require('./oauth-strategy');
 const GoogleAPI = require('../../integrations/social/google-api');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 
 /**

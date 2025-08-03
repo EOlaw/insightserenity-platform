@@ -15,7 +15,7 @@ const GitHubStrategy = require('passport-github2').Strategy;
 const BaseOAuthStrategy = require('./oauth-strategy');
 const GitHubAPI = require('../../integrations/social/github-api');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 
 /**
