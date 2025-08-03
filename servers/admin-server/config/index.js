@@ -12,22 +12,29 @@ const path = require('path');
 // Import shared configuration as base - FIXED to use existing base-config
 const sharedConfig = require('../../../shared/config');
 
+// Import admin-specific configurations directly
+const adminConfig = require('./admin-config');
+const sessionConfig = require('./session-config');
+const featuresConfig = require('./features-config');
+const securityConfig = require('./security-config');
+const monitoringConfig = require('./monitoring-config');
+
 // Safely load admin-specific configurations
-const loadAdminConfigModule = (moduleName) => {
-    try {
-        return require(`./${moduleName}`);
-    } catch (error) {
-        console.log(`Admin config module ${moduleName} not found, using defaults`);
-        return {};
-    }
-};
+// const loadAdminConfigModule = (moduleName) => {
+//     try {
+//         return require(`./${moduleName}`);
+//     } catch (error) {
+//         console.log(`Admin config module ${moduleName} not found, using defaults`);
+//         return {};
+//     }
+// };
 
 // Load admin-specific configurations with fallbacks
-const adminConfig = loadAdminConfigModule('admin-config');
-const sessionConfig = loadAdminConfigModule('session-config');
-const featuresConfig = loadAdminConfigModule('features-config');
-const securityConfig = loadAdminConfigModule('security-config');
-const monitoringConfig = loadAdminConfigModule('monitoring-config');
+// const adminConfig = loadAdminConfigModule('admin-config');
+// const sessionConfig = loadAdminConfigModule('session-config');
+// const featuresConfig = loadAdminConfigModule('features-config');
+// const securityConfig = loadAdminConfigModule('security-config');
+// const monitoringConfig = loadAdminConfigModule('monitoring-config');
 
 /**
  * Admin server configuration class - FIXED to use existing baseConfig structure
@@ -40,13 +47,13 @@ class AdminConfiguration {
         this.isProduction = this.environment === 'production';
         this.isStaging = this.environment === 'staging';
         this.isTest = this.environment === 'test';
-        
+
         // Initialize configuration using existing shared config
         this.config = this.buildConfiguration();
-        
+
         // Validate critical configurations
         this.validateConfiguration();
-        
+
         // Freeze configuration in production
         if (this.isProduction) {
             this.deepFreeze(this.config);
@@ -61,7 +68,7 @@ class AdminConfiguration {
         // Start with shared configuration as base - FIXED to not modify shared config
         const baseConfig = {
             ...sharedConfig,
-            
+
             // Override app settings for admin using existing structure
             app: {
                 ...sharedConfig.app,
@@ -83,7 +90,7 @@ class AdminConfiguration {
         // Merge admin-specific configurations using existing patterns
         return {
             ...baseConfig,
-            
+
             // Admin-specific configuration
             admin: {
                 port: parseInt(process.env.ADMIN_PORT, 10) || 5001,
@@ -94,7 +101,7 @@ class AdminConfiguration {
                 uploadLimit: process.env.ADMIN_UPLOAD_LIMIT || '50mb',
                 behindProxy: process.env.ADMIN_BEHIND_PROXY === 'true',
                 trustProxyLevel: parseInt(process.env.ADMIN_TRUST_PROXY_LEVEL, 10) || 1,
-                
+
                 security: {
                     forceSSL: process.env.ADMIN_FORCE_SSL === 'true',
                     requireMFA: process.env.ADMIN_REQUIRE_MFA === 'true',
@@ -105,16 +112,23 @@ class AdminConfiguration {
                         addresses: process.env.ADMIN_IP_WHITELIST ? process.env.ADMIN_IP_WHITELIST.split(',') : []
                     },
                     ssl: {
-                        keyPath: process.env.ADMIN_SSL_KEY_PATH || './certs/key.pem',
-                        certPath: process.env.ADMIN_SSL_CERT_PATH || './certs/cert.pem'
+                        keyPath: process.env.ADMIN_SSL_KEY_PATH || '../key.pem',
+                        certPath: process.env.ADMIN_SSL_CERT_PATH || '../cert.pem'
                     }
                 },
-                ...adminConfig
+                // Extract non-logging properties from adminConfig
+                ...Object.fromEntries(Object.entries(adminConfig).filter(([key]) => key !== 'logging'))
             },
-            
+
+            // Expose logging configuration at top level for admin-logger
+            logging: {
+                ...baseConfig.logging,
+                ...adminConfig.logging
+            },
+
             // Session configuration - merge with existing session config
             session: this.mergeSessionConfig(baseConfig.security?.session, sessionConfig),
-            
+
             // Features configuration - use from baseConfig or override
             features: {
                 ...baseConfig.features,
@@ -124,10 +138,10 @@ class AdminConfiguration {
                 auditLogging: process.env.AUDIT_ENABLED !== 'false',
                 ...featuresConfig
             },
-            
+
             // Security configuration - enhance existing security config
             security: this.mergeSecurityConfig(baseConfig.security, securityConfig),
-            
+
             // Monitoring configuration
             monitoring: {
                 healthCheckInterval: parseInt(process.env.ADMIN_HEALTH_CHECK_INTERVAL, 10) || 30000,
@@ -137,7 +151,7 @@ class AdminConfiguration {
                 },
                 ...monitoringConfig
             },
-            
+
             // Admin-specific paths
             paths: {
                 ...baseConfig.paths,
@@ -164,12 +178,12 @@ class AdminConfiguration {
         const protocol = process.env.ADMIN_FORCE_SSL === 'true' ? 'https' : 'http';
         const host = process.env.ADMIN_HOST || '127.0.0.1';
         const port = process.env.ADMIN_PORT || 5001;
-        
+
         // Production URLs typically don't include port
         if (this.isProduction && [80, 443].includes(parseInt(port, 10))) {
             return `${protocol}://${host}`;
         }
-        
+
         return `${protocol}://${host}:${port}`;
     }
 
@@ -254,11 +268,11 @@ class AdminConfiguration {
             if (!this.config.security.ssl.enabled && !this.config.admin.security.forceSSL) {
                 console.warn('Warning: SSL should be enabled for admin server in production');
             }
-            
+
             if (!this.config.admin.security.ipWhitelist?.enabled) {
                 console.warn('Warning: IP whitelist should be enabled for admin server in production');
             }
-            
+
             if (!this.config.security.session.secret || this.config.security.session.secret.length < 32) {
                 errors.push('Session secret must be at least 32 characters in production');
             }
@@ -289,7 +303,7 @@ class AdminConfiguration {
      */
     deepFreeze(obj) {
         Object.freeze(obj);
-        
+
         Object.getOwnPropertyNames(obj).forEach(prop => {
             if (obj[prop] !== null
                 && (typeof obj[prop] === 'object' || typeof obj[prop] === 'function')
@@ -297,7 +311,7 @@ class AdminConfiguration {
                 this.deepFreeze(obj[prop]);
             }
         });
-        
+
         return obj;
     }
 
@@ -310,7 +324,7 @@ class AdminConfiguration {
     get(path, defaultValue = undefined) {
         const keys = path.split('.');
         let result = this.config;
-        
+
         for (const key of keys) {
             if (result && typeof result === 'object' && key in result) {
                 result = result[key];
@@ -318,7 +332,7 @@ class AdminConfiguration {
                 return defaultValue;
             }
         }
-        
+
         return result;
     }
 
@@ -330,7 +344,7 @@ class AdminConfiguration {
     has(path) {
         const keys = path.split('.');
         let result = this.config;
-        
+
         for (const key of keys) {
             if (result && typeof result === 'object' && key in result) {
                 result = result[key];
@@ -338,7 +352,7 @@ class AdminConfiguration {
                 return false;
             }
         }
-        
+
         return true;
     }
 

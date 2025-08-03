@@ -1,6 +1,7 @@
 /**
  * @file Security Configuration
  * @description Enhanced security settings for admin server operations
+ * @module servers/admin-server/config/security-config
  * @version 3.0.0
  */
 

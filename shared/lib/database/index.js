@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview Database module main exports
+ * @fileoverview Database module main exports - FIXED VERSION
  * @module shared/lib/database
  * @requires module:shared/lib/database/connection-manager
  * @requires module:shared/lib/database/multi-tenant-manager
@@ -209,7 +209,7 @@ class Database {
                 }
             }
 
-            // Load models (this will populate the models registry)
+            // Load models (FIXED - now properly loads models from BaseModel registry)
             await Database.#loadModels();
 
             Database.#initialized = true;
@@ -301,6 +301,17 @@ class Database {
         }
 
         return ConnectionManager.getConnection(name);
+    }
+
+    /**
+     * Gets the database instance (FIXED - direct access)
+     * @static
+     * @param {string} [name='default'] - Connection name
+     * @returns {Object|null} Database instance
+     */
+    static getDatabase(name = 'default') {
+        const connection = Database.getConnection(name);
+        return connection ? connection.db : null;
     }
 
     /**
@@ -611,36 +622,187 @@ class Database {
 
     /**
      * @private
-     * Loads built-in models
+     * Loads built-in models - FIXED VERSION
      * @static
      * @async
      */
     static async #loadModels() {
         try {
-            console.log('Starting model loading process...');
-            console.log('Models currently in registry:', Array.from(Database.#models.keys()));
-            console.log('Schemas currently in registry:', Array.from(Database.#schemas.keys()));
+            logger.info('Starting model loading process');
+            
+            let loadedCount = 0;
+            let failedCount = 0;
 
-            // Since the models are being registered externally (as shown in the logs)
-            // We'll just log what we have and assume they're loaded properly
+            // Get models from BaseModel registry if available
+            if (BaseModel && BaseModel.getAllModels) {
+                try {
+                    const baseModelRegistry = BaseModel.getAllModels();
+                    
+                    for (const [modelName, model] of baseModelRegistry) {
+                        try {
+                            // Register with Database module
+                            Database.#models.set(modelName, model);
+                            
+                            // Try to get schema if available
+                            if (BaseModel.schemaCache && BaseModel.schemaCache.get) {
+                                const schema = BaseModel.schemaCache.get(modelName);
+                                if (schema) {
+                                    Database.#schemas.set(modelName, schema);
+                                }
+                            }
+                            
+                            loadedCount++;
+                            logger.debug(`Loaded model: ${modelName}`);
+                        } catch (modelError) {
+                            failedCount++;
+                            logger.error(`Failed to load model ${modelName}`, { error: modelError.message });
+                        }
+                    }
+                } catch (registryError) {
+                    logger.warn('Could not access BaseModel registry', { error: registryError.message });
+                }
+            }
+
+            // Alternative method: Try to access models through mongoose if BaseModel registry is not available
+            if (loadedCount === 0) {
+                try {
+                    const mongoose = require('mongoose');
+                    const modelNames = mongoose.modelNames();
+                    
+                    for (const modelName of modelNames) {
+                        try {
+                            const model = mongoose.model(modelName);
+                            Database.#models.set(modelName, model);
+                            
+                            // Try to get schema
+                            if (model.schema) {
+                                Database.#schemas.set(modelName, model.schema);
+                            }
+                            
+                            loadedCount++;
+                            logger.debug(`Loaded model from mongoose: ${modelName}`);
+                        } catch (modelError) {
+                            failedCount++;
+                            logger.error(`Failed to load model ${modelName} from mongoose`, { error: modelError.message });
+                        }
+                    }
+                } catch (mongooseError) {
+                    logger.warn('Could not access mongoose models', { error: mongooseError.message });
+                }
+            }
+
+            // Final attempt: Register essential models if none were loaded
+            if (loadedCount === 0) {
+                logger.warn('No models loaded from registries, attempting to create essential models');
+                await Database.#createEssentialModels();
+                loadedCount = Database.#models.size;
+            }
+
             logger.info('Model loading completed', {
-                loaded: Database.#models.size,
-                failed: 0,
-                total: Database.#models.size
+                loaded: loadedCount,
+                failed: failedCount,
+                total: loadedCount + failedCount,
+                modelsAvailable: Array.from(Database.#models.keys())
             });
 
-            // Check if models are actually working
+            // Log model details for debugging
             for (const [modelName, model] of Database.#models) {
-                console.log(`Model ${modelName}:`, {
+                logger.debug(`Model available: ${modelName}`, {
                     hasModel: !!model,
                     modelName: model.modelName || 'undefined',
-                    collection: model.collection?.name || 'undefined'
+                    collection: model.collection?.name || 'undefined',
+                    hasSchema: Database.#schemas.has(modelName)
                 });
             }
 
         } catch (error) {
-            console.error('Model loading error:', error);
-            logger.error('Failed to load models', error);
+            logger.error('Model loading failed', error);
+            throw new AppError('Failed to load models', 500, 'MODEL_LOADING_ERROR', {
+                originalError: error.message
+            });
+        }
+    }
+
+    /**
+     * @private
+     * Creates essential models if none are loaded
+     * @static
+     * @async
+     */
+    static async #createEssentialModels() {
+        try {
+            const mongoose = require('mongoose');
+            
+            // Create basic User model if not exists
+            if (!Database.#models.has('User')) {
+                const userSchema = new mongoose.Schema({
+                    username: { type: String, required: true, unique: true },
+                    email: { type: String, required: true, unique: true },
+                    password: { type: String, required: true },
+                    firstName: String,
+                    lastName: String,
+                    displayName: String,
+                    roles: [{
+                        code: String,
+                        name: String,
+                        assignedAt: Date,
+                        assignedBy: String
+                    }],
+                    status: { type: String, default: 'active' },
+                    isSystem: { type: Boolean, default: false },
+                    metadata: mongoose.Schema.Types.Mixed,
+                    createdAt: { type: Date, default: Date.now },
+                    updatedAt: { type: Date, default: Date.now }
+                });
+
+                const UserModel = mongoose.model('User', userSchema);
+                Database.#models.set('User', UserModel);
+                Database.#schemas.set('User', userSchema);
+                logger.info('Created essential User model');
+            }
+
+            // Create basic Organization model if not exists
+            if (!Database.#models.has('Organization')) {
+                const organizationSchema = new mongoose.Schema({
+                    name: { type: String, required: true },
+                    slug: { type: String, required: true, unique: true },
+                    displayName: String,
+                    description: String,
+                    type: { 
+                        type: String, 
+                        enum: ['individual', 'business', 'nonprofit', 'government', 'educational', 'healthcare', 'system', 'other'],
+                        default: 'business'
+                    },
+                    contact: {
+                        email: { type: String, required: true },
+                        phone: String,
+                        website: String
+                    },
+                    ownership: {
+                        ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+                        createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+                    },
+                    subscription: {
+                        status: { type: String, default: 'active' },
+                        tier: { type: String, default: 'starter' }
+                    },
+                    status: {
+                        state: { type: String, default: 'active' }
+                    },
+                    metadata: mongoose.Schema.Types.Mixed,
+                    createdAt: { type: Date, default: Date.now },
+                    updatedAt: { type: Date, default: Date.now }
+                });
+
+                const OrganizationModel = mongoose.model('Organization', organizationSchema);
+                Database.#models.set('Organization', OrganizationModel);
+                Database.#schemas.set('Organization', organizationSchema);
+                logger.info('Created essential Organization model');
+            }
+
+        } catch (error) {
+            logger.error('Failed to create essential models', error);
+            throw error;
         }
     }
 
@@ -788,6 +950,40 @@ class Database {
 
         logger.info('All database data cleared');
     }
+
+    /**
+     * Forces model reload from BaseModel registry
+     * @static
+     * @async
+     * @returns {Promise<Object>} Reload result
+     */
+    static async reloadModels() {
+        try {
+            // Clear current models
+            Database.#models.clear();
+            Database.#schemas.clear();
+
+            // Reload models
+            await Database.#loadModels();
+
+            logger.info('Models reloaded successfully', {
+                modelsLoaded: Database.#models.size,
+                modelsAvailable: Array.from(Database.#models.keys())
+            });
+
+            return {
+                success: true,
+                modelsLoaded: Database.#models.size,
+                models: Array.from(Database.#models.keys())
+            };
+
+        } catch (error) {
+            logger.error('Failed to reload models', error);
+            throw new AppError('Model reload failed', 500, 'MODEL_RELOAD_ERROR', {
+                originalError: error.message
+            });
+        }
+    }
 }
 
 // Export main class and utilities
@@ -804,6 +1000,8 @@ module.exports.BaseModel = BaseModel;
 module.exports.connect = Database.initialize;
 module.exports.disconnect = Database.shutdown;
 module.exports.getConnection = Database.getConnection;
+module.exports.getDatabase = Database.getDatabase;
 module.exports.getModel = Database.getModel;
 module.exports.query = Database.query;
 module.exports.transaction = Database.transaction;
+module.exports.reloadModels = Database.reloadModels;

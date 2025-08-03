@@ -15,7 +15,7 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const UserModel = require('..\models\users\user-model');
 const OrganizationModel = require('..\..\..\..\servers\customer-services\modules\hosted-organizations\organizations\models\organization-model');
 const BaseModel = require('../models/base-model');

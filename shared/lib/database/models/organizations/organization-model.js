@@ -62,7 +62,7 @@ const organizationSchemaDefinition = {
 
   type: {
     type: String,
-    enum: ['individual', 'business', 'nonprofit', 'government', 'educational', 'healthcare', 'other'],
+    enum: ['individual', 'business', 'nonprofit', 'government', 'educational', 'healthcare', 'system', 'other'],
     default: 'business',
     index: true
   },
