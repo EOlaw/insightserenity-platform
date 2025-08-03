@@ -12,7 +12,7 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const BaseModel = require('../models/base-model');
 const PermissionService = require('../../security/access-control/permission-service');
 const { PERMISSIONS, PERMISSION_CATEGORIES } = require('../../utils/constants/permissions');

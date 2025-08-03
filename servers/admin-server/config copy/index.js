@@ -12,22 +12,28 @@ const path = require('path');
 // Import shared configuration as base - FIXED to use existing base-config
 const sharedConfig = require('../../../shared/config');
 
-// Safely load admin-specific configurations
-const loadAdminConfigModule = (moduleName) => {
-    try {
-        return require(`./${moduleName}`);
-    } catch (error) {
-        console.log(`Admin config module ${moduleName} not found, using defaults`);
-        return {};
-    }
-};
+const adminConfig = require('./admin-config');
+const sessionConfig = require('./session-config');
+const featuresConfig = require('./features-config');
+const securityConfig = require('./security-config');
+const monitoringConfig = require('./monitoring-config');
 
-// Load admin-specific configurations with fallbacks
-const adminConfig = loadAdminConfigModule('admin-config');
-const sessionConfig = loadAdminConfigModule('session-config');
-const featuresConfig = loadAdminConfigModule('features-config');
-const securityConfig = loadAdminConfigModule('security-config');
-const monitoringConfig = loadAdminConfigModule('monitoring-config');
+// Safely load admin-specific configurations
+// const loadAdminConfigModule = (moduleName) => {
+//     try {
+//         return require(`./${moduleName}`);
+//     } catch (error) {
+//         console.log(`Admin config module ${moduleName} not found, using defaults`);
+//         return {};
+//     }
+// };
+
+// // Load admin-specific configurations with fallbacks
+// const adminConfig = loadAdminConfigModule('admin-config');
+// const sessionConfig = loadAdminConfigModule('session-config');
+// const featuresConfig = loadAdminConfigModule('features-config');
+// const securityConfig = loadAdminConfigModule('security-config');
+// const monitoringConfig = loadAdminConfigModule('monitoring-config');
 
 /**
  * Admin server configuration class - FIXED to use existing baseConfig structure

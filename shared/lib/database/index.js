@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview Database module main exports - FIXED VERSION
+ * @fileoverview Database module main exports - FIXED VERSION WITH SEEDING CONTROLS
  * @module shared/lib/database
  * @requires module:shared/lib/database/connection-manager
  * @requires module:shared/lib/database/multi-tenant-manager
@@ -80,6 +80,8 @@ class Database {
     static #migrationRunner = null;
     static #models = new Map();
     static #schemas = new Map();
+    static #seedingInProgress = false;
+    static #seedingDisabled = false;
 
     /**
      * Initializes the database module
@@ -103,7 +105,9 @@ class Database {
                 seed = {},
                 migration = {},
                 runMigrations = false,
-                runSeeds = false
+                runSeeds = false,
+                disableAutoSeeding = false,
+                seedingStrategy = 'safe' // 'safe', 'force', 'skip'
             } = options;
 
             logger.info('Initializing database module');
@@ -167,6 +171,7 @@ class Database {
                     }
 
                     if (runMigrations && Database.#migrationRunner.migrate) {
+                        logger.info('Running database migrations...');
                         const migrationResult = await Database.#migrationRunner.migrate();
                         logger.info('Migrations completed', {
                             successful: migrationResult.successful || 0,
@@ -180,8 +185,11 @@ class Database {
                 }
             }
 
+            // Load models BEFORE attempting seeding
+            await Database.#loadModels();
+
             // Initialize seed manager if available
-            if (SeedManager) {
+            if (SeedManager && !disableAutoSeeding) {
                 try {
                     Database.#seedManager = new SeedManager({
                         ...config.database?.seed,
@@ -193,24 +201,30 @@ class Database {
                         await Database.#seedManager.initialize();
                     }
 
-                    if (runSeeds && config.app?.env !== 'production' && Database.#seedManager.seed) {
-                        const seedResult = await Database.#seedManager.seed({
-                            type: config.app?.env
-                        });
-                        logger.info('Seeds completed', {
-                            successful: seedResult.successful || 0,
-                            failed: seedResult.failed || 0
-                        });
+                    // Enhanced seeding control with better error handling
+                    const shouldRunSeeds = runSeeds && 
+                                         config.app?.env !== 'production' && 
+                                         Database.#seedManager.seed &&
+                                         !Database.#seedingDisabled;
+
+                    if (shouldRunSeeds) {
+                        await Database.#runSeedsWithStrategy(seedingStrategy, seed);
                     }
                 } catch (seedError) {
-                    logger.warn('Seed manager initialization failed', {
-                        error: seedError.message
+                    logger.error('Seed manager initialization failed', {
+                        error: seedError.message,
+                        stack: seedError.stack
                     });
+                    
+                    // Don't fail initialization due to seeding issues in development
+                    if (config.app?.env === 'development') {
+                        logger.warn('Continuing database initialization despite seeding failure in development mode');
+                        Database.#seedingDisabled = true;
+                    } else {
+                        throw new AppError('Critical seeding failure in non-development environment', 500, 'SEEDING_ERROR');
+                    }
                 }
             }
-
-            // Load models (FIXED - now properly loads models from BaseModel registry)
-            await Database.#loadModels();
 
             Database.#initialized = true;
 
@@ -219,7 +233,8 @@ class Database {
                 multiTenant: Database.#multiTenantManager ? 'Enabled' : 'Disabled',
                 migrationRunner: Database.#migrationRunner ? 'Available' : 'Not available',
                 seedManager: Database.#seedManager ? 'Available' : 'Not available',
-                modelsLoaded: Database.#models.size
+                modelsLoaded: Database.#models.size,
+                seedingDisabled: Database.#seedingDisabled
             });
 
         } catch (error) {
@@ -239,6 +254,328 @@ class Database {
     }
 
     /**
+     * Runs seeds with enhanced strategy and error handling
+     * @private
+     * @static
+     * @async
+     * @param {string} strategy - Seeding strategy ('safe', 'force', 'skip')
+     * @param {Object} seedOptions - Seeding options
+     */
+    static async #runSeedsWithStrategy(strategy, seedOptions = {}) {
+        if (Database.#seedingInProgress) {
+            logger.warn('Seeding already in progress, skipping');
+            return;
+        }
+
+        Database.#seedingInProgress = true;
+
+        try {
+            logger.info('Starting database seeding', { strategy });
+
+            // Pre-seeding validation
+            const validationResult = await Database.#validateSeedingPrerequisites();
+            if (!validationResult.valid) {
+                if (strategy === 'safe') {
+                    logger.warn('Seeding prerequisites not met, skipping seeding', {
+                        issues: validationResult.issues
+                    });
+                    return;
+                } else if (strategy === 'force') {
+                    logger.warn('Seeding prerequisites not met, but forcing seeding', {
+                        issues: validationResult.issues
+                    });
+                } else {
+                    logger.info('Skipping seeding due to strategy');
+                    return;
+                }
+            }
+
+            // Check if database is empty
+            const databaseState = await Database.#checkDatabaseState();
+            
+            if (databaseState.hasExistingData && strategy === 'safe') {
+                logger.info('Database already contains data, skipping seeding in safe mode', {
+                    collections: databaseState.existingCollections
+                });
+                return;
+            }
+
+            // Run seeding with transaction support
+            const seedResult = await Database.#executeSeeding(seedOptions);
+            
+            logger.info('Database seeding completed', {
+                successful: seedResult.successful || 0,
+                failed: seedResult.failed || 0,
+                warnings: seedResult.warnings || 0,
+                strategy
+            });
+
+        } catch (seedingError) {
+            logger.error('Database seeding failed', {
+                error: seedingError.message,
+                stack: seedingError.stack,
+                strategy
+            });
+
+            if (strategy === 'force' || config.app?.env === 'development') {
+                logger.warn('Seeding failed but continuing due to strategy/environment');
+                Database.#seedingDisabled = true;
+            } else {
+                throw seedingError;
+            }
+        } finally {
+            Database.#seedingInProgress = false;
+        }
+    }
+
+    /**
+     * Validates seeding prerequisites
+     * @private
+     * @static
+     * @async
+     * @returns {Promise<Object>} Validation result
+     */
+    static async #validateSeedingPrerequisites() {
+        const issues = [];
+        
+        try {
+            // Check database connection
+            const connection = Database.getConnection();
+            if (!connection) {
+                issues.push('No database connection available');
+            }
+
+            // Check if essential models are loaded
+            const essentialModels = ['User', 'Organization'];
+            for (const modelName of essentialModels) {
+                if (!Database.#models.has(modelName)) {
+                    issues.push(`Essential model ${modelName} not loaded`);
+                }
+            }
+
+            // Check BaseModel availability
+            if (!BaseModel) {
+                issues.push('BaseModel not available for seeding operations');
+            }
+
+            // Check database write permissions
+            if (connection) {
+                try {
+                    const testCollection = connection.db.collection('_database_test');
+                    await testCollection.insertOne({ test: true, timestamp: new Date() });
+                    await testCollection.deleteOne({ test: true });
+                } catch (permissionError) {
+                    issues.push('Database write permissions check failed');
+                }
+            }
+
+            return {
+                valid: issues.length === 0,
+                issues
+            };
+
+        } catch (error) {
+            issues.push(`Validation error: ${error.message}`);
+            return {
+                valid: false,
+                issues
+            };
+        }
+    }
+
+    /**
+     * Checks current database state
+     * @private
+     * @static
+     * @async
+     * @returns {Promise<Object>} Database state information
+     */
+    static async #checkDatabaseState() {
+        try {
+            const connection = Database.getConnection();
+            if (!connection) {
+                return { hasExistingData: false, existingCollections: [] };
+            }
+
+            const collections = await connection.db.listCollections().toArray();
+            const dataCollections = collections.filter(c => 
+                !c.name.startsWith('_') && 
+                !c.name.includes('test') &&
+                c.name !== 'sessions'
+            );
+
+            const existingCollections = [];
+            let hasExistingData = false;
+
+            for (const collection of dataCollections) {
+                try {
+                    const count = await connection.db.collection(collection.name).countDocuments();
+                    if (count > 0) {
+                        hasExistingData = true;
+                        existingCollections.push({
+                            name: collection.name,
+                            count
+                        });
+                    }
+                } catch (countError) {
+                    logger.warn(`Could not count documents in ${collection.name}`, { error: countError.message });
+                }
+            }
+
+            return {
+                hasExistingData,
+                existingCollections,
+                totalCollections: collections.length
+            };
+
+        } catch (error) {
+            logger.error('Failed to check database state', { error: error.message });
+            return { hasExistingData: false, existingCollections: [] };
+        }
+    }
+
+    /**
+     * Executes seeding with proper error handling
+     * @private
+     * @static
+     * @async
+     * @param {Object} seedOptions - Seeding options
+     * @returns {Promise<Object>} Seeding result
+     */
+    static async #executeSeeding(seedOptions) {
+        let seedResult = { successful: 0, failed: 0, warnings: 0 };
+
+        try {
+            // Use transaction if available
+            if (Database.#transactionManager) {
+                seedResult = await Database.#transactionManager.withTransaction(async () => {
+                    return await Database.#seedManager.seed({
+                        type: config.app?.env,
+                        skipExisting: true,
+                        continueOnError: true,
+                        ...seedOptions
+                    });
+                });
+            } else {
+                seedResult = await Database.#seedManager.seed({
+                    type: config.app?.env,
+                    skipExisting: true,
+                    continueOnError: true,
+                    ...seedOptions
+                });
+            }
+
+            return seedResult;
+
+        } catch (error) {
+            logger.error('Seeding execution failed', {
+                error: error.message,
+                stack: error.stack
+            });
+
+            // Try to provide partial results if available
+            return {
+                successful: seedResult.successful || 0,
+                failed: (seedResult.failed || 0) + 1,
+                warnings: seedResult.warnings || 0,
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Manually run database seeds
+     * @static
+     * @async
+     * @param {Object} [options={}] - Seeding options
+     * @returns {Promise<Object>} Seeding result
+     */
+    static async runSeeds(options = {}) {
+        if (!Database.#initialized) {
+            throw new AppError('Database not initialized', 500, 'DATABASE_NOT_INITIALIZED');
+        }
+
+        if (!Database.#seedManager) {
+            throw new AppError('Seed manager not available', 500, 'SEED_MANAGER_NOT_AVAILABLE');
+        }
+
+        if (Database.#seedingInProgress) {
+            throw new AppError('Seeding already in progress', 409, 'SEEDING_IN_PROGRESS');
+        }
+
+        const {
+            strategy = 'safe',
+            resetDatabase = false,
+            seedTypes = ['development'],
+            continueOnError = true
+        } = options;
+
+        logger.info('Manually running database seeds', { strategy, resetDatabase, seedTypes });
+
+        try {
+            // Reset database if requested
+            if (resetDatabase) {
+                await Database.#resetDatabase();
+            }
+
+            Database.#seedingDisabled = false;
+            return await Database.#runSeedsWithStrategy(strategy, {
+                types: seedTypes,
+                continueOnError
+            });
+
+        } catch (error) {
+            logger.error('Manual seeding failed', { error: error.message });
+            throw new AppError('Manual seeding failed', 500, 'MANUAL_SEEDING_ERROR', {
+                originalError: error.message
+            });
+        }
+    }
+
+    /**
+     * Resets database by removing all data
+     * @private
+     * @static
+     * @async
+     */
+    static async #resetDatabase() {
+        logger.warn('Resetting database - removing all data');
+        
+        const connection = Database.getConnection();
+        if (!connection) {
+            throw new Error('No database connection for reset');
+        }
+
+        const collections = await connection.db.listCollections().toArray();
+        
+        for (const collection of collections) {
+            try {
+                if (!collection.name.startsWith('_')) {
+                    await connection.db.collection(collection.name).deleteMany({});
+                    logger.info(`Cleared collection: ${collection.name}`);
+                }
+            } catch (error) {
+                logger.warn(`Failed to clear collection ${collection.name}`, { error: error.message });
+            }
+        }
+    }
+
+    /**
+     * Checks seeding status
+     * @static
+     * @returns {Object} Seeding status information
+     */
+    static getSeedingStatus() {
+        return {
+            initialized: Database.#initialized,
+            seedManagerAvailable: !!Database.#seedManager,
+            seedingInProgress: Database.#seedingInProgress,
+            seedingDisabled: Database.#seedingDisabled,
+            canRunSeeds: Database.#initialized && Database.#seedManager && !Database.#seedingInProgress
+        };
+    }
+
+    /**
      * Shuts down the database module
      * @static
      * @async
@@ -250,6 +587,16 @@ class Database {
             const { force = false } = options;
 
             logger.info('Shutting down database module');
+
+            // Wait for seeding to complete if in progress
+            if (Database.#seedingInProgress && !force) {
+                logger.info('Waiting for seeding to complete before shutdown');
+                let attempts = 0;
+                while (Database.#seedingInProgress && attempts < 30) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    attempts++;
+                }
+            }
 
             // Clear model registry
             Database.#models.clear();
@@ -274,6 +621,8 @@ class Database {
             Database.#seedManager = null;
             Database.#migrationRunner = null;
             Database.#initialized = false;
+            Database.#seedingInProgress = false;
+            Database.#seedingDisabled = false;
 
             logger.info('Database module shutdown complete');
 
@@ -432,6 +781,7 @@ class Database {
                 connections: {},
                 models: Database.#models.size,
                 metrics: {},
+                seeding: Database.getSeedingStatus(),
                 timestamp: new Date().toISOString()
             };
 
@@ -478,6 +828,7 @@ class Database {
                 status: 'error',
                 error: error.message,
                 initialized: Database.#initialized,
+                seeding: Database.getSeedingStatus(),
                 timestamp: new Date().toISOString()
             };
         }
@@ -552,9 +903,12 @@ class Database {
                     sampleDoc: {
                         username: 'test_user_' + Date.now(),
                         email: 'test@example.com',
+                        profile: {
+                            firstName: 'Test',
+                            lastName: 'User'
+                        },
                         createdAt: new Date(),
-                        role: 'user',
-                        status: 'active'
+                        accountStatus: { status: 'active' }
                     }
                 },
                 {
@@ -563,7 +917,14 @@ class Database {
                         name: 'Test Organization',
                         slug: 'test-org-' + Date.now(),
                         type: 'business',
-                        status: 'active',
+                        contact: {
+                            email: 'test@example.com'
+                        },
+                        ownership: {
+                            ownerId: new (require('mongoose')).Types.ObjectId(),
+                            createdBy: new (require('mongoose')).Types.ObjectId()
+                        },
+                        status: { state: 'active' },
                         createdAt: new Date()
                     }
                 }
@@ -622,7 +983,7 @@ class Database {
 
     /**
      * @private
-     * Loads built-in models - FIXED VERSION
+     * Loads built-in models - FIXED VERSION with better error handling
      * @static
      * @async
      */
@@ -739,18 +1100,19 @@ class Database {
                     username: { type: String, required: true, unique: true },
                     email: { type: String, required: true, unique: true },
                     password: { type: String, required: true },
-                    firstName: String,
-                    lastName: String,
-                    displayName: String,
-                    roles: [{
-                        code: String,
-                        name: String,
-                        assignedAt: Date,
-                        assignedBy: String
-                    }],
-                    status: { type: String, default: 'active' },
+                    profile: {
+                        firstName: { type: String, required: true },
+                        lastName: { type: String, required: true },
+                        displayName: String
+                    },
+                    accountStatus: {
+                        status: { type: String, default: 'active' }
+                    },
                     isSystem: { type: Boolean, default: false },
-                    metadata: mongoose.Schema.Types.Mixed,
+                    metadata: {
+                        type: mongoose.Schema.Types.Mixed,
+                        default: {}
+                    },
                     createdAt: { type: Date, default: Date.now },
                     updatedAt: { type: Date, default: Date.now }
                 });
@@ -789,7 +1151,7 @@ class Database {
                     status: {
                         state: { type: String, default: 'active' }
                     },
-                    metadata: mongoose.Schema.Types.Mixed,
+                    metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
                     createdAt: { type: Date, default: Date.now },
                     updatedAt: { type: Date, default: Date.now }
                 });
@@ -905,6 +1267,11 @@ class Database {
                 validation.warnings.push('No models registered');
             }
 
+            // Check seeding issues
+            if (Database.#seedingDisabled) {
+                validation.warnings.push('Database seeding is disabled due to previous failures');
+            }
+
             logger.info('Database validation completed', {
                 valid: validation.valid,
                 errors: validation.errors.length,
@@ -947,6 +1314,8 @@ class Database {
         Database.#transactionManager = null;
         Database.#seedManager = null;
         Database.#migrationRunner = null;
+        Database.#seedingInProgress = false;
+        Database.#seedingDisabled = false;
 
         logger.info('All database data cleared');
     }
@@ -1005,3 +1374,5 @@ module.exports.getModel = Database.getModel;
 module.exports.query = Database.query;
 module.exports.transaction = Database.transaction;
 module.exports.reloadModels = Database.reloadModels;
+module.exports.runSeeds = Database.runSeeds;
+module.exports.getSeedingStatus = Database.getSeedingStatus;

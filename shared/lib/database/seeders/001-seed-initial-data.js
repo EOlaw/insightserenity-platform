@@ -13,7 +13,7 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ROLES, ROLE_HIERARCHY } = require('../../utils/constants/roles');
 const { PERMISSIONS, PERMISSION_CATEGORIES } = require('../../utils/constants/permissions');
 const { STATUS_CODES, STATUS_TYPES } = require('../../utils/constants/status-codes');

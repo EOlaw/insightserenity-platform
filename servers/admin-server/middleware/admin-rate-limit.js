@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview Admin rate limiting middleware with enhanced security
+ * @fileoverview Admin rate limiting middleware with enhanced security - FIXED VERSION
  * @module servers/admin-server/middleware/admin-rate-limit
  * @requires module:express-rate-limit
  * @requires module:shared/lib/utils/logger
@@ -13,7 +13,7 @@ const logger = require('../../../shared/lib/utils/logger');
 
 /**
  * @class AdminRateLimitMiddleware
- * @description Enhanced rate limiting for admin operations with different tiers
+ * @description Enhanced rate limiting for admin operations with timeout protection
  */
 class AdminRateLimitMiddleware {
   /**
@@ -82,36 +82,152 @@ class AdminRateLimitMiddleware {
   static #cacheService = null;
 
   /**
-   * Get or initialize cache service
+   * @private
+   * @static
+   * @type {boolean}
+   */
+  static #initializationAttempted = false;
+
+  /**
+   * @private
+   * @static
+   * @type {Map<string, number>}
+   */
+  static #memoryStore = new Map();
+
+  /**
+   * FIXED: Get or initialize cache service with timeout protection
    * @private
    * @static
    * @returns {Object|null} Cache service instance
    */
   static #getCacheService() {
-    if (!this.#cacheService) {
+    if (this.#initializationAttempted && !this.#cacheService) {
+      return null; // Don't retry failed initialization
+    }
+
+    if (!this.#cacheService && !this.#initializationAttempted) {
+      this.#initializationAttempted = true;
+      
       try {
-        const CacheService = require('../../../shared/lib/services/cache-service');
-        
-        // Use singleton pattern if available
-        if (typeof CacheService.getInstance === 'function') {
-          this.#cacheService = CacheService.getInstance({
-            namespace: 'admin_rate_limit',
-            fallbackToMemory: true
+        // FIXED: Set immediate timeout for initialization
+        const initPromise = new Promise((resolve, reject) => {
+          try {
+            const CacheService = require('../../../shared/lib/services/cache-service');
+            
+            if (typeof CacheService.getInstance === 'function') {
+              resolve(CacheService.getInstance({
+                namespace: 'admin_rate_limit',
+                fallbackToMemory: true,
+                connectTimeout: 1000, // 1 second max
+                retryAttempts: 0 // No retries
+              }));
+            } else {
+              resolve(new CacheService({
+                namespace: 'admin_rate_limit',
+                fallbackToMemory: true,
+                connectTimeout: 1000,
+                retryAttempts: 0
+              }));
+            }
+          } catch (error) {
+            reject(error);
+          }
+        });
+
+        // FIXED: Race against timeout
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Cache service initialization timeout')), 1500);
+        });
+
+        Promise.race([initPromise, timeoutPromise])
+          .then(service => {
+            this.#cacheService = service;
+            logger.info('Cache service initialized for admin rate limiting');
+          })
+          .catch(error => {
+            logger.warn('Cache service initialization failed, using memory-only rate limiting', {
+              error: error.message
+            });
+            this.#cacheService = null;
           });
-        } else {
-          this.#cacheService = new CacheService({
-            namespace: 'admin_rate_limit',
-            fallbackToMemory: true
-          });
-        }
+
+        // Return null immediately, don't wait for async initialization
+        return null;
       } catch (error) {
-        logger.warn('CacheService not available for rate limiting, using memory only', {
+        logger.warn('Cache service module not available, using memory-only rate limiting', {
           error: error.message
         });
         this.#cacheService = null;
       }
     }
+
     return this.#cacheService;
+  }
+
+  /**
+   * FIXED: Create memory-based fallback store
+   * @private
+   * @static
+   * @param {number} windowMs - Window duration in milliseconds
+   * @returns {Object} Memory-based rate limit store
+   */
+  static #createMemoryStore(windowMs) {
+    return {
+      incr: async (key) => {
+        try {
+          const now = Date.now();
+          const windowStart = now - windowMs;
+          
+          // Clean old entries
+          this.#memoryStore.forEach((timestamp, storeKey) => {
+            if (timestamp < windowStart) {
+              this.#memoryStore.delete(storeKey);
+            }
+          });
+          
+          // Count current hits in window
+          let hitCount = 0;
+          this.#memoryStore.forEach((timestamp, storeKey) => {
+            if (storeKey.startsWith(key + ':') && timestamp >= windowStart) {
+              hitCount++;
+            }
+          });
+          
+          // Add new hit
+          const hitKey = `${key}:${now}:${Math.random()}`;
+          this.#memoryStore.set(hitKey, now);
+          hitCount++;
+          
+          return {
+            totalHits: hitCount,
+            resetTime: new Date(now + windowMs)
+          };
+        } catch (error) {
+          logger.error('Memory store incr error', { key, error: error.message });
+          return { totalHits: 1, resetTime: new Date(Date.now() + windowMs) };
+        }
+      },
+
+      decrement: async (key) => {
+        // Memory store doesn't support reliable decrement
+        return { totalHits: 0 };
+      },
+
+      resetKey: async (key) => {
+        try {
+          const keysToDelete = [];
+          this.#memoryStore.forEach((_, storeKey) => {
+            if (storeKey.startsWith(key + ':')) {
+              keysToDelete.push(storeKey);
+            }
+          });
+          keysToDelete.forEach(k => this.#memoryStore.delete(k));
+        } catch (error) {
+          logger.error('Memory store reset error', { key, error: error.message });
+        }
+      }
+    };
   }
 
   /**
@@ -136,7 +252,7 @@ class AdminRateLimitMiddleware {
   }
 
   /**
-   * Create store for rate limiting
+   * FIXED: Create store for rate limiting with fallback
    * @private
    * @static
    * @param {number} windowMs - Window duration in milliseconds
@@ -146,52 +262,66 @@ class AdminRateLimitMiddleware {
     const cacheService = this.#getCacheService();
     
     if (!cacheService) {
-      // Fallback to default memory store
-      return undefined;
+      logger.debug('Using memory-based rate limiting store');
+      return this.#createMemoryStore(windowMs);
     }
 
     return {
       incr: async (key) => {
         try {
           const ttl = Math.ceil(windowMs / 1000);
-          const current = await cacheService.increment(key, 1, ttl);
+          const current = await Promise.race([
+            cacheService.increment(key, 1, ttl),
+            new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('Cache operation timeout')), 2000);
+            })
+          ]);
+          
           return {
             totalHits: current,
             resetTime: new Date(Date.now() + windowMs)
           };
         } catch (error) {
-          logger.error('Rate limit store incr error', {
+          logger.warn('Cache service rate limit operation failed, falling back to memory', {
             key,
             error: error.message
           });
-          throw error;
+          
+          // Fallback to memory store
+          const memoryStore = this.#createMemoryStore(windowMs);
+          return await memoryStore.incr(key);
         }
       },
 
       decrement: async (key) => {
         try {
-          const current = await cacheService.decrement(key, 1);
-          return {
-            totalHits: Math.max(0, current)
-          };
+          if (cacheService && cacheService.decrement) {
+            const current = await Promise.race([
+              cacheService.decrement(key, 1),
+              new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Cache operation timeout')), 1000);
+              })
+            ]);
+            return { totalHits: Math.max(0, current) };
+          }
         } catch (error) {
-          logger.error('Rate limit store decrement error', {
-            key,
-            error: error.message
-          });
-          // Don't throw on decrement errors
-          return { totalHits: 0 };
+          logger.warn('Cache decrement failed', { key, error: error.message });
         }
+        return { totalHits: 0 };
       },
 
       resetKey: async (key) => {
         try {
-          await cacheService.delete(key);
+          if (cacheService && cacheService.delete) {
+            await Promise.race([
+              cacheService.delete(key),
+              new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Cache operation timeout')), 1000);
+              })
+            ]);
+          }
         } catch (error) {
-          logger.error('Rate limit store reset error', {
-            key,
-            error: error.message
-          });
+          logger.warn('Cache reset failed', { key, error: error.message });
         }
       }
     };
@@ -225,8 +355,6 @@ class AdminRateLimitMiddleware {
         // Send structured error response
         res.status(429).json(config.message);
       }
-      // REMOVED: onLimitReached - deprecated in express-rate-limit v7
-      // Threshold logging is now handled within the handler function above
     };
 
     return rateLimit(limiterConfig);
@@ -309,22 +437,24 @@ class AdminRateLimitMiddleware {
   }
 
   /**
-   * Reset rate limit for a specific key
+   * FIXED: Reset rate limit for a specific key with timeout
    * @static
    * @param {string} ip - IP address
    * @param {string} [type='general'] - Rate limit type
    * @returns {Promise<void>}
    */
   static async resetLimit(ip, type = 'general') {
-    const cacheService = this.#getCacheService();
-    if (!cacheService) {
-      logger.warn('Cannot reset rate limit - cache service not available');
-      return;
-    }
-
     try {
       const key = `admin_${type}:${ip}`;
-      await cacheService.delete(key);
+      const store = this.#createStore(this.#config[type]?.windowMs || 900000);
+      
+      await Promise.race([
+        store.resetKey(key),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Reset operation timeout')), 2000);
+        })
+      ]);
+      
       logger.info('Rate limit reset', { ip, type, key });
     } catch (error) {
       logger.error('Failed to reset rate limit', {
@@ -336,29 +466,42 @@ class AdminRateLimitMiddleware {
   }
 
   /**
-   * Get current rate limit status for an IP
+   * FIXED: Get current rate limit status for an IP with timeout
    * @static
    * @param {string} ip - IP address
    * @param {string} [type='general'] - Rate limit type
    * @returns {Promise<Object>} Rate limit status
    */
   static async getStatus(ip, type = 'general') {
-    const cacheService = this.#getCacheService();
-    if (!cacheService) {
-      return { available: false };
-    }
-
     try {
+      const cacheService = this.#getCacheService();
+      
+      if (!cacheService) {
+        return {
+          available: false,
+          reason: 'Cache service not available',
+          fallbackToMemory: true
+        };
+      }
+
       const key = `admin_${type}:${ip}`;
-      const current = await cacheService.get(key) || 0;
-      const ttl = await cacheService.ttl(key);
       const config = this.#config[type] || this.#config.general;
+      
+      const [current, ttl] = await Promise.race([
+        Promise.all([
+          cacheService.get(key).catch(() => 0),
+          cacheService.ttl(key).catch(() => -1)
+        ]),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Status check timeout')), 2000);
+        })
+      ]);
       
       return {
         available: true,
-        current,
+        current: current || 0,
         limit: config.max,
-        remaining: Math.max(0, config.max - current),
+        remaining: Math.max(0, config.max - (current || 0)),
         resetTime: ttl > 0 ? new Date(Date.now() + (ttl * 1000)) : null,
         windowMs: config.windowMs
       };
@@ -368,7 +511,11 @@ class AdminRateLimitMiddleware {
         type,
         error: error.message
       });
-      return { available: false, error: error.message };
+      return { 
+        available: false, 
+        error: error.message,
+        fallbackToMemory: true
+      };
     }
   }
 
@@ -380,7 +527,9 @@ class AdminRateLimitMiddleware {
   static getConfig() {
     return {
       ...this.#config,
-      cacheAvailable: !!this.#getCacheService()
+      cacheAvailable: !!this.#cacheService,
+      initializationAttempted: this.#initializationAttempted,
+      memoryStoreSize: this.#memoryStore.size
     };
   }
 }
