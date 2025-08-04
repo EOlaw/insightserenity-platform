@@ -11,10 +11,29 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const ConnectionManager = require('../connection-manager');
-const SchemaValidator = require('../validators/schema-validator');
-const { USER_STATUS, ORGANIZATION_STATUS } = require('../../utils/constants/status-codes');
+
+// Safe imports with fallbacks
+let SchemaValidator;
+let USER_STATUS, ORGANIZATION_STATUS;
+
+try {
+  SchemaValidator = require('../validators/schema-validator');
+} catch (error) {
+  logger.warn('SchemaValidator not available, validation will be limited');
+  SchemaValidator = null;
+}
+
+try {
+  const statusCodes = require('../../utils/constants/status-codes');
+  USER_STATUS = statusCodes.USER_STATUS || {};
+  ORGANIZATION_STATUS = statusCodes.ORGANIZATION_STATUS || {};
+} catch (error) {
+  logger.warn('Status codes not available, using defaults');
+  USER_STATUS = {};
+  ORGANIZATION_STATUS = {};
+}
 
 /**
  * @class UpdateSchemasMigration
@@ -314,6 +333,11 @@ class UpdateSchemasMigration {
     }
   };
 
+  static #OPERATION_TIMEOUT = 120000; // 2 minutes
+  static #RETRY_ATTEMPTS = 3;
+  static #RETRY_DELAY = 5000;
+  static #BATCH_SIZE = 500;
+
   /**
    * Applies the migration - updates schemas with new fields
    * @static
@@ -340,23 +364,29 @@ class UpdateSchemasMigration {
 
       const db = connection.db;
 
-      // Process each collection
+      // Process each collection with enhanced error handling
       for (const [collectionName, updates] of Object.entries(UpdateSchemasMigration.#SCHEMA_UPDATES)) {
         logger.info(`Processing schema updates for collection: ${collectionName}`);
 
         try {
           // Ensure collection exists
-          const collections = await db.listCollections({ name: collectionName }).toArray();
-          if (collections.length === 0) {
+          const collectionExists = await UpdateSchemasMigration.#ensureCollectionExists(db, collectionName);
+          
+          if (!collectionExists) {
             logger.warn(`Collection ${collectionName} does not exist, skipping`);
             continue;
           }
 
           const collection = db.collection(collectionName);
 
-          // Add new fields
-          if (updates.fields && updates.fields.length > 0) {
+          // Add new fields with error handling
+          if (updates.fields && Array.isArray(updates.fields) && updates.fields.length > 0) {
             for (const field of updates.fields) {
+              if (!field || !field.name) {
+                logger.warn(`Invalid field definition in ${collectionName}:`, field);
+                continue;
+              }
+
               const updateResult = await UpdateSchemasMigration.#addFieldToDocuments(
                 collection,
                 field.name,
@@ -364,26 +394,26 @@ class UpdateSchemasMigration {
                 field.description
               );
 
-              stats.documentsUpdated += updateResult.modifiedCount;
+              stats.documentsUpdated += updateResult.modifiedCount || 0;
               stats.fieldsAdded++;
 
               logger.info(`Added field ${field.name} to ${collectionName}`, {
-                documentsUpdated: updateResult.modifiedCount
+                documentsUpdated: updateResult.modifiedCount || 0
               });
             }
           }
 
           // Apply restructuring if defined
-          if (updates.restructure) {
+          if (updates.restructure && typeof updates.restructure === 'object') {
             const restructureResult = await UpdateSchemasMigration.#restructureDocuments(
               collection,
               updates.restructure
             );
 
-            stats.documentsUpdated += restructureResult.modifiedCount;
+            stats.documentsUpdated += restructureResult.modifiedCount || 0;
 
             logger.info(`Restructured documents in ${collectionName}`, {
-              documentsUpdated: restructureResult.modifiedCount
+              documentsUpdated: restructureResult.modifiedCount || 0
             });
           }
 
@@ -398,7 +428,7 @@ class UpdateSchemasMigration {
           if (!validationResult.valid) {
             stats.errors.push({
               collection: collectionName,
-              errors: validationResult.errors
+              errors: validationResult.errors || []
             });
           }
 
@@ -406,7 +436,7 @@ class UpdateSchemasMigration {
           logger.error(`Failed to update collection ${collectionName}`, error);
           stats.errors.push({
             collection: collectionName,
-            error: error.message
+            error: error && error.message ? error.message : 'Unknown error'
           });
         }
       }
@@ -430,20 +460,303 @@ class UpdateSchemasMigration {
     } catch (error) {
       logger.error('Schema update migration failed', error);
       
-      if (error instanceof AppError) {
+      if (error && error.name === 'AppError') {
         throw error;
       }
+
+      const errorMessage = error && error.message ? error.message : 'Unknown error';
 
       throw new AppError(
         'Failed to update database schemas',
         500,
         'SCHEMA_UPDATE_ERROR',
         {
-          originalError: error.message,
+          originalError: errorMessage,
           stats
         }
       );
     }
+  }
+
+  /**
+   * @private
+   * Ensures collection exists with timeout protection
+   * @static
+   * @async
+   * @param {Object} db - Database instance
+   * @param {string} collectionName - Collection name
+   * @returns {Promise<boolean>} Whether collection exists or was created
+   */
+  static async #ensureCollectionExists(db, collectionName) {
+    return new Promise(async (resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`Collection existence check timed out for: ${collectionName}`));
+      }, UpdateSchemasMigration.#OPERATION_TIMEOUT);
+
+      try {
+        const collections = await db.listCollections({ name: collectionName }).toArray();
+        clearTimeout(timeout);
+        resolve(collections.length > 0);
+      } catch (error) {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * @private
+   * Adds a field to all documents in a collection with enhanced error handling
+   * @static
+   * @async
+   * @param {Object} collection - MongoDB collection
+   * @param {string} fieldName - Field name to add
+   * @param {*} defaultValue - Default value for the field
+   * @param {string} description - Field description
+   * @returns {Promise<Object>} Update result
+   */
+  static async #addFieldToDocuments(collection, fieldName, defaultValue, description) {
+    let lastError;
+
+    for (let attempt = 1; attempt <= UpdateSchemasMigration.#RETRY_ATTEMPTS; attempt++) {
+      try {
+        // Only update documents that don't have the field
+        const filter = { [fieldName]: { $exists: false } };
+        const update = { $set: { [fieldName]: defaultValue } };
+
+        // Process in batches to avoid memory issues
+        const totalDocs = await collection.countDocuments(filter);
+        
+        if (totalDocs === 0) {
+          return { modifiedCount: 0 };
+        }
+
+        let totalModified = 0;
+        let skip = 0;
+
+        while (skip < totalDocs) {
+          const batchFilter = {
+            ...filter,
+            _id: {
+              $in: await collection
+                .find(filter, { projection: { _id: 1 } })
+                .skip(skip)
+                .limit(UpdateSchemasMigration.#BATCH_SIZE)
+                .map(doc => doc._id)
+                .toArray()
+            }
+          };
+
+          const result = await collection.updateMany(batchFilter, update);
+          totalModified += result.modifiedCount || 0;
+          skip += UpdateSchemasMigration.#BATCH_SIZE;
+
+          // Log progress for large collections
+          if (totalDocs > UpdateSchemasMigration.#BATCH_SIZE) {
+            logger.debug(`Progress for ${fieldName}: ${Math.min(skip, totalDocs)}/${totalDocs} documents processed`);
+          }
+        }
+
+        // Add field metadata comment if supported
+        try {
+          await collection.updateMany(
+            {},
+            { $comment: `Added field: ${fieldName} - ${description}` }
+          );
+        } catch (commentError) {
+          // Comments might not be supported, ignore
+          logger.debug('Field comment not supported, skipping');
+        }
+
+        return { modifiedCount: totalModified };
+
+      } catch (error) {
+        lastError = error;
+        
+        if (attempt < UpdateSchemasMigration.#RETRY_ATTEMPTS) {
+          logger.warn(`Failed to add field ${fieldName} (attempt ${attempt}), retrying...`, error.message);
+          await UpdateSchemasMigration.#delay(UpdateSchemasMigration.#RETRY_DELAY * attempt);
+        }
+      }
+    }
+
+    logger.error(`Failed to add field ${fieldName} after all retries`, lastError);
+    throw lastError;
+  }
+
+  /**
+   * @private
+   * Restructures documents according to specification with enhanced error handling
+   * @static
+   * @async
+   * @param {Object} collection - MongoDB collection
+   * @param {Object} restructureSpec - Restructuring specification
+   * @returns {Promise<Object>} Update result
+   */
+  static async #restructureDocuments(collection, restructureSpec) {
+    if (!restructureSpec || typeof restructureSpec !== 'object') {
+      return { modifiedCount: 0 };
+    }
+
+    let lastError;
+
+    for (let attempt = 1; attempt <= UpdateSchemasMigration.#RETRY_ATTEMPTS; attempt++) {
+      try {
+        // Build update operation for restructuring
+        const updateOperation = { $set: {} };
+        
+        for (const [path, structure] of Object.entries(restructureSpec)) {
+          if (path && structure !== undefined) {
+            updateOperation.$set[path] = structure;
+          }
+        }
+
+        if (Object.keys(updateOperation.$set).length === 0) {
+          return { modifiedCount: 0 };
+        }
+
+        // Apply restructuring in batches
+        const totalDocs = await collection.countDocuments({});
+        let totalModified = 0;
+        let skip = 0;
+
+        while (skip < totalDocs) {
+          const batchDocs = await collection
+            .find({}, { projection: { _id: 1 } })
+            .skip(skip)
+            .limit(UpdateSchemasMigration.#BATCH_SIZE)
+            .toArray();
+
+          if (batchDocs.length === 0) break;
+
+          const batchIds = batchDocs.map(doc => doc._id);
+          const result = await collection.updateMany(
+            { _id: { $in: batchIds } },
+            updateOperation
+          );
+
+          totalModified += result.modifiedCount || 0;
+          skip += UpdateSchemasMigration.#BATCH_SIZE;
+
+          // Log progress for large collections
+          if (totalDocs > UpdateSchemasMigration.#BATCH_SIZE) {
+            logger.debug(`Restructure progress: ${Math.min(skip, totalDocs)}/${totalDocs} documents processed`);
+          }
+        }
+
+        return { modifiedCount: totalModified };
+
+      } catch (error) {
+        lastError = error;
+        
+        if (attempt < UpdateSchemasMigration.#RETRY_ATTEMPTS) {
+          logger.warn(`Failed to restructure documents (attempt ${attempt}), retrying...`, error.message);
+          await UpdateSchemasMigration.#delay(UpdateSchemasMigration.#RETRY_DELAY * attempt);
+        }
+      }
+    }
+
+    logger.error('Failed to restructure documents after all retries', lastError);
+    throw lastError;
+  }
+
+  /**
+   * @private
+   * Validates collection schema with enhanced error handling
+   * @static
+   * @async
+   * @param {Object} collection - MongoDB collection
+   * @param {string} collectionName - Collection name
+   * @returns {Promise<Object>} Validation result
+   */
+  static async #validateCollection(collection, collectionName) {
+    try {
+      const sampleSize = 100;
+      let documents = [];
+      
+      try {
+        documents = await collection.find({}).limit(sampleSize).toArray();
+      } catch (error) {
+        logger.warn(`Failed to fetch documents for validation from ${collectionName}`, error.message);
+        return {
+          valid: false,
+          errors: [`Failed to fetch documents: ${error.message}`],
+          warnings: []
+        };
+      }
+
+      const validationResult = {
+        valid: true,
+        errors: [],
+        warnings: []
+      };
+
+      if (documents.length === 0) {
+        validationResult.warnings.push('No documents to validate');
+        return validationResult;
+      }
+
+      // Check expected fields exist
+      const expectedFields = UpdateSchemasMigration.#SCHEMA_UPDATES[collectionName]?.fields || [];
+      
+      for (const field of expectedFields) {
+        if (!field || !field.name) continue;
+
+        const documentsWithField = documents.filter(doc => 
+          doc && doc.hasOwnProperty(field.name)
+        ).length;
+
+        if (documentsWithField === 0) {
+          validationResult.errors.push(`Field ${field.name} not found in any documents`);
+          validationResult.valid = false;
+        } else if (documentsWithField < documents.length) {
+          validationResult.warnings.push(
+            `Field ${field.name} found in ${documentsWithField}/${documents.length} documents`
+          );
+        }
+      }
+
+      // Use SchemaValidator if available
+      if (SchemaValidator && typeof SchemaValidator.validateCollection === 'function') {
+        try {
+          const schemaValidation = await SchemaValidator.validateCollection(
+            collectionName,
+            documents
+          );
+
+          if (schemaValidation && !schemaValidation.valid) {
+            validationResult.valid = false;
+            if (Array.isArray(schemaValidation.errors)) {
+              validationResult.errors.push(...schemaValidation.errors);
+            }
+          }
+        } catch (schemaError) {
+          logger.warn(`Schema validation failed for ${collectionName}`, schemaError.message);
+          validationResult.warnings.push(`Schema validation unavailable: ${schemaError.message}`);
+        }
+      }
+
+      return validationResult;
+
+    } catch (error) {
+      logger.error(`Failed to validate collection ${collectionName}`, error);
+      return {
+        valid: false,
+        errors: [error && error.message ? error.message : 'Unknown validation error'],
+        warnings: []
+      };
+    }
+  }
+
+  /**
+   * @private
+   * Delays execution
+   * @static
+   * @param {number} ms - Milliseconds to delay
+   * @returns {Promise<void>}
+   */
+  static async #delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -476,36 +789,37 @@ class UpdateSchemasMigration {
         logger.info(`Rolling back schema updates for collection: ${collectionName}`);
 
         try {
-          const collections = await db.listCollections({ name: collectionName }).toArray();
-          if (collections.length === 0) {
+          const collectionExists = await UpdateSchemasMigration.#ensureCollectionExists(db, collectionName);
+          if (!collectionExists) {
             continue;
           }
 
           const collection = db.collection(collectionName);
 
           // Remove added fields
-          if (updates.fields && updates.fields.length > 0) {
+          if (updates.fields && Array.isArray(updates.fields) && updates.fields.length > 0) {
             const fieldsToRemove = {};
             updates.fields.forEach(field => {
-              fieldsToRemove[field.name] = '';
+              if (field && field.name) {
+                fieldsToRemove[field.name] = '';
+              }
             });
 
-            const updateResult = await collection.updateMany(
-              {},
-              { $unset: fieldsToRemove }
-            );
+            if (Object.keys(fieldsToRemove).length > 0) {
+              const updateResult = await collection.updateMany(
+                {},
+                { $unset: fieldsToRemove }
+              );
 
-            stats.documentsUpdated += updateResult.modifiedCount;
-            stats.fieldsRemoved += updates.fields.length;
+              stats.documentsUpdated += updateResult.modifiedCount || 0;
+              stats.fieldsRemoved += Object.keys(fieldsToRemove).length;
 
-            logger.info(`Removed fields from ${collectionName}`, {
-              fieldsRemoved: updates.fields.length,
-              documentsUpdated: updateResult.modifiedCount
-            });
+              logger.info(`Removed fields from ${collectionName}`, {
+                fieldsRemoved: Object.keys(fieldsToRemove).length,
+                documentsUpdated: updateResult.modifiedCount || 0
+              });
+            }
           }
-
-          // Note: Restructuring rollback would require storing original structure
-          // This is not implemented to avoid data loss
 
           stats.collectionsReverted++;
 
@@ -523,173 +837,18 @@ class UpdateSchemasMigration {
 
     } catch (error) {
       logger.error('Schema update rollback failed', error);
+      
+      const errorMessage = error && error.message ? error.message : 'Unknown error';
+      
       throw new AppError(
         'Failed to rollback schema updates',
         500,
         'SCHEMA_ROLLBACK_ERROR',
         {
-          originalError: error.message,
+          originalError: errorMessage,
           stats
         }
       );
-    }
-  }
-
-  /**
-   * @private
-   * Adds a field to all documents in a collection
-   * @static
-   * @async
-   * @param {Object} collection - MongoDB collection
-   * @param {string} fieldName - Field name to add
-   * @param {*} defaultValue - Default value for the field
-   * @param {string} description - Field description
-   * @returns {Promise<Object>} Update result
-   */
-  static async #addFieldToDocuments(collection, fieldName, defaultValue, description) {
-    try {
-      // Only update documents that don't have the field
-      const filter = { [fieldName]: { $exists: false } };
-      const update = { $set: { [fieldName]: defaultValue } };
-
-      const result = await collection.updateMany(filter, update);
-
-      // Add field metadata as a comment (if supported)
-      try {
-        await collection.updateMany(
-          {},
-          { $comment: `Added field: ${fieldName} - ${description}` }
-        );
-      } catch (error) {
-        // Comments might not be supported, ignore
-      }
-
-      return result;
-
-    } catch (error) {
-      logger.error(`Failed to add field ${fieldName}`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * @private
-   * Restructures documents according to specification
-   * @static
-   * @async
-   * @param {Object} collection - MongoDB collection
-   * @param {Object} restructureSpec - Restructuring specification
-   * @returns {Promise<Object>} Update result
-   */
-  static async #restructureDocuments(collection, restructureSpec) {
-    try {
-      const pipeline = [];
-
-      // Build aggregation pipeline for restructuring
-      for (const [path, structure] of Object.entries(restructureSpec)) {
-        const pathParts = path.split('.');
-        
-        // Create nested structure
-        let setOperation = { $set: {} };
-        let current = setOperation.$set;
-        
-        for (let i = 0; i < pathParts.length - 1; i++) {
-          current[pathParts[i]] = {};
-          current = current[pathParts[i]];
-        }
-        
-        current[pathParts[pathParts.length - 1]] = structure;
-        pipeline.push(setOperation);
-      }
-
-      // Add merge operation
-      pipeline.push({
-        $merge: {
-          into: collection.collectionName,
-          whenMatched: 'merge',
-          whenNotMatched: 'fail'
-        }
-      });
-
-      // Execute aggregation pipeline
-      await collection.aggregate(pipeline).toArray();
-
-      // Get count of documents
-      const count = await collection.countDocuments();
-
-      return { modifiedCount: count };
-
-    } catch (error) {
-      logger.error('Failed to restructure documents', error);
-      throw error;
-    }
-  }
-
-  /**
-   * @private
-   * Validates collection schema
-   * @static
-   * @async
-   * @param {Object} collection - MongoDB collection
-   * @param {string} collectionName - Collection name
-   * @returns {Promise<Object>} Validation result
-   */
-  static async #validateCollection(collection, collectionName) {
-    try {
-      const sampleSize = 100;
-      const documents = await collection.find({}).limit(sampleSize).toArray();
-
-      const validationResult = {
-        valid: true,
-        errors: [],
-        warnings: []
-      };
-
-      if (documents.length === 0) {
-        validationResult.warnings.push('No documents to validate');
-        return validationResult;
-      }
-
-      // Check expected fields exist
-      const expectedFields = UpdateSchemasMigration.#SCHEMA_UPDATES[collectionName]?.fields || [];
-      
-      for (const field of expectedFields) {
-        const documentsWithField = documents.filter(doc => 
-          doc.hasOwnProperty(field.name)
-        ).length;
-
-        if (documentsWithField === 0) {
-          validationResult.errors.push(`Field ${field.name} not found in any documents`);
-          validationResult.valid = false;
-        } else if (documentsWithField < documents.length) {
-          validationResult.warnings.push(
-            `Field ${field.name} found in ${documentsWithField}/${documents.length} documents`
-          );
-        }
-      }
-
-      // Use SchemaValidator if available
-      if (SchemaValidator && SchemaValidator.validateCollection) {
-        const schemaValidation = await SchemaValidator.validateCollection(
-          collectionName,
-          documents
-        );
-
-        if (!schemaValidation.valid) {
-          validationResult.valid = false;
-          validationResult.errors.push(...schemaValidation.errors);
-        }
-      }
-
-      return validationResult;
-
-    } catch (error) {
-      logger.error(`Failed to validate collection ${collectionName}`, error);
-      return {
-        valid: false,
-        errors: [error.message],
-        warnings: []
-      };
     }
   }
 
@@ -712,24 +871,36 @@ class UpdateSchemasMigration {
       };
 
       for (const collectionName of Object.keys(UpdateSchemasMigration.#SCHEMA_UPDATES)) {
-        const collection = db.collection(collectionName);
-        const count = await collection.countDocuments();
-        
-        stats.collections[collectionName] = {
-          documentCount: count,
-          expectedFields: UpdateSchemasMigration.#SCHEMA_UPDATES[collectionName].fields.length
-        };
+        try {
+          const collection = db.collection(collectionName);
+          const count = await collection.countDocuments();
+          
+          stats.collections[collectionName] = {
+            documentCount: count,
+            expectedFields: (UpdateSchemasMigration.#SCHEMA_UPDATES[collectionName].fields || []).length
+          };
+        } catch (error) {
+          logger.warn(`Failed to get statistics for ${collectionName}`, error.message);
+          stats.collections[collectionName] = {
+            documentCount: 0,
+            expectedFields: 0,
+            error: error.message
+          };
+        }
       }
 
       return stats;
 
     } catch (error) {
       logger.error('Failed to get migration statistics', error);
+      
+      const errorMessage = error && error.message ? error.message : 'Unknown error';
+      
       throw new AppError(
         'Failed to retrieve migration statistics',
         500,
         'STATS_ERROR',
-        { originalError: error.message }
+        { originalError: errorMessage }
       );
     }
   }

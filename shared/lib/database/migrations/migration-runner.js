@@ -15,7 +15,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const ConnectionManager = require('../connection-manager');
 const TransactionManager = require('../transaction-manager');
 const config = require('../../../config');
@@ -23,7 +23,7 @@ const config = require('../../../config');
 /**
  * @class MigrationRunner
  * @description Manages the execution of database migrations with version control,
- * rollback support, and comprehensive error handling
+ * rollback support, and comprehensive error handling with cloud database resilience
  */
 class MigrationRunner {
   /**
@@ -44,6 +44,12 @@ class MigrationRunner {
   static #LOCK_TIMEOUT = 300000; // 5 minutes
   static #migrations = new Map();
   static #isInitialized = false;
+
+  // Enhanced timeout and retry configuration for cloud resilience
+  static #COLLECTION_OPERATION_TIMEOUT = 120000; // 2 minutes
+  static #COLLECTION_RETRY_ATTEMPTS = 3;
+  static #COLLECTION_RETRY_DELAY = 5000; // 5 seconds
+  static #COLLECTION_RETRY_BACKOFF = 2; // Exponential backoff multiplier
 
   /**
    * Initializes the migration runner
@@ -79,7 +85,7 @@ class MigrationRunner {
         connection
       };
 
-      // Create migration collections if needed
+      // Create migration collections if needed with enhanced resilience
       if (createCollections) {
         await MigrationRunner.#ensureCollections();
       }
@@ -301,7 +307,81 @@ class MigrationRunner {
   }
 
   /**
-   * Gets migration status
+   * Gets migration status (primary method expected by migration tools)
+   * @static
+   * @async
+   * @returns {Promise<Object>} Migration status information
+   * @throws {AppError} If status retrieval fails
+   */
+  static async getStatus() {
+    try {
+      MigrationRunner.#ensureInitialized();
+
+      logger.info('Retrieving migration status');
+
+      const db = MigrationRunner.#config.connection.db;
+      const collection = db.collection(MigrationRunner.#MIGRATION_COLLECTION);
+
+      // Get completed migrations
+      const completedMigrations = await collection
+        .find({ status: MigrationRunner.#MIGRATION_STATES.COMPLETED })
+        .sort({ executedAt: 1 })
+        .toArray();
+
+      // Get all available migrations
+      const allMigrations = Array.from(MigrationRunner.#migrations.keys()).sort();
+
+      // Determine pending migrations
+      const completedNames = completedMigrations.map(m => m.name);
+      const pendingMigrations = allMigrations.filter(name => !completedNames.includes(name));
+
+      // Get failed migrations
+      const failedMigrations = await collection
+        .find({ status: MigrationRunner.#MIGRATION_STATES.FAILED })
+        .toArray();
+
+      const result = {
+        totalMigrations: allMigrations.length,
+        completedMigrations: completedMigrations.length,
+        pendingMigrations: pendingMigrations.length,
+        failedMigrations: failedMigrations.length,
+        migrations: {
+          completed: completedMigrations.map(m => ({
+            name: m.name,
+            executedAt: m.executedAt,
+            duration: m.duration
+          })),
+          pending: pendingMigrations,
+          failed: failedMigrations.map(m => ({
+            name: m.name,
+            failedAt: m.failedAt,
+            error: m.error
+          }))
+        }
+      };
+
+      logger.info('Migration status retrieved', {
+        totalMigrations: result.totalMigrations,
+        completedMigrations: result.completedMigrations,
+        pendingMigrations: result.pendingMigrations,
+        failedMigrations: result.failedMigrations
+      });
+
+      return result;
+
+    } catch (error) {
+      logger.error('Failed to retrieve migration status', error);
+      throw new AppError(
+        'Migration status retrieval failed',
+        500,
+        'MIGRATION_STATUS_ERROR',
+        { originalError: error.message }
+      );
+    }
+  }
+
+  /**
+   * Gets migration status (legacy method for backward compatibility)
    * @static
    * @async
    * @returns {Promise<Object>} Migration status information
@@ -493,39 +573,223 @@ module.exports = ${name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, ''
 
   /**
    * @private
-   * Ensures migration collections exist
+   * Ensures migration collections exist with enhanced cloud resilience
    * @static
    * @async
    * @returns {Promise<void>}
    */
   static async #ensureCollections() {
-    try {
-      const db = MigrationRunner.#config.connection.db;
-      const collections = await db.listCollections().toArray();
-      const collectionNames = collections.map(c => c.name);
-
-      // Create migration history collection
-      if (!collectionNames.includes(MigrationRunner.#MIGRATION_COLLECTION)) {
-        await db.createCollection(MigrationRunner.#MIGRATION_COLLECTION);
-        await db.collection(MigrationRunner.#MIGRATION_COLLECTION).createIndex(
-          { name: 1 },
-          { unique: true }
-        );
+    const collectionsToCreate = [
+      {
+        name: MigrationRunner.#MIGRATION_COLLECTION,
+        indexes: [{ name: 1 }],
+        indexOptions: { unique: true }
+      },
+      {
+        name: MigrationRunner.#MIGRATION_LOCK_COLLECTION,
+        indexes: [{ expiresAt: 1 }],
+        indexOptions: { expireAfterSeconds: 0 }
       }
+    ];
 
-      // Create migration lock collection
-      if (!collectionNames.includes(MigrationRunner.#MIGRATION_LOCK_COLLECTION)) {
-        await db.createCollection(MigrationRunner.#MIGRATION_LOCK_COLLECTION);
-        await db.collection(MigrationRunner.#MIGRATION_LOCK_COLLECTION).createIndex(
-          { expiresAt: 1 },
-          { expireAfterSeconds: 0 }
-        );
-      }
-
-    } catch (error) {
-      logger.error('Failed to ensure collections', error);
-      throw error;
+    for (const collectionConfig of collectionsToCreate) {
+      await MigrationRunner.#ensureCollectionWithRetry(collectionConfig);
     }
+  }
+
+  /**
+   * @private
+   * Ensures a single collection exists with comprehensive retry logic
+   * @static
+   * @async
+   * @param {Object} collectionConfig - Collection configuration
+   * @returns {Promise<void>}
+   */
+  static async #ensureCollectionWithRetry(collectionConfig) {
+    const { name, indexes, indexOptions } = collectionConfig;
+    let lastError;
+    let delay = MigrationRunner.#COLLECTION_RETRY_DELAY;
+
+    for (let attempt = 1; attempt <= MigrationRunner.#COLLECTION_RETRY_ATTEMPTS; attempt++) {
+      try {
+        logger.info(`Ensuring collection exists: ${name} (attempt ${attempt}/${MigrationRunner.#COLLECTION_RETRY_ATTEMPTS})`);
+
+        const db = MigrationRunner.#config.connection.db;
+        
+        // Check if collection exists with timeout
+        const collectionExists = await MigrationRunner.#checkCollectionExists(db, name);
+        
+        if (!collectionExists) {
+          logger.info(`Creating collection: ${name}`);
+          
+          // Create collection with timeout protection
+          await MigrationRunner.#createCollectionWithTimeout(db, name);
+          
+          logger.info(`Collection created successfully: ${name}`);
+        } else {
+          logger.info(`Collection already exists: ${name}`);
+        }
+
+        // Ensure indexes exist
+        if (indexes && indexes.length > 0) {
+          await MigrationRunner.#ensureIndexesWithTimeout(db, name, indexes, indexOptions);
+        }
+
+        // Success - exit retry loop
+        return;
+
+      } catch (error) {
+        lastError = error;
+        
+        const isTimeout = error.name === 'MongoNetworkTimeoutError' || 
+                         error.name === 'MongoTimeoutError' ||
+                         error.message.includes('timed out');
+
+        logger.warn(`Collection operation failed for ${name} (attempt ${attempt}/${MigrationRunner.#COLLECTION_RETRY_ATTEMPTS})`, {
+          error: error.message,
+          isTimeout,
+          willRetry: attempt < MigrationRunner.#COLLECTION_RETRY_ATTEMPTS
+        });
+
+        if (attempt < MigrationRunner.#COLLECTION_RETRY_ATTEMPTS) {
+          logger.info(`Retrying collection operation in ${delay}ms...`);
+          await MigrationRunner.#delay(delay);
+          delay *= MigrationRunner.#COLLECTION_RETRY_BACKOFF;
+        }
+      }
+    }
+
+    // Check if we should skip collection creation on timeout
+    const skipOnTimeout = config.database?.migrations?.skipCollectionCreationOnTimeout ?? true;
+    const isTimeoutError = lastError && (
+      lastError.name === 'MongoNetworkTimeoutError' || 
+      lastError.name === 'MongoTimeoutError' ||
+      lastError.message.includes('timed out')
+    );
+
+    if (skipOnTimeout && isTimeoutError) {
+      logger.warn(`Collection creation timed out for ${name}, continuing with migration (collections will be auto-created on first write)`, {
+        error: lastError.message,
+        skipOnTimeout
+      });
+      return;
+    }
+
+    // Throw error for non-timeout errors or when skip is disabled
+    logger.error(`Failed to ensure collection after all retry attempts: ${name}`, lastError);
+    throw lastError;
+  }
+
+  /**
+   * @private
+   * Checks if a collection exists with timeout protection
+   * @static
+   * @async
+   * @param {Object} db - Database instance
+   * @param {string} collectionName - Collection name
+   * @returns {Promise<boolean>} Whether collection exists
+   */
+  static async #checkCollectionExists(db, collectionName) {
+    return new Promise(async (resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`Collection existence check timed out for: ${collectionName}`));
+      }, MigrationRunner.#COLLECTION_OPERATION_TIMEOUT);
+
+      try {
+        const collections = await db.listCollections({ name: collectionName }).toArray();
+        clearTimeout(timeout);
+        resolve(collections.length > 0);
+      } catch (error) {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * @private
+   * Creates a collection with timeout protection
+   * @static
+   * @async
+   * @param {Object} db - Database instance
+   * @param {string} collectionName - Collection name
+   * @returns {Promise<void>}
+   */
+  static async #createCollectionWithTimeout(db, collectionName) {
+    return new Promise(async (resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`Collection creation timed out for: ${collectionName}`));
+      }, MigrationRunner.#COLLECTION_OPERATION_TIMEOUT);
+
+      try {
+        await db.createCollection(collectionName);
+        clearTimeout(timeout);
+        resolve();
+      } catch (error) {
+        clearTimeout(timeout);
+        // Ignore error if collection already exists
+        if (error.codeName === 'NamespaceExists') {
+          logger.info(`Collection ${collectionName} already exists, ignoring creation error`);
+          resolve();
+        } else {
+          reject(error);
+        }
+      }
+    });
+  }
+
+  /**
+   * @private
+   * Ensures indexes exist with timeout protection
+   * @static
+   * @async
+   * @param {Object} db - Database instance
+   * @param {string} collectionName - Collection name
+   * @param {Array} indexes - Index specifications
+   * @param {Object} indexOptions - Index options
+   * @returns {Promise<void>}
+   */
+  static async #ensureIndexesWithTimeout(db, collectionName, indexes, indexOptions = {}) {
+    return new Promise(async (resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`Index creation timed out for collection: ${collectionName}`));
+      }, MigrationRunner.#COLLECTION_OPERATION_TIMEOUT);
+
+      try {
+        const collection = db.collection(collectionName);
+        
+        for (const indexSpec of indexes) {
+          try {
+            await collection.createIndex(indexSpec, indexOptions);
+            logger.info(`Index created for collection ${collectionName}`, { indexSpec, indexOptions });
+          } catch (indexError) {
+            // Ignore error if index already exists
+            if (indexError.codeName === 'IndexOptionsConflict' || indexError.codeName === 'IndexKeySpecsConflict') {
+              logger.info(`Index already exists for collection ${collectionName}, ignoring creation error`);
+            } else {
+              throw indexError;
+            }
+          }
+        }
+
+        clearTimeout(timeout);
+        resolve();
+      } catch (error) {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * @private
+   * Delays execution for specified milliseconds
+   * @static
+   * @param {number} ms - Milliseconds to delay
+   * @returns {Promise<void>}
+   */
+  static async #delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**

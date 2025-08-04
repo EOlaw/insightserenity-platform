@@ -10,7 +10,7 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const ConnectionManager = require('../connection-manager');
 const config = require('../../../config');
 
@@ -226,6 +226,10 @@ class CreateIndexesMigration {
     ]
   };
 
+  static #OPERATION_TIMEOUT = 120000; // 2 minutes per operation
+  static #RETRY_ATTEMPTS = 3;
+  static #RETRY_DELAY = 5000;
+
   /**
    * Applies the migration - creates all indexes
    * @static
@@ -248,64 +252,48 @@ class CreateIndexesMigration {
 
       const db = connection.db;
 
-      // Process each collection
+      // Process each collection with enhanced error handling
       for (const [collectionName, indexes] of Object.entries(CreateIndexesMigration.#INDEX_DEFINITIONS)) {
         logger.info(`Processing indexes for collection: ${collectionName}`);
 
-        // Ensure collection exists
-        const collections = await db.listCollections({ name: collectionName }).toArray();
-        if (collections.length === 0) {
-          await db.createCollection(collectionName);
-          logger.info(`Created collection: ${collectionName}`);
-        }
+        try {
+          // Ensure collection exists with timeout protection
+          await CreateIndexesMigration.#ensureCollectionExists(db, collectionName);
 
-        const collection = db.collection(collectionName);
+          const collection = db.collection(collectionName);
 
-        // Get existing indexes
-        const existingIndexes = await collection.indexes();
-        const existingIndexMap = new Map(
-          existingIndexes.map(idx => [JSON.stringify(idx.key), idx])
-        );
+          // Get existing indexes with retry logic
+          const existingIndexes = await CreateIndexesMigration.#getExistingIndexes(collection);
+          const existingIndexMap = new Map(
+            existingIndexes.map(idx => [JSON.stringify(idx.key), idx])
+          );
 
-        // Create each index
-        for (const indexDef of indexes) {
-          const indexKey = JSON.stringify(indexDef.fields);
-
-          // Check if index already exists
-          if (existingIndexMap.has(indexKey)) {
-            logger.debug(`Index already exists on ${collectionName}:`, indexDef.fields);
-            skippedIndexes++;
-            continue;
-          }
-
-          try {
-            const indexName = await collection.createIndex(
-              indexDef.fields,
-              {
-                background: true,
-                ...indexDef.options
-              }
+          // Create each index with enhanced error handling
+          for (const indexDef of indexes) {
+            const indexResult = await CreateIndexesMigration.#createIndexSafely(
+              collection, 
+              indexDef, 
+              existingIndexMap, 
+              collectionName
             );
 
-            logger.info(`Created index on ${collectionName}:`, {
-              fields: indexDef.fields,
-              name: indexName
-            });
-
-            createdIndexes++;
-
-          } catch (error) {
-            // Handle duplicate key errors gracefully
-            if (error.code === 11000 || error.code === 11001) {
-              logger.warn(`Duplicate key error creating index on ${collectionName}:`, {
-                fields: indexDef.fields,
-                error: error.message
-              });
-              skippedIndexes++;
+            if (indexResult.created) {
+              createdIndexes++;
             } else {
-              throw error;
+              skippedIndexes++;
             }
           }
+
+        } catch (collectionError) {
+          logger.error(`Failed to process collection ${collectionName}`, collectionError);
+          
+          // Continue with other collections unless it's a critical error
+          if (collectionError.name === 'MongoNetworkTimeoutError') {
+            logger.warn(`Network timeout for collection ${collectionName}, continuing with next collection`);
+            continue;
+          }
+          
+          throw collectionError;
         }
       }
 
@@ -320,17 +308,168 @@ class CreateIndexesMigration {
 
     } catch (error) {
       logger.error('Index creation migration failed', error);
+      
+      const errorMessage = error && error.message ? error.message : 'Unknown error';
+      const errorCode = error && error.code ? error.code : 'INDEX_CREATION_ERROR';
+      
       throw new AppError(
         'Failed to create database indexes',
         500,
-        'INDEX_CREATION_ERROR',
+        errorCode,
         { 
-          originalError: error.message,
+          originalError: errorMessage,
           createdIndexes,
           skippedIndexes
         }
       );
     }
+  }
+
+  /**
+   * @private
+   * Ensures collection exists with timeout protection
+   * @static
+   * @async
+   * @param {Object} db - Database instance
+   * @param {string} collectionName - Collection name
+   * @returns {Promise<void>}
+   */
+  static async #ensureCollectionExists(db, collectionName) {
+    return new Promise(async (resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`Collection existence check timed out for: ${collectionName}`));
+      }, CreateIndexesMigration.#OPERATION_TIMEOUT);
+
+      try {
+        const collections = await db.listCollections({ name: collectionName }).toArray();
+        
+        if (collections.length === 0) {
+          await db.createCollection(collectionName);
+          logger.info(`Created collection: ${collectionName}`);
+        }
+
+        clearTimeout(timeout);
+        resolve();
+      } catch (error) {
+        clearTimeout(timeout);
+        
+        // Ignore error if collection already exists
+        if (error.codeName === 'NamespaceExists') {
+          logger.info(`Collection ${collectionName} already exists`);
+          resolve();
+        } else {
+          reject(error);
+        }
+      }
+    });
+  }
+
+  /**
+   * @private
+   * Gets existing indexes with retry logic
+   * @static
+   * @async
+   * @param {Object} collection - MongoDB collection
+   * @returns {Promise<Array>} Existing indexes
+   */
+  static async #getExistingIndexes(collection) {
+    let lastError;
+
+    for (let attempt = 1; attempt <= CreateIndexesMigration.#RETRY_ATTEMPTS; attempt++) {
+      try {
+        return await collection.indexes();
+      } catch (error) {
+        lastError = error;
+        
+        if (attempt < CreateIndexesMigration.#RETRY_ATTEMPTS) {
+          logger.warn(`Failed to get indexes (attempt ${attempt}), retrying...`, error.message);
+          await CreateIndexesMigration.#delay(CreateIndexesMigration.#RETRY_DELAY);
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  /**
+   * @private
+   * Creates index safely with comprehensive error handling
+   * @static
+   * @async
+   * @param {Object} collection - MongoDB collection
+   * @param {Object} indexDef - Index definition
+   * @param {Map} existingIndexMap - Map of existing indexes
+   * @param {string} collectionName - Collection name
+   * @returns {Promise<Object>} Creation result
+   */
+  static async #createIndexSafely(collection, indexDef, existingIndexMap, collectionName) {
+    const indexKey = JSON.stringify(indexDef.fields);
+
+    // Check if index already exists
+    if (existingIndexMap.has(indexKey)) {
+      logger.debug(`Index already exists on ${collectionName}:`, indexDef.fields);
+      return { created: false, reason: 'exists' };
+    }
+
+    let lastError;
+
+    for (let attempt = 1; attempt <= CreateIndexesMigration.#RETRY_ATTEMPTS; attempt++) {
+      try {
+        const indexName = await collection.createIndex(
+          indexDef.fields,
+          {
+            background: true,
+            ...indexDef.options
+          }
+        );
+
+        logger.info(`Created index on ${collectionName}:`, {
+          fields: indexDef.fields,
+          name: indexName
+        });
+
+        return { created: true, name: indexName };
+
+      } catch (error) {
+        lastError = error;
+
+        // Handle duplicate key errors gracefully
+        if (error.code === 11000 || error.code === 11001 || error.codeName === 'IndexOptionsConflict') {
+          logger.warn(`Index conflict on ${collectionName}:`, {
+            fields: indexDef.fields,
+            error: error.message
+          });
+          return { created: false, reason: 'conflict' };
+        }
+
+        // Handle network timeouts
+        if (error.name === 'MongoNetworkTimeoutError' && attempt < CreateIndexesMigration.#RETRY_ATTEMPTS) {
+          logger.warn(`Network timeout creating index on ${collectionName} (attempt ${attempt}), retrying...`);
+          await CreateIndexesMigration.#delay(CreateIndexesMigration.#RETRY_DELAY * attempt);
+          continue;
+        }
+
+        // For other errors on final attempt, throw
+        if (attempt === CreateIndexesMigration.#RETRY_ATTEMPTS) {
+          throw error;
+        }
+
+        await CreateIndexesMigration.#delay(CreateIndexesMigration.#RETRY_DELAY);
+      }
+    }
+
+    throw lastError;
+  }
+
+  /**
+   * @private
+   * Delays execution
+   * @static
+   * @param {number} ms - Milliseconds to delay
+   * @returns {Promise<void>}
+   */
+  static async #delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -358,40 +497,46 @@ class CreateIndexesMigration {
       for (const [collectionName, indexes] of Object.entries(CreateIndexesMigration.#INDEX_DEFINITIONS)) {
         logger.info(`Processing index removal for collection: ${collectionName}`);
 
-        // Check if collection exists
-        const collections = await db.listCollections({ name: collectionName }).toArray();
-        if (collections.length === 0) {
-          logger.debug(`Collection ${collectionName} does not exist, skipping`);
-          continue;
-        }
+        try {
+          // Check if collection exists
+          const collections = await db.listCollections({ name: collectionName }).toArray();
+          if (collections.length === 0) {
+            logger.debug(`Collection ${collectionName} does not exist, skipping`);
+            continue;
+          }
 
-        const collection = db.collection(collectionName);
+          const collection = db.collection(collectionName);
 
-        // Get existing indexes
-        const existingIndexes = await collection.indexes();
+          // Get existing indexes with retry logic
+          const existingIndexes = await CreateIndexesMigration.#getExistingIndexes(collection);
 
-        // Drop each non-_id index that matches our definitions
-        for (const indexDef of indexes) {
-          const matchingIndex = existingIndexes.find(idx => {
-            return JSON.stringify(idx.key) === JSON.stringify(indexDef.fields);
-          });
+          // Drop each non-_id index that matches our definitions
+          for (const indexDef of indexes) {
+            const matchingIndex = existingIndexes.find(idx => {
+              return JSON.stringify(idx.key) === JSON.stringify(indexDef.fields);
+            });
 
-          if (matchingIndex && matchingIndex.name !== '_id_') {
-            try {
-              await collection.dropIndex(matchingIndex.name);
-              logger.info(`Dropped index on ${collectionName}:`, {
-                fields: indexDef.fields,
-                name: matchingIndex.name
-              });
-              droppedIndexes++;
+            if (matchingIndex && matchingIndex.name !== '_id_') {
+              try {
+                await collection.dropIndex(matchingIndex.name);
+                logger.info(`Dropped index on ${collectionName}:`, {
+                  fields: indexDef.fields,
+                  name: matchingIndex.name
+                });
+                droppedIndexes++;
 
-            } catch (error) {
-              logger.warn(`Failed to drop index on ${collectionName}:`, {
-                fields: indexDef.fields,
-                error: error.message
-              });
+              } catch (error) {
+                logger.warn(`Failed to drop index on ${collectionName}:`, {
+                  fields: indexDef.fields,
+                  error: error.message
+                });
+              }
             }
           }
+
+        } catch (collectionError) {
+          logger.error(`Failed to process collection ${collectionName} during rollback`, collectionError);
+          // Continue with other collections
         }
       }
 
@@ -404,12 +549,15 @@ class CreateIndexesMigration {
 
     } catch (error) {
       logger.error('Index removal rollback failed', error);
+      
+      const errorMessage = error && error.message ? error.message : 'Unknown error';
+      
       throw new AppError(
         'Failed to remove database indexes',
         500,
         'INDEX_REMOVAL_ERROR',
         {
-          originalError: error.message,
+          originalError: errorMessage,
           droppedIndexes
         }
       );
@@ -438,10 +586,10 @@ class CreateIndexesMigration {
 
       // Check each collection
       for (const [collectionName, expectedIndexes] of Object.entries(CreateIndexesMigration.#INDEX_DEFINITIONS)) {
-        const collection = db.collection(collectionName);
-        
         try {
-          const existingIndexes = await collection.indexes();
+          const collection = db.collection(collectionName);
+          const existingIndexes = await CreateIndexesMigration.#getExistingIndexes(collection);
+          
           const existingIndexMap = new Map(
             existingIndexes.map(idx => [JSON.stringify(idx.key), idx])
           );
@@ -476,11 +624,14 @@ class CreateIndexesMigration {
 
     } catch (error) {
       logger.error('Index validation failed', error);
+      
+      const errorMessage = error && error.message ? error.message : 'Unknown error';
+      
       throw new AppError(
         'Failed to validate indexes',
         500,
         'INDEX_VALIDATION_ERROR',
-        { originalError: error.message }
+        { originalError: errorMessage }
       );
     }
   }

@@ -84,6 +84,28 @@ const HTTP_STATUS = Object.freeze({
 });
 
 /**
+ * Application-specific status codes for business logic
+ * @namespace APPLICATION_STATUS
+ */
+const APPLICATION_STATUS = Object.freeze({
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+  PENDING: 'pending',
+  SUSPENDED: 'suspended',
+  DELETED: 'deleted',
+  DRAFT: 'draft',
+  PUBLISHED: 'published',
+  ARCHIVED: 'archived',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  PROCESSING: 'processing',
+  QUEUED: 'queued',
+  SCHEDULED: 'scheduled'
+});
+
+/**
  * Status code categories
  * @namespace STATUS_CATEGORIES
  */
@@ -271,6 +293,17 @@ const PLATFORM_MODE_DESCRIPTIONS = Object.freeze({
 });
 
 /**
+ * Consolidated status codes for schema validator compatibility
+ * @namespace STATUS_CODES
+ */
+const STATUS_CODES = Object.freeze({
+  ...HTTP_STATUS,
+  ...APPLICATION_STATUS,
+  ...PLATFORM_STATUS,
+  ...HEALTH_STATUS
+});
+
+/**
  * Get status category from code
  * @param {number} statusCode - HTTP status code
  * @returns {string} Status category
@@ -434,9 +467,14 @@ const errorResponse = (message, code = null, details = null) => {
   return createApiResponse(RESPONSE_STATUS.ERROR, null, message, { error });
 };
 
-// Export all constants and utilities
+// Export all constants and utilities with multiple access patterns for compatibility
 module.exports = Object.freeze({
+  // Primary export for schema validator compatibility
+  STATUS_CODES,
+  
+  // Individual namespace exports
   HTTP_STATUS,
+  APPLICATION_STATUS,
   STATUS_CATEGORIES,
   STATUS_MESSAGES,
   RESPONSE_STATUS,
@@ -458,5 +496,8 @@ module.exports = Object.freeze({
   allowsUserAccess,
   createApiResponse,
   successResponse,
-  errorResponse
+  errorResponse,
+  
+  // Legacy compatibility exports
+  ...STATUS_CODES
 });

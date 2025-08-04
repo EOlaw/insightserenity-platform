@@ -5,18 +5,51 @@
  * @module shared/lib/database/validators/schema-validator
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
- * @requires module:shared/lib/utils/constants/error-codes
- * @requires module:shared/lib/utils/constants/status-codes
- * @requires module:shared/lib/utils/constants/permissions
- * @requires module:shared/lib/utils/constants/roles
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
-const { ERROR_CODES } = require('../../utils/constants/error-codes');
-const { STATUS_CODES } = require('../../utils/constants/status-codes');
-const { PERMISSIONS } = require('../../utils/constants/permissions');
-const { ROLES } = require('../../utils/constants/roles');
+const { AppError } = require('../../utils/app-error');
+
+// Lazy-loaded constants to avoid circular dependencies
+let constantsCache = null;
+
+/**
+ * Safely loads and caches constants
+ * @private
+ * @returns {Object} Loaded constants
+ */
+function loadConstants() {
+  if (constantsCache) {
+    return constantsCache;
+  }
+
+  constantsCache = {
+    ERROR_CODES: {},
+    STATUS_CODES: {},
+    PERMISSIONS: {},
+    ROLES: {}
+  };
+
+  try {
+    const errorCodesModule = require('../../utils/constants/error-codes');
+    constantsCache.ERROR_CODES = errorCodesModule.ERROR_CODES || errorCodesModule || {};
+    
+    const statusCodesModule = require('../../utils/constants/status-codes');
+    constantsCache.STATUS_CODES = statusCodesModule.STATUS_CODES || statusCodesModule.HTTP_STATUS || statusCodesModule || {};
+    
+    const permissionsModule = require('../../utils/constants/permissions');
+    constantsCache.PERMISSIONS = permissionsModule.PERMISSIONS || permissionsModule || {};
+    
+    const rolesModule = require('../../utils/constants/roles');
+    constantsCache.ROLES = rolesModule.ROLES || rolesModule || {};
+
+    logger.debug('Constants loaded successfully for schema validator');
+  } catch (error) {
+    logger.warn('Failed to load some constants, using fallbacks', { error: error.message });
+  }
+
+  return constantsCache;
+}
 
 /**
  * @class SchemaValidator
@@ -49,25 +82,6 @@ class SchemaValidator {
    * @static
    * @readonly
    * @type {Object}
-   * @description System-wide enum mappings
-   */
-  static #SYSTEM_ENUMS = {
-    status: Object.values(STATUS_CODES),
-    permissions: Object.values(PERMISSIONS),
-    roles: Object.values(ROLES),
-    userStatus: ['active', 'inactive', 'pending', 'suspended', 'deleted'],
-    organizationType: ['enterprise', 'business', 'startup', 'nonprofit', 'government'],
-    subscriptionStatus: ['active', 'canceled', 'past_due', 'trialing', 'pending'],
-    paymentStatus: ['pending', 'processing', 'completed', 'failed', 'refunded'],
-    notificationType: ['email', 'sms', 'push', 'in-app', 'webhook'],
-    auditAction: ['create', 'read', 'update', 'delete', 'login', 'logout', 'export', 'import']
-  };
-
-  /**
-   * @private
-   * @static
-   * @readonly
-   * @type {Object}
    * @description Field constraint validators
    */
   static #CONSTRAINT_VALIDATORS = {
@@ -93,6 +107,52 @@ class SchemaValidator {
    * @description Schema validation cache
    */
   static #schemaCache = new Map();
+
+  /**
+   * Gets system enums dynamically to avoid initialization issues
+   * @private
+   * @static
+   * @returns {Object} System enums
+   */
+  static #getSystemEnums() {
+    const constants = loadConstants();
+    
+    const safeExtractValues = (obj) => {
+      try {
+        if (!obj || typeof obj !== 'object') {
+          return [];
+        }
+        
+        // Handle nested objects (like PERMISSIONS.PLATFORM.*)
+        const values = [];
+        const traverse = (current) => {
+          if (typeof current === 'string') {
+            values.push(current);
+          } else if (typeof current === 'object' && current !== null) {
+            Object.values(current).forEach(traverse);
+          }
+        };
+        
+        Object.values(obj).forEach(traverse);
+        return values;
+      } catch (error) {
+        logger.warn('Failed to extract values from object', { error: error.message });
+        return [];
+      }
+    };
+
+    return {
+      status: safeExtractValues(constants.STATUS_CODES),
+      permissions: safeExtractValues(constants.PERMISSIONS),
+      roles: safeExtractValues(constants.ROLES),
+      userStatus: ['active', 'inactive', 'pending', 'suspended', 'deleted'],
+      organizationType: ['enterprise', 'business', 'startup', 'nonprofit', 'government'],
+      subscriptionStatus: ['active', 'canceled', 'past_due', 'trialing', 'pending'],
+      paymentStatus: ['pending', 'processing', 'completed', 'failed', 'refunded'],
+      notificationType: ['email', 'sms', 'push', 'in-app', 'webhook'],
+      auditAction: ['create', 'read', 'update', 'delete', 'login', 'logout', 'export', 'import']
+    };
+  }
 
   /**
    * Validates a complete schema definition
@@ -135,6 +195,7 @@ class SchemaValidator {
       };
 
       if (!schema || typeof schema !== 'object') {
+        const constants = loadConstants();
         validationResult.valid = false;
         validationResult.errors.push({
           type: 'INVALID_SCHEMA',
@@ -146,7 +207,7 @@ class SchemaValidator {
           throw new AppError(
             'Invalid schema object',
             400,
-            ERROR_CODES.VALIDATION_ERROR,
+            constants.ERROR_CODES?.VALIDATION_ERROR || 'VALIDATION_ERROR',
             { model: modelName }
           );
         }
@@ -204,11 +265,12 @@ class SchemaValidator {
       validationResult.warnings.push(...schemaLevelValidation.warnings);
 
       if (strict && !validationResult.valid) {
+        const constants = loadConstants();
         const errorDetails = validationResult.errors.map(e => e.message).join('; ');
         throw new AppError(
           `Schema validation failed: ${errorDetails}`,
           400,
-          ERROR_CODES.VALIDATION_ERROR,
+          constants.ERROR_CODES?.VALIDATION_ERROR || 'VALIDATION_ERROR',
           { model: modelName, errors: validationResult.errors }
         );
       }
@@ -227,10 +289,11 @@ class SchemaValidator {
       }
       
       logger.error(`Schema validation error: ${modelName}`, error);
+      const constants = loadConstants();
       throw new AppError(
         'Schema validation failed',
         500,
-        ERROR_CODES.INTERNAL_ERROR,
+        constants.ERROR_CODES?.INTERNAL_ERROR || 'INTERNAL_ERROR',
         { model: modelName, originalError: error.message }
       );
     }
@@ -302,10 +365,11 @@ class SchemaValidator {
 
     } catch (error) {
       logger.error('Relationship validation error', error);
+      const constants = loadConstants();
       throw new AppError(
         'Relationship validation failed',
         500,
-        ERROR_CODES.INTERNAL_ERROR,
+        constants.ERROR_CODES?.INTERNAL_ERROR || 'INTERNAL_ERROR',
         { originalError: error.message }
       );
     }
@@ -324,6 +388,9 @@ class SchemaValidator {
       SchemaValidator.#schemaCache.clear();
       logger.debug('Cleared all schema cache');
     }
+    
+    // Also clear constants cache to force reload
+    constantsCache = null;
   }
 
   /**
@@ -348,56 +415,69 @@ class SchemaValidator {
       }
     };
 
-    // Handle shorthand definitions (e.g., field: String)
-    const normalizedDefinition = SchemaValidator.#normalizeFieldDefinition(fieldDefinition);
+    try {
+      // Handle shorthand definitions (e.g., field: String)
+      const normalizedDefinition = SchemaValidator.#normalizeFieldDefinition(fieldDefinition);
 
-    // Validate type
-    const typeValidation = SchemaValidator.#validateFieldType(fieldName, normalizedDefinition.type);
-    if (!typeValidation.valid) {
+      // Validate type
+      const typeValidation = SchemaValidator.#validateFieldType(fieldName, normalizedDefinition.type);
+      if (!typeValidation.valid) {
+        result.valid = false;
+        result.errors.push(...typeValidation.errors);
+      }
+
+      // Validate constraints
+      if (options.validateConstraints) {
+        const constraintValidation = SchemaValidator.#validateFieldConstraints(
+          fieldName,
+          normalizedDefinition,
+          options.modelName
+        );
+        if (!constraintValidation.valid) {
+          result.valid = false;
+          result.errors.push(...constraintValidation.errors);
+        }
+        result.warnings.push(...constraintValidation.warnings);
+        
+        // Update metadata
+        result.metadata.required = normalizedDefinition.required === true;
+        result.metadata.indexed = normalizedDefinition.index === true || normalizedDefinition.unique === true;
+      }
+
+      // Validate enums
+      if (options.validateEnums && normalizedDefinition.enum) {
+        const enumValidation = SchemaValidator.#validateEnum(fieldName, normalizedDefinition.enum);
+        if (!enumValidation.valid) {
+          result.valid = false;
+          result.errors.push(...enumValidation.errors);
+        }
+        result.warnings.push(...enumValidation.warnings);
+        result.metadata.enum = normalizedDefinition.enum;
+      }
+
+      // Validate relationships
+      if (options.validateRelationships && normalizedDefinition.ref) {
+        result.metadata.relationship = {
+          sourceModel: options.modelName,
+          targetModel: normalizedDefinition.ref,
+          field: fieldName,
+          type: normalizedDefinition.type === 'Array' ? 'many' : 'one'
+        };
+      }
+
+      return result;
+
+    } catch (error) {
+      logger.error(`Field validation failed for ${fieldName}`, error);
       result.valid = false;
-      result.errors.push(...typeValidation.errors);
-    }
-
-    // Validate constraints
-    if (options.validateConstraints) {
-      const constraintValidation = SchemaValidator.#validateFieldConstraints(
-        fieldName,
-        normalizedDefinition,
-        options.modelName
-      );
-      if (!constraintValidation.valid) {
-        result.valid = false;
-        result.errors.push(...constraintValidation.errors);
-      }
-      result.warnings.push(...constraintValidation.warnings);
+      result.errors.push({
+        type: 'FIELD_VALIDATION_ERROR',
+        message: `Field validation failed: ${error.message}`,
+        field: fieldName
+      });
       
-      // Update metadata
-      result.metadata.required = normalizedDefinition.required === true;
-      result.metadata.indexed = normalizedDefinition.index === true || normalizedDefinition.unique === true;
+      return result;
     }
-
-    // Validate enums
-    if (options.validateEnums && normalizedDefinition.enum) {
-      const enumValidation = SchemaValidator.#validateEnum(fieldName, normalizedDefinition.enum);
-      if (!enumValidation.valid) {
-        result.valid = false;
-        result.errors.push(...enumValidation.errors);
-      }
-      result.warnings.push(...enumValidation.warnings);
-      result.metadata.enum = normalizedDefinition.enum;
-    }
-
-    // Validate relationships
-    if (options.validateRelationships && normalizedDefinition.ref) {
-      result.metadata.relationship = {
-        sourceModel: options.modelName,
-        targetModel: normalizedDefinition.ref,
-        field: fieldName,
-        type: normalizedDefinition.type === 'Array' ? 'many' : 'one'
-      };
-    }
-
-    return result;
   }
 
   /**
@@ -650,8 +730,9 @@ class SchemaValidator {
    */
   static #findMatchingSystemEnum(fieldName, enumValues) {
     const fieldNameLower = fieldName.toLowerCase();
+    const systemEnums = SchemaValidator.#getSystemEnums();
     
-    for (const [enumName, systemValues] of Object.entries(SchemaValidator.#SYSTEM_ENUMS)) {
+    for (const [enumName, systemValues] of Object.entries(systemEnums)) {
       if (fieldNameLower.includes(enumName.toLowerCase())) {
         const enumSet = new Set(enumValues);
         const systemSet = new Set(systemValues);
