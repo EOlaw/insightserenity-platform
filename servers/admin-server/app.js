@@ -1,7 +1,7 @@
 /**
- * @file Admin Application Setup - FIXED YOUR EXISTING VERSION
- * @description Express application configuration for administrative platform management
- * @version 3.0.0
+ * @file Admin Application Setup - ENHANCED VERSION WITH MODEL RECOVERY
+ * @description Express application configuration for administrative platform management with enhanced model handling
+ * @version 3.1.0
  */
 
 'use strict';
@@ -83,7 +83,7 @@ try {
 }
 
 /**
- * FIXED: Admin Application class with proper middleware ordering and error handling
+ * ENHANCED: Admin Application class with proper middleware ordering, error handling, and model management
  */
 class AdminApplication {
     constructor() {
@@ -91,6 +91,8 @@ class AdminApplication {
         this.sessionManager = null;
         this.isShuttingDown = false;
         this.requestCount = 0; // FIXED: Add request tracking
+        this.modelRecoveryAttempts = 0;
+        this.maxModelRecoveryAttempts = 3;
 
         // Create merged configuration with safe defaults
         this.config = this.createMergedConfiguration();
@@ -126,6 +128,11 @@ class AdminApplication {
                     ipWhitelist: {
                         enabled: process.env.ADMIN_IP_WHITELIST_ENABLED === 'true' || false
                     }
+                },
+                features: {
+                    modelRecovery: true,
+                    realTimeMonitoring: process.env.ADMIN_REAL_TIME_MONITORING !== 'false',
+                    advancedAnalytics: process.env.ADMIN_ADVANCED_ANALYTICS !== 'false'
                 }
             };
 
@@ -174,7 +181,8 @@ class AdminApplication {
                 hasAdmin: !!mergedConfig.admin,
                 hasSecurity: !!mergedConfig.security,
                 hasDatabase: !!mergedConfig.database,
-                environment: mergedConfig.app.env
+                environment: mergedConfig.app.env,
+                modelRecoveryEnabled: mergedConfig.admin.features.modelRecovery
             });
 
             return mergedConfig;
@@ -185,7 +193,11 @@ class AdminApplication {
 
             return {
                 app: { env: 'development', version: '1.0.0', name: 'Admin Server' },
-                admin: { basePath: '/admin', uploadLimit: '50mb' },
+                admin: { 
+                    basePath: '/admin', 
+                    uploadLimit: '50mb',
+                    features: { modelRecovery: true }
+                },
                 security: { session: { enabled: true }, cors: { enabled: true } },
                 database: { multiTenant: { enabled: false } }
             };
@@ -193,11 +205,11 @@ class AdminApplication {
     }
 
     /**
-     * FIXED: Initialize the admin application with proper ordering
+     * ENHANCED: Initialize the admin application with proper ordering and model management
      */
     async initialize() {
         try {
-            console.log('🚀 Initializing Fixed Admin Application...');
+            console.log('🚀 Initializing Enhanced Admin Application...');
 
             this.setupTrustProxy();
             this.setupRequestTracking(); // FIXED: Add request tracking first
@@ -205,14 +217,15 @@ class AdminApplication {
             this.setupAdminMiddleware();
             await this.setupSessionAndAuthentication(); // FIXED: Combined and reordered
             this.setupAuditMiddleware();
-            this.setupAdminRoutes();
+            this.setupModelAwareMiddleware(); // ENHANCED: Add model-aware middleware
+            this.setupAdminRoutes(); // ENHANCED: Setup enhanced routes
             this.setupErrorHandling();
             this.setupAdminEventHandlers();
 
-            console.log('✅ Fixed Admin Application initialization completed successfully');
+            console.log('✅ Enhanced Admin Application initialization completed successfully');
             return this.app;
         } catch (error) {
-            console.error('❌ Fixed Admin Application initialization failed:', error.message);
+            console.error('❌ Enhanced Admin Application initialization failed:', error.message);
             throw error;
         }
     }
@@ -748,11 +761,147 @@ class AdminApplication {
     }
 
     /**
-     * Setup admin routes with timeout protection
+     * ENHANCED: Setup model-aware middleware for enhanced error handling
+     */
+    setupModelAwareMiddleware() {
+        try {
+            console.log('🔧 Setting up model-aware middleware...');
+
+            // Model availability middleware
+            this.app.use(async (req, res, next) => {
+                try {
+                    // Attach model availability info to request
+                    const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
+                    
+                    req.modelStatus = {
+                        available: modelSummary,
+                        canAccessUsers: false,
+                        canAccessOrganizations: false,
+                        canAccessAuditLogs: false,
+                        recoveryAttempts: this.modelRecoveryAttempts,
+                        maxRecoveryAttempts: this.maxModelRecoveryAttempts
+                    };
+
+                    // Check individual model availability
+                    try {
+                        req.modelStatus.canAccessUsers = !!(await Database.getModel('User'));
+                    } catch (error) {
+                        logger.debug('User model check failed', { error: error.message });
+                    }
+
+                    try {
+                        req.modelStatus.canAccessOrganizations = !!(await Database.getModel('Organization'));
+                    } catch (error) {
+                        logger.debug('Organization model check failed', { error: error.message });
+                    }
+
+                    try {
+                        req.modelStatus.canAccessAuditLogs = !!(await Database.getModel('AuditLog'));
+                    } catch (error) {
+                        logger.debug('AuditLog model check failed', { error: error.message });
+                    }
+
+                    next();
+                } catch (error) {
+                    logger.warn('Model status check failed', { error: error.message });
+                    req.modelStatus = { 
+                        available: false, 
+                        canAccessUsers: false,
+                        canAccessOrganizations: false,
+                        canAccessAuditLogs: false,
+                        error: error.message,
+                        recoveryAttempts: this.modelRecoveryAttempts
+                    };
+                    next();
+                }
+            });
+
+            // Enhanced error recovery middleware
+            this.app.use((err, req, res, next) => {
+                if (err.message && err.message.toLowerCase().includes('model')) {
+                    logger.warn('Model-related error detected, attempting recovery', {
+                        error: err.message,
+                        path: req.path,
+                        recoveryAttempts: this.modelRecoveryAttempts
+                    });
+
+                    // Trigger model recovery if needed
+                    if (this.modelRecoveryAttempts < this.maxModelRecoveryAttempts) {
+                        this.triggerModelRecovery(err);
+                    }
+
+                    // Provide fallback response for model errors
+                    return res.status(503).json({
+                        success: false,
+                        error: {
+                            message: 'Service temporarily unavailable due to model initialization',
+                            code: 'MODEL_UNAVAILABLE',
+                            canRetry: true,
+                            retryAfter: 30,
+                            recoveryInProgress: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts
+                        },
+                        timestamp: new Date().toISOString(),
+                        requestId: req.requestId
+                    });
+                }
+
+                next(err);
+            });
+
+            console.log('✅ Model-aware middleware setup completed');
+            logger.info('Model-aware middleware initialized successfully');
+
+        } catch (error) {
+            console.error('❌ Model-aware middleware setup failed:', error.message);
+            logger.error('Failed to setup model-aware middleware', { error: error.message });
+        }
+    }
+
+    /**
+     * Trigger model recovery process
+     */
+    async triggerModelRecovery(error) {
+        try {
+            if (this.modelRecoveryAttempts >= this.maxModelRecoveryAttempts) {
+                logger.warn('Model recovery attempts exceeded limit', {
+                    attempts: this.modelRecoveryAttempts,
+                    maxAttempts: this.maxModelRecoveryAttempts
+                });
+                return;
+            }
+
+            this.modelRecoveryAttempts++;
+            logger.info('Triggering model recovery', {
+                attempt: this.modelRecoveryAttempts,
+                triggerError: error.message
+            });
+
+            // Force model registration
+            if (Database.forceModelRegistration) {
+                Database.forceModelRegistration();
+            }
+
+            // Attempt model reload
+            if (Database.reloadModels) {
+                const reloadResult = await Database.reloadModels();
+                logger.info('Model recovery reload result', reloadResult);
+            }
+
+        } catch (recoveryError) {
+            logger.error('Model recovery failed', { 
+                error: recoveryError.message,
+                originalError: error.message,
+                attempt: this.modelRecoveryAttempts
+            });
+        }
+    }
+
+    /**
+     * ENHANCED: Setup admin routes with model validation and recovery endpoints
      */
     setupAdminRoutes() {
         try {
-            console.log('🛤️ Setting up admin routes...');
+            console.log('🛤️ Setting up enhanced admin routes...');
 
             const adminBase = this.config.admin.basePath || '/admin';
 
@@ -766,10 +915,17 @@ class AdminApplication {
                 ]);
             };
 
-            // Health check (no auth required)
-            this.app.get('/health', (req, res) => {
+            // ENHANCED: Health check with comprehensive model status
+            this.app.get('/health', async (req, res) => {
                 try {
-                    const dbHealth = Database.getHealthStatus ? Database.getHealthStatus() : { status: 'unknown' };
+                    const dbHealth = Database.getHealthStatus ? 
+                        await Database.getHealthStatus() : 
+                        { status: 'unknown' };
+                    
+                    const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
+                    const modelErrors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
+                    const seedingStatus = Database.getSeedingStatus ? Database.getSeedingStatus() : {};
+                    
                     res.status(200).json({
                         status: 'ok',
                         server: 'admin',
@@ -780,6 +936,18 @@ class AdminApplication {
                         requestId: req.requestId,
                         requestNumber: req.requestNumber,
                         database: dbHealth,
+                        models: {
+                            total: modelSummary.total,
+                            successful: modelSummary.successful,
+                            failed: modelSummary.failed,
+                            available: modelSummary.models || [],
+                            errors: modelErrors.slice(0, 3), // Limit error details
+                            status: modelSummary.failed > 0 ? 'partial' : 'healthy',
+                            recoveryAttempts: this.modelRecoveryAttempts,
+                            maxRecoveryAttempts: this.maxModelRecoveryAttempts,
+                            recoveryEnabled: this.config.admin.features.modelRecovery
+                        },
+                        seeding: seedingStatus,
                         session: {
                             configured: !!req.session,
                             sessionId: req.session?.id || req.sessionID || 'no-session',
@@ -794,7 +962,8 @@ class AdminApplication {
                             auditLogging: true,
                             ipWhitelist: this.config.admin.security?.ipWhitelist?.enabled || false,
                             mfa: this.config.admin.security?.requireMFA || false,
-                            sessionManager: !!this.sessionManager
+                            sessionManager: !!this.sessionManager,
+                            modelRecovery: this.config.admin.features.modelRecovery
                         }
                     });
                 } catch (error) {
@@ -807,12 +976,176 @@ class AdminApplication {
                 }
             });
 
-            // Admin dashboard with proper response handling
-            this.app.get(`${adminBase}/dashboard`, (req, res) => {
+            // ENHANCED: Model status endpoint
+            this.app.get(`${adminBase}/models/status`, async (req, res) => {
                 try {
+                    const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
+                    const modelErrors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
+                    
+                    const essentialModels = ['User', 'Organization', 'AuditLog'];
+                    const modelAvailability = {};
+                    
+                    for (const modelName of essentialModels) {
+                        try {
+                            const model = await Database.getModel(modelName);
+                            modelAvailability[modelName] = {
+                                available: !!model,
+                                name: model?.modelName || 'N/A',
+                                collection: model?.collection?.name || 'N/A'
+                            };
+                        } catch (error) {
+                            modelAvailability[modelName] = {
+                                available: false,
+                                error: error.message
+                            };
+                        }
+                    }
+                    
+                    res.json({
+                        summary: modelSummary,
+                        errors: modelErrors,
+                        essentialModels: modelAvailability,
+                        recovery: {
+                            attempts: this.modelRecoveryAttempts,
+                            maxAttempts: this.maxModelRecoveryAttempts,
+                            canRecover: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts,
+                            enabled: this.config.admin.features.modelRecovery
+                        },
+                        actions: {
+                            canReload: !!Database.reloadModels,
+                            canForceRegistration: !!Database.forceModelRegistration,
+                            canRunSeeds: !!Database.runSeeds
+                        },
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (error) {
+                    res.status(500).json({
+                        error: error.message,
+                        timestamp: new Date().toISOString(),
+                        requestId: req.requestId
+                    });
+                }
+            });
+
+            // ENHANCED: Model reload endpoint
+            this.app.post(`${adminBase}/models/reload`, async (req, res) => {
+                try {
+                    if (!Database.reloadModels) {
+                        return res.status(501).json({
+                            success: false,
+                            error: 'Model reload functionality not available',
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+
+                    const reloadResult = await Database.reloadModels();
+                    this.modelRecoveryAttempts++; // Track manual reload attempts
+                    
+                    res.json({
+                        success: true,
+                        result: reloadResult,
+                        recoveryAttempts: this.modelRecoveryAttempts,
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString(),
+                        requestId: req.requestId
+                    });
+                }
+            });
+
+            // ENHANCED: Force model registration endpoint
+            this.app.post(`${adminBase}/models/force-registration`, async (req, res) => {
+                try {
+                    if (!Database.forceModelRegistration) {
+                        return res.status(501).json({
+                            success: false,
+                            error: 'Force model registration functionality not available',
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+
+                    const result = Database.forceModelRegistration();
+                    
+                    res.json({
+                        success: true,
+                        result,
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString(),
+                        requestId: req.requestId
+                    });
+                }
+            });
+
+            // ENHANCED: Database seeds management
+            this.app.get(`${adminBase}/seeds/status`, async (req, res) => {
+                try {
+                    const seedingStatus = Database.getSeedingStatus ? Database.getSeedingStatus() : {};
+                    
+                    res.json({
+                        status: seedingStatus,
+                        canRunSeeds: !!Database.runSeeds,
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (error) {
+                    res.status(500).json({
+                        error: error.message,
+                        timestamp: new Date().toISOString(),
+                        requestId: req.requestId
+                    });
+                }
+            });
+
+            this.app.post(`${adminBase}/seeds/run`, async (req, res) => {
+                try {
+                    if (!Database.runSeeds) {
+                        return res.status(501).json({
+                            success: false,
+                            error: 'Seeding functionality not available',
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+
+                    const { strategy = 'safe', resetDatabase = false } = req.body;
+                    
+                    const seedResult = await Database.runSeeds({
+                        strategy,
+                        resetDatabase,
+                        seedTypes: ['development'],
+                        continueOnError: true
+                    });
+                    
+                    res.json({
+                        success: true,
+                        result: seedResult,
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString(),
+                        requestId: req.requestId
+                    });
+                }
+            });
+
+            // Admin dashboard with proper response handling
+            this.app.get(`${adminBase}/dashboard`, async (req, res) => {
+                try {
+                    const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
+                    
                     const responseData = {
-                        title: 'Admin Dashboard',
-                        message: 'Welcome to the Fixed InsightSerenity Admin Dashboard',
+                        title: 'Enhanced Admin Dashboard',
+                        message: 'Welcome to the Enhanced InsightSerenity Admin Dashboard',
                         user: req.user || null,
                         authenticated: !!req.user,
                         session: {
@@ -826,11 +1159,20 @@ class AdminApplication {
                             requestNumber: req.requestNumber,
                             totalRequests: this.requestCount
                         },
+                        models: {
+                            total: modelSummary.total,
+                            successful: modelSummary.successful,
+                            failed: modelSummary.failed,
+                            healthy: modelSummary.failed === 0,
+                            recoveryAttempts: this.modelRecoveryAttempts,
+                            available: req.modelStatus || {}
+                        },
                         features: {
                             realTimeMonitoring: true,
                             advancedAnalytics: false,
                             bulkOperations: true,
-                            sessionManager: !!this.sessionManager
+                            sessionManager: !!this.sessionManager,
+                            modelRecovery: this.config.admin.features.modelRecovery
                         },
                         timestamp: new Date().toISOString(),
                         requestId: req.requestId
@@ -871,6 +1213,7 @@ class AdminApplication {
                         middleware: {
                             sessionManager: !!this.sessionManager
                         },
+                        models: req.modelStatus || {},
                         requestId: req.requestId,
                         timestamp: new Date().toISOString()
                     });
@@ -892,21 +1235,30 @@ class AdminApplication {
             if (this.config.app.env !== 'production') {
                 this.app.get(`${adminBase}/api-docs`, (req, res) => {
                     res.json({
-                        title: 'Admin API Documentation',
+                        title: 'Enhanced Admin API Documentation',
                         version: this.config.app.version,
                         environment: this.config.app.env,
                         endpoints: this.getApiEndpoints(),
+                        features: {
+                            modelManagement: true,
+                            seedsManagement: true,
+                            healthMonitoring: true,
+                            sessionManagement: true
+                        },
                         timestamp: new Date().toISOString(),
                         requestId: req.requestId
                     });
                 });
             }
 
-            console.log('✅ Admin routes setup completed');
-            logger.info('Admin routes setup completed', { basePath: adminBase });
+            console.log('✅ Enhanced admin routes setup completed');
+            logger.info('Enhanced admin routes setup completed', { 
+                basePath: adminBase,
+                modelRecoveryEnabled: this.config.admin.features.modelRecovery
+            });
         } catch (error) {
-            console.error('❌ Admin routes setup failed:', error.message);
-            logger.error('Failed to setup admin routes', { error: error.message });
+            console.error('❌ Enhanced admin routes setup failed:', error.message);
+            logger.error('Failed to setup enhanced admin routes', { error: error.message });
             throw error;
         }
     }
@@ -949,6 +1301,7 @@ class AdminApplication {
                         sessionId: req.session?.id || req.sessionID,
                         ip: req.ip,
                         requestId: req.requestId,
+                        modelStatus: req.modelStatus,
                         timestamp: new Date().toISOString()
                     });
 
@@ -964,9 +1317,24 @@ class AdminApplication {
                         }
                     };
 
+                    // Add model status if available
+                    if (req.modelStatus) {
+                        errorResponse.models = req.modelStatus;
+                    }
+
                     if (this.config.app.env === 'development') {
                         errorResponse.error.stack = err.stack;
                         errorResponse.error.details = err.details;
+                    }
+
+                    // Check if this is a model-related error
+                    if (err.message && err.message.toLowerCase().includes('model')) {
+                        errorResponse.error.recovery = {
+                            available: this.config.admin.features.modelRecovery,
+                            attempts: this.modelRecoveryAttempts,
+                            maxAttempts: this.maxModelRecoveryAttempts,
+                            canRetry: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts
+                        };
                     }
 
                     if (!res.headersSent) {
@@ -976,7 +1344,7 @@ class AdminApplication {
             }
 
             console.log('✅ Error handling setup completed');
-            logger.info('Admin error handling setup completed successfully');
+            logger.info('Enhanced admin error handling setup completed successfully');
         } catch (error) {
             console.error('❌ Error handling setup failed:', error.message);
             logger.error('Critical failure in error handling setup', {
@@ -1003,8 +1371,17 @@ class AdminApplication {
                 logger.error('Security breach detected', event);
             });
 
+            // ENHANCED: Handle model-related events
+            this.app.on('model:failure', async (event) => {
+                logger.error('Model failure detected in admin app', event);
+                
+                if (this.modelRecoveryAttempts < this.maxModelRecoveryAttempts) {
+                    await this.triggerModelRecovery(event);
+                }
+            });
+
             console.log('✅ Event handlers setup completed');
-            logger.info('Admin event handlers setup completed');
+            logger.info('Enhanced admin event handlers setup completed');
         } catch (error) {
             console.error('❌ Event handlers setup failed:', error.message);
             logger.error('Failed to setup event handlers', { error: error.message });
@@ -1039,37 +1416,53 @@ class AdminApplication {
      */
     async start() {
         try {
-            console.log('🚀 Starting Fixed Admin Application...');
+            console.log('🚀 Starting Enhanced Admin Application...');
 
             await this.initialize();
 
-            console.log('✅ Fixed admin application started successfully');
+            console.log('✅ Enhanced admin application started successfully');
             console.log('📍 Available routes:');
-            console.log('   - GET /health (Comprehensive health check)');
-            console.log('   - GET /admin/dashboard (Fixed dashboard)');
+            console.log('   - GET /health (Comprehensive health check with model status)');
+            console.log('   - GET /admin/dashboard (Enhanced dashboard)');
             console.log('   - GET /admin/session (Session details)');
+            console.log('   - GET /admin/models/status (Model status and recovery)');
+            console.log('   - POST /admin/models/reload (Reload models)');
+            console.log('   - POST /admin/models/force-registration (Force model registration)');
+            console.log('   - GET /admin/seeds/status (Seeding status)');
+            console.log('   - POST /admin/seeds/run (Run database seeds)');
             console.log('   - GET /admin/api-docs (API documentation)');
             
-            console.log('🔧 Fixed features:');
+            console.log('🔧 Enhanced features:');
             console.log('   - Proper middleware ordering');
             console.log('   - Express-session before Passport');
             console.log('   - Timeout protection on all middleware');
             console.log('   - Request tracking and monitoring');
             console.log('   - Fallback error handling');
+            console.log('   - Model recovery and management');
+            console.log('   - Database seeding management');
+            console.log('   - Enhanced health monitoring');
 
-            logger.info('Fixed admin application started successfully', {
+            logger.info('Enhanced admin application started successfully', {
                 environment: this.config.app.env,
                 features: {
                     sessionManager: !!this.sessionManager,
                     requestTracking: true,
                     timeoutProtection: true,
-                    fallbackHandling: true
+                    fallbackHandling: true,
+                    modelRecovery: this.config.admin.features.modelRecovery,
+                    modelManagement: true,
+                    seedsManagement: true
+                },
+                modelRecovery: {
+                    enabled: this.config.admin.features.modelRecovery,
+                    attempts: this.modelRecoveryAttempts,
+                    maxAttempts: this.maxModelRecoveryAttempts
                 }
             });
 
             return this.app;
         } catch (error) {
-            console.error('❌ Failed to start fixed admin application:', error.message);
+            console.error('❌ Failed to start enhanced admin application:', error.message);
             logger.error('Failed to start admin application', { error: error.message });
             throw error;
         }
@@ -1080,8 +1473,8 @@ class AdminApplication {
      */
     async stop() {
         try {
-            console.log('🛑 Stopping admin application...');
-            logger.info('Stopping admin application...');
+            console.log('🛑 Stopping enhanced admin application...');
+            logger.info('Stopping enhanced admin application...');
             this.isShuttingDown = true;
 
             // Close session manager
@@ -1089,10 +1482,10 @@ class AdminApplication {
                 await this.sessionManager.close();
             }
 
-            console.log('✅ Admin application stopped successfully');
-            logger.info('Admin application stopped successfully');
+            console.log('✅ Enhanced admin application stopped successfully');
+            logger.info('Enhanced admin application stopped successfully');
         } catch (error) {
-            console.error('❌ Error stopping admin application:', error.message);
+            console.error('❌ Error stopping enhanced admin application:', error.message);
             logger.error('Error stopping admin application', { error: error.message });
             throw error;
         }

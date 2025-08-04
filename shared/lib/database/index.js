@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview Database module main exports - FIXED VERSION WITH SEEDING CONTROLS
+ * @fileoverview Database module main exports - FIXED VERSION WITH SEEDING CONTROLS AND MODEL REGISTRATION
  * @module shared/lib/database
  * @requires module:shared/lib/database/connection-manager
  * @requires module:shared/lib/database/multi-tenant-manager
@@ -63,6 +63,23 @@ try {
     logger.warn('MigrationRunner not available', { error: error.message });
 }
 
+// CRITICAL FIX: Import models index to register all models with BaseModel
+// This must happen after BaseModel is imported but before Database initialization
+let modelsRegistered = false;
+function ensureModelsRegistered() {
+    if (!modelsRegistered && BaseModel) {
+        try {
+            logger.info('Loading and registering all database models...');
+            require('./models'); // This imports and registers all models
+            modelsRegistered = true;
+            logger.info('All models have been registered successfully');
+        } catch (modelError) {
+            logger.error('Failed to register models from index', { error: modelError.message });
+            // Continue with fallback behavior
+        }
+    }
+}
+
 /**
  * @class Database
  * @description Main database module providing unified access to all database functionality
@@ -111,6 +128,9 @@ class Database {
             } = options;
 
             logger.info('Initializing database module');
+
+            // CRITICAL FIX: Ensure models are registered BEFORE any other initialization
+            ensureModelsRegistered();
 
             // Initialize connection manager
             const connectionOptions = {
@@ -185,7 +205,7 @@ class Database {
                 }
             }
 
-            // Load models BEFORE attempting seeding
+            // Load models AFTER registration and BEFORE attempting seeding
             await Database.#loadModels();
 
             // Initialize seed manager if available
@@ -234,6 +254,7 @@ class Database {
                 migrationRunner: Database.#migrationRunner ? 'Available' : 'Not available',
                 seedManager: Database.#seedManager ? 'Available' : 'Not available',
                 modelsLoaded: Database.#models.size,
+                modelsRegistered: modelsRegistered,
                 seedingDisabled: Database.#seedingDisabled
             });
 
@@ -623,6 +644,7 @@ class Database {
             Database.#initialized = false;
             Database.#seedingInProgress = false;
             Database.#seedingDisabled = false;
+            modelsRegistered = false;
 
             logger.info('Database module shutdown complete');
 
@@ -674,6 +696,9 @@ class Database {
         if (!Database.#initialized) {
             throw new AppError('Database not initialized', 500, 'DATABASE_NOT_INITIALIZED');
         }
+
+        // Ensure models are registered before attempting to get them
+        ensureModelsRegistered();
 
         // Check if multi-tenant
         if (tenantId && Database.#multiTenantManager) {
@@ -780,6 +805,7 @@ class Database {
                 initialized: Database.#initialized,
                 connections: {},
                 models: Database.#models.size,
+                modelsRegistered: modelsRegistered,
                 metrics: {},
                 seeding: Database.getSeedingStatus(),
                 timestamp: new Date().toISOString()
@@ -828,6 +854,7 @@ class Database {
                 status: 'error',
                 error: error.message,
                 initialized: Database.#initialized,
+                modelsRegistered: modelsRegistered,
                 seeding: Database.getSeedingStatus(),
                 timestamp: new Date().toISOString()
             };
@@ -983,7 +1010,7 @@ class Database {
 
     /**
      * @private
-     * Loads built-in models - FIXED VERSION with better error handling
+     * Loads built-in models - ENHANCED VERSION with improved registry access
      * @static
      * @async
      */
@@ -993,6 +1020,9 @@ class Database {
             
             let loadedCount = 0;
             let failedCount = 0;
+
+            // Ensure models are registered first
+            ensureModelsRegistered();
 
             // Get models from BaseModel registry if available
             if (BaseModel && BaseModel.getAllModels) {
@@ -1063,7 +1093,8 @@ class Database {
                 loaded: loadedCount,
                 failed: failedCount,
                 total: loadedCount + failedCount,
-                modelsAvailable: Array.from(Database.#models.keys())
+                modelsAvailable: Array.from(Database.#models.keys()),
+                modelsRegistered: modelsRegistered
             });
 
             // Log model details for debugging
@@ -1316,6 +1347,7 @@ class Database {
         Database.#migrationRunner = null;
         Database.#seedingInProgress = false;
         Database.#seedingDisabled = false;
+        modelsRegistered = false;
 
         logger.info('All database data cleared');
     }
@@ -1332,18 +1364,24 @@ class Database {
             Database.#models.clear();
             Database.#schemas.clear();
 
+            // Force re-registration
+            modelsRegistered = false;
+            ensureModelsRegistered();
+
             // Reload models
             await Database.#loadModels();
 
             logger.info('Models reloaded successfully', {
                 modelsLoaded: Database.#models.size,
-                modelsAvailable: Array.from(Database.#models.keys())
+                modelsAvailable: Array.from(Database.#models.keys()),
+                modelsRegistered: modelsRegistered
             });
 
             return {
                 success: true,
                 modelsLoaded: Database.#models.size,
-                models: Array.from(Database.#models.keys())
+                models: Array.from(Database.#models.keys()),
+                modelsRegistered: modelsRegistered
             };
 
         } catch (error) {
@@ -1352,6 +1390,21 @@ class Database {
                 originalError: error.message
             });
         }
+    }
+
+    /**
+     * Forces model registration
+     * @static
+     * @returns {Object} Registration result
+     */
+    static forceModelRegistration() {
+        modelsRegistered = false;
+        ensureModelsRegistered();
+        
+        return {
+            success: modelsRegistered,
+            modelsInRegistry: BaseModel && BaseModel.getAllModels ? BaseModel.getAllModels().size : 0
+        };
     }
 }
 
@@ -1376,3 +1429,4 @@ module.exports.transaction = Database.transaction;
 module.exports.reloadModels = Database.reloadModels;
 module.exports.runSeeds = Database.runSeeds;
 module.exports.getSeedingStatus = Database.getSeedingStatus;
+module.exports.forceModelRegistration = Database.forceModelRegistration;

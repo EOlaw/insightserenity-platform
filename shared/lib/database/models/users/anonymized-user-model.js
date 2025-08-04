@@ -8,7 +8,7 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('./base-model');
+const BaseModel = require('../base-model');
 
 /**
  * Anonymized user schema definition

@@ -14,7 +14,7 @@
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
-const AppError = require('../../../utils/app-error');
+const { AppError } = require('../../../utils/app-error');
 const validators = require('../../../utils/validators/common-validators');
 const dateHelper = require('../../../utils/helpers/date-helper');
 

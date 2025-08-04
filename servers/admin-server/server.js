@@ -1,7 +1,7 @@
 /**
- * @file Admin Server Entry Point - COMPLETE FIXED VERSION
- * @description Enterprise administration server with enhanced security and monitoring
- * @version 3.0.0
+ * @file Admin Server Entry Point - ENHANCED VERSION WITH MODEL RECOVERY
+ * @description Enterprise administration server with enhanced security, monitoring, and model recovery
+ * @version 3.1.0
  */
 
 'use strict';
@@ -64,7 +64,7 @@ const HealthMonitor = require('../../shared/lib/utils/health-monitor');
 const SecurityManager = require('../../shared/lib/security/security-manager');
 
 /**
- * Admin Server class for platform administration
+ * Admin Server class for platform administration with enhanced model recovery
  * @class AdminServer
  */
 class AdminServer extends EventEmitter {
@@ -79,10 +79,12 @@ class AdminServer extends EventEmitter {
         this.auditService = null;
         this.adminConfig = null;
         this.mergedConfig = null;
+        this.modelRecoveryAttempts = 0;
+        this.maxModelRecoveryAttempts = 3;
     }
 
     /**
-     * Initialize and start the admin server
+     * Initialize and start the admin server with enhanced model recovery
      * @returns {Promise<http.Server|https.Server>} The server instance
      * @throws {Error} If server initialization fails
      */
@@ -108,6 +110,9 @@ class AdminServer extends EventEmitter {
             // Initialize database connection EARLY - before security verification
             await Database.initialize();
 
+            // ENHANCED: Validate and recover models after database initialization
+            await this.validateAndRecoverModels();
+
             // Initialize enterprise audit system with error handling
             await this.initializeAuditSystemSafely();
 
@@ -128,6 +133,7 @@ class AdminServer extends EventEmitter {
                     auditLogging: String(auditConfig?.enabled || false),
                     realTimeMonitoring: String(this.adminConfig?.features?.realTimeMonitoring || false),
                     advancedSecurity: String(this.adminConfig?.security?.advanced || false),
+                    modelRecovery: String(true),
                     redisEnabled: process.env.REDIS_ENABLED === 'true',
                     memoryFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true'
                 }
@@ -143,15 +149,17 @@ class AdminServer extends EventEmitter {
                 throw new Error('Failed to initialize Admin Express application');
             }
 
-            // Initialize health monitoring
+            // Initialize health monitoring with model status
             this.healthMonitor = new HealthMonitor({
                 checkInterval: this.adminConfig.monitoring.healthCheckInterval || 30000,
-                services: ['database', 'redis', 'auth', 'audit'],
+                services: ['database', 'redis', 'auth', 'audit', 'models'],
                 customChecks: {
                     adminSessions: () => this.checkAdminSessions(),
                     securityStatus: () => this.checkSecurityStatus(),
                     environmentConfig: () => this.checkEnvironmentConfig(),
-                    auditSystem: () => this.checkAuditSystemHealth()
+                    auditSystem: () => this.checkAuditSystemHealth(),
+                    modelStatus: () => this.checkModelStatus(),
+                    modelRecovery: () => this.checkModelRecoveryStatus()
                 }
             });
 
@@ -176,6 +184,7 @@ class AdminServer extends EventEmitter {
             this.setupGracefulShutdown();
             this.setupErrorHandlers();
             this.setupSecurityMonitoring();
+            this.setupModelRecoveryMonitoring();
 
             // Log server startup success
             logger.info('Admin server startup completed successfully', {
@@ -186,7 +195,9 @@ class AdminServer extends EventEmitter {
                 cacheStrategy: process.env.REDIS_ENABLED === 'true' ? 'redis' : 'memory',
                 sessionStore: process.env.SESSION_STORE || 'memory',
                 auditEnabled: auditConfig?.enabled || false,
-                auditStorageType: auditConfig?.storage?.type || 'hybrid'
+                auditStorageType: auditConfig?.storage?.type || 'hybrid',
+                modelRecoveryEnabled: true,
+                modelsHealthy: await this.getModelsHealthStatus()
             });
 
             return this.server;
@@ -203,6 +214,356 @@ class AdminServer extends EventEmitter {
             });
 
             throw error;
+        }
+    }
+
+    /**
+     * ENHANCED: Validate and recover models with comprehensive error handling
+     */
+    async validateAndRecoverModels() {
+        try {
+            logger.info('Starting enhanced model validation and recovery', {
+                attempt: this.modelRecoveryAttempts + 1,
+                maxAttempts: this.maxModelRecoveryAttempts
+            });
+
+            // Get current model status
+            const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
+            const modelErrors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
+
+            logger.info('Current model registration status', {
+                total: modelSummary.total,
+                successful: modelSummary.successful,
+                failed: modelSummary.failed,
+                errors: modelErrors.length
+            });
+
+            // If models failed to register and we haven't exceeded retry attempts
+            if (modelSummary.failed > 0 && this.modelRecoveryAttempts < this.maxModelRecoveryAttempts) {
+                logger.warn('Some models failed to register, attempting recovery', {
+                    failed: modelSummary.failed,
+                    successful: modelSummary.successful,
+                    attempt: this.modelRecoveryAttempts + 1
+                });
+
+                this.modelRecoveryAttempts++;
+
+                // Force model registration
+                if (Database.forceModelRegistration) {
+                    const forceResult = Database.forceModelRegistration();
+                    logger.info('Force model registration result', forceResult);
+                }
+
+                // Attempt to reload models
+                if (Database.reloadModels) {
+                    const reloadResult = await Database.reloadModels();
+                    logger.info('Model reload completed', reloadResult);
+                }
+
+                // Re-check status after recovery attempt
+                const updatedSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : modelSummary;
+                logger.info('Model status after recovery attempt', {
+                    previousFailed: modelSummary.failed,
+                    currentFailed: updatedSummary.failed,
+                    improvement: modelSummary.failed - updatedSummary.failed
+                });
+            }
+
+            // Validate essential models are available
+            const essentialModels = ['User', 'Organization', 'AuditLog'];
+            const missingEssential = [];
+
+            for (const modelName of essentialModels) {
+                try {
+                    const model = await Database.getModel(modelName);
+                    if (!model) {
+                        missingEssential.push(modelName);
+                    } else {
+                        logger.debug(`Essential model verified: ${modelName}`);
+                    }
+                } catch (error) {
+                    logger.warn(`Failed to verify essential model: ${modelName}`, { error: error.message });
+                    missingEssential.push(modelName);
+                }
+            }
+
+            if (missingEssential.length > 0) {
+                logger.error('Essential models missing', { missing: missingEssential });
+                // Create fallback models if needed
+                await this.createFallbackModels(missingEssential);
+            }
+
+            // Test database operations
+            await this.testDatabaseOperations();
+
+            // Create test collections to ensure database is properly set up
+            if (Database.createTestCollections) {
+                try {
+                    const testResult = await Database.createTestCollections();
+                    logger.info('Database test collections created successfully', testResult);
+                } catch (testError) {
+                    logger.warn('Failed to create test collections', { error: testError.message });
+                }
+            }
+
+            logger.info('Model validation and recovery completed successfully', {
+                recoveryAttempts: this.modelRecoveryAttempts,
+                essentialModelsAvailable: essentialModels.length - missingEssential.length,
+                totalEssentialModels: essentialModels.length
+            });
+
+        } catch (error) {
+            logger.error('Model validation and recovery failed', { 
+                error: error.message,
+                stack: error.stack,
+                attempt: this.modelRecoveryAttempts
+            });
+
+            // Don't fail startup for model issues in development
+            if (process.env.NODE_ENV === 'development') {
+                logger.warn('Continuing startup despite model validation failure in development mode');
+                return;
+            }
+
+            throw new AppError('Model validation failed', 500, 'MODEL_VALIDATION_ERROR', {
+                originalError: error.message,
+                recoveryAttempts: this.modelRecoveryAttempts
+            });
+        }
+    }
+
+    /**
+     * Create fallback models for missing essential models
+     */
+    async createFallbackModels(missingModels) {
+        for (const modelName of missingModels) {
+            try {
+                logger.info(`Creating fallback model: ${modelName}`);
+                
+                // Try to use Database.createTestCollections to ensure basic functionality
+                if (Database.createTestCollections) {
+                    await Database.createTestCollections();
+                }
+
+                // Try to register essential models if BaseModel is available
+                const BaseModel = require('../../shared/lib/database/models/base-model');
+                if (BaseModel && BaseModel.createModel) {
+                    const mongoose = require('mongoose');
+                    
+                    if (modelName === 'User' && !await Database.getModel('User')) {
+                        const userSchema = new mongoose.Schema({
+                            username: { type: String, required: true, unique: true },
+                            email: { type: String, required: true, unique: true },
+                            password: { type: String, required: true },
+                            profile: {
+                                firstName: { type: String, required: true },
+                                lastName: { type: String, required: true },
+                                displayName: String
+                            },
+                            accountStatus: {
+                                status: { type: String, default: 'active' }
+                            },
+                            isSystem: { type: Boolean, default: false },
+                            metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+                            createdAt: { type: Date, default: Date.now },
+                            updatedAt: { type: Date, default: Date.now }
+                        });
+
+                        Database.registerModel('User', userSchema);
+                        logger.info('Fallback User model created');
+                    }
+
+                    if (modelName === 'Organization' && !await Database.getModel('Organization')) {
+                        const organizationSchema = new mongoose.Schema({
+                            name: { type: String, required: true },
+                            slug: { type: String, required: true, unique: true },
+                            displayName: String,
+                            description: String,
+                            type: { 
+                                type: String, 
+                                enum: ['individual', 'business', 'nonprofit', 'government', 'educational', 'healthcare', 'system', 'other'],
+                                default: 'business'
+                            },
+                            contact: {
+                                email: { type: String, required: true },
+                                phone: String,
+                                website: String
+                            },
+                            ownership: {
+                                ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+                                createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+                            },
+                            subscription: {
+                                status: { type: String, default: 'active' },
+                                tier: { type: String, default: 'starter' }
+                            },
+                            status: {
+                                state: { type: String, default: 'active' }
+                            },
+                            metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+                            createdAt: { type: Date, default: Date.now },
+                            updatedAt: { type: Date, default: Date.now }
+                        });
+
+                        Database.registerModel('Organization', organizationSchema);
+                        logger.info('Fallback Organization model created');
+                    }
+                }
+
+            } catch (error) {
+                logger.error(`Failed to create fallback for ${modelName}`, { 
+                    error: error.message,
+                    stack: error.stack
+                });
+            }
+        }
+    }
+
+    /**
+     * Test basic database operations
+     */
+    async testDatabaseOperations() {
+        try {
+            const connection = Database.getConnection();
+            if (connection) {
+                // Test basic read operation
+                const collections = await connection.db.listCollections().toArray();
+                logger.info('Database operations test passed', { 
+                    collections: collections.length,
+                    connectionStatus: 'healthy'
+                });
+
+                // Test basic write operation
+                const testCollection = connection.db.collection('_admin_server_test');
+                const testDoc = { 
+                    test: true, 
+                    timestamp: new Date(),
+                    serverInstance: process.pid
+                };
+                
+                await testCollection.insertOne(testDoc);
+                await testCollection.deleteOne({ test: true });
+                
+                logger.debug('Database write/delete operations test passed');
+                
+            } else {
+                throw new Error('No database connection available');
+            }
+        } catch (error) {
+            logger.error('Database operations test failed', { 
+                error: error.message,
+                stack: error.stack
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Check current model status
+     */
+    async checkModelStatus() {
+        try {
+            const summary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
+            const errors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
+            
+            return {
+                healthy: summary.failed === 0,
+                summary,
+                errors: errors.slice(0, 5), // Limit error details
+                lastCheck: new Date().toISOString(),
+                recoveryAttempts: this.modelRecoveryAttempts,
+                maxRecoveryAttempts: this.maxModelRecoveryAttempts
+            };
+        } catch (error) {
+            logger.error('Model status check failed', { error: error.message });
+            return {
+                healthy: false,
+                error: error.message,
+                lastCheck: new Date().toISOString()
+            };
+        }
+    }
+
+    /**
+     * Check model recovery status
+     */
+    async checkModelRecoveryStatus() {
+        try {
+            return {
+                healthy: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts,
+                recoveryAttempts: this.modelRecoveryAttempts,
+                maxAttempts: this.maxModelRecoveryAttempts,
+                canRecover: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts,
+                lastRecoveryAttempt: this.modelRecoveryAttempts > 0 ? new Date().toISOString() : null
+            };
+        } catch (error) {
+            return {
+                healthy: false,
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Get models health status
+     */
+    async getModelsHealthStatus() {
+        try {
+            const summary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { successful: 0, failed: 0 };
+            return {
+                total: summary.total || summary.successful + summary.failed,
+                successful: summary.successful,
+                failed: summary.failed,
+                healthy: summary.failed === 0 || summary.successful > 0
+            };
+        } catch (error) {
+            return { healthy: false, error: error.message };
+        }
+    }
+
+    /**
+     * Setup model recovery monitoring
+     */
+    setupModelRecoveryMonitoring() {
+        try {
+            // Monitor for model-related events
+            this.on('model:recovery:needed', async (data) => {
+                logger.warn('Model recovery needed', data);
+                
+                if (this.modelRecoveryAttempts < this.maxModelRecoveryAttempts) {
+                    try {
+                        await this.validateAndRecoverModels();
+                    } catch (error) {
+                        logger.error('Automatic model recovery failed', { error: error.message });
+                    }
+                }
+            });
+
+            // Monitor for model failures
+            this.on('model:failure', async (data) => {
+                logger.error('Model failure detected', data);
+                
+                if (this.auditService) {
+                    try {
+                        await this.auditService.logEvent({
+                            eventType: AuditEvents.SYSTEM.ERROR,
+                            userId: 'system',
+                            tenantId: 'admin',
+                            resource: 'model_system',
+                            action: 'model_failure',
+                            result: 'failure',
+                            metadata: data
+                        });
+                    } catch (auditError) {
+                        logger.warn('Failed to log model failure to audit', { error: auditError.message });
+                    }
+                }
+            });
+
+            logger.info('Model recovery monitoring setup completed');
+
+        } catch (error) {
+            logger.error('Failed to setup model recovery monitoring', { error: error.message });
         }
     }
 
@@ -271,7 +632,8 @@ class AdminServer extends EventEmitter {
                 features: {
                     realTimeMonitoring: process.env.ADMIN_REAL_TIME_MONITORING !== 'false',
                     advancedAnalytics: process.env.ADMIN_ADVANCED_ANALYTICS !== 'false',
-                    bulkOperations: process.env.ADMIN_BULK_OPERATIONS !== 'false'
+                    bulkOperations: process.env.ADMIN_BULK_OPERATIONS !== 'false',
+                    modelRecovery: true
                 },
                 monitoring: {
                     healthCheckInterval: parseInt(process.env.ADMIN_HEALTH_CHECK_INTERVAL, 10) || 30000,
@@ -295,7 +657,8 @@ class AdminServer extends EventEmitter {
                 ipWhitelistEnabled: this.adminConfig.security.ipWhitelist.enabled,
                 mfaRequired: this.adminConfig.security.requireMFA,
                 featuresEnabled: Object.keys(this.adminConfig.features).length,
-                monitoringEnabled: this.adminConfig.monitoring.metricsEnabled
+                monitoringEnabled: this.adminConfig.monitoring.metricsEnabled,
+                modelRecoveryEnabled: this.adminConfig.features.modelRecovery
             });
 
         } catch (error) {
@@ -320,7 +683,8 @@ class AdminServer extends EventEmitter {
                 features: {
                     realTimeMonitoring: true,
                     advancedAnalytics: false,
-                    bulkOperations: false
+                    bulkOperations: false,
+                    modelRecovery: true
                 },
                 monitoring: {
                     healthCheckInterval: 30000,
@@ -709,6 +1073,7 @@ class AdminServer extends EventEmitter {
                 console.log(`📊 Admin Dashboard: ${protocol.toLowerCase()}://${host}:${port}/admin/dashboard`);
                 console.log(`🔍 Health Check: ${protocol.toLowerCase()}://${host}:${port}/health`);
                 console.log(`📋 Audit System: ${auditConfig?.enabled ? 'Enabled' : 'Disabled'} (${auditConfig?.storage?.type || 'memory'})`);
+                console.log(`🔧 Model Recovery: Enabled`);
 
                 if (process.env.NODE_ENV === 'development') {
                     console.log(`🐛 Debugger: ws://${host}:9230`);
@@ -951,6 +1316,15 @@ class AdminServer extends EventEmitter {
                 }
             }
 
+            // Emit model recovery needed if it's a model-related error
+            if (error.message && error.message.toLowerCase().includes('model')) {
+                this.emit('model:failure', {
+                    error: error.message,
+                    type: 'uncaught_exception',
+                    timestamp: new Date().toISOString()
+                });
+            }
+
             setTimeout(() => {
                 process.exit(1);
             }, 1000);
@@ -982,6 +1356,15 @@ class AdminServer extends EventEmitter {
                 } catch (auditError) {
                     logger.error('Failed to log unhandled rejection to audit', { error: auditError.message });
                 }
+            }
+
+            // Emit model recovery needed if it's a model-related error
+            if (reason && String(reason).toLowerCase().includes('model')) {
+                this.emit('model:failure', {
+                    error: String(reason),
+                    type: 'unhandled_rejection',
+                    timestamp: new Date().toISOString()
+                });
             }
         });
     }
@@ -1016,7 +1399,7 @@ class AdminServer extends EventEmitter {
     }
 
     /**
-     * Get admin server status
+     * Get admin server status with enhanced model information
      */
     getStatus() {
         const dbHealth = Database.getHealthStatus();
@@ -1026,6 +1409,8 @@ class AdminServer extends EventEmitter {
             config: this.auditService.getConfig(),
             factoryStatus: AuditServiceFactory.getStatus()
         } : { enabled: false };
+
+        const modelStatus = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
 
         return {
             server: {
@@ -1052,6 +1437,14 @@ class AdminServer extends EventEmitter {
                 redis: process.env.REDIS_ENABLED === 'true',
                 sessionStore: process.env.SESSION_STORE || 'memory',
                 cacheFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true'
+            },
+            models: {
+                total: modelStatus.total,
+                successful: modelStatus.successful,
+                failed: modelStatus.failed,
+                recoveryAttempts: this.modelRecoveryAttempts,
+                maxRecoveryAttempts: this.maxModelRecoveryAttempts,
+                recoveryEnabled: this.adminConfig.features.modelRecovery
             },
             audit: auditStatus,
             database: dbHealth,

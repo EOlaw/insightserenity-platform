@@ -13,7 +13,7 @@
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
-const AppError = require('../../../utils/app-error');
+const { AppError } = require('../../../utils/app-error');
 const validators = require('../../../utils/validators/common-validators');
 
 /**
@@ -1334,9 +1334,9 @@ userProfileSchema.statics.bulkImportFromLinkedIn = async function(linkedInData, 
 };
 
 // Create and export model
-const UserProfileModel = BaseModel.createModel('UserProfile', userProfileSchema);
+const UserProfile = BaseModel.createModel('UserProfile', userProfileSchema);
 
 module.exports = {
   schema: userProfileSchema,
-  model: UserProfileModel
+  model: UserProfile
 };

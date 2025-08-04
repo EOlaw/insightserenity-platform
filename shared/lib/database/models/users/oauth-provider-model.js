@@ -13,12 +13,12 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('./base-model');
-const logger = require('../../utils/logger');
-const { AppError } = require('../../utils/app-error');
-const validators = require('../../utils/validators/common-validators');
-const encryptionService = require('../../security/encryption/encryption-service');
-const cryptoHelper = require('../../utils/helpers/crypto-helper');
+const BaseModel = require('../base-model');
+const logger = require('../../../utils/logger');
+const { AppError } = require('../../../utils/app-error');
+const validators = require('../../../utils/validators/common-validators');
+const encryptionService = require('../../../security/encryption/encryption-service');
+const cryptoHelper = require('../../../utils/helpers/crypto-helper');
 
 /**
  * OAuth provider schema definition
