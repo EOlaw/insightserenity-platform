@@ -82,6 +82,16 @@ try {
     notFoundHandler = null;
 }
 
+// Import admin modules
+// const platformManagementRoutes = require('./modules/platform-management/routes');
+// const userManagementRoutes = require('./modules/user-management/routes');
+// const organizationManagementRoutes = require('./modules/organization-management/routes');
+// const securityAdministrationRoutes = require('./modules/security-administration/routes');
+// const billingAdministrationRoutes = require('./modules/billing-administration/routes');
+// const systemMonitoringRoutes = require('./modules/system-monitoring/routes');
+// const supportAdministrationRoutes = require('./modules/support-administration/routes');
+// const reportsAnalyticsRoutes = require('./modules/reports-analytics/routes');
+
 /**
  * ENHANCED: Admin Application class with proper middleware ordering, error handling, and model management
  */
@@ -193,8 +203,8 @@ class AdminApplication {
 
             return {
                 app: { env: 'development', version: '1.0.0', name: 'Admin Server' },
-                admin: { 
-                    basePath: '/admin', 
+                admin: {
+                    basePath: '/admin',
                     uploadLimit: '50mb',
                     features: { modelRecovery: true }
                 },
@@ -257,15 +267,15 @@ class AdminApplication {
             this.app.use((req, res, next) => {
                 const startTime = Date.now();
                 const requestId = require('crypto').randomBytes(8).toString('hex');
-                
+
                 this.requestCount++;
                 req.requestId = requestId;
                 req.requestTime = new Date().toISOString();
                 req.requestNumber = this.requestCount;
                 req.isAdmin = true;
-                
+
                 console.log(`🔍 [${requestId}] ${req.method} ${req.path} - START (#${this.requestCount})`);
-                
+
                 // FIXED: Essential timeout protection to prevent hanging
                 const timeout = setTimeout(() => {
                     if (!res.headersSent) {
@@ -297,7 +307,7 @@ class AdminApplication {
                 res.setHeader('X-Request-ID', requestId);
                 res.setHeader('X-Admin-Server', 'true');
                 res.setHeader('X-Request-Number', req.requestNumber);
-                
+
                 next();
             });
 
@@ -690,7 +700,7 @@ class AdminApplication {
                 res.locals.isAuthenticated = false;
                 res.locals.isAdmin = false;
                 res.locals.permissions = [];
-                
+
                 if (!req.session) {
                     req.session = {
                         id: `fallback_session_${Date.now()}`,
@@ -699,7 +709,7 @@ class AdminApplication {
                         tenantId: null
                     };
                 }
-                
+
                 next();
             });
 
@@ -772,7 +782,7 @@ class AdminApplication {
                 try {
                     // Attach model availability info to request
                     const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
-                    
+
                     req.modelStatus = {
                         available: modelSummary,
                         canAccessUsers: false,
@@ -804,8 +814,8 @@ class AdminApplication {
                     next();
                 } catch (error) {
                     logger.warn('Model status check failed', { error: error.message });
-                    req.modelStatus = { 
-                        available: false, 
+                    req.modelStatus = {
+                        available: false,
                         canAccessUsers: false,
                         canAccessOrganizations: false,
                         canAccessAuditLogs: false,
@@ -888,7 +898,7 @@ class AdminApplication {
             }
 
         } catch (recoveryError) {
-            logger.error('Model recovery failed', { 
+            logger.error('Model recovery failed', {
                 error: recoveryError.message,
                 originalError: error.message,
                 attempt: this.modelRecoveryAttempts
@@ -918,14 +928,14 @@ class AdminApplication {
             // ENHANCED: Health check with comprehensive model status
             this.app.get('/health', async (req, res) => {
                 try {
-                    const dbHealth = Database.getHealthStatus ? 
-                        await Database.getHealthStatus() : 
+                    const dbHealth = Database.getHealthStatus ?
+                        await Database.getHealthStatus() :
                         { status: 'unknown' };
-                    
+
                     const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
                     const modelErrors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
                     const seedingStatus = Database.getSeedingStatus ? Database.getSeedingStatus() : {};
-                    
+
                     res.status(200).json({
                         status: 'ok',
                         server: 'admin',
@@ -981,10 +991,10 @@ class AdminApplication {
                 try {
                     const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
                     const modelErrors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
-                    
+
                     const essentialModels = ['User', 'Organization', 'AuditLog'];
                     const modelAvailability = {};
-                    
+
                     for (const modelName of essentialModels) {
                         try {
                             const model = await Database.getModel(modelName);
@@ -1000,7 +1010,7 @@ class AdminApplication {
                             };
                         }
                     }
-                    
+
                     res.json({
                         summary: modelSummary,
                         errors: modelErrors,
@@ -1040,7 +1050,7 @@ class AdminApplication {
 
                     const reloadResult = await Database.reloadModels();
                     this.modelRecoveryAttempts++; // Track manual reload attempts
-                    
+
                     res.json({
                         success: true,
                         result: reloadResult,
@@ -1069,7 +1079,7 @@ class AdminApplication {
                     }
 
                     const result = Database.forceModelRegistration();
-                    
+
                     res.json({
                         success: true,
                         result,
@@ -1089,7 +1099,7 @@ class AdminApplication {
             this.app.get(`${adminBase}/seeds/status`, async (req, res) => {
                 try {
                     const seedingStatus = Database.getSeedingStatus ? Database.getSeedingStatus() : {};
-                    
+
                     res.json({
                         status: seedingStatus,
                         canRunSeeds: !!Database.runSeeds,
@@ -1115,14 +1125,14 @@ class AdminApplication {
                     }
 
                     const { strategy = 'safe', resetDatabase = false } = req.body;
-                    
+
                     const seedResult = await Database.runSeeds({
                         strategy,
                         resetDatabase,
                         seedTypes: ['development'],
                         continueOnError: true
                     });
-                    
+
                     res.json({
                         success: true,
                         result: seedResult,
@@ -1142,7 +1152,7 @@ class AdminApplication {
             this.app.get(`${adminBase}/dashboard`, async (req, res) => {
                 try {
                     const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
-                    
+
                     const responseData = {
                         title: 'Enhanced Admin Dashboard',
                         message: 'Welcome to the Enhanced InsightSerenity Admin Dashboard',
@@ -1231,6 +1241,16 @@ class AdminApplication {
                 res.redirect(`${adminBase}/dashboard`);
             });
 
+            // Admin API routes (all require authentication)
+            // this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutes);
+            // this.app.use(`${apiPrefix}/users`, adminAuth, userManagementRoutes);
+            // this.app.use(`${apiPrefix}/organizations`, adminAuth, organizationManagementRoutes);
+            // this.app.use(`${apiPrefix}/security`, adminAuth, securityAdministrationRoutes);
+            // this.app.use(`${apiPrefix}/billing`, adminAuth, billingAdministrationRoutes);
+            // this.app.use(`${apiPrefix}/monitoring`, adminAuth, systemMonitoringRoutes);
+            // this.app.use(`${apiPrefix}/support`, adminAuth, supportAdministrationRoutes);
+            // this.app.use(`${apiPrefix}/analytics`, adminAuth, reportsAnalyticsRoutes);
+
             // API documentation
             if (this.config.app.env !== 'production') {
                 this.app.get(`${adminBase}/api-docs`, (req, res) => {
@@ -1252,7 +1272,7 @@ class AdminApplication {
             }
 
             console.log('✅ Enhanced admin routes setup completed');
-            logger.info('Enhanced admin routes setup completed', { 
+            logger.info('Enhanced admin routes setup completed', {
                 basePath: adminBase,
                 modelRecoveryEnabled: this.config.admin.features.modelRecovery
             });
@@ -1374,7 +1394,7 @@ class AdminApplication {
             // ENHANCED: Handle model-related events
             this.app.on('model:failure', async (event) => {
                 logger.error('Model failure detected in admin app', event);
-                
+
                 if (this.modelRecoveryAttempts < this.maxModelRecoveryAttempts) {
                     await this.triggerModelRecovery(event);
                 }
@@ -1431,7 +1451,7 @@ class AdminApplication {
             console.log('   - GET /admin/seeds/status (Seeding status)');
             console.log('   - POST /admin/seeds/run (Run database seeds)');
             console.log('   - GET /admin/api-docs (API documentation)');
-            
+
             console.log('🔧 Enhanced features:');
             console.log('   - Proper middleware ordering');
             console.log('   - Express-session before Passport');

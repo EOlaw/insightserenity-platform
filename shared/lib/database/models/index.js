@@ -150,7 +150,7 @@ logger.debug('Registering billing models...');
 const PaymentMethod = safeRegisterModel('./billing/payment-method-model', 'PaymentMethod');
 const Subscription = safeRegisterModel('./billing/subscription-model', 'Subscription');
 const SubscriptionPlan = safeRegisterModel('./billing/subscription-plan-model', 'SubscriptionPlan');
-const UsageTracking = safeRegisterModel('./billing/usage-record-model', 'UsageTracking');
+const UsageRecord = safeRegisterModel('./billing/usage-record-model', 'UsageRecord');
 
 // ============================================================================
 // PLATFORM MODELS
@@ -235,7 +235,7 @@ module.exports = {
     PaymentMethod,
     Subscription,
     SubscriptionPlan,
-    UsageTracking,
+    UsageRecord,
 
     // Platform
     ApiIntegration,

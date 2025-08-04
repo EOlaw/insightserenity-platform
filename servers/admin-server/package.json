@@ -1,5 +1,5 @@
 {
-  "name": "@insightserenity/admin-server",
+  "name": "@insightserenity-platform/admin-server",
   "version": "3.0.0",
   "description": "InsightSerenity Platform Administration Server - Enterprise management and monitoring",
   "main": "server.js",
@@ -24,9 +24,9 @@
     "validate": "npm run lint && npm run test:unit",
     "build": "npm run validate",
     "security:check": "npm audit --audit-level=high",
-    "db:seed": "cross-env NODE_ENV=development node ../../shared/lib/database/seeders/001-seed-initial-data.js",
-    "db:migrate": "cross-env NODE_ENV=development node ../../scripts/run-migrations.js --server=admin",
-    "db:rollback": "NODE_ENV=development node ../../scripts/rollback-migrations.js --server=admin",
+    "db:migrate": "cross-env NODE_ENV=development node ../../tools/migration/migrate.js",
+    "db:rollback": "cross-env NODE_ENV=development node ../../tools/migration/rollback.js",
+    "db:seed": "cross-env NODE_ENV=development node ../../tools/migration/seed.js",
     "health:check": "curl -f http://localhost:5001/health || exit 1"
   },
   "dependencies": {

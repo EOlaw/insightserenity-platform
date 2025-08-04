@@ -10,7 +10,7 @@ const { parseBoolean, parseNumber, parseArray, parseJSON } = require('./base-con
 // Database configuration object
 const databaseConfig = {
   // MongoDB connection settings
-  uri: process.env.DB_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/insightserenity',
+  uri: process.env.DB_URI || process.env.MONGODB_URI || 'mongodb+srv://EOlaw146:Olawalee_.146@cluster0.4wv68hn.mongodb.net/Insightserenity_dev?retryWrites=true&w=majority',
   
   // Connection options
   options: {

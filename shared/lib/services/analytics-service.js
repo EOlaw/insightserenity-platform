@@ -11,7 +11,7 @@
  */
 
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const CacheService = require('./cache-service');
 const config = require('../../config');
 const { ERROR_CODES } = require('../utils/constants/error-codes');
@@ -22,6 +22,10 @@ const crypto = require('crypto');
  * @description Comprehensive analytics service for tracking, aggregating, and reporting metrics
  */
 class AnalyticsService {
+  // ============================================================================
+  // PRIVATE STATIC FIELD DECLARATIONS
+  // ============================================================================
+
   /**
    * @private
    * @static
@@ -85,13 +89,16 @@ class AnalyticsService {
    */
   static #flushInterval;
 
+  // ============================================================================
+  // PUBLIC STATIC CONSTANTS (accessible for export)
+  // ============================================================================
+
   /**
-   * @private
    * @static
    * @readonly
    * @type {Object}
    */
-  static #EVENT_TYPES = {
+  static EVENT_TYPES = Object.freeze({
     // User events
     USER_SIGNUP: 'user.signup',
     USER_LOGIN: 'user.login',
@@ -128,20 +135,23 @@ class AnalyticsService {
     
     // Custom events
     CUSTOM: 'custom'
-  };
+  });
 
   /**
-   * @private
    * @static
    * @readonly
    * @type {Object}
    */
-  static #METRIC_TYPES = {
+  static METRIC_TYPES = Object.freeze({
     COUNTER: 'counter',
     GAUGE: 'gauge',
     HISTOGRAM: 'histogram',
     SUMMARY: 'summary'
-  };
+  });
+
+  // ============================================================================
+  // PUBLIC STATIC METHODS
+  // ============================================================================
 
   /**
    * Initialize analytics service
@@ -154,90 +164,80 @@ class AnalyticsService {
       return;
     }
 
-    try {
-      this.#config = {
-        providers: {
-          internal: { enabled: true },
-          googleAnalytics: { 
-            enabled: config.analytics?.googleAnalytics?.enabled || false,
-            trackingId: config.analytics?.googleAnalytics?.trackingId,
-            ...options.providers?.googleAnalytics
-          },
-          mixpanel: {
-            enabled: config.analytics?.mixpanel?.enabled || false,
-            token: config.analytics?.mixpanel?.token,
-            ...options.providers?.mixpanel
-          },
-          segment: {
-            enabled: config.analytics?.segment?.enabled || false,
-            writeKey: config.analytics?.segment?.writeKey,
-            ...options.providers?.segment
-          }
+    this.#config = {
+      providers: {
+        internal: { enabled: true },
+        googleAnalytics: { 
+          enabled: config.analytics?.googleAnalytics?.enabled || false,
+          trackingId: config.analytics?.googleAnalytics?.trackingId,
+          ...options.providers?.googleAnalytics
         },
-        batching: {
-          enabled: true,
-          batchSize: 100,
-          flushInterval: 30000, // 30 seconds
-          ...config.analytics?.batching,
-          ...options.batching
+        mixpanel: {
+          enabled: config.analytics?.mixpanel?.enabled || false,
+          token: config.analytics?.mixpanel?.token,
+          ...options.providers?.mixpanel
         },
-        sampling: {
-          enabled: config.analytics?.sampling?.enabled || false,
-          rate: config.analytics?.sampling?.rate || 1.0,
-          ...options.sampling
-        },
-        privacy: {
-          anonymizeIp: true,
-          excludePii: true,
-          gdprCompliant: true,
-          ...config.analytics?.privacy,
-          ...options.privacy
-        },
-        retention: {
-          raw: 30, // days
-          aggregated: 365, // days
-          ...config.analytics?.retention,
-          ...options.retention
-        },
-        realtime: {
-          enabled: true,
-          windowSize: 300000, // 5 minutes
-          ...options.realtime
-        },
-        ...options
-      };
+        segment: {
+          enabled: config.analytics?.segment?.enabled || false,
+          writeKey: config.analytics?.segment?.writeKey,
+          ...options.providers?.segment
+        }
+      },
+      batching: {
+        enabled: true,
+        batchSize: 100,
+        flushInterval: 30000, // 30 seconds
+        ...config.analytics?.batching,
+        ...options.batching
+      },
+      sampling: {
+        enabled: config.analytics?.sampling?.enabled || false,
+        rate: config.analytics?.sampling?.rate || 1.0,
+        ...options.sampling
+      },
+      privacy: {
+        anonymizeIp: true,
+        excludePii: true,
+        gdprCompliant: true,
+        ...config.analytics?.privacy,
+        ...options.privacy
+      },
+      retention: {
+        raw: 30, // days
+        aggregated: 365, // days
+        ...config.analytics?.retention,
+        ...options.retention
+      },
+      realtime: {
+        enabled: true,
+        windowSize: 300000, // 5 minutes
+        ...options.realtime
+      },
+      ...options
+    };
 
-      // Initialize services
-      this.#cacheService = new CacheService({ namespace: 'analytics' });
-      
-      // Initialize providers
-      await this.#initializeProviders();
-      
-      // Register default schemas
-      this.#registerDefaultSchemas();
-      
-      // Register default processors
-      this.#registerDefaultProcessors();
-      
-      // Start batch processor
-      if (this.#config.batching.enabled) {
-        this.#startBatchProcessor();
-      }
-
-      this.#initialized = true;
-      logger.info('AnalyticsService initialized', {
-        providers: Array.from(this.#providers.keys()),
-        schemas: this.#eventSchemas.size
-      });
-
-    } catch (error) {
-      logger.error('Failed to initialize AnalyticsService', { error: error.message });
-      throw new AppError(
-        'Analytics service initialization failed',
-        500,
-        ERROR_CODES.SERVICE_INITIALIZATION_ERROR
-      );
+    // Initialize services
+    this.#cacheService = new CacheService({ namespace: 'analytics' });
+    
+    // Initialize providers
+    await this.#initializeProviders();
+    
+    // Register default schemas
+    this.#registerDefaultSchemas();
+    
+    // Register default processors
+    this.#registerDefaultProcessors();
+    
+    // Start batch processor
+    if (this.#config.batching.enabled) {
+      this.#startBatchProcessor();
     }
+
+    this.#initialized = true;
+    logger.info('AnalyticsService initialized', {
+      providers: Array.from(this.#providers.keys()),
+      schemas: this.#eventSchemas.size
+    });
   }
 
   /**
@@ -258,65 +258,49 @@ class AnalyticsService {
 
     const eventId = this.#generateEventId();
     
-    try {
-      // Validate and enrich event
-      const event = await this.#validateAndEnrichEvent(options);
-      
-      // Apply sampling
-      if (!this.#shouldSample(event)) {
-        return { eventId, sampled: false };
-      }
-
-      // Check privacy settings
-      if (this.#config.privacy.excludePii) {
-        event.properties = this.#removePii(event.properties);
-      }
-
-      // Process event through processors
-      const processed = await this.#processEvent(event);
-      
-      // Add to queue or send immediately
-      if (this.#config.batching.enabled) {
-        this.#eventQueue.add(processed);
-        
-        if (this.#eventQueue.size >= this.#config.batching.batchSize) {
-          await this.#flushEvents();
-        }
-      } else {
-        await this.#sendEvent(processed);
-      }
-
-      // Update real-time metrics
-      if (this.#config.realtime.enabled) {
-        await this.#updateRealtimeMetrics(processed);
-      }
-
-      logger.debug('Event tracked', {
-        eventId,
-        event: event.event,
-        userId: event.userId
-      });
-
-      return {
-        eventId,
-        tracked: true,
-        timestamp: event.timestamp
-      };
-
-    } catch (error) {
-      logger.error('Event tracking failed', {
-        eventId,
-        error: error.message,
-        event: options.event
-      });
-
-      throw error instanceof AppError ? error : new AppError(
-        'Failed to track event',
-        500,
-        ERROR_CODES.ANALYTICS_TRACKING_FAILED,
-        { eventId, originalError: error.message }
-      );
+    // Validate and enrich event
+    const event = await this.#validateAndEnrichEvent(options);
+    
+    // Apply sampling
+    if (!this.#shouldSample(event)) {
+      return { eventId, sampled: false };
     }
+
+    // Check privacy settings
+    if (this.#config.privacy.excludePii) {
+      event.properties = this.#removePii(event.properties);
+    }
+
+    // Process event through processors
+    const processed = await this.#processEvent(event);
+    
+    // Add to queue or send immediately
+    if (this.#config.batching.enabled) {
+      this.#eventQueue.add(processed);
+      
+      if (this.#eventQueue.size >= this.#config.batching.batchSize) {
+        await this.#flushEvents();
+      }
+    } else {
+      await this.#sendEvent(processed);
+    }
+
+    // Update real-time metrics
+    if (this.#config.realtime.enabled) {
+      await this.#updateRealtimeMetrics(processed);
+    }
+
+    logger.debug('Event tracked', {
+      eventId,
+      event: event.event,
+      userId: event.userId
+    });
+
+    return {
+      eventId,
+      tracked: true,
+      timestamp: event.timestamp
+    };
   }
 
   /**
@@ -327,7 +311,7 @@ class AnalyticsService {
    */
   static async trackPageView(options) {
     return this.track({
-      event: this.#EVENT_TYPES.PAGE_VIEW,
+      event: this.EVENT_TYPES.PAGE_VIEW,
       properties: {
         url: options.url,
         title: options.title,
@@ -349,15 +333,15 @@ class AnalyticsService {
    */
   static async trackUserAction(options) {
     const eventMap = {
-      signup: this.#EVENT_TYPES.USER_SIGNUP,
-      login: this.#EVENT_TYPES.USER_LOGIN,
-      logout: this.#EVENT_TYPES.USER_LOGOUT,
-      profileUpdate: this.#EVENT_TYPES.USER_PROFILE_UPDATE,
-      passwordChange: this.#EVENT_TYPES.USER_PASSWORD_CHANGE
+      signup: this.EVENT_TYPES.USER_SIGNUP,
+      login: this.EVENT_TYPES.USER_LOGIN,
+      logout: this.EVENT_TYPES.USER_LOGOUT,
+      profileUpdate: this.EVENT_TYPES.USER_PROFILE_UPDATE,
+      passwordChange: this.EVENT_TYPES.USER_PASSWORD_CHANGE
     };
 
     return this.track({
-      event: eventMap[options.action] || this.#EVENT_TYPES.CUSTOM,
+      event: eventMap[options.action] || this.EVENT_TYPES.CUSTOM,
       properties: options.properties,
       userId: options.userId,
       sessionId: options.sessionId,
@@ -374,15 +358,15 @@ class AnalyticsService {
    */
   static async trackRevenue(options) {
     const eventMap = {
-      initiated: this.#EVENT_TYPES.PAYMENT_INITIATED,
-      completed: this.#EVENT_TYPES.PAYMENT_COMPLETED,
-      failed: this.#EVENT_TYPES.PAYMENT_FAILED,
-      subscriptionStart: this.#EVENT_TYPES.SUBSCRIPTION_START,
-      subscriptionCancel: this.#EVENT_TYPES.SUBSCRIPTION_CANCEL
+      initiated: this.EVENT_TYPES.PAYMENT_INITIATED,
+      completed: this.EVENT_TYPES.PAYMENT_COMPLETED,
+      failed: this.EVENT_TYPES.PAYMENT_FAILED,
+      subscriptionStart: this.EVENT_TYPES.SUBSCRIPTION_START,
+      subscriptionCancel: this.EVENT_TYPES.SUBSCRIPTION_CANCEL
     };
 
     return this.track({
-      event: eventMap[options.type] || this.#EVENT_TYPES.CUSTOM,
+      event: eventMap[options.type] || this.EVENT_TYPES.CUSTOM,
       properties: {
         amount: options.amount,
         currency: options.currency || 'USD',
@@ -407,66 +391,58 @@ class AnalyticsService {
   static async trackPerformance(options) {
     await this.initialize();
 
-    const { metric, value, tags = {}, type = this.#METRIC_TYPES.GAUGE } = options;
+    const { metric, value, tags = {}, type = this.METRIC_TYPES.GAUGE } = options;
 
-    try {
-      // Get or create metric
-      if (!this.#metrics.has(metric)) {
-        this.#metrics.set(metric, {
-          type,
-          values: [],
-          tags: new Map()
-        });
-      }
-
-      const metricData = this.#metrics.get(metric);
-      
-      // Update metric based on type
-      switch (type) {
-        case this.#METRIC_TYPES.COUNTER:
-          metricData.value = (metricData.value || 0) + value;
-          break;
-          
-        case this.#METRIC_TYPES.GAUGE:
-          metricData.value = value;
-          break;
-          
-        case this.#METRIC_TYPES.HISTOGRAM:
-        case this.#METRIC_TYPES.SUMMARY:
-          metricData.values.push({
-            value,
-            timestamp: Date.now()
-          });
-          // Keep only recent values
-          if (metricData.values.length > 1000) {
-            metricData.values = metricData.values.slice(-1000);
-          }
-          break;
-      }
-
-      // Update tags
-      Object.entries(tags).forEach(([key, val]) => {
-        if (!metricData.tags.has(key)) {
-          metricData.tags.set(key, new Set());
-        }
-        metricData.tags.get(key).add(val);
-      });
-
-      // Send to providers that support metrics
-      for (const [name, provider] of this.#providers) {
-        if (provider.trackMetric) {
-          await provider.trackMetric(metric, value, type, tags);
-        }
-      }
-
-      logger.debug('Performance metric tracked', { metric, value, type });
-
-    } catch (error) {
-      logger.error('Performance tracking failed', {
-        metric,
-        error: error.message
+    // Get or create metric
+    if (!this.#metrics.has(metric)) {
+      this.#metrics.set(metric, {
+        type,
+        values: [],
+        tags: new Map()
       });
     }
+
+    const metricData = this.#metrics.get(metric);
+    
+    // Update metric based on type
+    switch (type) {
+      case this.METRIC_TYPES.COUNTER:
+        metricData.value = (metricData.value || 0) + value;
+        break;
+        
+      case this.METRIC_TYPES.GAUGE:
+        metricData.value = value;
+        break;
+        
+      case this.METRIC_TYPES.HISTOGRAM:
+      case this.METRIC_TYPES.SUMMARY:
+        metricData.values.push({
+          value,
+          timestamp: Date.now()
+        });
+        // Keep only recent values
+        if (metricData.values.length > 1000) {
+          metricData.values = metricData.values.slice(-1000);
+        }
+        break;
+    }
+
+    // Update tags
+    Object.entries(tags).forEach(([key, val]) => {
+      if (!metricData.tags.has(key)) {
+        metricData.tags.set(key, new Set());
+      }
+      metricData.tags.get(key).add(val);
+    });
+
+    // Send to providers that support metrics
+    for (const [name, provider] of this.#providers) {
+      if (provider.trackMetric) {
+        await provider.trackMetric(metric, value, type, tags);
+      }
+    }
+
+    logger.debug('Performance metric tracked', { metric, value, type });
   }
 
   /**
@@ -488,39 +464,29 @@ class AnalyticsService {
       metrics = ['count']
     } = options;
 
-    try {
-      // Get data from cache or aggregate
-      const cacheKey = this.#buildAnalyticsCacheKey(options);
-      const cached = await this.#cacheService.get(cacheKey);
-      
-      if (cached) {
-        return cached;
-      }
-
-      // Aggregate data
-      const data = await this.#aggregateAnalytics({
-        startDate: startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-        endDate: endDate || new Date(),
-        events,
-        userId,
-        organizationId,
-        groupBy,
-        metrics
-      });
-
-      // Cache results
-      await this.#cacheService.set(cacheKey, data, 300); // 5 minutes
-
-      return data;
-
-    } catch (error) {
-      logger.error('Failed to get analytics', { error: error.message });
-      throw new AppError(
-        'Failed to retrieve analytics',
-        500,
-        ERROR_CODES.ANALYTICS_RETRIEVAL_FAILED
-      );
+    // Get data from cache or aggregate
+    const cacheKey = this.#buildAnalyticsCacheKey(options);
+    const cached = await this.#cacheService.get(cacheKey);
+    
+    if (cached) {
+      return cached;
     }
+
+    // Aggregate data
+    const data = await this.#aggregateAnalytics({
+      startDate: startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+      endDate: endDate || new Date(),
+      events,
+      userId,
+      organizationId,
+      groupBy,
+      metrics
+    });
+
+    // Cache results
+    await this.#cacheService.set(cacheKey, data, 300); // 5 minutes
+
+    return data;
   }
 
   /**
@@ -536,7 +502,7 @@ class AnalyticsService {
       throw new AppError(
         'Real-time analytics not enabled',
         503,
-        ERROR_CODES.SERVICE_UNAVAILABLE
+        ERROR_CODES.SYSTEM.SERVICE_UNAVAILABLE
       );
     }
 
@@ -545,29 +511,19 @@ class AnalyticsService {
       window = this.#config.realtime.windowSize
     } = options;
 
-    try {
-      const cacheKey = `realtime:${metric}:${window}`;
-      const data = await this.#cacheService.get(cacheKey);
-      
-      if (!data) {
-        return {
-          metric,
-          value: 0,
-          window,
-          timestamp: new Date()
-        };
-      }
-
-      return data;
-
-    } catch (error) {
-      logger.error('Failed to get real-time analytics', { error: error.message });
-      throw new AppError(
-        'Failed to retrieve real-time analytics',
-        500,
-        ERROR_CODES.ANALYTICS_RETRIEVAL_FAILED
-      );
+    const cacheKey = `realtime:${metric}:${window}`;
+    const data = await this.#cacheService.get(cacheKey);
+    
+    if (!data) {
+      return {
+        metric,
+        value: 0,
+        window,
+        timestamp: new Date()
+      };
     }
+
+    return data;
   }
 
   /**
@@ -591,66 +547,56 @@ class AnalyticsService {
       throw new AppError(
         'At least 2 steps required for funnel',
         400,
-        ERROR_CODES.VALIDATION_ERROR
+        ERROR_CODES.VALIDATION.REQUIRED_FIELD
       );
     }
 
-    try {
-      const funnelData = {
-        steps: [],
-        conversion: {
-          total: 0,
-          rate: 0
-        }
+    const funnelData = {
+      steps: [],
+      conversion: {
+        total: 0,
+        rate: 0
+      }
+    };
+
+    // Calculate conversion for each step
+    let previousCount = null;
+    
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      const count = await this.#getEventCount({
+        event: step.event,
+        startDate,
+        endDate,
+        userId,
+        organizationId,
+        filters: step.filters
+      });
+
+      const stepData = {
+        name: step.name || step.event,
+        event: step.event,
+        count,
+        rate: previousCount ? (count / previousCount) * 100 : 100
       };
 
-      // Calculate conversion for each step
-      let previousCount = null;
+      funnelData.steps.push(stepData);
       
-      for (let i = 0; i < steps.length; i++) {
-        const step = steps[i];
-        const count = await this.#getEventCount({
-          event: step.event,
-          startDate,
-          endDate,
-          userId,
-          organizationId,
-          filters: step.filters
-        });
-
-        const stepData = {
-          name: step.name || step.event,
-          event: step.event,
-          count,
-          rate: previousCount ? (count / previousCount) * 100 : 100
-        };
-
-        funnelData.steps.push(stepData);
-        
-        if (i === 0) {
-          funnelData.conversion.total = count;
-        }
-        
-        previousCount = count;
+      if (i === 0) {
+        funnelData.conversion.total = count;
       }
-
-      // Overall conversion rate
-      if (funnelData.conversion.total > 0) {
-        const lastStep = funnelData.steps[funnelData.steps.length - 1];
-        funnelData.conversion.rate = 
-          (lastStep.count / funnelData.conversion.total) * 100;
-      }
-
-      return funnelData;
-
-    } catch (error) {
-      logger.error('Failed to get funnel analysis', { error: error.message });
-      throw new AppError(
-        'Failed to retrieve funnel analysis',
-        500,
-        ERROR_CODES.ANALYTICS_RETRIEVAL_FAILED
-      );
+      
+      previousCount = count;
     }
+
+    // Overall conversion rate
+    if (funnelData.conversion.total > 0) {
+      const lastStep = funnelData.steps[funnelData.steps.length - 1];
+      funnelData.conversion.rate = 
+        (lastStep.count / funnelData.conversion.total) * 100;
+    }
+
+    return funnelData;
   }
 
   /**
@@ -671,70 +617,60 @@ class AnalyticsService {
       periods = 12
     } = options;
 
-    try {
-      const cohorts = [];
-      const intervalMs = this.#getIntervalMs(interval);
-      const currentDate = new Date(startDate);
+    const cohorts = [];
+    const intervalMs = this.#getIntervalMs(interval);
+    const currentDate = new Date(startDate);
 
-      // Generate cohorts
-      for (let i = 0; i < periods; i++) {
-        const cohortStart = new Date(currentDate);
-        const cohortEnd = new Date(currentDate.getTime() + intervalMs);
+    // Generate cohorts
+    for (let i = 0; i < periods; i++) {
+      const cohortStart = new Date(currentDate);
+      const cohortEnd = new Date(currentDate.getTime() + intervalMs);
+      
+      // Get users in cohort
+      const cohortUsers = await this.#getUsersForEvent({
+        event: cohortEvent,
+        startDate: cohortStart,
+        endDate: cohortEnd
+      });
+
+      // Track retention for each period
+      const retention = [];
+      
+      for (let j = 0; j <= i; j++) {
+        const periodStart = new Date(cohortStart.getTime() + (j * intervalMs));
+        const periodEnd = new Date(periodStart.getTime() + intervalMs);
         
-        // Get users in cohort
-        const cohortUsers = await this.#getUsersForEvent({
-          event: cohortEvent,
-          startDate: cohortStart,
-          endDate: cohortEnd
+        const returnedUsers = await this.#getUsersForEvent({
+          event: returnEvent,
+          startDate: periodStart,
+          endDate: periodEnd,
+          userIds: cohortUsers
         });
 
-        // Track retention for each period
-        const retention = [];
-        
-        for (let j = 0; j <= i; j++) {
-          const periodStart = new Date(cohortStart.getTime() + (j * intervalMs));
-          const periodEnd = new Date(periodStart.getTime() + intervalMs);
-          
-          const returnedUsers = await this.#getUsersForEvent({
-            event: returnEvent,
-            startDate: periodStart,
-            endDate: periodEnd,
-            userIds: cohortUsers
-          });
-
-          retention.push({
-            period: j,
-            users: returnedUsers.length,
-            rate: cohortUsers.length > 0 
-              ? (returnedUsers.length / cohortUsers.length) * 100 
-              : 0
-          });
-        }
-
-        cohorts.push({
-          cohort: cohortStart.toISOString().split('T')[0],
-          size: cohortUsers.length,
-          retention
+        retention.push({
+          period: j,
+          users: returnedUsers.length,
+          rate: cohortUsers.length > 0 
+            ? (returnedUsers.length / cohortUsers.length) * 100 
+            : 0
         });
-
-        currentDate.setTime(currentDate.getTime() + intervalMs);
       }
 
-      return {
-        cohortEvent,
-        returnEvent,
-        interval,
-        cohorts
-      };
+      cohorts.push({
+        cohort: cohortStart.toISOString().split('T')[0],
+        size: cohortUsers.length,
+        retention
+      });
 
-    } catch (error) {
-      logger.error('Failed to get cohort analysis', { error: error.message });
-      throw new AppError(
-        'Failed to retrieve cohort analysis',
-        500,
-        ERROR_CODES.ANALYTICS_RETRIEVAL_FAILED
-      );
+      currentDate.setTime(currentDate.getTime() + intervalMs);
     }
+
+    return {
+      cohortEvent,
+      returnEvent,
+      interval,
+      cohorts
+    };
   }
 
   /**
@@ -748,7 +684,7 @@ class AnalyticsService {
       throw new AppError(
         'Invalid event schema',
         400,
-        ERROR_CODES.VALIDATION_ERROR
+        ERROR_CODES.VALIDATION.REQUIRED_FIELD
       );
     }
 
@@ -772,7 +708,7 @@ class AnalyticsService {
       throw new AppError(
         'Invalid processor configuration',
         400,
-        ERROR_CODES.VALIDATION_ERROR
+        ERROR_CODES.VALIDATION.INVALID_TYPE
       );
     }
 
@@ -798,54 +734,44 @@ class AnalyticsService {
       organizationId
     } = options;
 
-    try {
-      // Get analytics data
-      const data = await this.getAnalytics({
-        startDate,
-        endDate,
-        events,
-        userId,
-        organizationId
-      });
+    // Get analytics data
+    const data = await this.getAnalytics({
+      startDate,
+      endDate,
+      events,
+      userId,
+      organizationId
+    });
 
-      // Format data based on requested format
-      let exported;
-      
-      switch (format) {
-        case 'csv':
-          exported = this.#formatAsCsv(data);
-          break;
-          
-        case 'json':
-          exported = JSON.stringify(data, null, 2);
-          break;
-          
-        case 'excel':
-          exported = await this.#formatAsExcel(data);
-          break;
-          
-        default:
-          throw new AppError(
-            'Unsupported export format',
-            400,
-            ERROR_CODES.UNSUPPORTED_FORMAT
-          );
-      }
-
-      return {
-        data: exported,
-        format,
-        filename: `analytics_${Date.now()}.${format}`
-      };
-
-    } catch (error) {
-      logger.error('Analytics export failed', { error: error.message });
-      throw error instanceof AppError ? error : new AppError(
-        'Failed to export analytics',
-        500,
-        ERROR_CODES.EXPORT_FAILED
-      );
+    // Format data based on requested format
+    let exported;
+    
+    switch (format) {
+      case 'csv':
+        exported = this.#formatAsCsv(data);
+        break;
+        
+      case 'json':
+        exported = JSON.stringify(data, null, 2);
+        break;
+        
+      case 'excel':
+        exported = await this.#formatAsExcel(data);
+        break;
+        
+      default:
+        throw new AppError(
+          'Unsupported export format',
+          400,
+          ERROR_CODES.VALIDATION.INVALID_FORMAT
+        );
     }
+
+    return {
+      data: exported,
+      format,
+      filename: `analytics_${Date.now()}.${format}`
+    };
   }
 
   /**
@@ -886,6 +812,40 @@ class AnalyticsService {
   }
 
   /**
+   * Graceful shutdown
+   * @returns {Promise<void>}
+   */
+  static async shutdown() {
+    logger.info('Shutting down AnalyticsService');
+
+    // Stop batch processor
+    if (this.#flushInterval) {
+      clearInterval(this.#flushInterval);
+    }
+
+    // Flush remaining events
+    await this.#flushEvents();
+
+    // Clear data
+    this.#providers.clear();
+    this.#eventSchemas.clear();
+    this.#processors.clear();
+    this.#metrics.clear();
+    this.#eventQueue.clear();
+
+    if (this.#cacheService && this.#cacheService.shutdown) {
+      await this.#cacheService.shutdown();
+    }
+
+    this.#initialized = false;
+    logger.info('AnalyticsService shutdown complete');
+  }
+
+  // ============================================================================
+  // PRIVATE STATIC METHODS
+  // ============================================================================
+
+  /**
    * @private
    * Initialize analytics providers
    */
@@ -893,7 +853,6 @@ class AnalyticsService {
     // Internal provider (always enabled)
     this.#providers.set('internal', {
       send: async (event) => {
-        // Store in database or internal storage
         logger.debug('Internal analytics event', { event: event.event });
         return { success: true };
       },
@@ -906,10 +865,8 @@ class AnalyticsService {
 
     // Google Analytics
     if (this.#config.providers.googleAnalytics.enabled) {
-      // Initialize GA provider
       this.#providers.set('googleAnalytics', {
         send: async (event) => {
-          // Implement GA tracking
           return { success: true };
         }
       });
@@ -917,10 +874,8 @@ class AnalyticsService {
 
     // Mixpanel
     if (this.#config.providers.mixpanel.enabled) {
-      // Initialize Mixpanel provider
       this.#providers.set('mixpanel', {
         send: async (event) => {
-          // Implement Mixpanel tracking
           return { success: true };
         }
       });
@@ -928,10 +883,8 @@ class AnalyticsService {
 
     // Segment
     if (this.#config.providers.segment.enabled) {
-      // Initialize Segment provider
       this.#providers.set('segment', {
         send: async (event) => {
-          // Implement Segment tracking
           return { success: true };
         }
       });
@@ -944,7 +897,7 @@ class AnalyticsService {
    */
   static #registerDefaultSchemas() {
     // User events
-    this.registerEventSchema(this.#EVENT_TYPES.USER_SIGNUP, {
+    this.registerEventSchema(this.EVENT_TYPES.USER_SIGNUP, {
       required: ['userId'],
       properties: {
         userId: { type: 'string' },
@@ -954,7 +907,7 @@ class AnalyticsService {
       }
     });
 
-    this.registerEventSchema(this.#EVENT_TYPES.USER_LOGIN, {
+    this.registerEventSchema(this.EVENT_TYPES.USER_LOGIN, {
       required: ['userId'],
       properties: {
         userId: { type: 'string' },
@@ -964,7 +917,7 @@ class AnalyticsService {
     });
 
     // Page view
-    this.registerEventSchema(this.#EVENT_TYPES.PAGE_VIEW, {
+    this.registerEventSchema(this.EVENT_TYPES.PAGE_VIEW, {
       required: ['url'],
       properties: {
         url: { type: 'string' },
@@ -974,7 +927,7 @@ class AnalyticsService {
     });
 
     // Revenue events
-    this.registerEventSchema(this.#EVENT_TYPES.PAYMENT_COMPLETED, {
+    this.registerEventSchema(this.EVENT_TYPES.PAYMENT_COMPLETED, {
       required: ['amount', 'currency'],
       properties: {
         amount: { type: 'number' },
@@ -993,7 +946,6 @@ class AnalyticsService {
     // User agent parser
     this.registerProcessor('*', (event) => {
       if (event.context?.userAgent) {
-        // Parse user agent
         event.context.browser = this.#parseBrowser(event.context.userAgent);
         event.context.os = this.#parseOS(event.context.userAgent);
         event.context.device = this.#parseDevice(event.context.userAgent);
@@ -1019,7 +971,6 @@ class AnalyticsService {
     // Geo-location enrichment
     this.registerProcessor('*', (event) => {
       if (event.context?.ip && this.#config.privacy.anonymizeIp) {
-        // Anonymize IP
         const parts = event.context.ip.split('.');
         if (parts.length === 4) {
           parts[3] = '0';
@@ -1061,7 +1012,7 @@ class AnalyticsService {
           throw new AppError(
             `Missing required field: ${field}`,
             400,
-            ERROR_CODES.VALIDATION_ERROR
+            ERROR_CODES.VALIDATION.REQUIRED_FIELD
           );
         }
       }
@@ -1074,7 +1025,7 @@ class AnalyticsService {
             throw new AppError(
               `Invalid type for ${prop}: expected ${config.type}, got ${actualType}`,
               400,
-              ERROR_CODES.VALIDATION_ERROR
+              ERROR_CODES.VALIDATION.INVALID_TYPE
             );
           }
         }
@@ -1110,20 +1061,11 @@ class AnalyticsService {
     const results = [];
 
     for (const [name, provider] of this.#providers) {
-      try {
-        const result = await provider.send(event);
-        results.push({ provider: name, success: true, result });
-        
-        if (provider.stats) {
-          provider.stats.events++;
-        }
-      } catch (error) {
-        logger.error(`Analytics provider error: ${name}`, { error: error.message });
-        results.push({ provider: name, success: false, error: error.message });
-        
-        if (provider.stats) {
-          provider.stats.errors++;
-        }
+      const result = await provider.send(event);
+      results.push({ provider: name, success: true, result });
+      
+      if (provider.stats) {
+        provider.stats.events++;
       }
     }
 
@@ -1140,20 +1082,12 @@ class AnalyticsService {
     const events = Array.from(this.#eventQueue);
     this.#eventQueue.clear();
 
-    try {
-      // Send events in batch
-      for (const event of events) {
-        await this.#sendEvent(event);
-      }
-
-      logger.debug('Flushed analytics events', { count: events.length });
-
-    } catch (error) {
-      logger.error('Failed to flush events', { error: error.message });
-      
-      // Re-queue failed events
-      events.forEach(event => this.#eventQueue.add(event));
+    // Send events in batch
+    for (const event of events) {
+      await this.#sendEvent(event);
     }
+
+    logger.debug('Flushed analytics events', { count: events.length });
   }
 
   /**
@@ -1175,9 +1109,9 @@ class AnalyticsService {
     
     // Always track important events
     const importantEvents = [
-      this.#EVENT_TYPES.USER_SIGNUP,
-      this.#EVENT_TYPES.PAYMENT_COMPLETED,
-      this.#EVENT_TYPES.ERROR
+      this.EVENT_TYPES.USER_SIGNUP,
+      this.EVENT_TYPES.PAYMENT_COMPLETED,
+      this.EVENT_TYPES.ERROR
     ];
     
     if (importantEvents.includes(event.event)) {
@@ -1215,7 +1149,6 @@ class AnalyticsService {
    */
   static async #updateRealtimeMetrics(event) {
     const window = this.#config.realtime.windowSize;
-    const now = Date.now();
     
     // Update active users
     if (event.userId) {
@@ -1239,9 +1172,6 @@ class AnalyticsService {
    * Aggregate analytics data
    */
   static async #aggregateAnalytics(options) {
-    // This would typically query a database or analytics store
-    // For now, return mock aggregated data
-    
     const data = {
       summary: {
         totalEvents: 0,
@@ -1277,8 +1207,6 @@ class AnalyticsService {
    * Get event count
    */
   static async #getEventCount(options) {
-    // This would query the analytics store
-    // Return mock data for now
     return Math.floor(Math.random() * 1000);
   }
 
@@ -1287,8 +1215,6 @@ class AnalyticsService {
    * Get users for event
    */
   static async #getUsersForEvent(options) {
-    // This would query the analytics store
-    // Return mock data for now
     const count = Math.floor(Math.random() * 100);
     return Array.from({ length: count }, (_, i) => `user_${i}`);
   }
@@ -1306,7 +1232,6 @@ class AnalyticsService {
    * Parse browser from user agent
    */
   static #parseBrowser(userAgent) {
-    // Simple browser detection
     if (userAgent.includes('Chrome')) return 'Chrome';
     if (userAgent.includes('Firefox')) return 'Firefox';
     if (userAgent.includes('Safari')) return 'Safari';
@@ -1319,7 +1244,6 @@ class AnalyticsService {
    * Parse OS from user agent
    */
   static #parseOS(userAgent) {
-    // Simple OS detection
     if (userAgent.includes('Windows')) return 'Windows';
     if (userAgent.includes('Mac')) return 'macOS';
     if (userAgent.includes('Linux')) return 'Linux';
@@ -1333,7 +1257,6 @@ class AnalyticsService {
    * Parse device from user agent
    */
   static #parseDevice(userAgent) {
-    // Simple device detection
     if (userAgent.includes('Mobile')) return 'Mobile';
     if (userAgent.includes('Tablet')) return 'Tablet';
     return 'Desktop';
@@ -1371,7 +1294,6 @@ class AnalyticsService {
    * Format as CSV
    */
   static #formatAsCsv(data) {
-    // Convert data to CSV format
     const headers = ['Date', 'Events', 'Users'];
     const rows = data.timeline.map(item => 
       [item.date, item.events, item.users].join(',')
@@ -1385,8 +1307,6 @@ class AnalyticsService {
    * Format as Excel
    */
   static async #formatAsExcel(data) {
-    // This would use a library like exceljs
-    // Return placeholder for now
     return Buffer.from(this.#formatAsCsv(data));
   }
 
@@ -1412,38 +1332,6 @@ class AnalyticsService {
   static #generateEventId() {
     return `event_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
   }
-
-  /**
-   * Graceful shutdown
-   * @returns {Promise<void>}
-   */
-  static async shutdown() {
-    logger.info('Shutting down AnalyticsService');
-
-    // Stop batch processor
-    if (this.#flushInterval) {
-      clearInterval(this.#flushInterval);
-    }
-
-    // Flush remaining events
-    await this.#flushEvents();
-
-    // Clear data
-    this.#providers.clear();
-    this.#eventSchemas.clear();
-    this.#processors.clear();
-    this.#metrics.clear();
-    this.#eventQueue.clear();
-
-    await this.#cacheService.shutdown();
-
-    this.#initialized = false;
-    logger.info('AnalyticsService shutdown complete');
-  }
 }
-
-// Export event types
-AnalyticsService.EVENT_TYPES = AnalyticsService.#EVENT_TYPES;
-AnalyticsService.METRIC_TYPES = AnalyticsService.#METRIC_TYPES;
 
 module.exports = AnalyticsService;

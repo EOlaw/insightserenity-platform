@@ -14,27 +14,57 @@ const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
 const { AppError } = require('../../../utils/app-error');
 
-// Fallback validators if not available
+// Enhanced fallback validators with proper function definitions
 let validators;
 try {
   validators = require('../../../utils/validators/common-validators');
 } catch (error) {
   logger.warn('Common validators not available, using fallback validators');
+  
+  // Robust fallback validators
   validators = {
     isEmail: function(email) {
+      if (!email || typeof email !== 'string') return false;
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      return emailRegex.test(email);
+      return emailRegex.test(email.trim());
     },
     isURL: function(url) {
+      if (!url || typeof url !== 'string') return false;
       try {
         new URL(url);
         return true;
       } catch {
         return false;
       }
+    },
+    isPhone: function(phone) {
+      if (!phone || typeof phone !== 'string') return false;
+      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+      return phoneRegex.test(phone.replace(/[\s\-\(\)]/g, ''));
     }
   };
 }
+
+// Ensure validators are functions and provide safe defaults
+const safeValidators = {
+  isEmail: typeof validators.isEmail === 'function' ? validators.isEmail : (email) => {
+    if (!email || typeof email !== 'string') return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  },
+  isURL: typeof validators.isURL === 'function' ? validators.isURL : (url) => {
+    if (!url || typeof url !== 'string') return false;
+    try {
+      new URL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  isPhone: typeof validators.isPhone === 'function' ? validators.isPhone : (phone) => {
+    if (!phone || typeof phone !== 'string') return false;
+    return /^[\+]?[1-9][\d]{0,15}$/.test(phone.replace(/[\s\-\(\)]/g, ''));
+  }
+};
 
 /**
  * User profile schema definition
@@ -84,10 +114,12 @@ const userProfileSchemaDefinition = {
         },
         email: {
           type: String,
-          validate: {
-            validator: validators.isEmail,
-            message: 'Invalid email address'
-          }
+          validate: [
+            {
+              validator: safeValidators.isEmail,
+              message: 'Invalid email address'
+            }
+          ]
         },
         isPublic: {
           type: Boolean,
@@ -99,7 +131,15 @@ const userProfileSchemaDefinition = {
           type: String,
           enum: ['mobile', 'work', 'home', 'other']
         },
-        number: String,
+        number: {
+          type: String,
+          validate: [
+            {
+              validator: safeValidators.isPhone,
+              message: 'Invalid phone number'
+            }
+          ]
+        },
         extension: String,
         isPublic: {
           type: Boolean,
@@ -113,10 +153,12 @@ const userProfileSchemaDefinition = {
         },
         url: {
           type: String,
-          validate: {
-            validator: validators.isURL,
-            message: 'Invalid URL'
-          }
+          validate: [
+            {
+              validator: safeValidators.isURL,
+              message: 'Invalid URL'
+            }
+          ]
         },
         title: String
       }]
@@ -194,7 +236,17 @@ const userProfileSchemaDefinition = {
           required: true
         },
         logo: String,
-        website: String,
+        website: {
+          type: String,
+          validate: [
+            {
+              validator: function(url) {
+                return !url || safeValidators.isURL(url);
+              },
+              message: 'Invalid website URL'
+            }
+          ]
+        },
         industry: String,
         size: {
           type: String,
@@ -228,7 +280,17 @@ const userProfileSchemaDefinition = {
         name: String,
         title: String,
         relationship: String,
-        email: String,
+        email: {
+          type: String,
+          validate: [
+            {
+              validator: function(email) {
+                return !email || safeValidators.isEmail(email);
+              },
+              message: 'Invalid reference email address'
+            }
+          ]
+        },
         phone: String
       }]
     }],
@@ -282,7 +344,17 @@ const userProfileSchemaDefinition = {
         required: true
       },
       credentialId: String,
-      credentialUrl: String,
+      credentialUrl: {
+        type: String,
+        validate: [
+          {
+            validator: function(url) {
+              return !url || safeValidators.isURL(url);
+            },
+            message: 'Invalid credential URL'
+          }
+        ]
+      },
       issueDate: {
         type: Date,
         required: true
@@ -295,7 +367,17 @@ const userProfileSchemaDefinition = {
       skills: [String],
       attachments: [{
         type: String,
-        url: String,
+        url: {
+          type: String,
+          validate: [
+            {
+              validator: function(url) {
+                return !url || safeValidators.isURL(url);
+              },
+              message: 'Invalid attachment URL'
+            }
+          ]
+        },
         uploadedAt: Date
       }]
     }],
@@ -319,7 +401,17 @@ const userProfileSchemaDefinition = {
       },
       publisher: String,
       publicationDate: Date,
-      url: String,
+      url: {
+        type: String,
+        validate: [
+          {
+            validator: function(url) {
+              return !url || safeValidators.isURL(url);
+            },
+            message: 'Invalid publication URL'
+          }
+        ]
+      },
       doi: String,
       coAuthors: [String],
       description: String
@@ -336,7 +428,17 @@ const userProfileSchemaDefinition = {
       },
       inventors: [String],
       description: String,
-      url: String
+      url: {
+        type: String,
+        validate: [
+          {
+            validator: function(url) {
+              return !url || safeValidators.isURL(url);
+            },
+            message: 'Invalid patent URL'
+          }
+        ]
+      }
     }]
   },
 
@@ -348,7 +450,17 @@ const userProfileSchemaDefinition = {
         required: true
       },
       logo: String,
-      website: String,
+      website: {
+        type: String,
+        validate: [
+          {
+            validator: function(url) {
+              return !url || safeValidators.isURL(url);
+            },
+            message: 'Invalid institution website URL'
+          }
+        ]
+      },
       type: {
         type: String,
         enum: ['university', 'college', 'bootcamp', 'online', 'certification', 'other']
@@ -369,7 +481,17 @@ const userProfileSchemaDefinition = {
       title: String,
       advisor: String,
       abstract: String,
-      url: String
+      url: {
+        type: String,
+        validate: [
+          {
+            validator: function(url) {
+              return !url || safeValidators.isURL(url);
+            },
+            message: 'Invalid thesis URL'
+          }
+        ]
+      }
     }
   }],
 
@@ -393,8 +515,28 @@ const userProfileSchemaDefinition = {
         type: String,
         enum: ['planning', 'in_progress', 'completed', 'on_hold', 'cancelled']
       },
-      url: String,
-      repository: String,
+      url: {
+        type: String,
+        validate: [
+          {
+            validator: function(url) {
+              return !url || safeValidators.isURL(url);
+            },
+            message: 'Invalid project URL'
+          }
+        ]
+      },
+      repository: {
+        type: String,
+        validate: [
+          {
+            validator: function(url) {
+              return !url || safeValidators.isURL(url);
+            },
+            message: 'Invalid repository URL'
+          }
+        ]
+      },
       technologies: [String],
       outcomes: [String],
       media: [{
@@ -402,7 +544,17 @@ const userProfileSchemaDefinition = {
           type: String,
           enum: ['image', 'video', 'document', 'link']
         },
-        url: String,
+        url: {
+          type: String,
+          validate: [
+            {
+              validator: function(url) {
+                return !url || safeValidators.isURL(url);
+              },
+              message: 'Invalid media URL'
+            }
+          ]
+        },
         thumbnail: String,
         caption: String
       }],
@@ -422,13 +574,31 @@ const userProfileSchemaDefinition = {
       issuer: String,
       date: Date,
       description: String,
-      url: String,
+      url: {
+        type: String,
+        validate: [
+          {
+            validator: function(url) {
+              return !url || safeValidators.isURL(url);
+            },
+            message: 'Invalid achievement URL'
+          }
+        ]
+      },
       media: String
     }],
 
     media: {
       photos: [{
-        url: String,
+        url: {
+          type: String,
+          validate: [
+            {
+              validator: safeValidators.isURL,
+              message: 'Invalid photo URL'
+            }
+          ]
+        },
         thumbnail: String,
         caption: String,
         tags: [String],
@@ -440,7 +610,15 @@ const userProfileSchemaDefinition = {
         }
       }],
       videos: [{
-        url: String,
+        url: {
+          type: String,
+          validate: [
+            {
+              validator: safeValidators.isURL,
+              message: 'Invalid video URL'
+            }
+          ]
+        },
         thumbnail: String,
         title: String,
         description: String,
@@ -455,7 +633,15 @@ const userProfileSchemaDefinition = {
       documents: [{
         title: String,
         type: String,
-        url: String,
+        url: {
+          type: String,
+          validate: [
+            {
+              validator: safeValidators.isURL,
+              message: 'Invalid document URL'
+            }
+          ]
+        },
         size: Number,
         uploadedAt: Date,
         visibility: {
@@ -474,7 +660,15 @@ const userProfileSchemaDefinition = {
         type: String,
         enum: ['linkedin', 'twitter', 'github', 'gitlab', 'stackoverflow', 'behance', 'dribbble', 'medium', 'devto', 'youtube', 'instagram', 'facebook', 'other']
       },
-      url: String,
+      url: {
+        type: String,
+        validate: [
+          {
+            validator: safeValidators.isURL,
+            message: 'Invalid social profile URL'
+          }
+        ]
+      },
       username: String,
       verified: Boolean,
       visibility: {
@@ -695,11 +889,17 @@ const userProfileSchemaDefinition = {
   }
 };
 
-// Create schema
-const userProfileSchema = BaseModel.createSchema(userProfileSchemaDefinition, {
-  collection: 'user_profiles',
-  timestamps: true
-});
+// Create schema with proper error handling
+let userProfileSchema;
+try {
+  userProfileSchema = BaseModel.createSchema(userProfileSchemaDefinition, {
+    collection: 'user_profiles',
+    timestamps: true
+  });
+} catch (error) {
+  logger.error('Failed to create UserProfile schema', { error: error.message });
+  throw new AppError('UserProfile schema creation failed', 500, 'SCHEMA_CREATION_ERROR');
+}
 
 // ==================== Indexes ====================
 userProfileSchema.index({ userId: 1 });
@@ -1349,7 +1549,13 @@ userProfileSchema.statics.bulkImportFromLinkedIn = async function(linkedInData, 
 };
 
 // Create and export model
-const UserProfileModel = BaseModel.createModel('UserProfile', userProfileSchema);
+let UserProfileModel;
+try {
+  UserProfileModel = BaseModel.createModel('UserProfile', userProfileSchema);
+} catch (error) {
+  logger.error('Failed to create UserProfile model', { error: error.message });
+  throw new AppError('UserProfile model creation failed', 500, 'MODEL_CREATION_ERROR');
+}
 
 module.exports = {
   schema: userProfileSchema,

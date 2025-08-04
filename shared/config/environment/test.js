@@ -154,7 +154,7 @@ class TestConfig {
 
     // Database configuration overrides
     this.database = {
-      uri: process.env.TEST_MONGODB_URI || 'mongodb://localhost:27017/insightserenity_test',
+      uri: process.env.TEST_MONGODB_URI || 'mongodb+srv://EOlaw146:Olawalee_.146@cluster0.4wv68hn.mongodb.net/Insightserenity_dev?retryWrites=true&w=majority',
       options: {
         maxPoolSize: 5,
         minPoolSize: 1,

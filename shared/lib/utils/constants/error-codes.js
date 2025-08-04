@@ -147,7 +147,45 @@ const ERROR_CODES = Object.freeze({
     CERTIFICATE_ERROR: 'SEC_7008',
     SECURITY_VIOLATION: 'SEC_7009',
     BRUTE_FORCE_DETECTED: 'SEC_7010'
-  })
+  }),
+
+  // Analytics & Reporting Errors (8000-8099)  
+  ANALYTICS: Object.freeze({
+    TRACKING_FAILED: 'ANL_8001',
+    RETRIEVAL_FAILED: 'ANL_8002',
+    PROCESSING_FAILED: 'ANL_8003',
+    EXPORT_FAILED: 'ANL_8004',
+    SCHEMA_INVALID: 'ANL_8005',
+    PROVIDER_ERROR: 'ANL_8006',
+    SAMPLING_ERROR: 'ANL_8007',
+    AGGREGATION_FAILED: 'ANL_8008'
+  }),
+
+  // Service Errors (9000-9099)
+  SERVICE: Object.freeze({
+    INITIALIZATION_ERROR: 'SRV_9001',
+    SHUTDOWN_ERROR: 'SRV_9002',
+    CONNECTION_ERROR: 'SRV_9003',
+    TIMEOUT_ERROR: 'SRV_9004',
+    UNAVAILABLE: 'SRV_9005',
+    OVERLOADED: 'SRV_9006',
+    CONFIGURATION_ERROR: 'SRV_9007',
+    DEPENDENCY_ERROR: 'SRV_9008'
+  }),
+
+  // Legacy error codes for backward compatibility
+  VALIDATION_ERROR: 'VAL_2001',
+  AUTHENTICATION_ERROR: 'AUTH_1004', 
+  DATABASE_ERROR: 'DB_3001',
+  BUSINESS_LOGIC_ERROR: 'BIZ_4001',
+  EXTERNAL_SERVICE_ERROR: 'EXT_5001',
+  SYSTEM_ERROR: 'SYS_6001',
+  SECURITY_ERROR: 'SEC_7001',
+  ANALYTICS_TRACKING_FAILED: 'ANL_8001',
+  ANALYTICS_RETRIEVAL_FAILED: 'ANL_8002',
+  SERVICE_INITIALIZATION_ERROR: 'SRV_9001',
+  UNSUPPORTED_FORMAT: 'VAL_2002',
+  EXPORT_FAILED: 'ANL_8004'
 });
 
 /**
@@ -265,7 +303,41 @@ const ERROR_MESSAGES = Object.freeze({
   [ERROR_CODES.SECURITY.DECRYPTION_ERROR]: 'Decryption error',
   [ERROR_CODES.SECURITY.CERTIFICATE_ERROR]: 'Certificate validation error',
   [ERROR_CODES.SECURITY.SECURITY_VIOLATION]: 'Security violation detected',
-  [ERROR_CODES.SECURITY.BRUTE_FORCE_DETECTED]: 'Brute force attack detected'
+  [ERROR_CODES.SECURITY.BRUTE_FORCE_DETECTED]: 'Brute force attack detected',
+
+  // Analytics messages
+  [ERROR_CODES.ANALYTICS.TRACKING_FAILED]: 'Analytics tracking failed',
+  [ERROR_CODES.ANALYTICS.RETRIEVAL_FAILED]: 'Analytics data retrieval failed',
+  [ERROR_CODES.ANALYTICS.PROCESSING_FAILED]: 'Analytics processing failed',
+  [ERROR_CODES.ANALYTICS.EXPORT_FAILED]: 'Analytics export failed',
+  [ERROR_CODES.ANALYTICS.SCHEMA_INVALID]: 'Invalid analytics schema',
+  [ERROR_CODES.ANALYTICS.PROVIDER_ERROR]: 'Analytics provider error',
+  [ERROR_CODES.ANALYTICS.SAMPLING_ERROR]: 'Analytics sampling error',
+  [ERROR_CODES.ANALYTICS.AGGREGATION_FAILED]: 'Analytics aggregation failed',
+
+  // Service messages
+  [ERROR_CODES.SERVICE.INITIALIZATION_ERROR]: 'Service initialization failed',
+  [ERROR_CODES.SERVICE.SHUTDOWN_ERROR]: 'Service shutdown error',
+  [ERROR_CODES.SERVICE.CONNECTION_ERROR]: 'Service connection error',
+  [ERROR_CODES.SERVICE.TIMEOUT_ERROR]: 'Service timeout error',
+  [ERROR_CODES.SERVICE.UNAVAILABLE]: 'Service unavailable',
+  [ERROR_CODES.SERVICE.OVERLOADED]: 'Service overloaded',
+  [ERROR_CODES.SERVICE.CONFIGURATION_ERROR]: 'Service configuration error',
+  [ERROR_CODES.SERVICE.DEPENDENCY_ERROR]: 'Service dependency error',
+
+  // Legacy error codes messages
+  [ERROR_CODES.VALIDATION_ERROR]: 'Validation error',
+  [ERROR_CODES.AUTHENTICATION_ERROR]: 'Authentication error',
+  [ERROR_CODES.DATABASE_ERROR]: 'Database error',
+  [ERROR_CODES.BUSINESS_LOGIC_ERROR]: 'Business logic error',
+  [ERROR_CODES.EXTERNAL_SERVICE_ERROR]: 'External service error',
+  [ERROR_CODES.SYSTEM_ERROR]: 'System error',
+  [ERROR_CODES.SECURITY_ERROR]: 'Security error',
+  [ERROR_CODES.ANALYTICS_TRACKING_FAILED]: 'Analytics tracking failed',
+  [ERROR_CODES.ANALYTICS_RETRIEVAL_FAILED]: 'Analytics retrieval failed',
+  [ERROR_CODES.SERVICE_INITIALIZATION_ERROR]: 'Service initialization failed',
+  [ERROR_CODES.UNSUPPORTED_FORMAT]: 'Unsupported format',
+  [ERROR_CODES.EXPORT_FAILED]: 'Export failed'
 });
 
 /**
@@ -284,9 +356,39 @@ const getErrorMessage = (errorCode, customMessage) => {
  * @returns {boolean} True if error code exists
  */
 const isValidErrorCode = (errorCode) => {
-  return Object.values(ERROR_CODES).some(category => 
-    Object.values(category).includes(errorCode)
+  // Check in nested categories
+  const nestedCodeExists = Object.values(ERROR_CODES).some(category => 
+    typeof category === 'object' && Object.values(category).includes(errorCode)
   );
+  
+  // Check in direct error codes (legacy)
+  const directCodeExists = Object.values(ERROR_CODES).includes(errorCode);
+  
+  return nestedCodeExists || directCodeExists;
+};
+
+/**
+ * Get error category by code
+ * @param {string} errorCode - The error code
+ * @returns {string|null} The error category name
+ */
+const getErrorCategory = (errorCode) => {
+  for (const [category, codes] of Object.entries(ERROR_CODES)) {
+    if (typeof codes === 'object' && Object.values(codes).includes(errorCode)) {
+      return category;
+    }
+  }
+  return null;
+};
+
+/**
+ * Get all error codes in a category
+ * @param {string} category - The category name
+ * @returns {Object|null} The error codes in the category
+ */
+const getErrorCodesInCategory = (category) => {
+  const categoryName = category.toUpperCase();
+  return ERROR_CODES[categoryName] || null;
 };
 
 // Export error codes and utilities
@@ -294,5 +396,7 @@ module.exports = Object.freeze({
   ERROR_CODES,
   ERROR_MESSAGES,
   getErrorMessage,
-  isValidErrorCode
+  isValidErrorCode,
+  getErrorCategory,
+  getErrorCodesInCategory
 });
