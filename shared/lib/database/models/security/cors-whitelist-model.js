@@ -8,9 +8,9 @@
  * @requires module:shared/lib/config
  */
 
-const logger = require('../../../lib/utils/logger');
-const CacheService = require('../../services/cache-service');
-const config = require('../../../config');
+const logger = require('../../../../lib/utils/logger');
+const CacheService = require('../../../services/cache-service');
+const config = require('../../../../config');
 
 /**
  * @class CorsConfig

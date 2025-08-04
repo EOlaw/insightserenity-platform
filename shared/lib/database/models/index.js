@@ -94,7 +94,7 @@ logger.debug('Registering user models...');
 
 const User = safeRegisterModel('./users/user-model', 'User');
 const UserProfile = safeRegisterModel('./users/user-profile-model', 'UserProfile');
-const UserSession = safeRegisterModel('./users/user-session-model', 'UserSession');
+const UserSession = safeRegisterModel('./users/session-model', 'UserSession');
 const UserActivity = safeRegisterModel('./users/user-activity-model', 'UserActivity');
 const LoginHistory = safeRegisterModel('./users/login-history-model', 'LoginHistory');
 const Permission = safeRegisterModel('./users/permission-model', 'Permission');
@@ -130,7 +130,7 @@ logger.debug('Registering authentication models...');
 
 const Passkey = safeRegisterModel('./users/passkey-model', 'Passkey');
 const OAuthProvider = safeRegisterModel('./users/oauth-provider-model', 'OAuthProvider');
-const SessionData = safeRegisterModel('./users/session-data-model', 'SessionData');
+const SessionData = safeRegisterModel('./users/session-model', 'SessionData');
 
 // ============================================================================
 // PRIVACY & COMPLIANCE MODELS

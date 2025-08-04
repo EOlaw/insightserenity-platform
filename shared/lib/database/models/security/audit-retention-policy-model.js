@@ -12,9 +12,9 @@
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
-const logger = require('..\..\..\utils\logger');
-const AppError = require('..\..\..\utils\app-error');
-const { COMPLIANCE_FRAMEWORKS, RETENTION_PERIODS } = require('../../utils/constants/compliance-frameworks');
+const logger = require('../../../utils/logger');
+const { AppError } = require('../../../utils/app-error');
+const { COMPLIANCE_FRAMEWORKS, RETENTION_PERIODS } = require('../../../utils/constants/compliance-frameworks');
 
 /**
  * Audit retention policy schema for data lifecycle management

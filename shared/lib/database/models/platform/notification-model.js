@@ -17,9 +17,12 @@
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
-const AppError = require('../../../utils/app-error');
-// const notificationService = require('../../../services/notification-service'); // Circular dependency avoided
-// const emailService = require('../../../services/email-service'); // Circular dependency avoided
+const { AppError } = require('../../../utils/app-error');
+// Avoid notificationService and emailService circular dependencies by importing them later
+// This allows us to use them in methods without causing circular import issues
+const notificationService = require('../../../services/notification-service'); // Circular dependency avoided
+const emailService = require('../../../services/email-service'); // Circular dependency avoided
+
 const stringHelper = require('../../../utils/helpers/string-helper');
 const textFormatter = require('../../../utils/formatters/text-formatter');
 const encryptionService = require('../../../security/encryption/encryption-service');

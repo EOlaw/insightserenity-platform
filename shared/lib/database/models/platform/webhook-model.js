@@ -18,7 +18,7 @@
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
-const AppError = require('../../../utils/app-error');
+const { AppError } = require('../../../utils/app-error');
 const webhookService = require('../../../services/webhook-service');
 const hashService = require('../../../security/encryption/hash-service');
 const stringHelper = require('../../../utils/helpers/string-helper');

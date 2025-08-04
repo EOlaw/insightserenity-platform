@@ -20,7 +20,7 @@ const logger = require('../../../utils/logger');
 const { AppError } = require('../../../utils/app-error');
 const validators = require('../../../utils/validators/common-validators');
 const dateHelper = require('../../../utils/helpers/date-helper');
-const encryptionHelper = require('../../../utils/helpers/encryption-helper');
+const { EncryptionHelper } = require('../../../utils/helpers/encryption-helper');
 const auditService = require('../../../security/audit/audit-service');
 const analyticsService = require('../../../services/analytics-service');
 
@@ -939,31 +939,31 @@ apiIntegrationSchema.methods.encryptCredentials = async function() {
   const credentials = this.authentication.credentials;
   
   if (credentials.apiKey?.value) {
-    credentials.apiKey.value = await encryptionHelper.encrypt(credentials.apiKey.value);
+    credentials.apiKey.value = await EncryptionHelper.encrypt(credentials.apiKey.value);
   }
   
   if (credentials.bearerToken?.token) {
-    credentials.bearerToken.token = await encryptionHelper.encrypt(credentials.bearerToken.token);
+    credentials.bearerToken.token = await EncryptionHelper.encrypt(credentials.bearerToken.token);
   }
   
   if (credentials.bearerToken?.refreshToken) {
-    credentials.bearerToken.refreshToken = await encryptionHelper.encrypt(credentials.bearerToken.refreshToken);
+    credentials.bearerToken.refreshToken = await EncryptionHelper.encrypt(credentials.bearerToken.refreshToken);
   }
   
   if (credentials.oauth2) {
     if (credentials.oauth2.clientSecret) {
-      credentials.oauth2.clientSecret = await encryptionHelper.encrypt(credentials.oauth2.clientSecret);
+      credentials.oauth2.clientSecret = await EncryptionHelper.encrypt(credentials.oauth2.clientSecret);
     }
     if (credentials.oauth2.accessToken) {
-      credentials.oauth2.accessToken = await encryptionHelper.encrypt(credentials.oauth2.accessToken);
+      credentials.oauth2.accessToken = await EncryptionHelper.encrypt(credentials.oauth2.accessToken);
     }
     if (credentials.oauth2.refreshToken) {
-      credentials.oauth2.refreshToken = await encryptionHelper.encrypt(credentials.oauth2.refreshToken);
+      credentials.oauth2.refreshToken = await EncryptionHelper.encrypt(credentials.oauth2.refreshToken);
     }
   }
   
   if (credentials.basicAuth?.password) {
-    credentials.basicAuth.password = await encryptionHelper.encrypt(credentials.basicAuth.password);
+    credentials.basicAuth.password = await EncryptionHelper.encrypt(credentials.basicAuth.password);
   }
 };
 
@@ -972,31 +972,31 @@ apiIntegrationSchema.methods.decryptCredentials = async function() {
   const decrypted = JSON.parse(JSON.stringify(credentials));
   
   if (decrypted.apiKey?.value) {
-    decrypted.apiKey.value = await encryptionHelper.decrypt(decrypted.apiKey.value);
+    decrypted.apiKey.value = await EncryptionHelper.decrypt(decrypted.apiKey.value);
   }
   
   if (decrypted.bearerToken?.token) {
-    decrypted.bearerToken.token = await encryptionHelper.decrypt(decrypted.bearerToken.token);
+    decrypted.bearerToken.token = await EncryptionHelper.decrypt(decrypted.bearerToken.token);
   }
   
   if (decrypted.bearerToken?.refreshToken) {
-    decrypted.bearerToken.refreshToken = await encryptionHelper.decrypt(decrypted.bearerToken.refreshToken);
+    decrypted.bearerToken.refreshToken = await EncryptionHelper.decrypt(decrypted.bearerToken.refreshToken);
   }
   
   if (decrypted.oauth2) {
     if (decrypted.oauth2.clientSecret) {
-      decrypted.oauth2.clientSecret = await encryptionHelper.decrypt(decrypted.oauth2.clientSecret);
+      decrypted.oauth2.clientSecret = await EncryptionHelper.decrypt(decrypted.oauth2.clientSecret);
     }
     if (decrypted.oauth2.accessToken) {
-      decrypted.oauth2.accessToken = await encryptionHelper.decrypt(decrypted.oauth2.accessToken);
+      decrypted.oauth2.accessToken = await EncryptionHelper.decrypt(decrypted.oauth2.accessToken);
     }
     if (decrypted.oauth2.refreshToken) {
-      decrypted.oauth2.refreshToken = await encryptionHelper.decrypt(decrypted.oauth2.refreshToken);
+      decrypted.oauth2.refreshToken = await EncryptionHelper.decrypt(decrypted.oauth2.refreshToken);
     }
   }
   
   if (decrypted.basicAuth?.password) {
-    decrypted.basicAuth.password = await encryptionHelper.decrypt(decrypted.basicAuth.password);
+    decrypted.basicAuth.password = await EncryptionHelper.decrypt(decrypted.basicAuth.password);
   }
   
   return decrypted;

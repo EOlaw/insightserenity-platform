@@ -15,11 +15,11 @@ const EncryptionService = require('../encryption/encryption-service');
 const AuditService = require('../audit/audit-service');
 const UserModel = require('../../database/models/users/user-model');
 
-const ConsentModel = require('../../database/models/consent-model');
-const AnonymizedUserModel = require('../../database/models/anonymized-user-model');
-const ProcessingActivityModel = require('../../database/models/processing-activity-model');
-const ErasureLogModel = require('../../database/models/erasure-log-model');
-const DataBreachModel = require('../../database/models/data-breach-model');
+const ConsentModel = require('../../database/models/users/consent-model');
+const AnonymizedUserModel = require('../../database/models/users/anonymized-user-model');
+const ProcessingActivityModel = require('../../database/models/security/processing-activity-model');
+const ErasureLogModel = require('../../database/models/security/erasure-log-model');
+const DataBreachModel = require('../../database/models/security/data-breach-model');
 const PaymentModel = require('../../database/models/billing/payment-model');
 
 /**

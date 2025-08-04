@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * @fileoverview User session model for managing active user sessions
- * @module shared/lib/database/models/users/user-session-model
+ * @fileoverview Session model for managing active user sessions
+ * @module shared/lib/database/models/users/session-model
  * @requires mongoose
  * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
@@ -11,17 +11,32 @@
  * @requires module:shared/lib/security/encryption/hash-service
  */
 
+// const crypto = require('crypto');
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
 const { AppError } = require('../../../utils/app-error');
 const stringHelper = require('../../../utils/helpers/string-helper');
-const HashService = require('../../../security/encryption/hash-service');
+// const HashService = require('../../../security/encryption/hash-service');
+
+// Fallback hash service if not available
+let HashService;
+try {
+  HashService = require('../../../security/encryption/hash-service');
+} catch (error) {
+  logger.warn('HashService not available, using fallback crypto functions');
+  const crypto = require('crypto');
+  HashService = {
+    hashToken: async (token) => {
+      return crypto.createHash('sha256').update(token).digest('hex');
+    }
+  };
+}
 
 /**
- * User session schema definition
+ * Session schema definition
  */
-const userSessionSchemaDefinition = {
+const sessionSchemaDefinition = {
   // User and organization context
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -141,8 +156,15 @@ const userSessionSchemaDefinition = {
     city: String,
     postalCode: String,
     coordinates: {
-      latitude: Number,
-      longitude: Number
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point'
+      },
+      coordinates: {
+        type: [Number],
+        default: undefined
+      }
     },
     timezone: String
   },
@@ -279,40 +301,40 @@ const userSessionSchemaDefinition = {
 };
 
 // Create schema
-const userSessionSchema = BaseModel.createSchema(userSessionSchemaDefinition, {
-  collection: 'user_sessions',
+const sessionSchema = BaseModel.createSchema(sessionSchemaDefinition, {
+  collection: 'sessions',
   timestamps: true
 });
 
 // Indexes
-userSessionSchema.index({ userId: 1, status: 1 });
-userSessionSchema.index({ userId: 1, deviceInfo.deviceId: 1 });
-userSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-userSessionSchema.index({ lastActivityAt: 1, status: 1 });
-userSessionSchema.index({ 'security.riskScore': -1, status: 1 });
+sessionSchema.index({ userId: 1, status: 1 });
+sessionSchema.index({ userId: 1, 'deviceInfo.deviceId': 1 });
+sessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+sessionSchema.index({ lastActivityAt: 1, status: 1 });
+sessionSchema.index({ 'security.riskScore': -1, status: 1 });
 
 // Virtual fields
-userSessionSchema.virtual('isExpired').get(function() {
+sessionSchema.virtual('isExpired').get(function() {
   return this.expiresAt < new Date() || this.status === 'expired';
 });
 
-userSessionSchema.virtual('isIdle').get(function() {
+sessionSchema.virtual('isIdle').get(function() {
   const idleTime = this.settings.idleTimeout * 60 * 1000; // Convert to milliseconds
   return new Date() - this.lastActivityAt > idleTime;
 });
 
-userSessionSchema.virtual('duration').get(function() {
+sessionSchema.virtual('duration').get(function() {
   const endTime = this.terminatedAt || new Date();
   return Math.floor((endTime - this.createdAt) / 1000); // in seconds
 });
 
-userSessionSchema.virtual('remainingTime').get(function() {
+sessionSchema.virtual('remainingTime').get(function() {
   if (this.isExpired) return 0;
   return Math.max(0, Math.floor((this.expiresAt - new Date()) / 1000)); // in seconds
 });
 
 // Pre-save middleware
-userSessionSchema.pre('save', async function(next) {
+sessionSchema.pre('save', async function(next) {
   try {
     if (this.isNew) {
       // Generate session ID if not provided
@@ -343,7 +365,7 @@ userSessionSchema.pre('save', async function(next) {
 });
 
 // Instance methods
-userSessionSchema.methods.calculateRiskScore = function() {
+sessionSchema.methods.calculateRiskScore = function() {
   let score = 0;
 
   // Network-based risks
@@ -371,7 +393,7 @@ userSessionSchema.methods.calculateRiskScore = function() {
   return Math.min(score, 100);
 };
 
-userSessionSchema.methods.updateActivity = async function(activityData = {}) {
+sessionSchema.methods.updateActivity = async function(activityData = {}) {
   this.lastActivityAt = new Date();
   
   if (activityData.requestType === 'api') {
@@ -404,7 +426,7 @@ userSessionSchema.methods.updateActivity = async function(activityData = {}) {
   return this;
 };
 
-userSessionSchema.methods.refresh = async function(refreshToken) {
+sessionSchema.methods.refresh = async function(refreshToken) {
   if (!this.refreshToken) {
     throw new AppError('Session does not support refresh', 400, 'NO_REFRESH_TOKEN');
   }
@@ -442,7 +464,7 @@ userSessionSchema.methods.refresh = async function(refreshToken) {
   };
 };
 
-userSessionSchema.methods.terminate = async function(reason = 'logout') {
+sessionSchema.methods.terminate = async function(reason = 'logout') {
   this.status = 'revoked';
   this.isActive = false;
   this.terminatedAt = new Date();
@@ -463,7 +485,7 @@ userSessionSchema.methods.terminate = async function(reason = 'logout') {
   return this;
 };
 
-userSessionSchema.methods.verifyMfa = async function() {
+sessionSchema.methods.verifyMfa = async function() {
   this.settings.mfaVerified = true;
   this.settings.mfaVerifiedAt = new Date();
   
@@ -474,7 +496,7 @@ userSessionSchema.methods.verifyMfa = async function() {
   return this;
 };
 
-userSessionSchema.methods.addSecurityChallenge = async function(challengeType) {
+sessionSchema.methods.addSecurityChallenge = async function(challengeType) {
   if (!this.security.challenges) {
     this.security.challenges = [];
   }
@@ -488,7 +510,7 @@ userSessionSchema.methods.addSecurityChallenge = async function(challengeType) {
   return this;
 };
 
-userSessionSchema.methods.completeSecurityChallenge = async function(challengeType, passed) {
+sessionSchema.methods.completeSecurityChallenge = async function(challengeType, passed) {
   const challenge = this.security.challenges.find(
     c => c.type === challengeType && !c.completedAt
   );
@@ -511,7 +533,7 @@ userSessionSchema.methods.completeSecurityChallenge = async function(challengeTy
   return this;
 };
 
-userSessionSchema.methods.grantTemporaryPermission = async function(permission, durationMinutes) {
+sessionSchema.methods.grantTemporaryPermission = async function(permission, durationMinutes) {
   if (!this.permissions.temporaryPermissions) {
     this.permissions.temporaryPermissions = [];
   }
@@ -526,7 +548,7 @@ userSessionSchema.methods.grantTemporaryPermission = async function(permission, 
   return this;
 };
 
-userSessionSchema.methods.linkSession = async function(otherSessionId, deviceName) {
+sessionSchema.methods.linkSession = async function(otherSessionId, deviceName) {
   if (!this.linkedSessions) {
     this.linkedSessions = [];
   }
@@ -547,7 +569,7 @@ userSessionSchema.methods.linkSession = async function(otherSessionId, deviceNam
 };
 
 // Static methods
-userSessionSchema.statics.createSession = async function(sessionData) {
+sessionSchema.statics.createSession = async function(sessionData) {
   const session = new this(sessionData);
   await session.save();
 
@@ -561,7 +583,7 @@ userSessionSchema.statics.createSession = async function(sessionData) {
   return session;
 };
 
-userSessionSchema.statics.findActiveSessionsByUser = async function(userId, options = {}) {
+sessionSchema.statics.findActiveSessionsByUser = async function(userId, options = {}) {
   const query = {
     userId,
     status: 'active',
@@ -579,7 +601,7 @@ userSessionSchema.statics.findActiveSessionsByUser = async function(userId, opti
   return await this.find(query).sort({ lastActivityAt: -1 });
 };
 
-userSessionSchema.statics.verifySession = async function(sessionId, sessionToken) {
+sessionSchema.statics.verifySession = async function(sessionId, sessionToken) {
   const session = await this.findOne({ sessionId })
     .select('+sessionToken');
 
@@ -603,7 +625,7 @@ userSessionSchema.statics.verifySession = async function(sessionId, sessionToken
   return session;
 };
 
-userSessionSchema.statics.terminateUserSessions = async function(userId, options = {}) {
+sessionSchema.statics.terminateUserSessions = async function(userId, options = {}) {
   const {
     reason = 'admin_action',
     excludeSessionId,
@@ -642,7 +664,7 @@ userSessionSchema.statics.terminateUserSessions = async function(userId, options
   return terminatedCount;
 };
 
-userSessionSchema.statics.checkConcurrentSessions = async function(userId, deviceId) {
+sessionSchema.statics.checkConcurrentSessions = async function(userId, deviceId) {
   const activeSessions = await this.countDocuments({
     userId,
     status: 'active',
@@ -671,7 +693,7 @@ userSessionSchema.statics.checkConcurrentSessions = async function(userId, devic
   };
 };
 
-userSessionSchema.statics.getSessionAnalytics = async function(userId, options = {}) {
+sessionSchema.statics.getSessionAnalytics = async function(userId, options = {}) {
   const {
     startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
     endDate = new Date()
@@ -766,7 +788,7 @@ userSessionSchema.statics.getSessionAnalytics = async function(userId, options =
   return analytics[0];
 };
 
-userSessionSchema.statics.detectAnomalies = async function(session) {
+sessionSchema.statics.detectAnomalies = async function(session) {
   const anomalies = [];
   const userId = session.userId;
 
@@ -853,7 +875,7 @@ userSessionSchema.statics.detectAnomalies = async function(session) {
   return anomalies;
 };
 
-userSessionSchema.statics.calculateDistance = function(coord1, coord2) {
+sessionSchema.statics.calculateDistance = function(coord1, coord2) {
   const R = 6371; // Earth's radius in km
   const lat1 = coord1.latitude * Math.PI / 180;
   const lat2 = coord2.latitude * Math.PI / 180;
@@ -869,7 +891,7 @@ userSessionSchema.statics.calculateDistance = function(coord1, coord2) {
   return R * c;
 };
 
-userSessionSchema.statics.cleanupExpiredSessions = async function() {
+sessionSchema.statics.cleanupExpiredSessions = async function() {
   const result = await this.updateMany(
     {
       status: 'active',
@@ -895,9 +917,9 @@ userSessionSchema.statics.cleanupExpiredSessions = async function() {
 };
 
 // Create and export model
-const UserSessionModel = BaseModel.createModel('UserSession', userSessionSchema);
+const SessionModel = BaseModel.createModel('Session', sessionSchema);
 
 module.exports = {
-  schema: userSessionSchema,
-  model: UserSessionModel
+  schema: sessionSchema,
+  model: SessionModel
 };

@@ -14,11 +14,11 @@
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
-const logger = require('..\..\..\utils\logger');
-const AppError = require('..\..\..\utils\app-error');
-const fileService = require('..\..\..\services\file-service');
-const encryptionService = require('..\..\..\security\encryption\encryption-service');
-const fileHelper = require('..\..\..\utils\helpers\file-helper');
+const logger = require('../../../utils/logger');
+const { AppError } = require('../../../utils/app-error');
+const fileService = require('../../../services/file-service');
+const encryptionService = require('../../../security/encryption/encryption-service');
+const fileHelper = require('../../../utils/helpers/file-helper');
 
 /**
  * Audit export schema for tracking exported audit data
@@ -831,7 +831,7 @@ auditExportSchema.methods.logAccess = async function(userId, action, request) {
 };
 
 auditExportSchema.methods.sendCompletionNotifications = async function() {
-  const notificationService = require('..\..\..\services\notification-service');
+  const notificationService = require('../../../services/notification-service');
   
   const downloadUrl = this.configuration.notifications.onComplete.includeDownloadLink ? 
     await this.generateSignedUrl() : null;
@@ -849,7 +849,7 @@ auditExportSchema.methods.sendCompletionNotifications = async function() {
 };
 
 auditExportSchema.methods.sendFailureNotifications = async function() {
-  const notificationService = require('..\..\..\services\notification-service');
+  const notificationService = require('../../../services/notification-service');
   
   await notificationService.send({
     channel: 'email',
@@ -864,7 +864,7 @@ auditExportSchema.methods.sendFailureNotifications = async function() {
 };
 
 auditExportSchema.methods.triggerWebhooks = async function(event) {
-  const webhookService = require('..\..\..\services\webhook-service');
+  const webhookService = require('../../../services/webhook-service');
   
   const webhooks = this.configuration.notifications.webhooks.filter(
     w => w.events.includes(event) || w.events.includes('*')

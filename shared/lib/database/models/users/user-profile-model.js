@@ -7,14 +7,34 @@
  * @requires module:shared/lib/database/models/base-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
- * @requires module:shared/lib/utils/validators/common-validators
  */
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
 const logger = require('../../../utils/logger');
 const { AppError } = require('../../../utils/app-error');
-const validators = require('../../../utils/validators/common-validators');
+
+// Fallback validators if not available
+let validators;
+try {
+  validators = require('../../../utils/validators/common-validators');
+} catch (error) {
+  logger.warn('Common validators not available, using fallback validators');
+  validators = {
+    isEmail: function(email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return emailRegex.test(email);
+    },
+    isURL: function(url) {
+      try {
+        new URL(url);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+}
 
 /**
  * User profile schema definition
@@ -725,10 +745,14 @@ userProfileSchema.pre('save', async function(next) {
   try {
     // Update full name
     if (this.isModified('personal')) {
-      const User = this.model('User');
-      const user = await User.findById(this.userId);
-      if (user) {
-        this.personal.fullName = user.fullName;
+      try {
+        const User = this.model('User');
+        const user = await User.findById(this.userId);
+        if (user && user.profile && user.profile.firstName && user.profile.lastName) {
+          this.personal.fullName = `${user.profile.firstName} ${user.profile.lastName}`;
+        }
+      } catch (error) {
+        logger.warn('Could not update full name from user', { error: error.message });
       }
     }
 
@@ -750,15 +774,6 @@ userProfileSchema.pre('save', async function(next) {
 
 // ==================== Instance Methods ====================
 userProfileSchema.methods.calculateCompleteness = function() {
-  const weights = {
-    personal: 20,
-    professional: 30,
-    education: 15,
-    skills: 15,
-    portfolio: 10,
-    social: 10
-  };
-
   let score = 0;
   const missing = [];
 
@@ -1030,7 +1045,7 @@ userProfileSchema.statics.createProfile = async function(userId, profileData = {
     userId,
     organizationId: user.defaultOrganizationId,
     personal: {
-      fullName: user.fullName,
+      fullName: user.profile ? `${user.profile.firstName} ${user.profile.lastName}` : 'Unknown User',
       ...profileData.personal
     },
     ...profileData
@@ -1334,9 +1349,9 @@ userProfileSchema.statics.bulkImportFromLinkedIn = async function(linkedInData, 
 };
 
 // Create and export model
-const UserProfile = BaseModel.createModel('UserProfile', userProfileSchema);
+const UserProfileModel = BaseModel.createModel('UserProfile', userProfileSchema);
 
 module.exports = {
   schema: userProfileSchema,
-  model: UserProfile
+  model: UserProfileModel
 };

@@ -12,9 +12,9 @@
 
 const mongoose = require('mongoose');
 const BaseModel = require('../base-model');
-const logger = require('..\..\..\utils\logger');
-const AppError = require('..\..\..\utils\app-error');
-const { COMPLIANCE_FRAMEWORKS } = require('../../utils/constants/compliance-frameworks');
+const logger = require('../../../utils/logger');
+const { AppError } = require('../../../utils/app-error');
+const { COMPLIANCE_FRAMEWORKS } = require('../../../utils/constants/compliance-frameworks');
 
 /**
  * Compliance mapping schema for framework requirements and controls
