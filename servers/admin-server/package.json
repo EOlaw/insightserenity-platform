@@ -27,7 +27,7 @@
     "db:migrate": "cross-env NODE_ENV=development node ../../tools/migration/migrate.js",
     "db:rollback": "cross-env NODE_ENV=development node ../../tools/migration/rollback.js",
     "db:seed": "cross-env NODE_ENV=development node ../../tools/migration/seed.js",
-    "health:check": "curl -f http://localhost:5001/health || exit 1"
+    "health:check": "curl -f http://127.0.0.1:5001/health || exit 1"
   },
   "dependencies": {
     "@eslint/plugin-kit": "^0.3.4",

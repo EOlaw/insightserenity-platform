@@ -572,19 +572,48 @@ class AdminServer extends EventEmitter {
      * @private
      * @returns {boolean} Whether SSL should be used
      */
+    // shouldUseSSL() {
+    //     // Check admin-specific SSL configuration first
+    //     if (this.adminConfig?.security?.forceSSL === true) {
+    //         return true;
+    //     }
+
+    //     // Check if SSL is explicitly disabled
+    //     if (this.adminConfig?.security?.forceSSL === false) {
+    //         return false;
+    //     }
+
+    //     // Check environment variable
+    //     if (process.env.ADMIN_FORCE_SSL === 'true') {
+    //         return true;
+    //     }
+
+    //     // Check for SSL certificates existence
+    //     if (this.adminConfig?.security?.ssl?.keyPath && this.adminConfig?.security?.ssl?.certPath) {
+    //         const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl.keyPath);
+    //         const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl.certPath);
+            
+    //         if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    //             return true;
+    //         }
+    //     }
+
+    //     // Default to false for development
+    //     return false;
+    // }
     shouldUseSSL() {
-        // Check admin-specific SSL configuration first
+        // Check if SSL is explicitly enabled in admin configuration
+        if (this.adminConfig?.security?.ssl?.enabled === true) {
+            return true;
+        }
+
+        // Check admin-specific SSL configuration
         if (this.adminConfig?.security?.forceSSL === true) {
             return true;
         }
 
-        // Check if SSL is explicitly disabled
-        if (this.adminConfig?.security?.forceSSL === false) {
-            return false;
-        }
-
-        // Check environment variable
-        if (process.env.ADMIN_FORCE_SSL === 'true') {
+        // Check environment variables
+        if (process.env.ADMIN_SSL_ENABLED === 'true' || process.env.ADMIN_FORCE_SSL === 'true') {
             return true;
         }
 
@@ -622,8 +651,8 @@ class AdminServer extends EventEmitter {
                     requireMFA: process.env.ADMIN_REQUIRE_MFA === 'true' || false,
                     sessionTimeout: parseInt(process.env.ADMIN_SESSION_TIMEOUT, 10) || 3600000,
                     ssl: {
-                        keyPath: process.env.ADMIN_SSL_KEY_PATH || process.env.SSL_KEY_PATH || './certs/key.pem',
-                        certPath: process.env.ADMIN_SSL_CERT_PATH || process.env.SSL_CERT_PATH || './certs/cert.pem',
+                        keyPath: process.env.ADMIN_SSL_KEY_PATH || process.env.SSL_KEY_PATH || '/insightserenity-platform/servers/admin-server/key.pem',
+                        certPath: process.env.ADMIN_SSL_CERT_PATH || process.env.SSL_CERT_PATH || '/insightserenity-platform/servers/admin-server/cert.pem',
                         ca: process.env.ADMIN_SSL_CA_PATH || process.env.SSL_CA_PATH
                     },
                     level: process.env.ADMIN_SECURITY_LEVEL || 'high',

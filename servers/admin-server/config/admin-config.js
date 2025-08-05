@@ -83,8 +83,8 @@ module.exports = {
         ssl: {
             enabled: parseBooleanFromEnv(process.env.ADMIN_SSL_ENABLED, isProduction),
             forceSSL: parseBooleanFromEnv(process.env.ADMIN_FORCE_SSL, isProduction),
-            keyPath: process.env.ADMIN_SSL_KEY_PATH || './certs/admin-key.pem',
-            certPath: process.env.ADMIN_SSL_CERT_PATH || './certs/admin-cert.pem',
+            keyPath: process.env.ADMIN_SSL_KEY_PATH || '../key.pem',
+            certPath: process.env.ADMIN_SSL_CERT_PATH || '../cert.pem',
             caPath: process.env.ADMIN_SSL_CA_PATH || './certs/admin-ca.pem',
             ciphers: process.env.ADMIN_SSL_CIPHERS || 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256',
             requestClientCert: parseBooleanFromEnv(process.env.ADMIN_SSL_REQUEST_CLIENT_CERT, false),
