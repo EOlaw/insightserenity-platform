@@ -33,7 +33,7 @@ const {
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { Upload } = require('@aws-sdk/lib-storage');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const CacheService = require('../../services/cache-service');
 const EncryptionService = require('../../security/encryption/encryption-service');

@@ -1,5 +1,5 @@
 /**
- * @file Admin Configuration Index - FIXED VERSION
+ * @file Admin Configuration Index - PRODUCTION FIXED VERSION
  * @description Central configuration aggregator for admin server
  * @module servers/admin-server/config/index
  * @version 3.0.0
@@ -9,7 +9,7 @@
 
 const path = require('path');
 
-// Import shared configuration as base - FIXED to use existing base-config
+// Import shared configuration as base
 const sharedConfig = require('../../../shared/config');
 
 // Import admin-specific configurations directly
@@ -19,25 +19,8 @@ const featuresConfig = require('./features-config');
 const securityConfig = require('./security-config');
 const monitoringConfig = require('./monitoring-config');
 
-// Safely load admin-specific configurations
-// const loadAdminConfigModule = (moduleName) => {
-//     try {
-//         return require(`./${moduleName}`);
-//     } catch (error) {
-//         console.log(`Admin config module ${moduleName} not found, using defaults`);
-//         return {};
-//     }
-// };
-
-// Load admin-specific configurations with fallbacks
-// const adminConfig = loadAdminConfigModule('admin-config');
-// const sessionConfig = loadAdminConfigModule('session-config');
-// const featuresConfig = loadAdminConfigModule('features-config');
-// const securityConfig = loadAdminConfigModule('security-config');
-// const monitoringConfig = loadAdminConfigModule('monitoring-config');
-
 /**
- * Admin server configuration class - FIXED to use existing baseConfig structure
+ * Admin server configuration class
  * Extends shared configuration with admin-specific settings
  */
 class AdminConfiguration {
@@ -53,19 +36,14 @@ class AdminConfiguration {
 
         // Validate critical configurations
         this.validateConfiguration();
-
-        // Freeze configuration in production
-        if (this.isProduction) {
-            this.deepFreeze(this.config);
-        }
     }
 
     /**
-     * Build complete configuration object - FIXED to use existing shared config structure
+     * Build complete configuration object
      * @returns {Object} Complete admin configuration
      */
     buildConfiguration() {
-        // Start with shared configuration as base - FIXED to not modify shared config
+        // Start with shared configuration as base
         const baseConfig = {
             ...sharedConfig,
 
@@ -112,8 +90,8 @@ class AdminConfiguration {
                         addresses: process.env.ADMIN_IP_WHITELIST ? process.env.ADMIN_IP_WHITELIST.split(',') : []
                     },
                     ssl: {
-                        keyPath: process.env.ADMIN_SSL_KEY_PATH || '../key.pem',
-                        certPath: process.env.ADMIN_SSL_CERT_PATH || '../cert.pem'
+                        keyPath: process.env.ADMIN_SSL_KEY_PATH || './key.pem',
+                        certPath: process.env.ADMIN_SSL_CERT_PATH || './cert.pem'
                     }
                 },
                 // Extract non-logging properties from adminConfig
@@ -167,7 +145,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Build admin URL based on environment - keep existing function
+     * Build admin URL based on environment
      * @returns {string} Admin server URL
      */
     buildAdminUrl() {
@@ -188,7 +166,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Merge session configuration with shared config - keep existing function
+     * Merge session configuration with shared config
      * @param {Object} sharedSession - Shared session config
      * @param {Object} adminSession - Admin session config
      * @returns {Object} Merged session configuration
@@ -213,7 +191,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Merge security configuration with enhanced admin settings - keep existing function
+     * Merge security configuration with enhanced admin settings
      * @param {Object} sharedSecurity - Shared security config
      * @param {Object} adminSecurity - Admin security config
      * @returns {Object} Merged security configuration
@@ -252,7 +230,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Validate critical configuration values - keep existing function
+     * Validate critical configuration values
      * @throws {Error} If configuration is invalid
      */
     validateConfiguration() {
@@ -297,7 +275,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Deep freeze configuration object to prevent modifications - keep existing function
+     * Deep freeze configuration object to prevent modifications
      * @param {Object} obj - Object to freeze
      * @returns {Object} Frozen object
      */
@@ -316,7 +294,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Get configuration value by path - keep existing function
+     * Get configuration value by path
      * @param {string} path - Dot-separated path
      * @param {*} defaultValue - Default value if path not found
      * @returns {*} Configuration value
@@ -337,7 +315,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Check if configuration has a specific path - keep existing function
+     * Check if configuration has a specific path
      * @param {string} path - Dot-separated path
      * @returns {boolean} True if path exists
      */
@@ -357,7 +335,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Get all configuration - keep existing function
+     * Get all configuration
      * @returns {Object} Complete configuration
      */
     getAll() {
@@ -365,7 +343,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Get environment - keep existing function
+     * Get environment
      * @returns {string} Current environment
      */
     getEnvironment() {
@@ -373,7 +351,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Check if feature is enabled - keep existing function
+     * Check if feature is enabled
      * @param {string} feature - Feature name
      * @returns {boolean} True if feature is enabled
      */
@@ -382,7 +360,7 @@ class AdminConfiguration {
     }
 
     /**
-     * Get security setting - keep existing function
+     * Get security setting
      * @param {string} setting - Security setting path
      * @returns {*} Security setting value
      */
@@ -394,15 +372,26 @@ class AdminConfiguration {
 // Create singleton instance
 const adminConfiguration = new AdminConfiguration();
 
-// Export configuration - keep existing export structure
-module.exports = adminConfiguration.getAll();
+// Create export object BEFORE any freezing operations
+const exportObject = {
+    // Main configuration spread
+    ...adminConfiguration.getAll(),
+    
+    // Configuration instance for advanced usage
+    configInstance: adminConfiguration,
+    
+    // Utility methods bound to instance
+    get: adminConfiguration.get.bind(adminConfiguration),
+    has: adminConfiguration.has.bind(adminConfiguration),
+    isFeatureEnabled: adminConfiguration.isFeatureEnabled.bind(adminConfiguration),
+    getSecuritySetting: adminConfiguration.getSecuritySetting.bind(adminConfiguration),
+    environment: adminConfiguration.getEnvironment()
+};
 
-// Also export the configuration instance for advanced usage
-module.exports.configInstance = adminConfiguration;
+// Apply freezing AFTER all properties are set
+if (adminConfiguration.isProduction) {
+    adminConfiguration.deepFreeze(exportObject);
+}
 
-// Export utility methods - keep existing exports
-module.exports.get = adminConfiguration.get.bind(adminConfiguration);
-module.exports.has = adminConfiguration.has.bind(adminConfiguration);
-module.exports.isFeatureEnabled = adminConfiguration.isFeatureEnabled.bind(adminConfiguration);
-module.exports.getSecuritySetting = adminConfiguration.getSecuritySetting.bind(adminConfiguration);
-module.exports.environment = adminConfiguration.getEnvironment();
+// Export the complete object
+module.exports = exportObject;

@@ -27,7 +27,7 @@ const ResourceModel = require('../../../../servers/customer-services/modules/hos
 const CacheService = require('../../services/cache-service');
 const AuditService = require('../../security/audit/audit-service');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 
 /**

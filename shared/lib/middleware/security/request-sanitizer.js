@@ -20,12 +20,12 @@ const validator = require('validator');
 const createDOMPurify = require('dompurify');
 const { JSDOM } = require('jsdom');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const AuditService = require('../../security/audit/audit-service');
 const CacheService = require('../../services/cache-service');
-const UserModel = require('..\..\database\models\users\user-model');
-const OrganizationModel = require('..\..\..\..\servers\customer-services\modules\hosted-organizations\organizations\models\organization-model');
+const UserModel = require('../../database/models/users/user-model');
+const OrganizationModel = require('../../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model');
 const config = require('../../../config');
 
 // Initialize DOMPurify

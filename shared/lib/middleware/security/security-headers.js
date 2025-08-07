@@ -12,7 +12,7 @@
 
 const helmet = require('helmet');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const AuditService = require('../../security/audit/audit-service');
 const config = require('../../../config');
 

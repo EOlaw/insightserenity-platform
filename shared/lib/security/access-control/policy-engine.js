@@ -9,7 +9,7 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 
 /**
  * @class PolicyEngine
@@ -941,7 +941,7 @@ class PolicyEngine {
       throw new AppError('Conditions must be an object', 400, 'INVALID_CONDITIONS');
     }
 
-    for (const [key, condition of Object.entries(conditions)) {
+    for (const [key, condition] of Object.entries(conditions)) {
       if (condition.operator) {
         // Validate operator
         if (!Object.values(PolicyEngine.#OPERATORS).includes(condition.operator)) {
@@ -1208,7 +1208,7 @@ class PolicyEngine {
     }
 
     // Handle object with multiple conditions (implicit AND)
-    for (const [key, condition of Object.entries(conditions)) {
+    for (const [key, condition] of Object.entries(conditions)) {
       if (!this.#evaluateCondition(condition, context)) {
         return false;
       }
@@ -1395,21 +1395,21 @@ class PolicyEngine {
     switch (algorithm) {
       case PolicyEngine.#COMBINATION_ALGORITHMS.DENY_OVERRIDES:
         // If any policy denies, the result is deny
-        for (const eval of evaluations) {
-          if (eval.matched) {
-            if (eval.effect === PolicyEngine.#POLICY_EFFECTS.DENY) {
+        for (const evaluation of evaluations) {
+          if (evaluation.matched) {
+            if (evaluation.effect === PolicyEngine.#POLICY_EFFECTS.DENY) {
               return {
                 effect: PolicyEngine.#POLICY_EFFECTS.DENY,
-                reason: `Denied by policy: ${eval.policy.name}`,
-                obligations: eval.obligations,
-                advice: eval.advice
+                reason: `Denied by policy: ${evaluation.policy.name}`,
+                obligations: evaluation.obligations,
+                advice: evaluation.advice
               };
-            } else if (eval.effect === PolicyEngine.#POLICY_EFFECTS.ALLOW) {
+            } else if (evaluation.effect === PolicyEngine.#POLICY_EFFECTS.ALLOW) {
               decision = {
                 effect: PolicyEngine.#POLICY_EFFECTS.ALLOW,
-                reason: `Allowed by policy: ${eval.policy.name}`,
-                obligations: [...decision.obligations, ...eval.obligations],
-                advice: [...decision.advice, ...eval.advice]
+                reason: `Allowed by policy: ${evaluation.policy.name}`,
+                obligations: [...decision.obligations, ...evaluation.obligations],
+                advice: [...decision.advice, ...evaluation.advice]
               };
             }
           }
@@ -1419,22 +1419,22 @@ class PolicyEngine {
       case PolicyEngine.#COMBINATION_ALGORITHMS.ALLOW_OVERRIDES:
         // If any policy allows, the result is allow
         let hasDeny = false;
-        for (const eval of evaluations) {
-          if (eval.matched) {
-            if (eval.effect === PolicyEngine.#POLICY_EFFECTS.ALLOW) {
+        for (const evaluation of evaluations) {
+          if (evaluation.matched) {
+            if (evaluation.effect === PolicyEngine.#POLICY_EFFECTS.ALLOW) {
               return {
                 effect: PolicyEngine.#POLICY_EFFECTS.ALLOW,
-                reason: `Allowed by policy: ${eval.policy.name}`,
-                obligations: eval.obligations,
-                advice: eval.advice
+                reason: `Allowed by policy: ${evaluation.policy.name}`,
+                obligations: evaluation.obligations,
+                advice: evaluation.advice
               };
-            } else if (eval.effect === PolicyEngine.#POLICY_EFFECTS.DENY) {
+            } else if (evaluation.effect === PolicyEngine.#POLICY_EFFECTS.DENY) {
               hasDeny = true;
               decision = {
                 effect: PolicyEngine.#POLICY_EFFECTS.DENY,
-                reason: `Denied by policy: ${eval.policy.name}`,
-                obligations: eval.obligations,
-                advice: eval.advice
+                reason: `Denied by policy: ${evaluation.policy.name}`,
+                obligations: evaluation.obligations,
+                advice: evaluation.advice
               };
             }
           }
@@ -1443,13 +1443,13 @@ class PolicyEngine {
 
       case PolicyEngine.#COMBINATION_ALGORITHMS.FIRST_APPLICABLE:
         // First matching policy determines result
-        for (const eval of evaluations) {
-          if (eval.matched) {
+        for (const evaluation of evaluations) {
+          if (evaluation.matched) {
             return {
-              effect: eval.effect,
-              reason: `Determined by policy: ${eval.policy.name}`,
-              obligations: eval.obligations,
-              advice: eval.advice
+              effect: evaluation.effect,
+              reason: `Determined by policy: ${evaluation.policy.name}`,
+              obligations: evaluation.obligations,
+              advice: evaluation.advice
             };
           }
         }

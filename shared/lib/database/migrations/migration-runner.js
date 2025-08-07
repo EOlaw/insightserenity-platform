@@ -474,7 +474,7 @@ class MigrationRunner {
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 
 /**
  * @class ${name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, '')}Migration

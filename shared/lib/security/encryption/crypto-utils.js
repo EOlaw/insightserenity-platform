@@ -10,7 +10,7 @@
 
 const crypto = require('crypto');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 
 /**
  * @class CryptoUtils

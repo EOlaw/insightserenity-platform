@@ -15,7 +15,7 @@
 const axios = require('axios');
 const axiosRetry = require('axios-retry');
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const CacheService = require('./cache-service');
 const AuditLogModel = require('../database/models/security/audit-log-model');
 const config = require('../../config');

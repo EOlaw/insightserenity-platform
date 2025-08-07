@@ -13,7 +13,7 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const NotificationService = require('../../services/notification-service');
 const CacheService = require('../../services/cache-service');
 const AuditService = require('../../security/audit/audit-service');

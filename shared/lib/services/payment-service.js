@@ -18,7 +18,7 @@
 const StripeService = require('../integrations/payment/stripe-service');
 const PayPalService = require('../integrations/payment/paypal-service');
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const OrganizationModel = require('../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model');
 const AuditLogModel = require('../database/models/security/audit-log-model');
 const CacheService = require('./cache-service');

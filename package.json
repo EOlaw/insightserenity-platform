@@ -124,15 +124,20 @@
     "@azure/identity": "^4.10.2",
     "@azure/storage-blob": "^12.28.0",
     "@google-cloud/storage": "^7.16.0",
+    "argon2": "^0.43.1",
+    "dompurify": "^3.2.6",
     "fs-extra": "^11.3.0",
     "joi": "^18.0.0",
     "js-yaml": "^4.1.0",
+    "jsdom": "^26.1.0",
     "next": "15.4.2",
     "node-cron": "^4.2.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "sanitize-html": "^2.17.0",
     "systeminformation": "^5.27.7",
-    "xml2js": "^0.6.2"
+    "xml2js": "^0.6.2",
+    "xss": "^1.0.15"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.1.0",

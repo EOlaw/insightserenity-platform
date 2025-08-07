@@ -477,10 +477,11 @@ const usageRecordSchemaDefinition = {
   },
 
   // ==================== Audit & Compliance ====================
-  audit: {
+  auditData: {
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
+      ref: 'User',
+      required: true
     },
     
     modifiedBy: [{
@@ -618,13 +619,13 @@ usageRecordSchema.pre('save', async function(next) {
       this.processing.completedAt = new Date();
     }
 
-    // Add to audit trail
+    // Add to auditData trail
     if (!this.isNew && this.isModified()) {
-      if (!this.audit.trail) {
-        this.audit.trail = [];
+      if (!this.auditData.trail) {
+        this.auditData.trail = [];
       }
       
-      this.audit.trail.push({
+      this.auditData.trail.push({
         action: 'update',
         performedAt: new Date(),
         changes: {
@@ -835,11 +836,11 @@ usageRecordSchema.methods.waive = async function(reason, userId) {
     type: 'adjustment'
   });
 
-  if (!this.audit.trail) {
-    this.audit.trail = [];
+  if (!this.auditData.trail) {
+    this.auditData.trail = [];
   }
   
-  this.audit.trail.push({
+  this.auditData.trail.push({
     action: 'waive',
     performedBy: userId,
     performedAt: new Date(),

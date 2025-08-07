@@ -745,7 +745,7 @@ const apiIntegrationSchemaDefinition = {
   },
 
   // ==================== Audit & Compliance ====================
-  audit: {
+  auditData: {
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -876,13 +876,13 @@ apiIntegrationSchema.pre('save', async function(next) {
       this.usage.monthlyQuota.resetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     }
 
-    // Add audit trail entry
+    // Add auditData trail entry
     if (!this.isNew && this.isModified()) {
-      if (!this.audit.modifiedBy) {
-        this.audit.modifiedBy = [];
+      if (!this.auditData.modifiedBy) {
+        this.auditData.modifiedBy = [];
       }
       
-      this.audit.modifiedBy.push({
+      this.auditData.modifiedBy.push({
         at: new Date(),
         action: 'update',
         changes: {
@@ -900,7 +900,7 @@ apiIntegrationSchema.pre('save', async function(next) {
 // ==================== Post-save Middleware ====================
 apiIntegrationSchema.post('save', async function(doc) {
   try {
-    // Log audit event
+    // Log auditData event
     await auditService.logSecurityEvent({
       eventType: doc.isNew ? 'API_INTEGRATION_CREATED' : 'API_INTEGRATION_UPDATED',
       tenantId: doc.tenantId,
@@ -1213,11 +1213,11 @@ apiIntegrationSchema.methods.activate = async function(userId) {
   
   this.status.state = 'active';
   
-  if (!this.audit.modifiedBy) {
-    this.audit.modifiedBy = [];
+  if (!this.auditData.modifiedBy) {
+    this.auditData.modifiedBy = [];
   }
   
-  this.audit.modifiedBy.push({
+  this.auditData.modifiedBy.push({
     user: userId,
     at: new Date(),
     action: 'activate'
@@ -1240,11 +1240,11 @@ apiIntegrationSchema.methods.deactivate = async function(userId, reason = 'Manua
   
   this.status.state = 'inactive';
   
-  if (!this.audit.modifiedBy) {
-    this.audit.modifiedBy = [];
+  if (!this.auditData.modifiedBy) {
+    this.auditData.modifiedBy = [];
   }
   
-  this.audit.modifiedBy.push({
+  this.auditData.modifiedBy.push({
     user: userId,
     at: new Date(),
     action: 'deactivate',

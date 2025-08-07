@@ -7,7 +7,7 @@
 
 // Core utilities
 const Logger = require('./logger');
-const AppError = require('./app-error');
+const { AppError } = require('./app-error');
 const AsyncHandler = require('./async-handler');
 const ResponseFormatter = require('./response-formatter');
 

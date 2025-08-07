@@ -16,7 +16,7 @@
 const formData = require('form-data');
 const Mailgun = require('mailgun.js');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const CacheService = require('../../services/cache-service');
 const emailHelper = require('../../utils/helpers/email-helper');

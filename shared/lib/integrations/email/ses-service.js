@@ -16,7 +16,7 @@
 const { SESClient, SendEmailCommand, SendBulkEmailCommand, GetAccountSendingQuotaCommand } = require('@aws-sdk/client-ses');
 const { SESv2Client, SendEmailCommand: SendEmailV2Command, PutAccountSuppressionAttributesCommand, GetSuppressionAttributesCommand } = require('@aws-sdk/client-sesv2');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const CacheService = require('../../services/cache-service');
 const emailHelper = require('../../utils/helpers/email-helper');

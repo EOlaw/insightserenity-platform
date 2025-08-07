@@ -15,7 +15,7 @@
 const { Client: ElasticsearchClient } = require('@elastic/elasticsearch');
 const Fuse = require('fuse.js');
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const CacheService = require('./cache-service');
 const config = require('../../config');
 const { ERROR_CODES } = require('../utils/constants/error-codes');

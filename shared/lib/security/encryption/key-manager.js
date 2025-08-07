@@ -15,7 +15,7 @@ const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 
 /**
  * @class KeyManager

@@ -13,7 +13,7 @@
 
 const axios = require('axios');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const CacheService = require('../../services/cache-service');
 const ExternalApiService = require('../../services/external-api-service');

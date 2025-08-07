@@ -14,7 +14,7 @@
  */
 
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const CacheService = require('./cache-service');
 const WebhookService = require('./webhook-service');
 const OrganizationModel = require('../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model');

@@ -10,7 +10,7 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const AuditService = require('../audit/audit-service');
 const EncryptionService = require('../encryption/encryption-service');
 

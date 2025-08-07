@@ -25,7 +25,7 @@ const RBACService = require('../../security/access-control/rbac-service');
 const PermissionService = require('../../security/access-control/permission-service');
 const AuditService = require('../../security/audit/audit-service');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 
 /**

@@ -29,7 +29,7 @@ const CacheService = require('../../services/cache-service');
 const EncryptionService = require('../../security/encryption/encryption-service');
 const AuditService = require('../../security/audit/audit-service');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 
 /**

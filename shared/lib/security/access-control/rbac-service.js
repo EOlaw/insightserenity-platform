@@ -11,7 +11,7 @@
  */
 
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const RoleService = require('./role-service');
 const PermissionService = require('./permission-service');
 const PolicyEngine = require('./policy-engine');

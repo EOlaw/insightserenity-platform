@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const argon2 = require('argon2');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 
 /**
  * @class HashService

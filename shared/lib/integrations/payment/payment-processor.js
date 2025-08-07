@@ -16,7 +16,7 @@
 const StripeService = require('./stripe-service');
 const PayPalService = require('./paypal-service');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const CacheService = require('../../services/cache-service');
 const AuditLogModel = require('../../database/models/security/audit-log-model');

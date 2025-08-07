@@ -16,12 +16,12 @@
 
 const crypto = require('crypto');
 const CacheService = require('../../services/cache-service');
-const RateLimitModel = require('../../database/models/rate-limit-model');
+const RateLimitModel = require('../../database/models/security/rate-limit-model');
 const UserModel = require('../../database/models/users/user-model');
 const AuditService = require('../../security/audit/audit-service');
 const NotificationService = require('../../services/notification-service');
 const logger = require('../../utils/logger');
-const AppError = require('../../utils/app-error');
+const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 
 /**

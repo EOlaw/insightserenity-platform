@@ -16,7 +16,7 @@
 const twilio = require('twilio');
 const AWS = require('aws-sdk');
 const logger = require('../utils/logger');
-const AppError = require('../utils/app-error');
+const { AppError } = require('../utils/app-error');
 const NotificationModel = require('../database/models/platform/notification-model');
 const AuditLogModel = require('../database/models/security/audit-log-model').model;
 const CacheService = require('./cache-service');
