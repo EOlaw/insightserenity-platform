@@ -1,367 +1,1285 @@
 'use strict';
 
 /**
- * @fileoverview Maintenance management validators for admin operations
+ * @fileoverview Maintenance window and operations validation rules
  * @module servers/admin-server/modules/platform-management/validators/maintenance-validators
- * @requires module:express-validator
+ * @requires joi
  * @requires module:shared/lib/utils/validators/common-validators
+ * @requires module:shared/lib/utils/constants/status-codes
+ * @requires module:shared/lib/utils/constants/error-codes
+ * @requires module:shared/lib/utils/logger
+ * @requires module:shared/lib/utils/helpers/date-helper
  */
 
-const { body, param, query, validationResult } = require('express-validator');
-const {
-  isValidObjectId,
-  isValidCron,
-  isValidSemver,
-  sanitizeInput
-} = require('../../../../../shared/lib/utils/validators/common-validators');
-
-/**
- * Validate maintenance window creation/update
- * @type {Array<ValidationChain>}
- */
-const validateMaintenanceWindow = [
-  body('title')
-    .notEmpty().withMessage('Title is required')
-    .isLength({ min: 5, max: 200 }).withMessage('Title must be between 5 and 200 characters')
-    .customSanitizer(sanitizeInput),
-  body('description')
-    .notEmpty().withMessage('Description is required')
-    .isLength({ min: 10, max: 1000 }).withMessage('Description must be between 10 and 1000 characters')
-    .customSanitizer(sanitizeInput),
-  body('type')
-    .notEmpty().withMessage('Maintenance type is required')
-    .isIn(['scheduled', 'emergency', 'routine', 'upgrade'])
-    .withMessage('Invalid maintenance type'),
-  body('startTime')
-    .notEmpty().withMessage('Start time is required')
-    .isISO8601().withMessage('Invalid start time format')
-    .toDate()
-    .custom((value, { req }) => {
-      if (req.body.type !== 'emergency' && new Date(value) <= new Date()) {
-        return false;
-      }
-      return true;
-    }).withMessage('Start time must be in the future for non-emergency maintenance'),
-  body('endTime')
-    .notEmpty().withMessage('End time is required')
-    .isISO8601().withMessage('Invalid end time format')
-    .toDate()
-    .custom((endTime, { req }) => {
-      if (req.body.startTime && new Date(endTime) <= new Date(req.body.startTime)) {
-        return false;
-      }
-      return true;
-    }).withMessage('End time must be after start time'),
-  body('affectedServices')
-    .notEmpty().withMessage('Affected services are required')
-    .isArray({ min: 1 }).withMessage('At least one service must be specified')
-    .custom((services) => {
-      const validServices = ['api', 'web', 'database', 'cache', 'storage', 'messaging', 'analytics', 'all'];
-      return services.every(service => validServices.includes(service));
-    }).withMessage('Invalid service specified'),
-  body('impact')
-    .notEmpty().withMessage('Impact level is required')
-    .isIn(['none', 'minimal', 'partial', 'major', 'complete'])
-    .withMessage('Invalid impact level'),
-  body('notificationSettings')
-    .optional()
-    .isObject().withMessage('Notification settings must be an object'),
-  body('notificationSettings.advanceNotice')
-    .optional()
-    .isArray().withMessage('Advance notice must be an array')
-    .custom((notices) => {
-      return notices.every(notice => 
-        notice.time && notice.unit && 
-        ['minutes', 'hours', 'days'].includes(notice.unit) &&
-        notice.time > 0
-      );
-    }).withMessage('Invalid advance notice configuration'),
-  body('notificationSettings.channels')
-    .optional()
-    .isArray().withMessage('Channels must be an array')
-    .custom((channels) => {
-      const validChannels = ['email', 'sms', 'inApp', 'webhook'];
-      return channels.every(channel => validChannels.includes(channel));
-    }).withMessage('Invalid notification channel'),
-  body('requireApproval')
-    .optional()
-    .isBoolean().withMessage('Require approval must be boolean'),
-];
+const Joi = require('joi');
+const commonValidators = require('../../../../../shared/lib/utils/validators/common-validators');
+const { StatusCodes } = require('../../../../../shared/lib/utils/constants/status-codes');
+const { ErrorCodes } = require('../../../../../shared/lib/utils/constants/error-codes');
+const logger = require('../../../../../shared/lib/utils/logger');
+const dateHelper = require('../../../../../shared/lib/utils/helpers/date-helper');
 
 /**
- * Validate deployment request
- * @type {Array<ValidationChain>}
+ * Custom validation messages for maintenance operations
  */
-const validateDeployment = [
-  body('applicationName')
-    .notEmpty().withMessage('Application name is required')
-    .matches(/^[a-z][a-z0-9-]*$/).withMessage('Application name must be lowercase with hyphens')
-    .isLength({ min: 3, max: 50 }).withMessage('Application name must be between 3 and 50 characters'),
-  body('version')
-    .notEmpty().withMessage('Version is required')
-    .custom(isValidSemver).withMessage('Invalid semantic version format'),
-  body('environment')
-    .notEmpty().withMessage('Environment is required')
-    .isIn(['development', 'staging', 'production'])
-    .withMessage('Invalid environment'),
-  body('deploymentStrategy')
-    .notEmpty().withMessage('Deployment strategy is required')
-    .isIn(['rolling', 'blueGreen', 'canary', 'recreate'])
-    .withMessage('Invalid deployment strategy'),
-  body('rollbackEnabled')
-    .optional()
-    .isBoolean().withMessage('Rollback enabled must be boolean'),
-  body('healthCheckConfig')
-    .optional()
-    .isObject().withMessage('Health check config must be an object'),
-  body('healthCheckConfig.endpoint')
-    .optional()
-    .matches(/^\/[a-zA-Z0-9\/-]*$/).withMessage('Invalid health check endpoint'),
-  body('healthCheckConfig.interval')
-    .optional()
-    .isInt({ min: 5, max: 300 }).withMessage('Health check interval must be between 5 and 300 seconds'),
-  body('healthCheckConfig.timeout')
-    .optional()
-    .isInt({ min: 1, max: 60 }).withMessage('Health check timeout must be between 1 and 60 seconds'),
-  body('healthCheckConfig.retries')
-    .optional()
-    .isInt({ min: 1, max: 10 }).withMessage('Health check retries must be between 1 and 10'),
-  body('canaryConfig')
-    .optional()
-    .isObject().withMessage('Canary config must be an object')
-    .custom((config, { req }) => {
-      if (req.body.deploymentStrategy === 'canary' && !config) {
-        return false;
-      }
-      if (config && (!config.percentage || config.percentage < 1 || config.percentage > 50)) {
-        return false;
-      }
-      return true;
-    }).withMessage('Invalid canary configuration'),
-  body('preDeploymentChecks')
-    .optional()
-    .isArray().withMessage('Pre-deployment checks must be an array'),
-  body('postDeploymentChecks')
-    .optional()
-    .isArray().withMessage('Post-deployment checks must be an array'),
-];
-
-/**
- * Validate migration request
- * @type {Array<ValidationChain>}
- */
-const validateMigration = [
-  body('migrationType')
-    .notEmpty().withMessage('Migration type is required')
-    .isIn(['database', 'data', 'schema', 'configuration'])
-    .withMessage('Invalid migration type'),
-  body('source')
-    .notEmpty().withMessage('Source is required')
-    .isObject().withMessage('Source must be an object'),
-  body('source.version')
-    .notEmpty().withMessage('Source version is required')
-    .custom(isValidSemver).withMessage('Invalid source version format'),
-  body('target')
-    .notEmpty().withMessage('Target is required')
-    .isObject().withMessage('Target must be an object'),
-  body('target.version')
-    .notEmpty().withMessage('Target version is required')
-    .custom(isValidSemver).withMessage('Invalid target version format')
-    .custom((targetVersion, { req }) => {
-      if (req.body.source?.version) {
-        // Simple check - in real implementation would use semver comparison
-        return targetVersion > req.body.source.version;
-      }
-      return true;
-    }).withMessage('Target version must be newer than source version'),
-  body('backupRequired')
-    .optional()
-    .isBoolean().withMessage('Backup required must be boolean'),
-  body('validationSteps')
-    .optional()
-    .isArray().withMessage('Validation steps must be an array')
-    .custom((steps) => {
-      return steps.every(step => 
-        step.name && step.type && 
-        ['preCheck', 'postCheck', 'validation'].includes(step.type)
-      );
-    }).withMessage('Invalid validation step configuration'),
-  body('rollbackPlan')
-    .notEmpty().withMessage('Rollback plan is required')
-    .isObject().withMessage('Rollback plan must be an object'),
-  body('rollbackPlan.automatic')
-    .optional()
-    .isBoolean().withMessage('Automatic rollback must be boolean'),
-  body('rollbackPlan.conditions')
-    .optional()
-    .isArray().withMessage('Rollback conditions must be an array'),
-  body('estimatedDuration')
-    .optional()
-    .isInt({ min: 1, max: 1440 }).withMessage('Estimated duration must be between 1 and 1440 minutes'),
-];
-
-/**
- * Validate system update request
- * @type {Array<ValidationChain>}
- */
-const validateSystemUpdate = [
-  body('updateType')
-    .notEmpty().withMessage('Update type is required')
-    .isIn(['security', 'feature', 'bugfix', 'performance', 'dependency'])
-    .withMessage('Invalid update type'),
-  body('packages')
-    .notEmpty().withMessage('Packages are required')
-    .isArray({ min: 1 }).withMessage('At least one package must be specified')
-    .custom((packages) => {
-      return packages.every(pkg => 
-        pkg.name && pkg.currentVersion && pkg.targetVersion &&
-        isValidSemver(pkg.currentVersion) && isValidSemver(pkg.targetVersion)
-      );
-    }).withMessage('Invalid package configuration'),
-  body('priority')
-    .notEmpty().withMessage('Priority is required')
-    .isIn(['low', 'medium', 'high', 'critical'])
-    .withMessage('Invalid priority'),
-  body('requireRestart')
-    .optional()
-    .isBoolean().withMessage('Require restart must be boolean'),
-  body('compatibility')
-    .optional()
-    .isObject().withMessage('Compatibility must be an object'),
-  body('compatibility.breakingChanges')
-    .optional()
-    .isBoolean().withMessage('Breaking changes must be boolean'),
-  body('compatibility.minimumVersion')
-    .optional()
-    .custom(isValidSemver).withMessage('Invalid minimum version format'),
-  body('testingRequired')
-    .optional()
-    .isBoolean().withMessage('Testing required must be boolean'),
-  body('schedule')
-    .optional()
-    .isObject().withMessage('Schedule must be an object'),
-  body('schedule.type')
-    .optional()
-    .isIn(['immediate', 'scheduled', 'maintenance_window'])
-    .withMessage('Invalid schedule type'),
-  body('schedule.time')
-    .optional()
-    .isISO8601().withMessage('Invalid schedule time format')
-    .toDate(),
-];
-
-/**
- * Validate health check request
- * @type {Array<ValidationChain>}
- */
-const validateHealthCheck = [
-  body('checkType')
-    .notEmpty().withMessage('Check type is required')
-    .isIn(['quick', 'standard', 'comprehensive', 'custom'])
-    .withMessage('Invalid check type'),
-  body('components')
-    .optional()
-    .isArray().withMessage('Components must be an array')
-    .custom((components) => {
-      const validComponents = [
-        'api', 'database', 'cache', 'storage', 'messaging', 
-        'authentication', 'monitoring', 'networking', 'integrations'
-      ];
-      return components.every(comp => validComponents.includes(comp));
-    }).withMessage('Invalid component specified'),
-  body('depth')
-    .optional()
-    .isIn(['surface', 'moderate', 'deep'])
-    .withMessage('Invalid check depth'),
-  body('timeout')
-    .optional()
-    .isInt({ min: 5, max: 300 }).withMessage('Timeout must be between 5 and 300 seconds'),
-  body('includeMetrics')
-    .optional()
-    .isBoolean().withMessage('Include metrics must be boolean'),
-  body('includeLogs')
-    .optional()
-    .isBoolean().withMessage('Include logs must be boolean'),
-  body('customChecks')
-    .optional()
-    .isArray().withMessage('Custom checks must be an array')
-    .custom((checks) => {
-      return checks.every(check => 
-        check.name && check.endpoint && check.expectedStatus
-      );
-    }).withMessage('Invalid custom check configuration'),
-];
-
-/**
- * Validate backup scheduling
- * @type {Array<ValidationChain>}
- */
-const validateBackupSchedule = [
-  body('scheduleName')
-    .notEmpty().withMessage('Schedule name is required')
-    .matches(/^[a-z][a-z0-9-]*$/).withMessage('Schedule name must be lowercase with hyphens')
-    .isLength({ min: 3, max: 50 }).withMessage('Schedule name must be between 3 and 50 characters'),
-  body('frequency')
-    .notEmpty().withMessage('Frequency is required')
-    .isIn(['hourly', 'daily', 'weekly', 'monthly', 'custom'])
-    .withMessage('Invalid frequency'),
-  body('cronExpression')
-    .optional()
-    .custom((value, { req }) => {
-      if (req.body.frequency === 'custom' && !value) {
-        return false;
-      }
-      if (value && !isValidCron(value)) {
-        return false;
-      }
-      return true;
-    }).withMessage('Invalid or missing cron expression for custom frequency'),
-  body('backupType')
-    .notEmpty().withMessage('Backup type is required')
-    .isIn(['full', 'incremental', 'differential'])
-    .withMessage('Invalid backup type'),
-  body('retention')
-    .notEmpty().withMessage('Retention policy is required')
-    .isObject().withMessage('Retention must be an object'),
-  body('retention.count')
-    .optional()
-    .isInt({ min: 1, max: 100 }).withMessage('Retention count must be between 1 and 100'),
-  body('retention.days')
-    .optional()
-    .isInt({ min: 1, max: 365 }).withMessage('Retention days must be between 1 and 365'),
-  body('enabled')
-    .notEmpty().withMessage('Enabled status is required')
-    .isBoolean().withMessage('Enabled must be boolean'),
-];
-
-/**
- * Middleware to handle validation errors
- * @param {Object} req Express request object
- * @param {Object} res Express response object
- * @param {Function} next Express next middleware
- * @returns {void|Object}
- */
-const handleValidationErrors = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array().map(err => ({
-        field: err.param,
-        message: err.msg,
-        value: err.value
-      }))
-    });
-  }
-  next();
+const VALIDATION_MESSAGES = {
+  MAINTENANCE_ID_REQUIRED: 'Maintenance ID is required',
+  MAINTENANCE_ID_INVALID: 'Invalid maintenance ID format',
+  MAINTENANCE_TYPE_INVALID: 'Invalid maintenance type',
+  MAINTENANCE_STATUS_INVALID: 'Invalid maintenance status',
+  START_TIME_REQUIRED: 'Start time is required',
+  END_TIME_REQUIRED: 'End time is required',
+  START_TIME_PAST: 'Start time cannot be in the past',
+  END_TIME_BEFORE_START: 'End time must be after start time',
+  DURATION_EXCEEDED: 'Maintenance window duration exceeds maximum allowed',
+  REASON_REQUIRED: 'Reason for maintenance is required',
+  AFFECTED_SERVICES_REQUIRED: 'At least one affected service must be specified',
+  NOTIFICATION_LEAD_TIME_INVALID: 'Notification lead time must be at least 15 minutes',
+  APPROVAL_REQUIRED: 'Approval is required for this maintenance type',
+  HANDLER_ID_INVALID: 'Invalid handler ID format',
+  TASK_ID_INVALID: 'Invalid task ID format',
+  TEMPLATE_ID_INVALID: 'Invalid template ID format',
+  RECURRENCE_PATTERN_INVALID: 'Invalid recurrence pattern',
+  MAX_TASKS_EXCEEDED: 'Maximum number of maintenance tasks exceeded',
+  CONFIRMATION_REQUIRED: 'Confirmation is required for this operation',
+  EXTENSION_DURATION_INVALID: 'Extension duration must be between 15 minutes and 4 hours',
+  ROLLBACK_PLAN_REQUIRED: 'Rollback plan is required for critical maintenance',
+  TEAM_MEMBER_REQUIRED: 'At least one team member must be assigned'
 };
 
+/**
+ * Common validation schemas for maintenance operations
+ */
+const commonSchemas = {
+  maintenanceId: Joi.string()
+    .pattern(/^maint-[a-zA-Z0-9]{8,32}$/)
+    .required()
+    .messages({
+      'string.pattern.base': VALIDATION_MESSAGES.MAINTENANCE_ID_INVALID,
+      'any.required': VALIDATION_MESSAGES.MAINTENANCE_ID_REQUIRED
+    }),
+
+  maintenanceType: Joi.string()
+    .valid(
+      'scheduled',
+      'emergency',
+      'routine',
+      'upgrade',
+      'security',
+      'performance',
+      'database',
+      'network',
+      'hardware',
+      'software'
+    )
+    .messages({
+      'any.only': VALIDATION_MESSAGES.MAINTENANCE_TYPE_INVALID
+    }),
+
+  maintenanceStatus: Joi.string()
+    .valid(
+      'draft',
+      'scheduled',
+      'pending_approval',
+      'approved',
+      'in_progress',
+      'paused',
+      'completed',
+      'cancelled',
+      'failed'
+    )
+    .messages({
+      'any.only': VALIDATION_MESSAGES.MAINTENANCE_STATUS_INVALID
+    }),
+
+  maintenanceWindow: Joi.object({
+    startTime: Joi.date().iso().greater('now').required()
+      .messages({
+        'date.greater': VALIDATION_MESSAGES.START_TIME_PAST,
+        'any.required': VALIDATION_MESSAGES.START_TIME_REQUIRED
+      }),
+    endTime: Joi.date().iso().greater(Joi.ref('startTime')).required()
+      .messages({
+        'date.greater': VALIDATION_MESSAGES.END_TIME_BEFORE_START,
+        'any.required': VALIDATION_MESSAGES.END_TIME_REQUIRED
+      }),
+    timezone: Joi.string().default('UTC'),
+    duration: Joi.number().min(15).max(1440) // 15 minutes to 24 hours
+  }),
+
+  affectedServices: Joi.array()
+    .items(
+      Joi.object({
+        name: Joi.string().required(),
+        type: Joi.string().valid('full', 'partial', 'readonly').default('full'),
+        expectedDowntime: Joi.number().min(0),
+        components: Joi.array().items(Joi.string())
+      })
+    )
+    .min(1)
+    .messages({
+      'array.min': VALIDATION_MESSAGES.AFFECTED_SERVICES_REQUIRED
+    }),
+
+  notificationSettings: Joi.object({
+    enabled: Joi.boolean().default(true),
+    leadTime: Joi.number().min(15).max(10080).default(1440), // 15 minutes to 7 days
+    channels: Joi.array().items(
+      Joi.string().valid('email', 'sms', 'slack', 'teams', 'webhook', 'in-app')
+    ),
+    recipients: Joi.object({
+      users: Joi.array().items(Joi.string()),
+      groups: Joi.array().items(Joi.string()),
+      roles: Joi.array().items(Joi.string()),
+      external: Joi.array().items(Joi.string().email())
+    }),
+    template: Joi.string(),
+    customMessage: Joi.string().max(1000)
+  }),
+
+  taskDefinition: Joi.object({
+    name: Joi.string().min(3).max(100).required(),
+    description: Joi.string().max(500),
+    type: Joi.string().valid('manual', 'automated', 'verification', 'rollback').required(),
+    order: Joi.number().integer().min(1),
+    dependencies: Joi.array().items(Joi.string()),
+    estimatedDuration: Joi.number().min(1),
+    required: Joi.boolean().default(true),
+    script: Joi.when('type', {
+      is: 'automated',
+      then: Joi.string().required()
+    }),
+    assignee: Joi.string(),
+    checkpoints: Joi.array().items(
+      Joi.object({
+        name: Joi.string().required(),
+        criteria: Joi.string().required(),
+        type: Joi.string().valid('manual', 'automated').default('manual')
+      })
+    )
+  }),
+
+  impactAssessment: Joi.object({
+    severity: Joi.string().valid('critical', 'high', 'medium', 'low').required(),
+    scope: Joi.string().valid('global', 'regional', 'local', 'isolated').required(),
+    estimatedUsers: Joi.number().integer().min(0),
+    estimatedRevenueLoss: Joi.number().min(0),
+    businessImpact: Joi.string().max(1000),
+    technicalImpact: Joi.string().max(1000),
+    mitigationStrategies: Joi.array().items(Joi.string())
+  }),
+
+  approvalRequirements: Joi.object({
+    required: Joi.boolean().default(true),
+    minimumApprovers: Joi.number().integer().min(1).default(1),
+    approvers: Joi.array().items(
+      Joi.object({
+        user: Joi.string().required(),
+        role: Joi.string(),
+        required: Joi.boolean().default(false)
+      })
+    ),
+    deadline: Joi.date().iso(),
+    escalationPath: Joi.array().items(
+      Joi.object({
+        level: Joi.number().integer().min(1).required(),
+        users: Joi.array().items(Joi.string()).required(),
+        timeout: Joi.number().min(15).max(1440) // minutes
+      })
+    )
+  }),
+
+  rollbackPlan: Joi.object({
+    strategy: Joi.string().valid('automatic', 'manual', 'checkpoint').required(),
+    trigger: Joi.object({
+      conditions: Joi.array().items(
+        Joi.object({
+          metric: Joi.string().required(),
+          threshold: Joi.number().required(),
+          operator: Joi.string().valid('gt', 'gte', 'lt', 'lte', 'eq', 'neq').required()
+        })
+      ),
+      manualApproval: Joi.boolean().default(false)
+    }),
+    steps: Joi.array().items(
+      Joi.object({
+        order: Joi.number().integer().min(1).required(),
+        action: Joi.string().required(),
+        automated: Joi.boolean().default(false),
+        script: Joi.string(),
+        timeout: Joi.number().min(1).max(60)
+      })
+    ),
+    verificationSteps: Joi.array().items(Joi.string()),
+    estimatedTime: Joi.number().min(1)
+  }),
+
+  pagination: Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(20),
+    sort: Joi.string().default('-scheduledAt'),
+    order: Joi.string().valid('asc', 'desc').default('desc')
+  })
+};
+
+/**
+ * Maintenance scheduling validators
+ */
+const maintenanceSchedulingValidators = {
+  /**
+   * Validate schedule maintenance window request
+   */
+  scheduleMaintenanceWindow: {
+    body: Joi.object({
+      title: Joi.string().min(5).max(200).required(),
+      description: Joi.string().max(2000).required(),
+      type: commonSchemas.maintenanceType.required(),
+      priority: Joi.string().valid('critical', 'high', 'medium', 'low').required(),
+      window: commonSchemas.maintenanceWindow,
+      affectedServices: commonSchemas.affectedServices,
+      impactAssessment: commonSchemas.impactAssessment.required(),
+      tasks: Joi.array().items(commonSchemas.taskDefinition).max(50),
+      rollbackPlan: Joi.when('type', {
+        is: Joi.valid('upgrade', 'critical', 'database'),
+        then: commonSchemas.rollbackPlan.required()
+      }),
+      notifications: commonSchemas.notificationSettings,
+      approval: commonSchemas.approvalRequirements,
+      team: Joi.array().items(
+        Joi.object({
+          userId: Joi.string().required(),
+          role: Joi.string().valid('lead', 'engineer', 'observer').required(),
+          responsibilities: Joi.array().items(Joi.string())
+        })
+      ).min(1).messages({
+        'array.min': VALIDATION_MESSAGES.TEAM_MEMBER_REQUIRED
+      }),
+      changeRequest: Joi.object({
+        ticketId: Joi.string(),
+        system: Joi.string().valid('jira', 'servicenow', 'internal'),
+        link: Joi.string().uri()
+      }),
+      testPlan: Joi.object({
+        preChecks: Joi.array().items(Joi.string()),
+        postChecks: Joi.array().items(Joi.string()),
+        acceptanceCriteria: Joi.array().items(Joi.string())
+      }),
+      metadata: Joi.object(),
+      tags: Joi.array().items(Joi.string().max(50)).max(10)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate schedule recurring maintenance request
+   */
+  scheduleRecurringMaintenance: {
+    body: Joi.object({
+      baseConfiguration: Joi.object({
+        title: Joi.string().min(5).max(200).required(),
+        description: Joi.string().max(2000).required(),
+        type: commonSchemas.maintenanceType.required(),
+        priority: Joi.string().valid('critical', 'high', 'medium', 'low').required(),
+        duration: Joi.number().min(15).max(480).required(), // minutes
+        affectedServices: commonSchemas.affectedServices,
+        tasks: Joi.array().items(commonSchemas.taskDefinition).max(50),
+        team: Joi.array().items(
+          Joi.object({
+            userId: Joi.string().required(),
+            role: Joi.string().valid('lead', 'engineer', 'observer').required()
+          })
+        ).min(1)
+      }).required(),
+      recurrence: Joi.object({
+        pattern: Joi.string().valid('daily', 'weekly', 'monthly', 'custom').required(),
+        interval: Joi.number().integer().min(1).max(12).default(1),
+        daysOfWeek: Joi.when('pattern', {
+          is: 'weekly',
+          then: Joi.array().items(Joi.number().min(0).max(6)).min(1).required()
+        }),
+        dayOfMonth: Joi.when('pattern', {
+          is: 'monthly',
+          then: Joi.number().min(1).max(31).required()
+        }),
+        time: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).required(),
+        timezone: Joi.string().default('UTC'),
+        customCron: Joi.when('pattern', {
+          is: 'custom',
+          then: Joi.string().required()
+        })
+      }).required(),
+      schedule: Joi.object({
+        startDate: Joi.date().iso().required(),
+        endDate: Joi.date().iso().greater(Joi.ref('startDate')),
+        occurrences: Joi.number().integer().min(1).max(100),
+        blackoutDates: Joi.array().items(Joi.date().iso())
+      }).required(),
+      notifications: commonSchemas.notificationSettings,
+      autoApprove: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate schedule emergency maintenance request
+   */
+  scheduleEmergencyMaintenance: {
+    body: Joi.object({
+      title: Joi.string().min(5).max(200).required(),
+      reason: Joi.string().min(10).max(2000).required(),
+      severity: Joi.string().valid('critical', 'high').required(),
+      startTime: Joi.date().iso().required(),
+      estimatedDuration: Joi.number().min(5).max(240).required(), // minutes
+      affectedServices: commonSchemas.affectedServices,
+      immediateActions: Joi.array().items(
+        Joi.object({
+          action: Joi.string().required(),
+          responsible: Joi.string().required(),
+          status: Joi.string().valid('pending', 'in-progress', 'completed').default('pending')
+        })
+      ).min(1).required(),
+      incidentId: Joi.string(),
+      approvedBy: Joi.string().required(),
+      notifications: Joi.object({
+        sendImmediately: Joi.boolean().default(true),
+        channels: Joi.array().items(
+          Joi.string().valid('email', 'sms', 'slack', 'pagerduty')
+        ).default(['email', 'sms', 'slack']),
+        customMessage: Joi.string().max(500)
+      }),
+      postMortem: Joi.object({
+        scheduled: Joi.boolean().default(true),
+        date: Joi.date().iso().greater('now')
+      })
+    }).unknown(false)
+  },
+
+  /**
+   * Validate reschedule maintenance window request
+   */
+  rescheduleMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      newWindow: commonSchemas.maintenanceWindow,
+      reason: Joi.string().min(10).max(500).required(),
+      notifyAffectedParties: Joi.boolean().default(true),
+      requireReapproval: Joi.boolean().default(true)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate batch schedule maintenance request
+   */
+  batchScheduleMaintenance: {
+    body: Joi.object({
+      maintenanceWindows: Joi.array().items(
+        Joi.object({
+          title: Joi.string().min(5).max(200).required(),
+          description: Joi.string().max(2000).required(),
+          type: commonSchemas.maintenanceType.required(),
+          window: commonSchemas.maintenanceWindow,
+          affectedServices: commonSchemas.affectedServices,
+          priority: Joi.string().valid('critical', 'high', 'medium', 'low').required()
+        })
+      ).min(1).max(10).required(),
+      commonSettings: Joi.object({
+        notifications: commonSchemas.notificationSettings,
+        approval: commonSchemas.approvalRequirements,
+        team: Joi.array().items(
+          Joi.object({
+            userId: Joi.string().required(),
+            role: Joi.string().valid('lead', 'engineer', 'observer').required()
+          })
+        )
+      }),
+      validateConflicts: Joi.boolean().default(true),
+      stopOnError: Joi.boolean().default(true)
+    }).unknown(false)
+  }
+};
+
+/**
+ * Maintenance query validators
+ */
+const maintenanceQueryValidators = {
+  /**
+   * Validate get active maintenance windows request
+   */
+  getActiveMaintenanceWindows: {
+    query: Joi.object({
+      includeDetails: Joi.boolean().default(false),
+      services: Joi.array().items(Joi.string()),
+      type: commonSchemas.maintenanceType,
+      ...commonSchemas.pagination
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get scheduled maintenance windows request
+   */
+  getScheduledMaintenanceWindows: {
+    query: Joi.object({
+      startDate: Joi.date().iso(),
+      endDate: Joi.date().iso(),
+      type: commonSchemas.maintenanceType,
+      status: commonSchemas.maintenanceStatus,
+      services: Joi.array().items(Joi.string()),
+      priority: Joi.string().valid('critical', 'high', 'medium', 'low'),
+      includeCompleted: Joi.boolean().default(false),
+      includeCancelled: Joi.boolean().default(false),
+      ...commonSchemas.pagination
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get upcoming maintenance windows request
+   */
+  getUpcomingMaintenanceWindows: {
+    query: Joi.object({
+      days: Joi.number().integer().min(1).max(90).default(7),
+      services: Joi.array().items(Joi.string()),
+      type: commonSchemas.maintenanceType,
+      priority: Joi.string().valid('critical', 'high', 'medium', 'low'),
+      includeRecurring: Joi.boolean().default(true),
+      ...commonSchemas.pagination
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get maintenance history request
+   */
+  getMaintenanceHistory: {
+    query: Joi.object({
+      startDate: Joi.date().iso(),
+      endDate: Joi.date().iso(),
+      type: commonSchemas.maintenanceType,
+      status: commonSchemas.maintenanceStatus,
+      services: Joi.array().items(Joi.string()),
+      includeMetrics: Joi.boolean().default(false),
+      includeActivities: Joi.boolean().default(false),
+      ...commonSchemas.pagination
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get maintenance calendar request
+   */
+  getMaintenanceCalendar: {
+    query: Joi.object({
+      month: Joi.number().integer().min(1).max(12),
+      year: Joi.number().integer().min(2020).max(2100),
+      view: Joi.string().valid('month', 'week', 'day').default('month'),
+      timezone: Joi.string().default('UTC'),
+      services: Joi.array().items(Joi.string()),
+      includeTypes: Joi.array().items(commonSchemas.maintenanceType),
+      format: Joi.string().valid('json', 'ical', 'csv').default('json')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate search maintenance windows request
+   */
+  searchMaintenanceWindows: {
+    query: Joi.object({
+      query: Joi.string().min(2).max(100).required(),
+      searchIn: Joi.array().items(
+        Joi.string().valid('title', 'description', 'services', 'tasks', 'tags')
+      ).default(['title', 'description']),
+      startDate: Joi.date().iso(),
+      endDate: Joi.date().iso(),
+      status: commonSchemas.maintenanceStatus,
+      type: commonSchemas.maintenanceType,
+      ...commonSchemas.pagination
+    }).unknown(false)
+  },
+
+  /**
+   * Validate check maintenance status request
+   */
+  checkMaintenanceStatus: {
+    query: Joi.object({
+      service: Joi.string(),
+      verbose: Joi.boolean().default(false),
+      includeUpcoming: Joi.boolean().default(true),
+      hours: Joi.number().integer().min(1).max(72).default(24)
+    }).unknown(false)
+  }
+};
+
+/**
+ * Maintenance execution validators
+ */
+const maintenanceExecutionValidators = {
+  /**
+   * Validate start maintenance window request
+   */
+  startMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      confirmation: Joi.string().valid('START').required(),
+      preChecksPassed: Joi.boolean().required(),
+      overrideWarnings: Joi.boolean().default(false),
+      startedBy: Joi.string().required(),
+      notes: Joi.string().max(500)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate complete maintenance window request
+   */
+  completeMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      status: Joi.string().valid('completed', 'failed', 'partial').required(),
+      completedTasks: Joi.array().items(Joi.string()),
+      failedTasks: Joi.array().items(
+        Joi.object({
+          taskId: Joi.string().required(),
+          reason: Joi.string().required(),
+          impact: Joi.string()
+        })
+      ),
+      postChecksPassed: Joi.boolean().required(),
+      actualDuration: Joi.number().min(1),
+      completedBy: Joi.string().required(),
+      summary: Joi.string().max(2000).required(),
+      followUpActions: Joi.array().items(
+        Joi.object({
+          action: Joi.string().required(),
+          assignee: Joi.string().required(),
+          dueDate: Joi.date().iso()
+        })
+      ),
+      metrics: Joi.object({
+        downtime: Joi.number().min(0),
+        affectedUsers: Joi.number().integer().min(0),
+        incidentsReported: Joi.number().integer().min(0),
+        performanceImpact: Joi.number().min(-100).max(100)
+      })
+    }).unknown(false)
+  },
+
+  /**
+   * Validate cancel maintenance window request
+   */
+  cancelMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      reason: Joi.string().min(10).max(500).required(),
+      cancelledBy: Joi.string().required(),
+      notifyAffectedParties: Joi.boolean().default(true),
+      reschedule: Joi.boolean().default(false),
+      proposedNewDate: Joi.when('reschedule', {
+        is: true,
+        then: Joi.date().iso().greater('now')
+      })
+    }).unknown(false)
+  },
+
+  /**
+   * Validate extend maintenance window request
+   */
+  extendMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      extensionMinutes: Joi.number().min(15).max(240).required()
+        .messages({
+          'number.min': VALIDATION_MESSAGES.EXTENSION_DURATION_INVALID,
+          'number.max': VALIDATION_MESSAGES.EXTENSION_DURATION_INVALID
+        }),
+      reason: Joi.string().min(10).max(500).required(),
+      requestedBy: Joi.string().required(),
+      requireApproval: Joi.boolean().default(true),
+      notifyAffectedParties: Joi.boolean().default(true)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate pause maintenance window request
+   */
+  pauseMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      reason: Joi.string().min(10).max(500).required(),
+      pausedBy: Joi.string().required(),
+      estimatedResumption: Joi.date().iso().greater('now'),
+      notifyTeam: Joi.boolean().default(true)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate resume maintenance window request
+   */
+  resumeMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      resumedBy: Joi.string().required(),
+      adjustedEndTime: Joi.date().iso().greater('now'),
+      notes: Joi.string().max(500)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate rollback maintenance window request
+   */
+  rollbackMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      reason: Joi.string().min(10).max(1000).required(),
+      rollbackType: Joi.string().valid('full', 'partial', 'checkpoint').required(),
+      targetState: Joi.string(),
+      executedBy: Joi.string().required(),
+      confirmation: Joi.string().valid('ROLLBACK').required(),
+      impactAssessment: Joi.string().max(1000).required(),
+      notifyStakeholders: Joi.boolean().default(true)
+    }).unknown(false)
+  }
+};
+
+/**
+ * Maintenance management validators
+ */
+const maintenanceManagementValidators = {
+  /**
+   * Validate get maintenance window request
+   */
+  getMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    query: Joi.object({
+      includeActivities: Joi.boolean().default(false),
+      includeTasks: Joi.boolean().default(true),
+      includeTeam: Joi.boolean().default(true),
+      includeMetrics: Joi.boolean().default(false),
+      includeApprovals: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate update maintenance window request
+   */
+  updateMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      title: Joi.string().min(5).max(200),
+      description: Joi.string().max(2000),
+      type: commonSchemas.maintenanceType,
+      priority: Joi.string().valid('critical', 'high', 'medium', 'low'),
+      window: Joi.object({
+        startTime: Joi.date().iso().greater('now'),
+        endTime: Joi.date().iso().greater(Joi.ref('startTime')),
+        timezone: Joi.string()
+      }),
+      affectedServices: commonSchemas.affectedServices,
+      impactAssessment: commonSchemas.impactAssessment,
+      rollbackPlan: commonSchemas.rollbackPlan,
+      notifications: commonSchemas.notificationSettings,
+      metadata: Joi.object(),
+      tags: Joi.array().items(Joi.string().max(50)).max(10),
+      updatedBy: Joi.string().required(),
+      updateReason: Joi.string().max(500).required()
+    }).unknown(false).min(3) // At least one field to update plus updatedBy and updateReason
+  },
+
+  /**
+   * Validate delete maintenance window request
+   */
+  deleteMaintenanceWindow: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      confirmation: Joi.string().valid('DELETE').required(),
+      reason: Joi.string().max(500).required(),
+      deletedBy: Joi.string().required()
+    }).unknown(false)
+  }
+};
+
+/**
+ * Maintenance task validators
+ */
+const maintenanceTaskValidators = {
+  /**
+   * Validate add maintenance task request
+   */
+  addMaintenanceTask: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: commonSchemas.taskDefinition
+  },
+
+  /**
+   * Validate get maintenance tasks request
+   */
+  getMaintenanceTasks: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    query: Joi.object({
+      status: Joi.string().valid('pending', 'in-progress', 'completed', 'failed', 'skipped'),
+      type: Joi.string().valid('manual', 'automated', 'verification', 'rollback'),
+      assignee: Joi.string(),
+      includeCompleted: Joi.boolean().default(true)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate update maintenance task request
+   */
+  updateMaintenanceTask: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId,
+      taskId: Joi.string().pattern(/^task-[a-zA-Z0-9]{8,32}$/).required()
+    }),
+    body: Joi.object({
+      name: Joi.string().min(3).max(100),
+      description: Joi.string().max(500),
+      status: Joi.string().valid('pending', 'in-progress', 'completed', 'failed', 'skipped'),
+      assignee: Joi.string(),
+      estimatedDuration: Joi.number().min(1),
+      actualDuration: Joi.number().min(0),
+      notes: Joi.string().max(1000),
+      result: Joi.object({
+        success: Joi.boolean(),
+        output: Joi.string(),
+        errors: Joi.array().items(Joi.string())
+      }),
+      updatedBy: Joi.string().required()
+    }).unknown(false).min(2) // At least one field to update plus updatedBy
+  },
+
+  /**
+   * Validate complete maintenance task request
+   */
+  completeMaintenanceTask: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId,
+      taskId: Joi.string().pattern(/^task-[a-zA-Z0-9]{8,32}$/).required()
+    }),
+    body: Joi.object({
+      status: Joi.string().valid('completed', 'failed', 'skipped').required(),
+      result: Joi.object({
+        success: Joi.boolean().required(),
+        output: Joi.string(),
+        errors: Joi.array().items(Joi.string()),
+        metrics: Joi.object()
+      }).required(),
+      actualDuration: Joi.number().min(0),
+      completedBy: Joi.string().required(),
+      notes: Joi.string().max(1000)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate delete maintenance task request
+   */
+  deleteMaintenanceTask: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId,
+      taskId: Joi.string().pattern(/^task-[a-zA-Z0-9]{8,32}$/).required()
+    }),
+    body: Joi.object({
+      reason: Joi.string().max(500).required(),
+      deletedBy: Joi.string().required()
+    }).unknown(false)
+  }
+};
+
+/**
+ * Maintenance impact analysis validators
+ */
+const maintenanceImpactValidators = {
+  /**
+   * Validate get maintenance impact analysis request
+   */
+  getMaintenanceImpactAnalysis: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    query: Joi.object({
+      depth: Joi.string().valid('basic', 'detailed', 'comprehensive').default('detailed'),
+      includeDownstream: Joi.boolean().default(true),
+      includeUpstream: Joi.boolean().default(true),
+      timeframe: Joi.string().valid('immediate', 'short-term', 'long-term').default('immediate')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate analyze maintenance impact request
+   */
+  analyzeMaintenanceImpact: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      analysisType: Joi.string().valid('user', 'service', 'business', 'technical', 'full').required(),
+      parameters: Joi.object({
+        userSegments: Joi.array().items(Joi.string()),
+        businessMetrics: Joi.array().items(Joi.string()),
+        technicalMetrics: Joi.array().items(Joi.string()),
+        timeHorizon: Joi.number().min(1).max(168) // hours
+      }),
+      includeRecommendations: Joi.boolean().default(true),
+      generateReport: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get affected services request
+   */
+  getAffectedServices: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    query: Joi.object({
+      includeIndirect: Joi.boolean().default(true),
+      includeDependencies: Joi.boolean().default(true),
+      depth: Joi.number().integer().min(1).max(5).default(2)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get affected users request
+   */
+  getAffectedUsers: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    query: Joi.object({
+      segment: Joi.string().valid('all', 'premium', 'standard', 'trial'),
+      region: Joi.string(),
+      includeEstimates: Joi.boolean().default(true),
+      groupBy: Joi.string().valid('segment', 'region', 'service', 'none').default('none')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get maintenance risk assessment request
+   */
+  getMaintenanceRiskAssessment: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    query: Joi.object({
+      includeHistorical: Joi.boolean().default(true),
+      includeMitigations: Joi.boolean().default(true),
+      format: Joi.string().valid('summary', 'detailed', 'matrix').default('detailed')
+    }).unknown(false)
+  }
+};
+
+/**
+ * Maintenance validation validators
+ */
+const maintenanceValidationValidators = {
+  /**
+   * Validate maintenance window validation request
+   */
+  validateMaintenanceWindow: {
+    body: Joi.object({
+      window: commonSchemas.maintenanceWindow,
+      affectedServices: commonSchemas.affectedServices,
+      type: commonSchemas.maintenanceType.required(),
+      checkConflicts: Joi.boolean().default(true),
+      checkDependencies: Joi.boolean().default(true),
+      checkResources: Joi.boolean().default(true),
+      checkApprovals: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate check maintenance conflicts request
+   */
+  checkMaintenanceConflicts: {
+    body: Joi.object({
+      window: commonSchemas.maintenanceWindow,
+      services: Joi.array().items(Joi.string()).min(1).required(),
+      conflictTypes: Joi.array().items(
+        Joi.string().valid('time', 'service', 'resource', 'dependency')
+      ).default(['time', 'service']),
+      severity: Joi.string().valid('any', 'high', 'critical').default('any')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate prerequisites validation request
+   */
+  validatePrerequisites: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      checks: Joi.array().items(
+        Joi.string().valid('approvals', 'resources', 'backups', 'dependencies', 'team')
+      ).default(['approvals', 'resources', 'backups']),
+      strict: Joi.boolean().default(true)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate test maintenance procedures request
+   */
+  testMaintenanceProcedures: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      testType: Joi.string().valid('dry-run', 'simulation', 'sandbox').required(),
+      testEnvironment: Joi.string().valid('dev', 'test', 'staging').required(),
+      tasks: Joi.array().items(Joi.string()),
+      validateOutputs: Joi.boolean().default(true),
+      rollbackAfter: Joi.boolean().default(true)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate dry run maintenance request
+   */
+  dryRunMaintenance: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      simulateErrors: Joi.boolean().default(false),
+      errorProbability: Joi.when('simulateErrors', {
+        is: true,
+        then: Joi.number().min(0).max(1).default(0.1)
+      }),
+      includePerformanceMetrics: Joi.boolean().default(true),
+      generateReport: Joi.boolean().default(true)
+    }).unknown(false)
+  }
+};
+
+/**
+ * Maintenance notification validators
+ */
+const maintenanceNotificationValidators = {
+  /**
+   * Validate send maintenance notifications request
+   */
+  sendMaintenanceNotifications: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      notificationType: Joi.string().valid(
+        'announcement',
+        'reminder',
+        'start',
+        'update',
+        'completion',
+        'cancellation'
+      ).required(),
+      channels: Joi.array().items(
+        Joi.string().valid('email', 'sms', 'slack', 'teams', 'webhook', 'in-app')
+      ).min(1).required(),
+      recipients: Joi.object({
+        all: Joi.boolean().default(false),
+        users: Joi.array().items(Joi.string()),
+        groups: Joi.array().items(Joi.string()),
+        roles: Joi.array().items(Joi.string()),
+        external: Joi.array().items(Joi.string().email()),
+        exclude: Joi.array().items(Joi.string())
+      }),
+      message: Joi.object({
+        subject: Joi.string().max(200),
+        body: Joi.string().max(2000),
+        template: Joi.string(),
+        variables: Joi.object(),
+        priority: Joi.string().valid('high', 'normal', 'low').default('normal')
+      }),
+      scheduling: Joi.object({
+        sendAt: Joi.date().iso(),
+        timezone: Joi.string().default('UTC')
+      })
+    }).unknown(false)
+  },
+
+  /**
+   * Validate schedule notifications request
+   */
+  scheduleNotifications: {
+    params: Joi.object({
+      maintenanceId: commonSchemas.maintenanceId
+    }),
+    body: Joi.object({
+      notifications: Joi.array().items(
+        Joi.object({
+          type: Joi.string().valid(
+            'announcement',
+            'reminder-7d',
+            'reminder-1d',
+            'reminder-1h',
+            'start',
+            'completion'
+          ).required(),
+          enabled: Joi.boolean().default(true),
+          channels: Joi.array().items(Joi.string()),
+          template: Joi.string(),
+          customTiming: Joi.object({
+            value: Joi.number().min(1),
+            unit: Joi.string().valid('minutes', 'hours', 'days'),
+            before: Joi.boolean().default(true)
+          })
+        })
+      ).min(1).required(),
+      defaultChannels: Joi.array().items(
+        Joi.string().valid('email', 'sms', 'slack', 'teams', 'webhook', 'in-app')
+      ),
+      recipientSettings: Joi.object({
+        includeAffectedUsers: Joi.boolean().default(true),
+        includeTeam: Joi.boolean().default(true),
+        includeStakeholders: Joi.boolean().default(true),
+        customRecipients: Joi.array().items(Joi.string())
+      })
+    }).unknown(false)
+  }
+};
+
+/**
+ * Maintenance reporting validators
+ */
+const maintenanceReportingValidators = {
+  /**
+   * Validate get maintenance statistics request
+   */
+  getMaintenanceStatistics: {
+    query: Joi.object({
+      startDate: Joi.date().iso(),
+      endDate: Joi.date().iso(),
+      groupBy: Joi.string().valid('type', 'status', 'priority', 'month', 'week'),
+      metrics: Joi.array().items(
+        Joi.string().valid(
+          'total',
+          'completed',
+          'cancelled',
+          'failed',
+          'avgDuration',
+          'avgDowntime',
+          'affectedUsers',
+          'successRate'
+        )
+      ),
+      services: Joi.array().items(Joi.string()),
+      format: Joi.string().valid('json', 'csv', 'chart').default('json')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate create maintenance report request
+   */
+  createMaintenanceReport: {
+    query: Joi.object({
+      reportType: Joi.string().valid(
+        'executive',
+        'technical',
+        'compliance',
+        'performance',
+        'incident'
+      ).required(),
+      startDate: Joi.date().iso().required(),
+      endDate: Joi.date().iso().required(),
+      includeMetrics: Joi.boolean().default(true),
+      includeCharts: Joi.boolean().default(true),
+      includeRecommendations: Joi.boolean().default(true),
+      format: Joi.string().valid('pdf', 'html', 'json', 'docx').default('pdf'),
+      recipients: Joi.array().items(Joi.string().email())
+    }).unknown(false)
+  },
+
+  /**
+   * Validate export maintenance schedule request
+   */
+  exportMaintenanceSchedule: {
+    query: Joi.object({
+      startDate: Joi.date().iso(),
+      endDate: Joi.date().iso(),
+      format: Joi.string().valid('csv', 'excel', 'ical', 'json', 'pdf').required(),
+      includeDetails: Joi.boolean().default(false),
+      services: Joi.array().items(Joi.string()),
+      timezone: Joi.string().default('UTC')
+    }).unknown(false)
+  }
+};
+
+/**
+ * Maintenance handler validators
+ */
+const maintenanceHandlerValidators = {
+  /**
+   * Validate register maintenance handler request
+   */
+  registerMaintenanceHandler: {
+    body: Joi.object({
+      name: Joi.string().min(3).max(100).required(),
+      description: Joi.string().max(500),
+      type: Joi.string().valid('pre', 'post', 'error', 'rollback').required(),
+      triggerEvents: Joi.array().items(
+        Joi.string().valid('start', 'complete', 'fail', 'cancel', 'extend')
+      ).min(1).required(),
+      handler: Joi.object({
+        type: Joi.string().valid('webhook', 'function', 'script', 'lambda').required(),
+        endpoint: Joi.string().when('type', {
+          is: 'webhook',
+          then: Joi.string().uri().required()
+        }),
+        functionName: Joi.string().when('type', {
+          is: Joi.valid('function', 'lambda'),
+          then: Joi.required()
+        }),
+        script: Joi.string().when('type', {
+          is: 'script',
+          then: Joi.required()
+        }),
+        authentication: Joi.object({
+          type: Joi.string().valid('none', 'basic', 'bearer', 'api-key'),
+          credentials: Joi.object()
+        }),
+        timeout: Joi.number().min(1).max(300).default(30),
+        retries: Joi.number().min(0).max(5).default(3)
+      }).required(),
+      conditions: Joi.array().items(
+        Joi.object({
+          field: Joi.string().required(),
+          operator: Joi.string().valid('eq', 'neq', 'contains', 'regex').required(),
+          value: Joi.any().required()
+        })
+      ),
+      enabled: Joi.boolean().default(true),
+      metadata: Joi.object()
+    }).unknown(false)
+  },
+
+  /**
+   * Validate test maintenance handler request
+   */
+  testMaintenanceHandler: {
+    params: Joi.object({
+      handlerId: Joi.string().pattern(/^handler-[a-zA-Z0-9]{8,32}$/).required()
+    }),
+    body: Joi.object({
+      testData: Joi.object({
+        maintenanceId: Joi.string(),
+        event: Joi.string().required(),
+        context: Joi.object()
+      }).required(),
+      validateResponse: Joi.boolean().default(true),
+      timeout: Joi.number().min(1).max(60).default(10)
+    }).unknown(false)
+  }
+};
+
+/**
+ * Combined maintenance validators export
+ */
+const maintenanceValidators = {
+  ...maintenanceSchedulingValidators,
+  ...maintenanceQueryValidators,
+  ...maintenanceExecutionValidators,
+  ...maintenanceManagementValidators,
+  ...maintenanceTaskValidators,
+  ...maintenanceImpactValidators,
+  ...maintenanceValidationValidators,
+  ...maintenanceNotificationValidators,
+  ...maintenanceReportingValidators,
+  ...maintenanceHandlerValidators
+};
+
+/**
+ * Validation error handler
+ */
+const handleValidationError = (error, req, res) => {
+  logger.warn('Maintenance validation error', {
+    path: req.path,
+    method: req.method,
+    error: error.details,
+    body: req.body,
+    query: req.query,
+    params: req.params
+  });
+
+  const errors = error.details.map(detail => ({
+    field: detail.path.join('.'),
+    message: detail.message,
+    type: detail.type
+  }));
+
+  return res.status(StatusCodes.BAD_REQUEST).json({
+    success: false,
+    error: {
+      code: ErrorCodes.VALIDATION_ERROR,
+      message: 'Validation failed',
+      details: errors
+    }
+  });
+};
+
+/**
+ * Validation middleware factory
+ */
+const createValidator = (schema) => {
+  return (req, res, next) => {
+    const validationOptions = {
+      abortEarly: false,
+      allowUnknown: false,
+      stripUnknown: true
+    };
+
+    // Validate params if schema exists
+    if (schema.params) {
+      const { error, value } = schema.params.validate(req.params, validationOptions);
+      if (error) {
+        return handleValidationError(error, req, res);
+      }
+      req.params = value;
+    }
+
+    // Validate query if schema exists
+    if (schema.query) {
+      const { error, value } = schema.query.validate(req.query, validationOptions);
+      if (error) {
+        return handleValidationError(error, req, res);
+      }
+      req.query = value;
+    }
+
+    // Validate body if schema exists
+    if (schema.body) {
+      const { error, value } = schema.body.validate(req.body, validationOptions);
+      if (error) {
+        return handleValidationError(error, req, res);
+      }
+      req.body = value;
+    }
+
+    next();
+  };
+};
+
+// Export validators
 module.exports = {
-  validateMaintenanceWindow,
-  validateDeployment,
-  validateMigration,
-  validateSystemUpdate,
-  validateHealthCheck,
-  validateBackupSchedule,
-  handleValidationErrors
+  maintenanceValidators,
+  createValidator,
+  handleValidationError,
+  commonSchemas,
+  VALIDATION_MESSAGES
 };

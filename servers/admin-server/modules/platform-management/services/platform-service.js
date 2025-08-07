@@ -1,1355 +1,1504 @@
 'use strict';
 
 /**
- * @fileoverview Platform management service
+ * @fileoverview Platform management service with business logic
  * @module servers/admin-server/modules/platform-management/services/platform-service
+ * @requires module:servers/admin-server/modules/platform-management/models/platform-model
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
  * @requires module:shared/lib/services/cache-service
  * @requires module:shared/lib/services/notification-service
- * @requires module:servers/admin-server/modules/platform-management/models/platform-model
- * @requires module:servers/admin-server/modules/platform-management/models/system-model
+ * @requires module:shared/lib/security/audit/audit-service
+ * @requires module:shared/lib/database/transaction-manager
+ * @requires module:shared/lib/utils/helpers/date-helper
+ * @requires module:shared/lib/utils/helpers/string-helper
  */
 
+const PlatformModel = require('../models/platform-model');
 const logger = require('../../../../../shared/lib/utils/logger');
-const AppError = require('../../../../../shared/lib/utils/app-error');
+const { AppError } = require('../../../../../shared/lib/utils/app-error');
 const CacheService = require('../../../../../shared/lib/services/cache-service');
 const NotificationService = require('../../../../../shared/lib/services/notification-service');
-const PlatformModel = require('../models/platform-model');
-const SystemModel = require('../models/system-model');
+const AuditService = require('../../../../../shared/lib/security/audit/audit-service');
+const TransactionManager = require('../../../../../shared/lib/database/transaction-manager');
+const dateHelper = require('../../../../../shared/lib/utils/helpers/date-helper');
+const stringHelper = require('../../../../../shared/lib/utils/helpers/string-helper');
 
 /**
- * Service for managing platform configuration and operations
  * @class PlatformService
+ * @description Service class for platform management operations
  */
 class PlatformService {
+  /**
+   * Creates an instance of PlatformService
+   * @constructor
+   */
   constructor() {
-    this.cacheService = new CacheService('platform');
-    this.cacheKeyPrefix = 'platform:';
-    this.cacheTTL = 3600; // 1 hour
+    this.#cacheService = new CacheService({
+      prefix: 'platform:',
+      ttl: 300 // 5 minutes default TTL
+    });
+    this.#notificationService = new NotificationService();
+    this.#auditService = new AuditService();
+    this.#transactionManager = new TransactionManager();
   }
 
+  // Private fields
+  #cacheService;
+  #notificationService;
+  #auditService;
+  #transactionManager;
+
+  // Cache keys
+  static CACHE_KEYS = {
+    PLATFORM_CONFIG: 'config',
+    FEATURE_FLAGS: 'features',
+    SYSTEM_MODULES: 'modules',
+    MAINTENANCE_WINDOWS: 'maintenance',
+    PLATFORM_STATUS: 'status'
+  };
+
+  // Event types
+  static EVENTS = {
+    FEATURE_ENABLED: 'platform.feature.enabled',
+    FEATURE_DISABLED: 'platform.feature.disabled',
+    MAINTENANCE_SCHEDULED: 'platform.maintenance.scheduled',
+    MAINTENANCE_STARTED: 'platform.maintenance.started',
+    MAINTENANCE_COMPLETED: 'platform.maintenance.completed',
+    DEPLOYMENT_RECORDED: 'platform.deployment.recorded',
+    MODULE_UPDATED: 'platform.module.updated',
+    CONFIGURATION_CHANGED: 'platform.configuration.changed'
+  };
+
   /**
-   * Get platform configuration
-   * @param {Object} options Query options
+   * Gets platform configuration
+   * @async
+   * @param {Object} [options={}] - Query options
+   * @param {string} [options.environment] - Filter by environment
+   * @param {boolean} [options.includeInactive=false] - Include inactive configurations
+   * @param {boolean} [options.fromCache=true] - Whether to use cache
    * @returns {Promise<Object>} Platform configuration
+   * @throws {AppError} If platform not found
    */
-  async getPlatformConfig(options = {}) {
+  async getPlatformConfiguration(options = {}) {
     try {
-      const cacheKey = `${this.cacheKeyPrefix}config`;
-      const cached = await this.cacheService.get(cacheKey);
-      
-      if (cached && !options.skipCache) {
-        return cached;
+      const { environment, includeInactive = false, fromCache = true } = options;
+
+      // Try cache first
+      if (fromCache) {
+        const cacheKey = `${PlatformService.CACHE_KEYS.PLATFORM_CONFIG}:${environment || 'all'}`;
+        const cached = await this.#cacheService.get(cacheKey);
+        if (cached) {
+          logger.debug('Platform configuration retrieved from cache', { environment });
+          return cached;
+        }
       }
 
-      const platform = await PlatformModel.getInstance();
-      
+      // Build query
+      const query = {};
+      if (environment) {
+        query['deployment.environment'] = environment;
+      }
+      if (!includeInactive) {
+        query['status.operational'] = true;
+      }
+
+      // Fetch from database
+      const platform = await PlatformModel.findOne(query)
+        .populate('metadata.createdBy', 'name email')
+        .populate('metadata.lastModifiedBy', 'name email')
+        .populate('deployment.deployedBy', 'name email')
+        .populate('maintenanceWindows.createdBy', 'name email')
+        .lean();
+
       if (!platform) {
-        throw new AppError('Platform configuration not found', 404, 'PLATFORM_NOT_FOUND');
+        throw new AppError(`Platform configuration not found${environment ? ` for environment: ${environment}` : ''}`, 404);
       }
 
-      const config = platform.toObject();
+      // Process and cache result
+      const result = this.#processPlatformData(platform);
       
-      // Remove sensitive data if not admin request
-      if (!options.includeSecrets) {
-        this.#removeSensitiveData(config);
+      if (fromCache) {
+        const cacheKey = `${PlatformService.CACHE_KEYS.PLATFORM_CONFIG}:${environment || 'all'}`;
+        await this.#cacheService.set(cacheKey, result, 300);
       }
 
-      await this.cacheService.set(cacheKey, config, this.cacheTTL);
-      
-      return config;
-    } catch (error) {
-      logger.error('Failed to get platform configuration', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update platform configuration
-   * @param {Object} updates Configuration updates
-   * @param {String} userId User making the update
-   * @returns {Promise<Object>} Updated platform configuration
-   */
-  async updatePlatformConfig(updates, userId) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      // Log the update attempt
-      logger.info('Platform configuration update requested', {
-        userId,
-        updates: Object.keys(updates)
-      });
-
-      // Validate critical updates
-      if (updates.environment?.type && platform.environment.type !== updates.environment.type) {
-        throw new AppError('Cannot change environment type', 403, 'ENVIRONMENT_TYPE_IMMUTABLE');
-      }
-
-      // Apply updates
-      Object.assign(platform, updates);
-      platform.lastModifiedBy = userId;
-
-      await platform.save();
-
-      // Invalidate cache
-      await this.cacheService.del(`${this.cacheKeyPrefix}config`);
-
-      // Notify about configuration change
-      await NotificationService.sendSystemNotification({
-        type: 'platform_config_updated',
-        severity: 'info',
-        title: 'Platform Configuration Updated',
-        message: `Platform configuration was updated by admin`,
-        metadata: {
-          userId,
-          updatedFields: Object.keys(updates)
-        }
-      });
-
-      logger.info('Platform configuration updated successfully', {
+      logger.info('Platform configuration retrieved', {
         platformId: platform.platformId,
-        updatedBy: userId
+        environment: platform.deployment.environment
       });
-
-      return platform;
-    } catch (error) {
-      logger.error('Failed to update platform configuration', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update platform version
-   * @param {String} newVersion New version number
-   * @param {String} userId User performing upgrade
-   * @returns {Promise<Object>} Updated platform
-   */
-  async updateVersion(newVersion, userId) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      // Validate version format
-      const versionRegex = /^\d+\.\d+\.\d+$/;
-      if (!versionRegex.test(newVersion)) {
-        throw new AppError('Invalid version format. Use semantic versioning (x.y.z)', 400, 'INVALID_VERSION');
-      }
-
-      // Check if version is newer
-      const currentParts = platform.version.current.split('.').map(Number);
-      const newParts = newVersion.split('.').map(Number);
-      
-      const isNewer = newParts[0] > currentParts[0] ||
-        (newParts[0] === currentParts[0] && newParts[1] > currentParts[1]) ||
-        (newParts[0] === currentParts[0] && newParts[1] === currentParts[1] && newParts[2] > currentParts[2]);
-
-      if (!isNewer) {
-        throw new AppError('New version must be higher than current version', 400, 'VERSION_NOT_HIGHER');
-      }
-
-      // Perform version update
-      await platform.updateVersion(newVersion, userId);
-
-      // Clear caches
-      await this.cacheService.flush();
-
-      // Notify about version update
-      await NotificationService.sendSystemNotification({
-        type: 'platform_version_updated',
-        severity: 'important',
-        title: 'Platform Version Updated',
-        message: `Platform version updated from ${platform.version.previous[platform.version.previous.length - 1].version} to ${newVersion}`,
-        metadata: {
-          previousVersion: platform.version.previous[platform.version.previous.length - 1].version,
-          newVersion,
-          upgradedBy: userId
-        }
-      });
-
-      return platform;
-    } catch (error) {
-      logger.error('Failed to update platform version', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Enable maintenance mode
-   * @param {Object} options Maintenance mode options
-   * @param {String} userId User enabling maintenance
-   * @returns {Promise<Object>} Updated platform
-   */
-  async enableMaintenanceMode(options, userId) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      await platform.enableMaintenanceMode({
-        ...options,
-        userId
-      });
-
-      // Clear all caches
-      await this.cacheService.flush();
-
-      // Broadcast maintenance mode
-      await NotificationService.broadcastSystemEvent({
-        event: 'maintenance_mode_enabled',
-        data: {
-          message: platform.api.maintenanceMode.message,
-          endTime: platform.api.maintenanceMode.endTime
-        }
-      });
-
-      return platform;
-    } catch (error) {
-      logger.error('Failed to enable maintenance mode', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Disable maintenance mode
-   * @param {String} userId User disabling maintenance
-   * @returns {Promise<Object>} Updated platform
-   */
-  async disableMaintenanceMode(userId) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      await platform.disableMaintenanceMode(userId);
-
-      // Clear caches
-      await this.cacheService.flush();
-
-      // Broadcast maintenance mode disabled
-      await NotificationService.broadcastSystemEvent({
-        event: 'maintenance_mode_disabled',
-        data: {}
-      });
-
-      return platform;
-    } catch (error) {
-      logger.error('Failed to disable maintenance mode', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update feature flag
-   * @param {String} featureName Feature flag name
-   * @param {Object} config Feature configuration
-   * @param {String} userId User updating feature
-   * @returns {Promise<Object>} Updated feature configuration
-   */
-  async updateFeatureFlag(featureName, config, userId) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      const feature = await platform.updateFeatureFlag(featureName, config);
-
-      // Invalidate feature flags cache
-      await this.cacheService.del(`${this.cacheKeyPrefix}features`);
-
-      logger.info('Feature flag updated', {
-        feature: featureName,
-        config,
-        updatedBy: userId
-      });
-
-      return feature;
-    } catch (error) {
-      logger.error('Failed to update feature flag', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get all feature flags
-   * @param {Object} options Query options
-   * @returns {Promise<Object>} Feature flags
-   */
-  async getFeatureFlags(options = {}) {
-    try {
-      const cacheKey = `${this.cacheKeyPrefix}features`;
-      const cached = await this.cacheService.get(cacheKey);
-      
-      if (cached && !options.skipCache) {
-        return cached;
-      }
-
-      const platform = await PlatformModel.getInstance();
-      const features = Object.fromEntries(platform.features || []);
-
-      await this.cacheService.set(cacheKey, features, this.cacheTTL);
-
-      return features;
-    } catch (error) {
-      logger.error('Failed to get feature flags', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Check if feature is enabled
-   * @param {String} featureName Feature name
-   * @param {Object} context Evaluation context
-   * @returns {Promise<Boolean>} Feature enabled status
-   */
-  async isFeatureEnabled(featureName, context = {}) {
-    try {
-      const features = await this.getFeatureFlags();
-      const feature = features[featureName];
-
-      if (!feature) {
-        return false;
-      }
-
-      if (!feature.enabled) {
-        return false;
-      }
-
-      // Check rollout percentage
-      if (feature.rolloutPercentage < 100) {
-        const hash = this.#hashString(context.userId || context.organizationId || '');
-        const bucket = hash % 100;
-        if (bucket >= feature.rolloutPercentage) {
-          return false;
-        }
-      }
-
-      // Check allowed organizations
-      if (feature.allowedOrganizations?.length > 0 && context.organizationId) {
-        return feature.allowedOrganizations.includes(context.organizationId);
-      }
-
-      return true;
-    } catch (error) {
-      logger.error('Failed to check feature flag', error);
-      return false;
-    }
-  }
-
-  /**
-   * Add integration
-   * @param {Object} integrationData Integration configuration
-   * @param {String} userId User adding integration
-   * @returns {Promise<Object>} Added integration
-   */
-  async addIntegration(integrationData, userId) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      // Check if integration already exists
-      const existing = platform.integrations.find(i => 
-        i.name === integrationData.name && i.type === integrationData.type
-      );
-
-      if (existing) {
-        throw new AppError('Integration already exists', 409, 'INTEGRATION_EXISTS');
-      }
-
-      const integration = await platform.addIntegration(integrationData);
-
-      // Test integration connection
-      await this.#testIntegration(integration);
-
-      logger.info('Integration added successfully', {
-        name: integration.name,
-        type: integration.type,
-        addedBy: userId
-      });
-
-      return integration;
-    } catch (error) {
-      logger.error('Failed to add integration', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update integration
-   * @param {String} integrationId Integration ID
-   * @param {Object} updates Integration updates
-   * @param {String} userId User updating integration
-   * @returns {Promise<Object>} Updated integration
-   */
-  async updateIntegration(integrationId, updates, userId) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      const integration = platform.integrations.id(integrationId);
-      if (!integration) {
-        throw new AppError('Integration not found', 404, 'INTEGRATION_NOT_FOUND');
-      }
-
-      Object.assign(integration, updates);
-      platform.lastModifiedBy = userId;
-
-      await platform.save();
-
-      // Test updated integration
-      if (updates.enabled) {
-        await this.#testIntegration(integration);
-      }
-
-      logger.info('Integration updated', {
-        integrationId,
-        updatedBy: userId
-      });
-
-      return integration;
-    } catch (error) {
-      logger.error('Failed to update integration', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get platform status
-   * @returns {Promise<Object>} Platform status
-   */
-  async getPlatformStatus() {
-    try {
-      const [platform, systemHealth] = await Promise.all([
-        PlatformModel.getInstance(),
-        SystemModel.getClusterHealth()
-      ]);
-
-      const status = {
-        overall: platform.status.overall,
-        services: platform.status.services,
-        lastStatusChange: platform.status.lastStatusChange,
-        incidents: platform.status.incidents.filter(i => i.status !== 'resolved'),
-        systemHealth,
-        maintenanceMode: platform.api.maintenanceMode.enabled
-      };
-
-      return status;
-    } catch (error) {
-      logger.error('Failed to get platform status', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update platform status
-   * @param {Array} serviceStatuses Service status updates
-   * @returns {Promise<Object>} Updated status
-   */
-  async updatePlatformStatus(serviceStatuses) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      const status = await platform.updateSystemStatus(serviceStatuses);
-
-      // Broadcast status change if overall status changed
-      if (platform.isModified('status.overall')) {
-        await NotificationService.broadcastSystemEvent({
-          event: 'platform_status_changed',
-          data: {
-            status: status.overall,
-            services: status.services
-          }
-        });
-      }
-
-      return status;
-    } catch (error) {
-      logger.error('Failed to update platform status', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Record platform incident
-   * @param {Object} incidentData Incident details
-   * @param {String} userId User recording incident
-   * @returns {Promise<Object>} Recorded incident
-   */
-  async recordIncident(incidentData, userId) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      const incident = await platform.recordIncident(incidentData);
-
-      // Notify about incident
-      await NotificationService.sendSystemNotification({
-        type: 'platform_incident',
-        severity: incidentData.severity,
-        title: incidentData.title,
-        message: `Platform incident: ${incidentData.title}`,
-        metadata: {
-          incidentId: incident._id,
-          severity: incident.severity,
-          reportedBy: userId
-        }
-      });
-
-      return incident;
-    } catch (error) {
-      logger.error('Failed to record incident', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Check resource limits
-   * @param {String} resource Resource name
-   * @param {Number} currentUsage Current usage value
-   * @returns {Promise<Object>} Resource limit check result
-   */
-  async checkResourceLimit(resource, currentUsage) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      const result = platform.checkResourceLimit(resource, currentUsage);
-
-      // Send alert if approaching limit
-      if (!result.withinLimit || result.percentageUsed > 90) {
-        await NotificationService.sendSystemNotification({
-          type: 'resource_limit_warning',
-          severity: result.withinLimit ? 'warning' : 'critical',
-          title: `Resource Limit ${result.withinLimit ? 'Warning' : 'Exceeded'}`,
-          message: `${resource} usage at ${result.percentageUsed.toFixed(1)}% of limit`,
-          metadata: {
-            resource,
-            limit: result.limit,
-            usage: result.usage,
-            percentageUsed: result.percentageUsed
-          }
-        });
-      }
 
       return result;
     } catch (error) {
-      logger.error('Failed to check resource limit', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get platform health check
-   * @returns {Promise<Object>} Health check data
-   */
-  async performHealthCheck() {
-    try {
-      const healthData = await PlatformModel.performHealthCheck();
-      
-      // Add additional health checks
-      healthData.timestamp = new Date();
-      healthData.healthy = healthData.status === 'operational' && 
-                          healthData.database.connected &&
-                          healthData.cache.connected;
-
-      return healthData;
-    } catch (error) {
-      logger.error('Failed to perform health check', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get public platform configuration
-   * @returns {Promise<Object>} Public configuration
-   */
-  async getPublicConfig() {
-    try {
-      const cacheKey = `${this.cacheKeyPrefix}public`;
-      const cached = await this.cacheService.get(cacheKey);
-      
-      if (cached) {
-        return cached;
-      }
-
-      const config = await PlatformModel.getPublicConfig();
-      
-      await this.cacheService.set(cacheKey, config, this.cacheTTL);
-
-      return config;
-    } catch (error) {
-      logger.error('Failed to get public configuration', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Remove sensitive data from configuration
-   * @private
-   * @param {Object} config Configuration object
-   */
-  #removeSensitiveData(config) {
-    // Remove integration credentials
-    if (config.integrations) {
-      config.integrations.forEach(integration => {
-        delete integration.credentials;
-        delete integration.webhooks;
+      logger.error('Failed to get platform configuration', {
+        options,
+        error: error.message
       });
-    }
-
-    // Remove security keys
-    if (config.security?.encryption) {
-      delete config.security.encryption.key;
-    }
-
-    // Remove database credentials
-    if (config.systemConfig?.database) {
-      delete config.systemConfig.database.connectionString;
+      throw error instanceof AppError ? error : new AppError(`Failed to get platform configuration: ${error.message}`, 500);
     }
   }
 
   /**
-   * Test integration connection
-   * @private
-   * @param {Object} integration Integration configuration
-   * @returns {Promise<Boolean>} Test result
+   * Creates or initializes platform configuration
+   * @async
+   * @param {Object} platformData - Platform configuration data
+   * @param {string} userId - User ID creating the platform
+   * @returns {Promise<Object>} Created platform configuration
+   * @throws {AppError} If creation fails
    */
-  async #testIntegration(integration) {
-    // This would implement actual integration testing
-    logger.info('Testing integration connection', {
-      name: integration.name,
-      type: integration.type
-    });
+  async createPlatformConfiguration(platformData, userId) {
+    const session = await this.#transactionManager.startSession();
 
-    // Simulate test
-    return true;
-  }
-
-  /**
-   * Simple string hash function
-   * @private
-   * @param {String} str String to hash
-   * @returns {Number} Hash value
-   */
-  #hashString(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return Math.abs(hash);
-  }
-
-  //////////////////////////////////////////////////////////////////////
-
-  // Additional methods can be added here for future platform management features
-  /**
-   * Get platform overview with key metrics
-   * @returns {Promise<Object>} Platform overview data
-   */
-  async getPlatformOverview() {
     try {
-      const cacheKey = `${this.cacheKeyPrefix}overview`;
-      const cached = await this.cacheService.get(cacheKey);
-      
-      if (cached) {
-        return cached;
+      await session.startTransaction();
+
+      // Check if platform already exists for environment
+      const existing = await PlatformModel.findOne({
+        'deployment.environment': platformData.deployment.environment
+      });
+
+      if (existing) {
+        throw new AppError(`Platform already exists for environment: ${platformData.deployment.environment}`, 409);
       }
 
-      const platform = await PlatformModel.getInstance();
-      const systemHealth = await SystemModel.getClusterHealth();
-      
-      const overview = {
-        status: platform.status.overall,
-        version: platform.version.current,
-        environment: platform.environment.type,
-        uptime: process.uptime(),
-        activeServices: platform.status.services.filter(s => s.status === 'operational').length,
-        totalServices: platform.status.services.length,
-        systemHealth: {
-          cpu: systemHealth.cpu || 0,
-          memory: systemHealth.memory || 0,
-          disk: systemHealth.disk || 0
-        },
-        maintenanceMode: platform.api.maintenanceMode.enabled,
-        lastUpdate: platform.lastModified || new Date()
-      };
-
-      await this.cacheService.set(cacheKey, overview, 300); // 5 minute cache
-
-      return overview;
-    } catch (error) {
-      logger.error('Failed to get platform overview', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get platform statistics
-   * @param {Object} options Query options
-   * @returns {Promise<Object>} Platform statistics
-   */
-  async getPlatformStatistics(options = {}) {
-    try {
-      const { timeRange = '24h' } = options;
-      const cacheKey = `${this.cacheKeyPrefix}stats:${timeRange}`;
-      const cached = await this.cacheService.get(cacheKey);
-      
-      if (cached && !options.skipCache) {
-        return cached;
-      }
-
-      // This would typically fetch from multiple data sources
-      const statistics = {
-        users: {
-          total: 0,
-          active: 0,
-          newToday: 0
-        },
-        requests: {
-          total: 0,
-          successful: 0,
-          failed: 0,
-          averageResponseTime: 0
-        },
-        resources: {
-          cpuUsage: 0,
-          memoryUsage: 0,
-          diskUsage: 0
-        },
-        features: {
-          enabled: 0,
-          disabled: 0,
-          total: 0
-        },
-        timestamp: new Date(),
-        timeRange
-      };
-
-      await this.cacheService.set(cacheKey, statistics, 600); // 10 minute cache
-
-      return statistics;
-    } catch (error) {
-      logger.error('Failed to get platform statistics', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get platform settings
-   * @returns {Promise<Object>} Platform settings
-   */
-  async getPlatformSettings() {
-    try {
-      const cacheKey = `${this.cacheKeyPrefix}settings`;
-      const cached = await this.cacheService.get(cacheKey);
-      
-      if (cached) {
-        return cached;
-      }
-
-      const platform = await PlatformModel.getInstance();
-      
-      const settings = {
-        general: {
-          platformName: platform.name || 'InsightSerenity Platform',
-          description: platform.description || '',
-          timezone: platform.systemConfig?.timezone || 'UTC',
-          language: platform.systemConfig?.language || 'en'
-        },
-        security: {
-          sessionTimeout: platform.security?.sessionTimeout || 3600,
-          maxLoginAttempts: platform.security?.maxLoginAttempts || 5,
-          passwordPolicy: platform.security?.passwordPolicy || {},
-          twoFactorRequired: platform.security?.twoFactorRequired || false
-        },
-        notifications: {
-          emailEnabled: platform.notifications?.email?.enabled || false,
-          smsEnabled: platform.notifications?.sms?.enabled || false,
-          pushEnabled: platform.notifications?.push?.enabled || false
-        },
-        api: {
-          rateLimiting: platform.api?.rateLimiting || {},
-          versioning: platform.api?.versioning || 'v1',
-          documentation: platform.api?.documentation?.enabled || true
+      // Create platform configuration
+      const platform = new PlatformModel({
+        ...platformData,
+        metadata: {
+          ...platformData.metadata,
+          createdBy: userId
         }
-      };
+      });
 
-      await this.cacheService.set(cacheKey, settings, this.cacheTTL);
-
-      return settings;
-    } catch (error) {
-      logger.error('Failed to get platform settings', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update platform settings
-   * @param {Object} settings Settings to update
-   * @param {String} userId User making the update
-   * @returns {Promise<Object>} Updated settings
-   */
-  async updatePlatformSettings(settings, userId) {
-    try {
-      const platform = await PlatformModel.getInstance();
-      
-      // Apply settings updates
-      if (settings.general) {
-        Object.assign(platform.systemConfig, settings.general);
-      }
-      
-      if (settings.security) {
-        Object.assign(platform.security, settings.security);
-      }
-      
-      if (settings.notifications) {
-        Object.assign(platform.notifications, settings.notifications);
-      }
-      
-      if (settings.api) {
-        Object.assign(platform.api, settings.api);
+      // Add default feature flags
+      if (!platform.featureFlags || platform.featureFlags.length === 0) {
+        platform.featureFlags = this.#getDefaultFeatureFlags();
       }
 
-      platform.lastModifiedBy = userId;
-      await platform.save();
+      // Add default system modules
+      if (!platform.systemModules || platform.systemModules.length === 0) {
+        platform.systemModules = this.#getDefaultSystemModules();
+      }
 
-      // Clear caches
-      await this.cacheService.del(`${this.cacheKeyPrefix}settings`);
-      await this.cacheService.del(`${this.cacheKeyPrefix}config`);
+      // Save platform
+      await platform.save({ session });
 
-      logger.info('Platform settings updated', {
+      // Create audit entry
+      await this.#auditService.log({
         userId,
-        settingsUpdated: Object.keys(settings)
+        action: 'platform.create',
+        resource: 'platform',
+        resourceId: platform.platformId,
+        details: {
+          environment: platform.deployment.environment,
+          version: platform.deployment.version
+        },
+        session
       });
 
-      return await this.getPlatformSettings();
+      await session.commitTransaction();
+
+      logger.info('Platform configuration created', {
+        platformId: platform.platformId,
+        environment: platform.deployment.environment,
+        userId
+      });
+
+      // Clear cache
+      await this.#clearPlatformCache();
+
+      return platform.toObject();
     } catch (error) {
-      logger.error('Failed to update platform settings', error);
-      throw error;
+      await session.abortTransaction();
+      logger.error('Failed to create platform configuration', {
+        error: error.message,
+        userId
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to create platform configuration: ${error.message}`, 500);
+    } finally {
+      await session.endSession();
     }
   }
 
   /**
-   * Reset platform settings to defaults
-   * @param {String} userId User resetting settings
-   * @returns {Promise<Object>} Reset settings
+   * Updates platform configuration
+   * @async
+   * @param {string} platformId - Platform ID
+   * @param {Object} updates - Updates to apply
+   * @param {string} userId - User ID performing update
+   * @returns {Promise<Object>} Updated platform configuration
+   * @throws {AppError} If update fails
    */
-  async resetPlatformSettings(userId) {
+  async updatePlatformConfiguration(platformId, updates, userId) {
+    const session = await this.#transactionManager.startSession();
+
     try {
-      const platform = await PlatformModel.getInstance();
-      
-      // Reset to default values
-      platform.systemConfig = {
-        timezone: 'UTC',
-        language: 'en'
-      };
-      
-      platform.security = {
-        sessionTimeout: 3600,
-        maxLoginAttempts: 5,
-        twoFactorRequired: false
-      };
-      
-      platform.notifications = {
-        email: { enabled: false },
-        sms: { enabled: false },
-        push: { enabled: false }
-      };
+      await session.startTransaction();
 
-      platform.lastModifiedBy = userId;
-      await platform.save();
-
-      // Clear caches
-      await this.cacheService.flush();
-
-      logger.warn('Platform settings reset to defaults', { userId });
-
-      return await this.getPlatformSettings();
-    } catch (error) {
-      logger.error('Failed to reset platform settings', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get platform modules
-   * @returns {Promise<Array>} Platform modules
-   */
-  async getPlatformModules() {
-    try {
-      const cacheKey = `${this.cacheKeyPrefix}modules`;
-      const cached = await this.cacheService.get(cacheKey);
-      
-      if (cached) {
-        return cached;
+      // Get platform
+      const platform = await PlatformModel.findOne({ platformId }).session(session);
+      if (!platform) {
+        throw new AppError('Platform configuration not found', 404);
       }
 
-      // This would typically fetch from module registry
-      const modules = [
-        {
-          id: 'user-management',
-          name: 'User Management',
-          version: '1.0.0',
-          enabled: true,
-          required: true,
-          description: 'Core user management functionality'
-        },
-        {
-          id: 'organization-management', 
-          name: 'Organization Management',
-          version: '1.0.0',
-          enabled: true,
-          required: true,
-          description: 'Multi-tenant organization management'
-        },
-        {
-          id: 'payment-processing',
-          name: 'Payment Processing',
-          version: '1.0.0',
-          enabled: false,
-          required: false,
-          description: 'Payment and billing functionality'
-        }
+      // Track changes for audit
+      const changes = [];
+
+      // Apply updates
+      const allowedUpdates = [
+        'platformName', 'platformDescription', 'security', 'performance',
+        'notifications', 'api', 'integrations'
       ];
 
-      await this.cacheService.set(cacheKey, modules, this.cacheTTL);
+      for (const field of allowedUpdates) {
+        if (updates[field] !== undefined) {
+          const oldValue = platform[field];
+          platform[field] = updates[field];
+          changes.push({ field, oldValue, newValue: updates[field] });
+        }
+      }
 
-      return modules;
+      // Update metadata
+      platform.metadata.lastModifiedBy = userId;
+      platform._lastModifiedBy = userId;
+
+      // Save changes
+      await platform.save({ session });
+
+      // Create audit entry
+      await this.#auditService.log({
+        userId,
+        action: 'platform.update',
+        resource: 'platform',
+        resourceId: platformId,
+        details: {
+          changes,
+          fieldsUpdated: changes.map(c => c.field)
+        },
+        session
+      });
+
+      await session.commitTransaction();
+
+      logger.info('Platform configuration updated', {
+        platformId,
+        fieldsUpdated: changes.map(c => c.field),
+        userId
+      });
+
+      // Clear cache
+      await this.#clearPlatformCache();
+
+      // Send notification for critical changes
+      if (changes.some(c => c.field === 'security')) {
+        await this.#notificationService.sendToAdmins({
+          type: 'platform.security.updated',
+          title: 'Platform Security Configuration Updated',
+          message: `Security settings have been updated by ${userId}`,
+          severity: 'high',
+          data: { platformId, changes: changes.filter(c => c.field === 'security') }
+        });
+      }
+
+      return platform.toObject();
     } catch (error) {
-      logger.error('Failed to get platform modules', error);
-      throw error;
+      await session.abortTransaction();
+      logger.error('Failed to update platform configuration', {
+        platformId,
+        error: error.message
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to update platform configuration: ${error.message}`, 500);
+    } finally {
+      await session.endSession();
     }
   }
 
   /**
-   * Update platform module
-   * @param {String} moduleId Module identifier
-   * @param {Object} updates Module updates
-   * @param {String} userId User making update
-   * @returns {Promise<Object>} Updated module
+   * Manages feature flags
+   * @async
+   * @param {string} platformId - Platform ID
+   * @param {string} featureName - Feature name
+   * @param {Object} action - Action to perform
+   * @param {string} action.type - Action type (enable|disable|rollout)
+   * @param {Object} [action.options] - Action options
+   * @param {string} userId - User ID performing action
+   * @returns {Promise<Object>} Updated feature flag
+   * @throws {AppError} If operation fails
    */
-  async updatePlatformModule(moduleId, updates, userId) {
+  async manageFeatureFlag(platformId, featureName, action, userId) {
+    const session = await this.#transactionManager.startSession();
+
     try {
-      // This would typically update module configuration
-      logger.info('Platform module updated', {
-        moduleId,
+      await session.startTransaction();
+
+      // Get platform
+      const platform = await PlatformModel.findOne({ platformId }).session(session);
+      if (!platform) {
+        throw new AppError('Platform configuration not found', 404);
+      }
+
+      let result;
+      const eventType = action.type === 'enable' ? 
+        PlatformService.EVENTS.FEATURE_ENABLED : 
+        PlatformService.EVENTS.FEATURE_DISABLED;
+
+      switch (action.type) {
+        case 'enable':
+          result = await platform.enableFeature(featureName, {
+            ...action.options,
+            modifiedBy: userId
+          });
+          break;
+
+        case 'disable':
+          result = await platform.disableFeature(featureName, {
+            ...action.options,
+            modifiedBy: userId
+          });
+          break;
+
+        case 'rollout':
+          result = await this.#updateFeatureRollout(
+            platform,
+            featureName,
+            action.options.percentage,
+            action.options.strategy,
+            userId
+          );
+          break;
+
+        case 'target':
+          result = await this.#updateFeatureTargeting(
+            platform,
+            featureName,
+            action.options.enabledTenants,
+            action.options.disabledTenants,
+            userId
+          );
+          break;
+
+        default:
+          throw new AppError(`Invalid feature flag action: ${action.type}`, 400);
+      }
+
+      // Save changes
+      await platform.save({ session });
+
+      // Create audit entry
+      await this.#auditService.log({
+        userId,
+        action: `feature.${action.type}`,
+        resource: 'feature_flag',
+        resourceId: featureName,
+        details: {
+          platformId,
+          featureName,
+          action: action.type,
+          options: action.options
+        },
+        session
+      });
+
+      await session.commitTransaction();
+
+      logger.info('Feature flag updated', {
+        platformId,
+        featureName,
+        action: action.type,
+        userId
+      });
+
+      // Clear feature flags cache
+      await this.#cacheService.delete(`${PlatformService.CACHE_KEYS.FEATURE_FLAGS}:*`);
+
+      // Emit event
+      await this.#notificationService.emit(eventType, {
+        platformId,
+        featureName,
+        action: action.type,
+        userId,
+        timestamp: new Date()
+      });
+
+      const feature = platform.featureFlags.find(f => f.name === featureName);
+      return feature ? feature.toObject() : null;
+    } catch (error) {
+      await session.abortTransaction();
+      logger.error('Failed to manage feature flag', {
+        platformId,
+        featureName,
+        action,
+        error: error.message
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to manage feature flag: ${error.message}`, 500);
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  /**
+   * Gets feature flags for a tenant
+   * @async
+   * @param {string} tenantId - Tenant ID
+   * @param {Object} [options={}] - Query options
+   * @returns {Promise<Object>} Feature flags for tenant
+   */
+  async getFeatureFlagsForTenant(tenantId, options = {}) {
+    try {
+      const { environment = 'production', fromCache = true } = options;
+
+      // Try cache first
+      if (fromCache) {
+        const cacheKey = `${PlatformService.CACHE_KEYS.FEATURE_FLAGS}:tenant:${tenantId}`;
+        const cached = await this.#cacheService.get(cacheKey);
+        if (cached) {
+          return cached;
+        }
+      }
+
+      // Get platform configuration
+      const platform = await PlatformModel.findOne({
+        'deployment.environment': environment,
+        'status.operational': true
+      });
+
+      if (!platform) {
+        throw new AppError(`Platform not found for environment: ${environment}`, 404);
+      }
+
+      // Build feature flags object for tenant
+      const features = {};
+      
+      for (const flag of platform.featureFlags) {
+        features[flag.name] = {
+          enabled: platform.isFeatureEnabledForTenant(flag.name, tenantId),
+          metadata: flag.metadata,
+          description: flag.description
+        };
+      }
+
+      // Cache result
+      if (fromCache) {
+        const cacheKey = `${PlatformService.CACHE_KEYS.FEATURE_FLAGS}:tenant:${tenantId}`;
+        await this.#cacheService.set(cacheKey, features, 600); // 10 minutes
+      }
+
+      return features;
+    } catch (error) {
+      logger.error('Failed to get feature flags for tenant', {
+        tenantId,
+        error: error.message
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to get feature flags: ${error.message}`, 500);
+    }
+  }
+
+  /**
+   * Schedules a maintenance window
+   * @async
+   * @param {string} platformId - Platform ID
+   * @param {Object} maintenanceData - Maintenance window data
+   * @param {string} userId - User ID scheduling maintenance
+   * @returns {Promise<Object>} Scheduled maintenance window
+   * @throws {AppError} If scheduling fails
+   */
+  async scheduleMaintenanceWindow(platformId, maintenanceData, userId) {
+    const session = await this.#transactionManager.startSession();
+
+    try {
+      await session.startTransaction();
+
+      // Get platform
+      const platform = await PlatformModel.findOne({ platformId }).session(session);
+      if (!platform) {
+        throw new AppError('Platform configuration not found', 404);
+      }
+
+      // Add required fields
+      maintenanceData.createdBy = userId;
+
+      // Schedule maintenance
+      const maintenance = await platform.scheduleMaintenance(maintenanceData);
+
+      // Save changes
+      await platform.save({ session });
+
+      // Create audit entry
+      await this.#auditService.log({
+        userId,
+        action: 'maintenance.schedule',
+        resource: 'maintenance_window',
+        resourceId: maintenance.id,
+        details: {
+          platformId,
+          maintenanceId: maintenance.id,
+          startTime: maintenance.startTime,
+          endTime: maintenance.endTime,
+          type: maintenance.type
+        },
+        session
+      });
+
+      await session.commitTransaction();
+
+      logger.info('Maintenance window scheduled', {
+        platformId,
+        maintenanceId: maintenance.id,
+        startTime: maintenance.startTime,
+        endTime: maintenance.endTime,
+        userId
+      });
+
+      // Clear maintenance cache
+      await this.#cacheService.delete(`${PlatformService.CACHE_KEYS.MAINTENANCE_WINDOWS}:*`);
+
+      // Emit event
+      await this.#notificationService.emit(PlatformService.EVENTS.MAINTENANCE_SCHEDULED, {
+        platformId,
+        maintenance,
+        userId,
+        timestamp: new Date()
+      });
+
+      // Schedule notifications
+      if (maintenance.notifications.enabled) {
+        await this.#scheduleMaintenanceNotifications(platform, maintenance);
+      }
+
+      return maintenance;
+    } catch (error) {
+      await session.abortTransaction();
+      logger.error('Failed to schedule maintenance window', {
+        platformId,
+        error: error.message
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to schedule maintenance: ${error.message}`, 500);
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  /**
+   * Updates maintenance window status
+   * @async
+   * @param {string} platformId - Platform ID
+   * @param {string} maintenanceId - Maintenance window ID
+   * @param {string} status - New status
+   * @param {string} userId - User ID updating status
+   * @returns {Promise<Object>} Updated maintenance window
+   * @throws {AppError} If update fails
+   */
+  async updateMaintenanceStatus(platformId, maintenanceId, status, userId) {
+    const session = await this.#transactionManager.startSession();
+
+    try {
+      await session.startTransaction();
+
+      // Get platform
+      const platform = await PlatformModel.findOne({ platformId }).session(session);
+      if (!platform) {
+        throw new AppError('Platform configuration not found', 404);
+      }
+
+      // Find maintenance window
+      const maintenance = platform.maintenanceWindows.find(m => m.id === maintenanceId);
+      if (!maintenance) {
+        throw new AppError('Maintenance window not found', 404);
+      }
+
+      // Validate status transition
+      const validTransitions = {
+        'scheduled': ['in-progress', 'cancelled'],
+        'in-progress': ['completed', 'cancelled'],
+        'completed': [],
+        'cancelled': []
+      };
+
+      if (!validTransitions[maintenance.status].includes(status)) {
+        throw new AppError(`Invalid status transition from ${maintenance.status} to ${status}`, 400);
+      }
+
+      // Update status
+      const oldStatus = maintenance.status;
+      maintenance.status = status;
+      
+      if (status === 'completed') {
+        maintenance.completedAt = new Date();
+      }
+
+      // Save changes
+      await platform.save({ session });
+
+      // Create audit entry
+      await this.#auditService.log({
+        userId,
+        action: 'maintenance.update_status',
+        resource: 'maintenance_window',
+        resourceId: maintenanceId,
+        details: {
+          platformId,
+          maintenanceId,
+          oldStatus,
+          newStatus: status
+        },
+        session
+      });
+
+      await session.commitTransaction();
+
+      logger.info('Maintenance window status updated', {
+        platformId,
+        maintenanceId,
+        oldStatus,
+        newStatus: status,
+        userId
+      });
+
+      // Clear cache
+      await this.#cacheService.delete(`${PlatformService.CACHE_KEYS.MAINTENANCE_WINDOWS}:*`);
+      await this.#cacheService.delete(`${PlatformService.CACHE_KEYS.PLATFORM_STATUS}:*`);
+
+      // Emit appropriate event
+      const eventMap = {
+        'in-progress': PlatformService.EVENTS.MAINTENANCE_STARTED,
+        'completed': PlatformService.EVENTS.MAINTENANCE_COMPLETED,
+        'cancelled': 'platform.maintenance.cancelled'
+      };
+
+      if (eventMap[status]) {
+        await this.#notificationService.emit(eventMap[status], {
+          platformId,
+          maintenanceId,
+          maintenance: maintenance.toObject(),
+          userId,
+          timestamp: new Date()
+        });
+      }
+
+      // Send notifications
+      if (status === 'in-progress' || status === 'completed') {
+        await this.#sendMaintenanceStatusNotification(platform, maintenance, status);
+      }
+
+      return maintenance.toObject();
+    } catch (error) {
+      await session.abortTransaction();
+      logger.error('Failed to update maintenance status', {
+        platformId,
+        maintenanceId,
+        status,
+        error: error.message
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to update maintenance status: ${error.message}`, 500);
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  /**
+   * Gets active maintenance windows
+   * @async
+   * @param {Object} [options={}] - Query options
+   * @returns {Promise<Array>} Active maintenance windows
+   */
+  async getActiveMaintenanceWindows(options = {}) {
+    try {
+      const { environment, fromCache = true } = options;
+
+      // Try cache first
+      if (fromCache) {
+        const cacheKey = `${PlatformService.CACHE_KEYS.MAINTENANCE_WINDOWS}:active:${environment || 'all'}`;
+        const cached = await this.#cacheService.get(cacheKey);
+        if (cached) {
+          return cached;
+        }
+      }
+
+      // Build query
+      const query = {
+        'status.operational': true
+      };
+
+      if (environment) {
+        query['deployment.environment'] = environment;
+      }
+
+      // Get platforms with active maintenance
+      const platforms = await PlatformModel.getActiveMaintenanceWindows();
+
+      // Extract and format maintenance windows
+      const maintenanceWindows = [];
+      const now = new Date();
+
+      for (const platform of platforms) {
+        for (const window of platform.maintenanceWindows) {
+          if (
+            (window.status === 'scheduled' && window.startTime <= now && window.endTime >= now) ||
+            window.status === 'in-progress'
+          ) {
+            maintenanceWindows.push({
+              ...window.toObject(),
+              platformId: platform.platformId,
+              environment: platform.deployment.environment
+            });
+          }
+        }
+      }
+
+      // Sort by start time
+      maintenanceWindows.sort((a, b) => a.startTime - b.startTime);
+
+      // Cache result
+      if (fromCache) {
+        const cacheKey = `${PlatformService.CACHE_KEYS.MAINTENANCE_WINDOWS}:active:${environment || 'all'}`;
+        await this.#cacheService.set(cacheKey, maintenanceWindows, 60); // 1 minute
+      }
+
+      return maintenanceWindows;
+    } catch (error) {
+      logger.error('Failed to get active maintenance windows', {
+        options,
+        error: error.message
+      });
+      throw new AppError(`Failed to get maintenance windows: ${error.message}`, 500);
+    }
+  }
+
+  /**
+   * Records a deployment
+   * @async
+   * @param {string} platformId - Platform ID
+   * @param {Object} deploymentInfo - Deployment information
+   * @param {string} userId - User ID recording deployment
+   * @returns {Promise<Object>} Recorded deployment
+   * @throws {AppError} If recording fails
+   */
+  async recordDeployment(platformId, deploymentInfo, userId) {
+    const session = await this.#transactionManager.startSession();
+
+    try {
+      await session.startTransaction();
+
+      // Get platform
+      const platform = await PlatformModel.findOne({ platformId }).session(session);
+      if (!platform) {
+        throw new AppError('Platform configuration not found', 404);
+      }
+
+      // Add deployment info
+      deploymentInfo.deployedBy = userId;
+
+      // Record deployment
+      const deployment = await platform.recordDeployment(deploymentInfo);
+
+      // Save changes
+      await platform.save({ session });
+
+      // Create audit entry
+      await this.#auditService.log({
+        userId,
+        action: 'deployment.record',
+        resource: 'deployment',
+        resourceId: `${platformId}-${deployment.version}`,
+        details: {
+          platformId,
+          version: deployment.version,
+          environment: deployment.environment,
+          previousVersion: platform.deployment.rollbackHistory[platform.deployment.rollbackHistory.length - 1]?.version
+        },
+        session
+      });
+
+      await session.commitTransaction();
+
+      logger.info('Deployment recorded', {
+        platformId,
+        version: deployment.version,
+        environment: deployment.environment,
+        userId
+      });
+
+      // Clear cache
+      await this.#clearPlatformCache();
+
+      // Emit event
+      await this.#notificationService.emit(PlatformService.EVENTS.DEPLOYMENT_RECORDED, {
+        platformId,
+        deployment,
+        userId,
+        timestamp: new Date()
+      });
+
+      // Send notification
+      await this.#notificationService.sendToAdmins({
+        type: 'platform.deployment.recorded',
+        title: 'New Deployment Recorded',
+        message: `Version ${deployment.version} deployed to ${deployment.environment}`,
+        severity: 'info',
+        data: { platformId, deployment }
+      });
+
+      return deployment;
+    } catch (error) {
+      await session.abortTransaction();
+      logger.error('Failed to record deployment', {
+        platformId,
+        error: error.message
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to record deployment: ${error.message}`, 500);
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  /**
+   * Updates system module
+   * @async
+   * @param {string} platformId - Platform ID
+   * @param {string} moduleName - Module name
+   * @param {Object} updates - Module updates
+   * @param {string} userId - User ID updating module
+   * @returns {Promise<Object>} Updated module
+   * @throws {AppError} If update fails
+   */
+  async updateSystemModule(platformId, moduleName, updates, userId) {
+    const session = await this.#transactionManager.startSession();
+
+    try {
+      await session.startTransaction();
+
+      // Get platform
+      const platform = await PlatformModel.findOne({ platformId }).session(session);
+      if (!platform) {
+        throw new AppError('Platform configuration not found', 404);
+      }
+
+      // Update module
+      const module = await platform.updateSystemModule(moduleName, updates);
+
+      // Save changes
+      await platform.save({ session });
+
+      // Create audit entry
+      await this.#auditService.log({
+        userId,
+        action: 'module.update',
+        resource: 'system_module',
+        resourceId: moduleName,
+        details: {
+          platformId,
+          moduleName,
+          updates: Object.keys(updates)
+        },
+        session
+      });
+
+      await session.commitTransaction();
+
+      logger.info('System module updated', {
+        platformId,
+        moduleName,
         updates: Object.keys(updates),
         userId
       });
 
-      // Clear modules cache
-      await this.cacheService.del(`${this.cacheKeyPrefix}modules`);
+      // Clear cache
+      await this.#cacheService.delete(`${PlatformService.CACHE_KEYS.SYSTEM_MODULES}:*`);
 
-      return { moduleId, ...updates, updatedBy: userId, updatedAt: new Date() };
-    } catch (error) {
-      logger.error('Failed to update platform module', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Enable platform module
-   * @param {String} moduleId Module identifier
-   * @param {String} userId User enabling module
-   * @returns {Promise<Object>} Module status
-   */
-  async enablePlatformModule(moduleId, userId) {
-    try {
-      // This would typically enable module services
-      logger.info('Platform module enabled', { moduleId, userId });
-
-      await this.cacheService.del(`${this.cacheKeyPrefix}modules`);
-
-      return { moduleId, enabled: true, enabledBy: userId, enabledAt: new Date() };
-    } catch (error) {
-      logger.error('Failed to enable platform module', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Disable platform module
-   * @param {String} moduleId Module identifier
-   * @param {String} userId User disabling module
-   * @returns {Promise<Object>} Module status
-   */
-  async disablePlatformModule(moduleId, userId) {
-    try {
-      // This would typically disable module services
-      logger.info('Platform module disabled', { moduleId, userId });
-
-      await this.cacheService.del(`${this.cacheKeyPrefix}modules`);
-
-      return { moduleId, enabled: false, disabledBy: userId, disabledAt: new Date() };
-    } catch (error) {
-      logger.error('Failed to disable platform module', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get platform deployments
-   * @param {Object} options Query options
-   * @returns {Promise<Array>} Platform deployments
-   */
-  async getPlatformDeployments(options = {}) {
-    try {
-      const { limit = 50, status } = options;
-      
-      // This would typically fetch from deployment service
-      const deployments = [];
-
-      return deployments;
-    } catch (error) {
-      logger.error('Failed to get platform deployments', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Create platform deployment
-   * @param {Object} deploymentData Deployment configuration
-   * @param {String} userId User creating deployment
-   * @returns {Promise<Object>} Created deployment
-   */
-  async createPlatformDeployment(deploymentData, userId) {
-    try {
-      const deployment = {
-        id: `deploy-${Date.now()}`,
-        version: deploymentData.version,
-        environment: deploymentData.environment || 'staging',
-        status: 'pending',
-        createdBy: userId,
-        createdAt: new Date()
-      };
-
-      logger.info('Platform deployment created', {
-        deploymentId: deployment.id,
-        version: deployment.version,
-        userId
+      // Emit event
+      await this.#notificationService.emit(PlatformService.EVENTS.MODULE_UPDATED, {
+        platformId,
+        moduleName,
+        module: module.toObject(),
+        userId,
+        timestamp: new Date()
       });
 
-      return deployment;
+      return module.toObject();
     } catch (error) {
-      logger.error('Failed to create platform deployment', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get platform deployment details
-   * @param {String} deploymentId Deployment identifier
-   * @returns {Promise<Object>} Deployment details
-   */
-  async getPlatformDeploymentDetails(deploymentId) {
-    try {
-      // This would typically fetch detailed deployment information
-      const deployment = {
-        id: deploymentId,
-        status: 'completed',
-        logs: [],
-        metrics: {}
-      };
-
-      return deployment;
-    } catch (error) {
-      logger.error('Failed to get platform deployment details', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Rollback platform deployment
-   * @param {String} deploymentId Deployment to rollback
-   * @param {String} userId User performing rollback
-   * @returns {Promise<Object>} Rollback result
-   */
-  async rollbackPlatformDeployment(deploymentId, userId) {
-    try {
-      logger.warn('Platform deployment rollback initiated', {
-        deploymentId,
-        userId
+      await session.abortTransaction();
+      logger.error('Failed to update system module', {
+        platformId,
+        moduleName,
+        error: error.message
       });
-
-      const rollback = {
-        deploymentId,
-        status: 'rolling_back',
-        initiatedBy: userId,
-        initiatedAt: new Date()
-      };
-
-      return rollback;
-    } catch (error) {
-      logger.error('Failed to rollback platform deployment', error);
-      throw error;
+      throw error instanceof AppError ? error : new AppError(`Failed to update system module: ${error.message}`, 500);
+    } finally {
+      await session.endSession();
     }
   }
 
   /**
-   * Get platform resources
-   * @returns {Promise<Object>} Platform resources
+   * Performs platform health check
+   * @async
+   * @param {string} platformId - Platform ID
+   * @returns {Promise<Object>} Health check results
+   * @throws {AppError} If health check fails
    */
-  async getPlatformResources() {
+  async performHealthCheck(platformId) {
     try {
-      const cacheKey = `${this.cacheKeyPrefix}resources`;
-      const cached = await this.cacheService.get(cacheKey);
-      
-      if (cached) {
-        return cached;
+      // Get platform
+      const platform = await PlatformModel.findOne({ platformId });
+      if (!platform) {
+        throw new AppError('Platform configuration not found', 404);
       }
 
-      const resources = {
-        compute: {
-          cpu: { allocated: 0, available: 100, unit: 'cores' },
-          memory: { allocated: 0, available: 16384, unit: 'MB' },
-          storage: { allocated: 0, available: 1000, unit: 'GB' }
-        },
-        network: {
-          bandwidth: { used: 0, available: 1000, unit: 'Mbps' },
-          connections: { active: 0, limit: 10000 }
-        },
-        database: {
-          connections: { active: 0, limit: 100 },
-          storage: { used: 0, available: 500, unit: 'GB' }
-        }
-      };
+      // Perform health check
+      const healthResults = await platform.performHealthCheck();
 
-      await this.cacheService.set(cacheKey, resources, 300); // 5 minute cache
+      // Cache status
+      const cacheKey = `${PlatformService.CACHE_KEYS.PLATFORM_STATUS}:${platformId}`;
+      await this.#cacheService.set(cacheKey, {
+        status: platform.status,
+        healthScore: platform.status.healthScore,
+        lastCheck: platform.status.lastHealthCheck,
+        issues: platform.status.issues.filter(i => !i.resolvedAt)
+      }, 60); // 1 minute
 
-      return resources;
-    } catch (error) {
-      logger.error('Failed to get platform resources', error);
-      throw error;
-    }
-  }
+      // Send alerts for new critical issues
+      const criticalIssues = platform.status.issues.filter(i => 
+        i.severity === 'critical' && 
+        !i.resolvedAt &&
+        !i.acknowledgedBy &&
+        (new Date() - i.detectedAt) < 60000 // Detected in last minute
+      );
 
-  /**
-   * Get platform resource usage
-   * @param {Object} options Query options
-   * @returns {Promise<Object>} Resource usage data
-   */
-  async getPlatformResourceUsage(options = {}) {
-    try {
-      const { timeRange = '1h' } = options;
-      
-      const usage = {
-        timeRange,
-        timestamp: new Date(),
-        metrics: {
-          cpu: { current: 45, average: 40, peak: 80 },
-          memory: { current: 60, average: 55, peak: 85 },
-          disk: { current: 30, average: 25, peak: 50 },
-          network: { current: 20, average: 15, peak: 60 }
-        }
-      };
-
-      return usage;
-    } catch (error) {
-      logger.error('Failed to get platform resource usage', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update platform resource limits
-   * @param {Object} limits Resource limits to update
-   * @param {String} userId User updating limits
-   * @returns {Promise<Object>} Updated limits
-   */
-  async updatePlatformResourceLimits(limits, userId) {
-    try {
-      logger.info('Platform resource limits updated', {
-        limits: Object.keys(limits),
-        userId
-      });
-
-      // Clear resource cache
-      await this.cacheService.del(`${this.cacheKeyPrefix}resources`);
-
-      return { ...limits, updatedBy: userId, updatedAt: new Date() };
-    } catch (error) {
-      logger.error('Failed to update platform resource limits', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get platform API endpoints
-   * @returns {Promise<Array>} API endpoints
-   */
-  async getPlatformAPIEndpoints() {
-    try {
-      const cacheKey = `${this.cacheKeyPrefix}api_endpoints`;
-      const cached = await this.cacheService.get(cacheKey);
-      
-      if (cached) {
-        return cached;
+      if (criticalIssues.length > 0) {
+        await this.#notificationService.sendToAdmins({
+          type: 'platform.health.critical',
+          title: 'Critical Platform Health Issues Detected',
+          message: `${criticalIssues.length} critical issues detected during health check`,
+          severity: 'critical',
+          data: {
+            platformId,
+            issues: criticalIssues,
+            healthScore: platform.status.healthScore
+          }
+        });
       }
 
-      // This would typically discover endpoints from route registry
-      const endpoints = [
-        {
-          path: '/api/admin/platform',
-          method: 'GET',
-          description: 'Get platform configuration',
-          authenticated: true,
-          rateLimit: '100/min'
-        },
-        {
-          path: '/api/admin/users',
-          method: 'GET',
-          description: 'List users',
-          authenticated: true,
-          rateLimit: '100/min'
-        }
-      ];
+      logger.info('Platform health check completed', {
+        platformId,
+        healthScore: platform.status.healthScore,
+        issueCount: platform.status.issues.filter(i => !i.resolvedAt).length
+      });
 
-      await this.cacheService.set(cacheKey, endpoints, this.cacheTTL);
-
-      return endpoints;
+      return healthResults;
     } catch (error) {
-      logger.error('Failed to get platform API endpoints', error);
-      throw error;
+      logger.error('Failed to perform platform health check', {
+        platformId,
+        error: error.message
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to perform health check: ${error.message}`, 500);
     }
   }
 
   /**
-   * Get platform API usage statistics
-   * @param {Object} options Query options
-   * @returns {Promise<Object>} API usage data
+   * Gets platform statistics
+   * @async
+   * @param {string} platformId - Platform ID
+   * @param {Object} [options={}] - Query options
+   * @returns {Promise<Object>} Platform statistics
    */
-  async getPlatformAPIUsage(options = {}) {
+  async getPlatformStatistics(platformId, options = {}) {
     try {
       const { timeRange = '24h' } = options;
-      
-      const usage = {
-        timeRange,
-        totalRequests: 0,
-        successfulRequests: 0,
-        failedRequests: 0,
-        averageResponseTime: 0,
-        topEndpoints: [],
-        rateLimitHits: 0,
-        timestamp: new Date()
-      };
 
-      return usage;
-    } catch (error) {
-      logger.error('Failed to get platform API usage', error);
-      throw error;
-    }
-  }
+      // Get platform
+      const platform = await PlatformModel.findOne({ platformId })
+        .lean();
 
-  /**
-   * Update platform API rate limits
-   * @param {Object} rateLimits Rate limit configuration
-   * @param {String} userId User updating limits
-   * @returns {Promise<Object>} Updated rate limits
-   */
-  async updatePlatformAPIRateLimits(rateLimits, userId) {
-    try {
-      logger.info('Platform API rate limits updated', {
-        limits: Object.keys(rateLimits),
-        userId
-      });
-
-      return { ...rateLimits, updatedBy: userId, updatedAt: new Date() };
-    } catch (error) {
-      logger.error('Failed to update platform API rate limits', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get platform analytics dashboard data
-   * @param {Object} options Query options
-   * @returns {Promise<Object>} Dashboard data
-   */
-  async getPlatformAnalyticsDashboard(options = {}) {
-    try {
-      const { timeRange = '7d' } = options;
-      const cacheKey = `${this.cacheKeyPrefix}analytics:${timeRange}`;
-      const cached = await this.cacheService.get(cacheKey);
-      
-      if (cached) {
-        return cached;
+      if (!platform) {
+        throw new AppError('Platform configuration not found', 404);
       }
 
-      const dashboard = {
-        timeRange,
+      // Calculate time boundaries
+      const now = new Date();
+      const startTime = dateHelper.subtractTime(now, timeRange);
+
+      // Gather statistics
+      const stats = {
         overview: {
-          totalUsers: 0,
-          activeUsers: 0,
-          totalRequests: 0,
-          averageResponseTime: 0
+          platformId: platform.platformId,
+          environment: platform.deployment.environment,
+          version: platform.deployment.version,
+          uptime: this.#calculateUptime(platform.deployment.deployedAt),
+          healthScore: platform.status.healthScore,
+          operational: platform.status.operational
         },
-        charts: {
-          userGrowth: [],
-          requestVolume: [],
-          responseTime: [],
-          errorRate: []
+        features: {
+          total: platform.featureFlags.length,
+          enabled: platform.featureFlags.filter(f => f.enabled).length,
+          rollouts: platform.featureFlags.filter(f => 
+            f.rolloutPercentage && f.rolloutPercentage.percentage > 0 && f.rolloutPercentage.percentage < 100
+          ).length
         },
-        topPages: [],
-        userActivity: [],
-        timestamp: new Date()
+        modules: {
+          total: platform.systemModules.length,
+          enabled: platform.systemModules.filter(m => m.enabled).length,
+          healthy: platform.systemModules.filter(m => m.health.status === 'healthy').length,
+          degraded: platform.systemModules.filter(m => m.health.status === 'degraded').length,
+          unhealthy: platform.systemModules.filter(m => m.health.status === 'unhealthy').length
+        },
+        maintenance: {
+          scheduled: platform.maintenanceWindows.filter(m => 
+            m.status === 'scheduled' && m.startTime > now
+          ).length,
+          inProgress: platform.maintenanceWindows.filter(m => m.status === 'in-progress').length,
+          completed: platform.maintenanceWindows.filter(m => 
+            m.status === 'completed' && m.completedAt >= startTime
+          ).length
+        },
+        alerts: {
+          active: platform.status.issues.filter(i => !i.resolvedAt).length,
+          critical: platform.status.issues.filter(i => i.severity === 'critical' && !i.resolvedAt).length,
+          acknowledged: platform.status.issues.filter(i => i.acknowledgedBy && !i.resolvedAt).length,
+          recent: platform.status.issues.filter(i => i.detectedAt >= startTime).length
+        },
+        deployments: {
+          current: platform.deployment.version,
+          totalRollbacks: platform.deployment.rollbackHistory.length,
+          recentRollbacks: platform.deployment.rollbackHistory.filter(r => 
+            r.rolledBackAt && r.rolledBackAt >= startTime
+          ).length
+        }
       };
 
-      await this.cacheService.set(cacheKey, dashboard, 900); // 15 minute cache
-
-      return dashboard;
+      return stats;
     } catch (error) {
-      logger.error('Failed to get platform analytics dashboard', error);
-      throw error;
+      logger.error('Failed to get platform statistics', {
+        platformId,
+        error: error.message
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to get platform statistics: ${error.message}`, 500);
     }
   }
 
   /**
-   * Get platform trends analysis
-   * @param {Object} options Query options
-   * @returns {Promise<Object>} Trends data
+   * Searches feature flags
+   * @async
+   * @param {Object} searchCriteria - Search criteria
+   * @returns {Promise<Array>} Matching feature flags
    */
-  async getPlatformTrends(options = {}) {
+  async searchFeatureFlags(searchCriteria) {
     try {
-      const { metric = 'users', timeRange = '30d' } = options;
+      const {
+        query,
+        enabled,
+        hasRollout,
+        environment = 'production',
+        page = 1,
+        limit = 20
+      } = searchCriteria;
+
+      // Build MongoDB query
+      const mongoQuery = {
+        'deployment.environment': environment,
+        'status.operational': true
+      };
+
+      if (query) {
+        mongoQuery.$or = [
+          { 'featureFlags.name': new RegExp(query, 'i') },
+          { 'featureFlags.description': new RegExp(query, 'i') }
+        ];
+      }
+
+      if (enabled !== undefined) {
+        mongoQuery['featureFlags.enabled'] = enabled;
+      }
+
+      if (hasRollout) {
+        mongoQuery['featureFlags.rolloutPercentage.percentage'] = { $gt: 0, $lt: 100 };
+      }
+
+      // Execute search
+      const platforms = await PlatformModel.find(mongoQuery)
+        .select('platformId deployment.environment featureFlags')
+        .lean();
+
+      // Extract and filter feature flags
+      const allFlags = [];
       
-      const trends = {
-        metric,
-        timeRange,
-        trend: 'increasing',
-        changePercent: 0,
-        data: [],
-        predictions: [],
-        timestamp: new Date()
-      };
+      for (const platform of platforms) {
+        for (const flag of platform.featureFlags) {
+          if (
+            (!query || flag.name.toLowerCase().includes(query.toLowerCase()) || 
+             (flag.description && flag.description.toLowerCase().includes(query.toLowerCase()))) &&
+            (enabled === undefined || flag.enabled === enabled) &&
+            (!hasRollout || (flag.rolloutPercentage?.percentage > 0 && flag.rolloutPercentage?.percentage < 100))
+          ) {
+            allFlags.push({
+              ...flag,
+              platformId: platform.platformId,
+              environment: platform.deployment.environment
+            });
+          }
+        }
+      }
 
-      return trends;
+      // Sort by name
+      allFlags.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Paginate
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedFlags = allFlags.slice(startIndex, endIndex);
+
+      return {
+        flags: paginatedFlags,
+        pagination: {
+          total: allFlags.length,
+          page,
+          limit,
+          pages: Math.ceil(allFlags.length / limit)
+        }
+      };
     } catch (error) {
-      logger.error('Failed to get platform trends', error);
-      throw error;
+      logger.error('Failed to search feature flags', {
+        searchCriteria,
+        error: error.message
+      });
+      throw new AppError(`Failed to search feature flags: ${error.message}`, 500);
+    }
+  }
+
+  // Private helper methods
+
+  /**
+   * Processes platform data for response
+   * @private
+   * @param {Object} platform - Raw platform data
+   * @returns {Object} Processed platform data
+   */
+  #processPlatformData(platform) {
+    return {
+      ...platform,
+      isInMaintenance: this.#isInMaintenance(platform.maintenanceWindows),
+      activeFeatures: platform.featureFlags.filter(f => f.enabled).map(f => f.name),
+      healthStatus: this.#calculateHealthStatus(platform.status),
+      modulesSummary: this.#summarizeModules(platform.systemModules)
+    };
+  }
+
+  /**
+   * Checks if platform is in maintenance
+   * @private
+   * @param {Array} maintenanceWindows - Maintenance windows
+   * @returns {boolean} Whether in maintenance
+   */
+  #isInMaintenance(maintenanceWindows) {
+    const now = new Date();
+    return maintenanceWindows.some(window => 
+      window.status === 'in-progress' ||
+      (window.status === 'scheduled' && window.startTime <= now && window.endTime >= now)
+    );
+  }
+
+  /**
+   * Calculates health status
+   * @private
+   * @param {Object} status - Platform status
+   * @returns {string} Health status
+   */
+  #calculateHealthStatus(status) {
+    if (!status.operational) return 'offline';
+    if (status.healthScore >= 90) return 'healthy';
+    if (status.healthScore >= 70) return 'degraded';
+    return 'unhealthy';
+  }
+
+  /**
+   * Summarizes system modules
+   * @private
+   * @param {Array} modules - System modules
+   * @returns {Object} Modules summary
+   */
+  #summarizeModules(modules) {
+    return {
+      total: modules.length,
+      enabled: modules.filter(m => m.enabled).length,
+      byStatus: {
+        healthy: modules.filter(m => m.health.status === 'healthy').length,
+        degraded: modules.filter(m => m.health.status === 'degraded').length,
+        unhealthy: modules.filter(m => m.health.status === 'unhealthy').length,
+        unknown: modules.filter(m => m.health.status === 'unknown').length
+      }
+    };
+  }
+
+  /**
+   * Gets default feature flags
+   * @private
+   * @returns {Array} Default feature flags
+   */
+  #getDefaultFeatureFlags() {
+    return [
+      {
+        name: 'api-rate-limiting',
+        enabled: true,
+        description: 'Enable API rate limiting',
+        category: 'security'
+      },
+      {
+        name: 'two-factor-auth',
+        enabled: false,
+        description: 'Enable two-factor authentication',
+        category: 'security'
+      },
+      {
+        name: 'advanced-analytics',
+        enabled: false,
+        description: 'Enable advanced analytics features',
+        category: 'features'
+      },
+      {
+        name: 'beta-features',
+        enabled: false,
+        description: 'Enable beta features',
+        category: 'features'
+      }
+    ];
+  }
+
+  /**
+   * Gets default system modules
+   * @private
+   * @returns {Array} Default system modules
+   */
+  #getDefaultSystemModules() {
+    return [
+      {
+        name: 'core',
+        displayName: 'Core System',
+        version: '1.0.0',
+        enabled: true,
+        dependencies: [],
+        health: {
+          status: 'unknown'
+        }
+      },
+      {
+        name: 'authentication',
+        displayName: 'Authentication Service',
+        version: '1.0.0',
+        enabled: true,
+        dependencies: ['core'],
+        health: {
+          status: 'unknown'
+        }
+      },
+      {
+        name: 'api',
+        displayName: 'API Service',
+        version: '1.0.0',
+        enabled: true,
+        dependencies: ['core', 'authentication'],
+        health: {
+          status: 'unknown'
+        }
+      }
+    ];
+  }
+
+  /**
+   * Updates feature rollout configuration
+   * @private
+   * @param {Object} platform - Platform instance
+   * @param {string} featureName - Feature name
+   * @param {number} percentage - Rollout percentage
+   * @param {string} strategy - Rollout strategy
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} Updated platform
+   */
+  async #updateFeatureRollout(platform, featureName, percentage, strategy, userId) {
+    const feature = platform.featureFlags.find(f => f.name === featureName);
+    
+    if (!feature) {
+      throw new AppError(`Feature '${featureName}' not found`, 404);
+    }
+
+    feature.rolloutPercentage = {
+      percentage: Math.max(0, Math.min(100, percentage)),
+      strategy: strategy || 'random'
+    };
+    
+    feature.lastModified = new Date();
+    feature.modifiedBy = userId;
+
+    return platform;
+  }
+
+  /**
+   * Updates feature targeting
+   * @private
+   * @param {Object} platform - Platform instance
+   * @param {string} featureName - Feature name
+   * @param {Array} enabledTenants - Tenants to enable
+   * @param {Array} disabledTenants - Tenants to disable
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} Updated platform
+   */
+  async #updateFeatureTargeting(platform, featureName, enabledTenants, disabledTenants, userId) {
+    const feature = platform.featureFlags.find(f => f.name === featureName);
+    
+    if (!feature) {
+      throw new AppError(`Feature '${featureName}' not found`, 404);
+    }
+
+    if (enabledTenants) {
+      feature.enabledTenants = enabledTenants;
+    }
+    
+    if (disabledTenants) {
+      feature.disabledTenants = disabledTenants;
+    }
+    
+    feature.lastModified = new Date();
+    feature.modifiedBy = userId;
+
+    return platform;
+  }
+
+  /**
+   * Schedules maintenance notifications
+   * @private
+   * @param {Object} platform - Platform instance
+   * @param {Object} maintenance - Maintenance window
+   * @returns {Promise<void>}
+   */
+  async #scheduleMaintenanceNotifications(platform, maintenance) {
+    try {
+      for (const advanceMinutes of maintenance.notifications.advanceMinutes) {
+        const notifyAt = new Date(maintenance.startTime.getTime() - advanceMinutes * 60 * 1000);
+        
+        if (notifyAt > new Date()) {
+          // In production, use a job scheduler like Bull or Agenda
+          setTimeout(async () => {
+            await this.#sendMaintenanceNotification(platform, maintenance, advanceMinutes);
+          }, notifyAt.getTime() - Date.now());
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to schedule maintenance notifications', {
+        platformId: platform.platformId,
+        maintenanceId: maintenance.id,
+        error: error.message
+      });
     }
   }
 
   /**
-   * Export platform analytics data
-   * @param {Object} exportOptions Export configuration
-   * @param {String} userId User requesting export
-   * @returns {Promise<Object>} Export job details
+   * Sends maintenance notification
+   * @private
+   * @param {Object} platform - Platform instance
+   * @param {Object} maintenance - Maintenance window
+   * @param {number} advanceMinutes - Minutes in advance
+   * @returns {Promise<void>}
    */
-  async exportPlatformAnalytics(exportOptions, userId) {
+  async #sendMaintenanceNotification(platform, maintenance, advanceMinutes) {
     try {
-      const exportJob = {
-        id: `export-${Date.now()}`,
-        format: exportOptions.format || 'csv',
-        timeRange: exportOptions.timeRange || '30d',
-        metrics: exportOptions.metrics || [],
-        status: 'processing',
-        requestedBy: userId,
-        requestedAt: new Date()
-      };
-
-      logger.info('Platform analytics export requested', {
-        exportId: exportJob.id,
-        format: exportJob.format,
-        userId
+      const timeLabel = advanceMinutes >= 60 ? `${advanceMinutes / 60} hour(s)` : `${advanceMinutes} minutes`;
+      
+      await this.#notificationService.sendToAll({
+        type: 'platform.maintenance.reminder',
+        title: `Scheduled Maintenance in ${timeLabel}`,
+        message: maintenance.description,
+        severity: maintenance.requiresDowntime ? 'high' : 'medium',
+        data: {
+          platformId: platform.platformId,
+          maintenance,
+          startsIn: advanceMinutes
+        }
       });
 
-      return exportJob;
+      // Mark notification as sent
+      maintenance.notifications.sentAt.push({
+        minutes: advanceMinutes,
+        timestamp: new Date()
+      });
+      
+      await platform.save();
     } catch (error) {
-      logger.error('Failed to export platform analytics', error);
-      throw error;
+      logger.error('Failed to send maintenance notification', {
+        platformId: platform.platformId,
+        maintenanceId: maintenance.id,
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Sends maintenance status notification
+   * @private
+   * @param {Object} platform - Platform instance
+   * @param {Object} maintenance - Maintenance window
+   * @param {string} status - New status
+   * @returns {Promise<void>}
+   */
+  async #sendMaintenanceStatusNotification(platform, maintenance, status) {
+    try {
+      const messages = {
+        'in-progress': {
+          title: 'Maintenance Started',
+          message: `Scheduled maintenance has begun: ${maintenance.description}`,
+          severity: 'high'
+        },
+        'completed': {
+          title: 'Maintenance Completed',
+          message: `Scheduled maintenance has been completed: ${maintenance.description}`,
+          severity: 'info'
+        }
+      };
+
+      const notification = messages[status];
+      if (notification) {
+        await this.#notificationService.sendToAll({
+          type: `platform.maintenance.${status}`,
+          ...notification,
+          data: {
+            platformId: platform.platformId,
+            maintenance
+          }
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to send maintenance status notification', {
+        platformId: platform.platformId,
+        maintenanceId: maintenance.id,
+        status,
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Calculates uptime percentage
+   * @private
+   * @param {Date} deployedAt - Deployment timestamp
+   * @returns {number} Uptime percentage
+   */
+  #calculateUptime(deployedAt) {
+    const totalTime = Date.now() - deployedAt.getTime();
+    const uptimeMs = totalTime; // In production, calculate actual uptime
+    return Math.min(100, (uptimeMs / totalTime) * 100);
+  }
+
+  /**
+   * Clears platform cache
+   * @private
+   * @returns {Promise<void>}
+   */
+  async #clearPlatformCache() {
+    try {
+      await this.#cacheService.delete('platform:*');
+    } catch (error) {
+      logger.error('Failed to clear platform cache', {
+        error: error.message
+      });
     }
   }
 }
 
+// Export singleton instance
 module.exports = new PlatformService();

@@ -1,333 +1,1136 @@
 'use strict';
 
 /**
- * @fileoverview System management validators for admin operations
+ * @fileoverview System monitoring and health management validation rules
  * @module servers/admin-server/modules/platform-management/validators/system-validators
- * @requires module:express-validator
+ * @requires joi
  * @requires module:shared/lib/utils/validators/common-validators
+ * @requires module:shared/lib/utils/constants/status-codes
+ * @requires module:shared/lib/utils/constants/error-codes
+ * @requires module:shared/lib/utils/logger
  */
 
-const { body, param, query, validationResult } = require('express-validator');
-const {
-  isValidObjectId,
-  isValidIpAddress,
-  isValidPort,
-  isValidCron,
-  sanitizeInput
-} = require('../../../../../shared/lib/utils/validators/common-validators');
-
-/**
- * Validate system resource allocation
- * @type {Array<ValidationChain>}
- */
-const validateResourceAllocation = [
-  body('resourceType')
-    .notEmpty().withMessage('Resource type is required')
-    .isIn(['cpu', 'memory', 'storage', 'bandwidth'])
-    .withMessage('Invalid resource type'),
-  body('allocation')
-    .notEmpty().withMessage('Allocation is required')
-    .isObject().withMessage('Allocation must be an object'),
-  body('allocation.minimum')
-    .notEmpty().withMessage('Minimum allocation is required')
-    .isInt({ min: 0 }).withMessage('Minimum must be a positive integer'),
-  body('allocation.maximum')
-    .notEmpty().withMessage('Maximum allocation is required')
-    .isInt({ min: 1 }).withMessage('Maximum must be greater than 0')
-    .custom((max, { req }) => max >= req.body.allocation?.minimum)
-    .withMessage('Maximum must be greater than or equal to minimum'),
-  body('allocation.unit')
-    .notEmpty().withMessage('Unit is required')
-    .isIn(['bytes', 'KB', 'MB', 'GB', 'TB', 'percentage', 'cores'])
-    .withMessage('Invalid unit'),
-  body('autoScaling')
-    .optional()
-    .isObject().withMessage('Auto scaling must be an object'),
-  body('autoScaling.enabled')
-    .optional()
-    .isBoolean().withMessage('Auto scaling enabled must be boolean'),
-  body('autoScaling.threshold')
-    .optional()
-    .isFloat({ min: 0, max: 100 }).withMessage('Threshold must be between 0 and 100'),
-  body('priority')
-    .optional()
-    .isIn(['low', 'normal', 'high', 'critical'])
-    .withMessage('Invalid priority level'),
-];
+const Joi = require('joi');
+const commonValidators = require('../../../../../shared/lib/utils/validators/common-validators');
+const { StatusCodes } = require('../../../../../shared/lib/utils/constants/status-codes');
+const { ErrorCodes } = require('../../../../../shared/lib/utils/constants/error-codes');
+const logger = require('../../../../../shared/lib/utils/logger');
 
 /**
- * Validate system performance monitoring
- * @type {Array<ValidationChain>}
+ * Custom validation messages for system operations
  */
-const validatePerformanceMonitoring = [
-  query('metrics')
-    .optional()
-    .isString()
-    .customSanitizer(value => value.split(',').map(m => m.trim()))
-    .custom((metrics) => {
-      const validMetrics = ['cpu', 'memory', 'disk', 'network', 'latency', 'throughput', 'errors'];
-      return metrics.every(metric => validMetrics.includes(metric));
-    }).withMessage('Invalid metrics specified'),
-  query('interval')
-    .optional()
-    .isIn(['1m', '5m', '15m', '30m', '1h', '6h', '12h', '24h'])
-    .withMessage('Invalid interval'),
-  query('aggregation')
-    .optional()
-    .isIn(['avg', 'min', 'max', 'sum', 'count'])
-    .withMessage('Invalid aggregation method'),
-  query('startTime')
-    .optional()
-    .isISO8601().withMessage('Invalid start time format')
-    .toDate(),
-  query('endTime')
-    .optional()
-    .isISO8601().withMessage('Invalid end time format')
-    .toDate()
-    .custom((endTime, { req }) => {
-      if (req.query.startTime && endTime) {
-        return new Date(endTime) > new Date(req.query.startTime);
-      }
-      return true;
-    }).withMessage('End time must be after start time'),
-];
-
-/**
- * Validate system process management
- * @type {Array<ValidationChain>}
- */
-const validateProcessManagement = [
-  body('processName')
-    .notEmpty().withMessage('Process name is required')
-    .matches(/^[a-zA-Z0-9_-]+$/).withMessage('Invalid process name format')
-    .isLength({ min: 1, max: 50 }).withMessage('Process name must be between 1 and 50 characters'),
-  body('action')
-    .notEmpty().withMessage('Action is required')
-    .isIn(['start', 'stop', 'restart', 'reload', 'status', 'kill'])
-    .withMessage('Invalid action'),
-  body('signal')
-    .optional()
-    .isIn(['SIGTERM', 'SIGKILL', 'SIGHUP', 'SIGUSR1', 'SIGUSR2'])
-    .withMessage('Invalid signal'),
-  body('timeout')
-    .optional()
-    .isInt({ min: 0, max: 300 }).withMessage('Timeout must be between 0 and 300 seconds'),
-  body('force')
-    .optional()
-    .isBoolean().withMessage('Force must be boolean'),
-];
-
-/**
- * Validate system log configuration
- * @type {Array<ValidationChain>}
- */
-const validateLogConfiguration = [
-  body('logLevel')
-    .notEmpty().withMessage('Log level is required')
-    .isIn(['debug', 'info', 'warn', 'error', 'fatal'])
-    .withMessage('Invalid log level'),
-  body('loggers')
-    .optional()
-    .isArray().withMessage('Loggers must be an array')
-    .custom((loggers) => {
-      return loggers.every(logger => 
-        logger.name && 
-        ['console', 'file', 'syslog', 'database', 'external'].includes(logger.type)
-      );
-    }).withMessage('Invalid logger configuration'),
-  body('retention')
-    .optional()
-    .isObject().withMessage('Retention must be an object'),
-  body('retention.days')
-    .optional()
-    .isInt({ min: 1, max: 365 }).withMessage('Retention days must be between 1 and 365'),
-  body('retention.maxSize')
-    .optional()
-    .matches(/^\d+[KMG]B$/).withMessage('Invalid max size format (e.g., 100MB, 1GB)'),
-  body('rotation')
-    .optional()
-    .isObject().withMessage('Rotation must be an object'),
-  body('rotation.enabled')
-    .optional()
-    .isBoolean().withMessage('Rotation enabled must be boolean'),
-  body('rotation.schedule')
-    .optional()
-    .custom(isValidCron).withMessage('Invalid cron expression'),
-  body('filters')
-    .optional()
-    .isArray().withMessage('Filters must be an array'),
-];
-
-/**
- * Validate system security scan
- * @type {Array<ValidationChain>}
- */
-const validateSecurityScan = [
-  body('scanType')
-    .notEmpty().withMessage('Scan type is required')
-    .isIn(['vulnerability', 'malware', 'compliance', 'configuration', 'full'])
-    .withMessage('Invalid scan type'),
-  body('targets')
-    .isArray({ min: 1 }).withMessage('At least one target must be specified')
-    .custom((targets) => {
-      return targets.every(target => 
-        target.type && ['server', 'database', 'application', 'network'].includes(target.type)
-      );
-    }).withMessage('Invalid target configuration'),
-  body('schedule')
-    .optional()
-    .isObject().withMessage('Schedule must be an object'),
-  body('schedule.frequency')
-    .optional()
-    .isIn(['once', 'daily', 'weekly', 'monthly'])
-    .withMessage('Invalid frequency'),
-  body('schedule.cron')
-    .optional()
-    .custom(isValidCron).withMessage('Invalid cron expression'),
-  body('depth')
-    .optional()
-    .isIn(['quick', 'standard', 'deep', 'comprehensive'])
-    .withMessage('Invalid scan depth'),
-  body('notifications')
-    .optional()
-    .isObject().withMessage('Notifications must be an object'),
-  body('notifications.onComplete')
-    .optional()
-    .isBoolean().withMessage('onComplete must be boolean'),
-  body('notifications.onCritical')
-    .optional()
-    .isBoolean().withMessage('onCritical must be boolean'),
-];
-
-/**
- * Validate system network configuration
- * @type {Array<ValidationChain>}
- */
-const validateNetworkConfig = [
-  body('interface')
-    .notEmpty().withMessage('Network interface is required')
-    .matches(/^[a-zA-Z0-9]+$/).withMessage('Invalid interface name'),
-  body('ipAddress')
-    .optional()
-    .custom(isValidIpAddress).withMessage('Invalid IP address format'),
-  body('subnet')
-    .optional()
-    .matches(/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/)
-    .withMessage('Invalid subnet format (e.g., 192.168.1.0/24)'),
-  body('gateway')
-    .optional()
-    .custom(isValidIpAddress).withMessage('Invalid gateway IP address'),
-  body('dns')
-    .optional()
-    .isArray().withMessage('DNS must be an array')
-    .custom((dns) => dns.every(ip => isValidIpAddress(ip)))
-    .withMessage('Invalid DNS server IP addresses'),
-  body('ports')
-    .optional()
-    .isArray().withMessage('Ports must be an array')
-    .custom((ports) => {
-      return ports.every(port => 
-        port.number && isValidPort(port.number) &&
-        ['tcp', 'udp'].includes(port.protocol)
-      );
-    }).withMessage('Invalid port configuration'),
-  body('firewall')
-    .optional()
-    .isObject().withMessage('Firewall must be an object'),
-  body('firewall.enabled')
-    .optional()
-    .isBoolean().withMessage('Firewall enabled must be boolean'),
-  body('firewall.rules')
-    .optional()
-    .isArray().withMessage('Firewall rules must be an array'),
-];
-
-/**
- * Validate system cache management
- * @type {Array<ValidationChain>}
- */
-const validateCacheManagement = [
-  body('cacheType')
-    .notEmpty().withMessage('Cache type is required')
-    .isIn(['redis', 'memcached', 'application', 'cdn'])
-    .withMessage('Invalid cache type'),
-  body('action')
-    .notEmpty().withMessage('Action is required')
-    .isIn(['flush', 'clear', 'warm', 'invalidate', 'optimize'])
-    .withMessage('Invalid action'),
-  body('pattern')
-    .optional()
-    .isString().withMessage('Pattern must be a string')
-    .isLength({ max: 200 }).withMessage('Pattern too long'),
-  body('ttl')
-    .optional()
-    .isInt({ min: 0, max: 86400 }).withMessage('TTL must be between 0 and 86400 seconds'),
-  body('priority')
-    .optional()
-    .isIn(['low', 'normal', 'high'])
-    .withMessage('Invalid priority'),
-];
-
-/**
- * Validate system queue configuration
- * @type {Array<ValidationChain>}
- */
-const validateQueueConfig = [
-  body('queueName')
-    .notEmpty().withMessage('Queue name is required')
-    .matches(/^[a-zA-Z0-9_-]+$/).withMessage('Invalid queue name format')
-    .isLength({ min: 1, max: 50 }).withMessage('Queue name must be between 1 and 50 characters'),
-  body('type')
-    .notEmpty().withMessage('Queue type is required')
-    .isIn(['rabbitmq', 'redis', 'sqs', 'kafka'])
-    .withMessage('Invalid queue type'),
-  body('configuration')
-    .notEmpty().withMessage('Configuration is required')
-    .isObject().withMessage('Configuration must be an object'),
-  body('configuration.maxSize')
-    .optional()
-    .isInt({ min: 1, max: 1000000 }).withMessage('Max size must be between 1 and 1,000,000'),
-  body('configuration.maxRetries')
-    .optional()
-    .isInt({ min: 0, max: 10 }).withMessage('Max retries must be between 0 and 10'),
-  body('configuration.timeout')
-    .optional()
-    .isInt({ min: 1, max: 3600 }).withMessage('Timeout must be between 1 and 3600 seconds'),
-  body('configuration.deadLetterQueue')
-    .optional()
-    .isBoolean().withMessage('Dead letter queue must be boolean'),
-];
-
-/**
- * Middleware to handle validation errors
- * @param {Object} req Express request object
- * @param {Object} res Express response object
- * @param {Function} next Express next middleware
- * @returns {void|Object}
- */
-const handleValidationErrors = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array().map(err => ({
-        field: err.param,
-        message: err.msg,
-        value: err.value
-      }))
-    });
-  }
-  next();
+const VALIDATION_MESSAGES = {
+  SYSTEM_ID_REQUIRED: 'System ID is required',
+  SYSTEM_ID_INVALID: 'Invalid system ID format',
+  SERVICE_NAME_REQUIRED: 'Service name is required',
+  SERVICE_NAME_INVALID: 'Service name must be in kebab-case format',
+  ALERT_ID_REQUIRED: 'Alert ID is required',
+  METRIC_NAME_REQUIRED: 'Metric name is required',
+  METRIC_VALUE_INVALID: 'Metric value must be a valid number',
+  HEALTH_STATUS_INVALID: 'Invalid health status',
+  ALERT_SEVERITY_INVALID: 'Invalid alert severity level',
+  TIME_RANGE_INVALID: 'Invalid time range specified',
+  AGGREGATION_INVALID: 'Invalid aggregation method',
+  THRESHOLD_INVALID: 'Threshold value must be a positive number',
+  INTERVAL_INVALID: 'Interval must be between 10 and 3600 seconds',
+  PORT_INVALID: 'Invalid port number',
+  CPU_LIMIT_INVALID: 'CPU limit format is invalid',
+  MEMORY_LIMIT_INVALID: 'Memory limit format is invalid',
+  TIMESTAMP_INVALID: 'Invalid timestamp format',
+  DURATION_INVALID: 'Duration must be a positive integer',
+  SCALE_FACTOR_INVALID: 'Scale factor must be between 0.1 and 10'
 };
 
+/**
+ * Common validation schemas for system operations
+ */
+const commonSchemas = {
+  systemId: Joi.string()
+    .pattern(/^sys-[a-zA-Z0-9]{8,32}$/)
+    .required()
+    .messages({
+      'string.pattern.base': VALIDATION_MESSAGES.SYSTEM_ID_INVALID,
+      'any.required': VALIDATION_MESSAGES.SYSTEM_ID_REQUIRED
+    }),
+
+  serviceName: Joi.string()
+    .pattern(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/)
+    .min(2)
+    .max(64)
+    .required()
+    .messages({
+      'string.pattern.base': VALIDATION_MESSAGES.SERVICE_NAME_INVALID,
+      'any.required': VALIDATION_MESSAGES.SERVICE_NAME_REQUIRED
+    }),
+
+  alertId: Joi.string()
+    .pattern(/^alert-[a-zA-Z0-9]{8,32}$/)
+    .required()
+    .messages({
+      'any.required': VALIDATION_MESSAGES.ALERT_ID_REQUIRED
+    }),
+
+  healthStatus: Joi.string()
+    .valid('healthy', 'degraded', 'unhealthy', 'unknown', 'checking')
+    .messages({
+      'any.only': VALIDATION_MESSAGES.HEALTH_STATUS_INVALID
+    }),
+
+  alertSeverity: Joi.string()
+    .valid('critical', 'high', 'medium', 'low', 'info')
+    .messages({
+      'any.only': VALIDATION_MESSAGES.ALERT_SEVERITY_INVALID
+    }),
+
+  timeRange: Joi.object({
+    start: Joi.date().iso().required(),
+    end: Joi.date().iso().greater(Joi.ref('start')).required(),
+    timezone: Joi.string().default('UTC')
+  }),
+
+  pagination: Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(20),
+    sort: Joi.string().default('-timestamp'),
+    order: Joi.string().valid('asc', 'desc').default('desc')
+  }),
+
+  metricData: Joi.object({
+    name: Joi.string().required(),
+    value: Joi.number().required(),
+    unit: Joi.string(),
+    timestamp: Joi.date().iso().default(() => new Date()),
+    tags: Joi.object().pattern(Joi.string(), Joi.string()),
+    metadata: Joi.object()
+  }),
+
+  resourceLimits: Joi.object({
+    cpu: Joi.object({
+      request: Joi.string().pattern(/^\d+m?$/),
+      limit: Joi.string().pattern(/^\d+m?$/)
+    }),
+    memory: Joi.object({
+      request: Joi.string().pattern(/^\d+[KMG]i?$/),
+      limit: Joi.string().pattern(/^\d+[KMG]i?$/)
+    }),
+    storage: Joi.object({
+      size: Joi.string().pattern(/^\d+[KMG]i?$/),
+      iops: Joi.number().integer().min(100).max(100000)
+    }),
+    network: Joi.object({
+      ingress: Joi.string().pattern(/^\d+[KMG]bps$/),
+      egress: Joi.string().pattern(/^\d+[KMG]bps$/)
+    })
+  })
+};
+
+/**
+ * System initialization and setup validators
+ */
+const systemInitializationValidators = {
+  /**
+   * Validate initialize system request
+   */
+  initializeSystem: {
+    body: Joi.object({
+      systemName: Joi.string().min(3).max(64).required(),
+      systemType: Joi.string().valid('production', 'staging', 'development', 'test').required(),
+      description: Joi.string().max(500),
+      configuration: Joi.object({
+        region: Joi.string().required(),
+        zone: Joi.string(),
+        cluster: Joi.string(),
+        namespace: Joi.string().default('default'),
+        resources: commonSchemas.resourceLimits,
+        networking: Joi.object({
+          vpcId: Joi.string(),
+          subnetIds: Joi.array().items(Joi.string()),
+          securityGroups: Joi.array().items(Joi.string()),
+          loadBalancer: Joi.object({
+            enabled: Joi.boolean().default(true),
+            type: Joi.string().valid('application', 'network').default('application'),
+            scheme: Joi.string().valid('internal', 'internet-facing').default('internet-facing')
+          })
+        }),
+        monitoring: Joi.object({
+          enabled: Joi.boolean().default(true),
+          provider: Joi.string().valid('prometheus', 'datadog', 'newrelic', 'cloudwatch'),
+          configuration: Joi.object()
+        }),
+        logging: Joi.object({
+          enabled: Joi.boolean().default(true),
+          provider: Joi.string().valid('elasticsearch', 'cloudwatch', 'stackdriver', 'splunk'),
+          configuration: Joi.object()
+        })
+      }).required(),
+      components: Joi.array().items(
+        Joi.object({
+          name: Joi.string().required(),
+          type: Joi.string().valid('service', 'database', 'cache', 'queue', 'storage').required(),
+          enabled: Joi.boolean().default(true),
+          configuration: Joi.object()
+        })
+      ),
+      tags: Joi.object().pattern(Joi.string(), Joi.string()),
+      metadata: Joi.object()
+    }).unknown(false)
+  },
+
+  /**
+   * Validate provision system request
+   */
+  provisionSystem: {
+    body: Joi.object({
+      template: Joi.string().valid('basic', 'standard', 'enterprise', 'custom').required(),
+      specifications: Joi.object({
+        compute: Joi.object({
+          instances: Joi.number().integer().min(1).max(100).required(),
+          instanceType: Joi.string().required(),
+          autoScaling: Joi.object({
+            enabled: Joi.boolean().default(false),
+            minInstances: Joi.number().integer().min(1),
+            maxInstances: Joi.number().integer().max(100),
+            targetCPU: Joi.number().min(10).max(90)
+          })
+        }),
+        storage: Joi.object({
+          type: Joi.string().valid('ssd', 'hdd', 'hybrid').required(),
+          size: Joi.string().pattern(/^\d+[KMG]i?$/).required(),
+          iops: Joi.number().integer().min(100),
+          encryption: Joi.boolean().default(true)
+        }),
+        networking: Joi.object({
+          bandwidth: Joi.string().pattern(/^\d+[KMG]bps$/),
+          publicIP: Joi.boolean().default(false),
+          privateDNS: Joi.boolean().default(true)
+        })
+      }).required(),
+      schedule: Joi.object({
+        immediate: Joi.boolean().default(true),
+        scheduledAt: Joi.when('immediate', {
+          is: false,
+          then: Joi.date().iso().greater('now').required()
+        })
+      }),
+      approvalRequired: Joi.boolean().default(true),
+      notificationEmails: Joi.array().items(Joi.string().email())
+    }).unknown(false)
+  },
+
+  /**
+   * Validate bootstrap system request
+   */
+  bootstrapSystem: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      bootstrapType: Joi.string().valid('full', 'partial', 'minimal').default('full'),
+      components: Joi.array().items(
+        Joi.string().valid('core', 'monitoring', 'logging', 'security', 'networking')
+      ),
+      skipValidation: Joi.boolean().default(false),
+      force: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate reset system request
+   */
+  resetSystem: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      resetType: Joi.string().valid('soft', 'hard', 'factory').required(),
+      preserveData: Joi.boolean().default(true),
+      preserveConfiguration: Joi.boolean().default(false),
+      components: Joi.array().items(Joi.string()),
+      confirmation: Joi.string().valid('RESET').required(),
+      reason: Joi.string().max(500).required()
+    }).unknown(false)
+  }
+};
+
+/**
+ * System health and monitoring validators
+ */
+const systemHealthValidators = {
+  /**
+   * Validate get system health request
+   */
+  getSystemHealth: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      detailed: Joi.boolean().default(false),
+      includeHistory: Joi.boolean().default(false),
+      historyDuration: Joi.string().valid('1h', '6h', '24h', '7d').default('24h'),
+      components: Joi.array().items(Joi.string()),
+      format: Joi.string().valid('json', 'summary', 'detailed').default('json')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get detailed health report request
+   */
+  getDetailedHealthReport: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      reportType: Joi.string().valid('comprehensive', 'executive', 'technical').default('comprehensive'),
+      includeRecommendations: Joi.boolean().default(true),
+      includeTrends: Joi.boolean().default(true),
+      timeRange: commonSchemas.timeRange,
+      format: Joi.string().valid('json', 'pdf', 'html').default('json')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate perform health check request
+   */
+  performHealthCheck: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      checkTypes: Joi.array().items(
+        Joi.string().valid(
+          'connectivity',
+          'latency',
+          'throughput',
+          'resources',
+          'dependencies',
+          'certificates',
+          'configurations',
+          'security'
+        )
+      ).min(1).default(['connectivity', 'resources', 'dependencies']),
+      depth: Joi.string().valid('quick', 'standard', 'deep').default('standard'),
+      timeout: Joi.number().min(1000).max(60000).default(10000),
+      parallel: Joi.boolean().default(true),
+      abortOnFailure: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get health history request
+   */
+  getHealthHistory: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      timeRange: commonSchemas.timeRange,
+      granularity: Joi.string().valid('minute', 'hour', 'day').default('hour'),
+      metrics: Joi.array().items(Joi.string()),
+      includeAnomalies: Joi.boolean().default(true),
+      ...commonSchemas.pagination
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get health trends request
+   */
+  getHealthTrends: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      period: Joi.string().valid('24h', '7d', '30d', '90d').default('7d'),
+      metrics: Joi.array().items(
+        Joi.string().valid('availability', 'performance', 'errors', 'latency', 'throughput')
+      ),
+      comparison: Joi.string().valid('previous', 'average', 'baseline'),
+      includeForecasts: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate subscribe to health notifications request
+   */
+  subscribeToHealthNotifications: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      channels: Joi.array().items(
+        Joi.object({
+          type: Joi.string().valid('email', 'sms', 'slack', 'webhook').required(),
+          destination: Joi.string().required(),
+          events: Joi.array().items(
+            Joi.string().valid('degraded', 'unhealthy', 'recovered', 'maintenance')
+          ),
+          severity: Joi.array().items(commonSchemas.alertSeverity)
+        })
+      ).min(1).required(),
+      filters: Joi.object({
+        components: Joi.array().items(Joi.string()),
+        services: Joi.array().items(Joi.string()),
+        minimumSeverity: commonSchemas.alertSeverity
+      }),
+      schedule: Joi.object({
+        enabled: Joi.boolean().default(true),
+        quietHours: Joi.object({
+          start: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/),
+          end: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/),
+          timezone: Joi.string().default('UTC')
+        })
+      })
+    }).unknown(false)
+  }
+};
+
+/**
+ * System metrics and performance validators
+ */
+const systemMetricsValidators = {
+  /**
+   * Validate update system metrics request
+   */
+  updateSystemMetrics: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      metrics: Joi.array().items(commonSchemas.metricData).min(1).required(),
+      source: Joi.string().required(),
+      collectedAt: Joi.date().iso().default(() => new Date()),
+      aggregated: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate batch update metrics request
+   */
+  batchUpdateMetrics: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      batches: Joi.array().items(
+        Joi.object({
+          timestamp: Joi.date().iso().required(),
+          metrics: Joi.array().items(commonSchemas.metricData).min(1).required(),
+          source: Joi.string().required()
+        })
+      ).min(1).max(100).required(),
+      compression: Joi.string().valid('none', 'gzip', 'snappy').default('none'),
+      validateData: Joi.boolean().default(true)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get current metrics request
+   */
+  getCurrentMetrics: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      metrics: Joi.array().items(Joi.string()),
+      includeMetadata: Joi.boolean().default(false),
+      format: Joi.string().valid('json', 'prometheus', 'graphite').default('json')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get metrics history request
+   */
+  getMetricsHistory: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      metrics: Joi.array().items(Joi.string()).min(1).required(),
+      timeRange: commonSchemas.timeRange,
+      granularity: Joi.string().valid('raw', '1m', '5m', '15m', '1h', '1d').default('5m'),
+      aggregation: Joi.string().valid('avg', 'sum', 'min', 'max', 'count', 'p50', 'p95', 'p99'),
+      fillGaps: Joi.boolean().default(false),
+      ...commonSchemas.pagination
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get metrics stream request
+   */
+  getMetricsStream: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      metrics: Joi.array().items(Joi.string()),
+      interval: Joi.number().min(1).max(60).default(5),
+      format: Joi.string().valid('json', 'sse', 'websocket').default('sse'),
+      bufferSize: Joi.number().min(1).max(1000).default(100)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get performance statistics request
+   */
+  getPerformanceStats: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      period: Joi.string().valid('1h', '6h', '24h', '7d', '30d').default('24h'),
+      components: Joi.array().items(Joi.string()),
+      includeBreakdown: Joi.boolean().default(true),
+      includeComparison: Joi.boolean().default(false),
+      percentiles: Joi.array().items(
+        Joi.number().valid(50, 75, 90, 95, 99, 99.9)
+      ).default([50, 95, 99])
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get performance analysis request
+   */
+  getPerformanceAnalysis: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      analysisType: Joi.string().valid('bottlenecks', 'trends', 'anomalies', 'capacity').required(),
+      timeRange: commonSchemas.timeRange,
+      depth: Joi.string().valid('basic', 'detailed', 'comprehensive').default('detailed'),
+      includeRecommendations: Joi.boolean().default(true)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate export metrics request
+   */
+  exportMetrics: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      metrics: Joi.array().items(Joi.string()),
+      timeRange: commonSchemas.timeRange,
+      format: Joi.string().valid('csv', 'json', 'parquet', 'excel').required(),
+      compression: Joi.string().valid('none', 'gzip', 'zip').default('none'),
+      includeMetadata: Joi.boolean().default(true)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate archive metrics request
+   */
+  archiveMetrics: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      timeRange: commonSchemas.timeRange,
+      destination: Joi.object({
+        type: Joi.string().valid('s3', 'azure', 'gcp', 'local').required(),
+        path: Joi.string().required(),
+        credentials: Joi.object().when('type', {
+          not: 'local',
+          then: Joi.required()
+        })
+      }),
+      compression: Joi.string().valid('none', 'gzip', 'snappy', 'lz4').default('gzip'),
+      retention: Joi.number().min(1).max(3650).default(365),
+      deleteAfterArchive: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate cleanup metrics request
+   */
+  cleanupMetrics: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      olderThan: Joi.date().iso().max('now').required(),
+      metrics: Joi.array().items(Joi.string()),
+      dryRun: Joi.boolean().default(true),
+      batchSize: Joi.number().min(100).max(10000).default(1000),
+      confirmation: Joi.when('dryRun', {
+        is: false,
+        then: Joi.string().valid('DELETE').required()
+      })
+    }).unknown(false)
+  }
+};
+
+/**
+ * Service health and management validators
+ */
+const serviceManagementValidators = {
+  /**
+   * Validate update service health request
+   */
+  updateServiceHealth: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId,
+      serviceName: commonSchemas.serviceName
+    }),
+    body: Joi.object({
+      status: commonSchemas.healthStatus.required(),
+      checks: Joi.array().items(
+        Joi.object({
+          name: Joi.string().required(),
+          status: commonSchemas.healthStatus.required(),
+          message: Joi.string(),
+          duration: Joi.number().min(0),
+          timestamp: Joi.date().iso().default(() => new Date())
+        })
+      ),
+      metrics: Joi.object({
+        responseTime: Joi.number().min(0),
+        errorRate: Joi.number().min(0).max(100),
+        throughput: Joi.number().min(0),
+        activeConnections: Joi.number().integer().min(0)
+      }),
+      dependencies: Joi.array().items(
+        Joi.object({
+          name: Joi.string().required(),
+          status: commonSchemas.healthStatus.required(),
+          latency: Joi.number().min(0)
+        })
+      ),
+      version: Joi.string(),
+      metadata: Joi.object()
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get services status request
+   */
+  getServicesStatus: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      status: commonSchemas.healthStatus,
+      includeMetrics: Joi.boolean().default(false),
+      includeDependencies: Joi.boolean().default(false),
+      sortBy: Joi.string().valid('name', 'status', 'lastUpdate').default('name')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get service status request
+   */
+  getServiceStatus: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId,
+      serviceName: commonSchemas.serviceName
+    }),
+    query: Joi.object({
+      detailed: Joi.boolean().default(false),
+      includeHistory: Joi.boolean().default(false),
+      historyDuration: Joi.string().valid('1h', '6h', '24h', '7d').default('24h')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate restart service request
+   */
+  restartService: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId,
+      serviceName: commonSchemas.serviceName
+    }),
+    body: Joi.object({
+      graceful: Joi.boolean().default(true),
+      timeout: Joi.number().min(0).max(300).default(30),
+      force: Joi.boolean().default(false),
+      reason: Joi.string().max(500).required()
+    }).unknown(false)
+  },
+
+  /**
+   * Validate scale service request
+   */
+  scaleService: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId,
+      serviceName: commonSchemas.serviceName
+    }),
+    body: Joi.object({
+      replicas: Joi.number().integer().min(0).max(100),
+      scaleFactor: Joi.number().min(0.1).max(10),
+      resources: commonSchemas.resourceLimits,
+      strategy: Joi.string().valid('immediate', 'rolling', 'blue-green').default('rolling'),
+      reason: Joi.string().max(500).required()
+    }).unknown(false).or('replicas', 'scaleFactor')
+  },
+
+  /**
+   * Validate get service logs request
+   */
+  getServiceLogs: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId,
+      serviceName: commonSchemas.serviceName
+    }),
+    query: Joi.object({
+      lines: Joi.number().integer().min(1).max(10000).default(100),
+      since: Joi.date().iso(),
+      until: Joi.date().iso(),
+      level: Joi.string().valid('error', 'warn', 'info', 'debug'),
+      search: Joi.string().max(200),
+      follow: Joi.boolean().default(false),
+      format: Joi.string().valid('json', 'text').default('json')
+    }).unknown(false)
+  }
+};
+
+/**
+ * Alert management validators
+ */
+const alertManagementValidators = {
+  /**
+   * Validate create system alert request
+   */
+  createSystemAlert: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      title: Joi.string().min(3).max(200).required(),
+      description: Joi.string().max(1000),
+      severity: commonSchemas.alertSeverity.required(),
+      source: Joi.string().required(),
+      category: Joi.string().valid(
+        'performance',
+        'availability',
+        'security',
+        'configuration',
+        'capacity'
+      ).required(),
+      affectedComponents: Joi.array().items(Joi.string()),
+      metrics: Joi.object().pattern(Joi.string(), Joi.number()),
+      thresholds: Joi.object({
+        actual: Joi.number(),
+        expected: Joi.number(),
+        threshold: Joi.number()
+      }),
+      actions: Joi.array().items(
+        Joi.object({
+          type: Joi.string().valid('notify', 'escalate', 'auto-remediate').required(),
+          parameters: Joi.object()
+        })
+      ),
+      metadata: Joi.object(),
+      expiresAt: Joi.date().iso().greater('now')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate acknowledge alert request
+   */
+  acknowledgeAlert: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId,
+      alertId: commonSchemas.alertId
+    }),
+    body: Joi.object({
+      acknowledgedBy: Joi.string().required(),
+      comment: Joi.string().max(500),
+      estimatedResolution: Joi.date().iso().greater('now'),
+      assignedTo: Joi.string()
+    }).unknown(false)
+  },
+
+  /**
+   * Validate resolve alert request
+   */
+  resolveAlert: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId,
+      alertId: commonSchemas.alertId
+    }),
+    body: Joi.object({
+      resolvedBy: Joi.string().required(),
+      resolution: Joi.string().max(1000).required(),
+      rootCause: Joi.string().max(500),
+      preventiveMeasures: Joi.array().items(Joi.string()),
+      verificationSteps: Joi.array().items(Joi.string()),
+      closeRelated: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get active alerts request
+   */
+  getActiveAlerts: {
+    query: Joi.object({
+      systemId: Joi.string().pattern(/^sys-[a-zA-Z0-9]{8,32}$/),
+      severity: commonSchemas.alertSeverity,
+      category: Joi.string(),
+      acknowledged: Joi.boolean(),
+      assignedTo: Joi.string(),
+      createdAfter: Joi.date().iso(),
+      sortBy: Joi.string().valid('severity', 'created', 'updated').default('severity'),
+      ...commonSchemas.pagination
+    }).unknown(false)
+  },
+
+  /**
+   * Validate configure alert rules request
+   */
+  configureAlertRules: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      rules: Joi.array().items(
+        Joi.object({
+          name: Joi.string().required(),
+          enabled: Joi.boolean().default(true),
+          condition: Joi.object({
+            metric: Joi.string().required(),
+            operator: Joi.string().valid('gt', 'gte', 'lt', 'lte', 'eq', 'neq').required(),
+            threshold: Joi.number().required(),
+            duration: Joi.number().min(0).default(60),
+            aggregation: Joi.string().valid('avg', 'sum', 'min', 'max', 'count')
+          }).required(),
+          severity: commonSchemas.alertSeverity.required(),
+          actions: Joi.array().items(
+            Joi.object({
+              type: Joi.string().required(),
+              configuration: Joi.object()
+            })
+          ),
+          cooldown: Joi.number().min(0).max(3600).default(300),
+          metadata: Joi.object()
+        })
+      ).min(1).required()
+    }).unknown(false)
+  }
+};
+
+/**
+ * System monitoring control validators
+ */
+const monitoringControlValidators = {
+  /**
+   * Validate start monitoring request
+   */
+  startMonitoring: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      components: Joi.array().items(Joi.string()),
+      metricsInterval: Joi.number().min(10).max(3600).default(60),
+      logLevel: Joi.string().valid('error', 'warn', 'info', 'debug').default('info'),
+      alertingEnabled: Joi.boolean().default(true),
+      tracingEnabled: Joi.boolean().default(false)
+    }).unknown(false)
+  },
+
+  /**
+   * Validate update monitoring configuration request
+   */
+  updateMonitoringConfig: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      metricsCollection: Joi.object({
+        enabled: Joi.boolean(),
+        interval: Joi.number().min(10).max(3600),
+        retention: Joi.number().min(1).max(365),
+        metrics: Joi.array().items(
+          Joi.object({
+            name: Joi.string().required(),
+            enabled: Joi.boolean(),
+            interval: Joi.number().min(10).max(3600)
+          })
+        )
+      }),
+      logging: Joi.object({
+        enabled: Joi.boolean(),
+        level: Joi.string().valid('error', 'warn', 'info', 'debug'),
+        retention: Joi.number().min(1).max(365),
+        format: Joi.string().valid('json', 'text', 'structured')
+      }),
+      alerting: Joi.object({
+        enabled: Joi.boolean(),
+        channels: Joi.array().items(
+          Joi.object({
+            type: Joi.string().required(),
+            enabled: Joi.boolean(),
+            configuration: Joi.object()
+          })
+        )
+      }),
+      tracing: Joi.object({
+        enabled: Joi.boolean(),
+        samplingRate: Joi.number().min(0).max(1),
+        backend: Joi.string()
+      })
+    }).unknown(false).min(1)
+  }
+};
+
+/**
+ * System dashboard and reporting validators
+ */
+const dashboardReportingValidators = {
+  /**
+   * Validate get system dashboard request
+   */
+  getSystemDashboard: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    query: Joi.object({
+      timeRange: Joi.string().valid('1h', '6h', '24h', '7d', '30d').default('24h'),
+      widgets: Joi.array().items(
+        Joi.string().valid(
+          'health',
+          'metrics',
+          'alerts',
+          'performance',
+          'resources',
+          'services',
+          'logs',
+          'events'
+        )
+      ),
+      refresh: Joi.boolean().default(false),
+      layout: Joi.string().valid('default', 'compact', 'detailed').default('default')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate create custom dashboard request
+   */
+  createCustomDashboard: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      name: Joi.string().min(3).max(100).required(),
+      description: Joi.string().max(500),
+      layout: Joi.object({
+        type: Joi.string().valid('grid', 'flow', 'tabs').default('grid'),
+        columns: Joi.number().min(1).max(12).default(12),
+        rows: Joi.number().min(1).max(100)
+      }),
+      widgets: Joi.array().items(
+        Joi.object({
+          id: Joi.string(),
+          type: Joi.string().required(),
+          title: Joi.string().required(),
+          position: Joi.object({
+            x: Joi.number().min(0).required(),
+            y: Joi.number().min(0).required(),
+            width: Joi.number().min(1).max(12).required(),
+            height: Joi.number().min(1).max(10).required()
+          }),
+          configuration: Joi.object()
+        })
+      ).min(1).required(),
+      refreshInterval: Joi.number().min(0).max(3600).default(60),
+      permissions: Joi.object({
+        public: Joi.boolean().default(false),
+        sharedWith: Joi.array().items(Joi.string())
+      }),
+      metadata: Joi.object()
+    }).unknown(false)
+  },
+
+  /**
+   * Validate generate system report request
+   */
+  generateSystemReport: {
+    params: Joi.object({
+      systemId: commonSchemas.systemId
+    }),
+    body: Joi.object({
+      reportType: Joi.string().valid(
+        'health',
+        'performance',
+        'capacity',
+        'security',
+        'compliance',
+        'executive'
+      ).required(),
+      timeRange: commonSchemas.timeRange,
+      sections: Joi.array().items(Joi.string()),
+      format: Joi.string().valid('pdf', 'html', 'json', 'csv', 'excel').default('pdf'),
+      includeGraphs: Joi.boolean().default(true),
+      includeRecommendations: Joi.boolean().default(true),
+      recipients: Joi.array().items(Joi.string().email()),
+      schedule: Joi.object({
+        frequency: Joi.string().valid('once', 'daily', 'weekly', 'monthly'),
+        time: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/),
+        dayOfWeek: Joi.when('frequency', {
+          is: 'weekly',
+          then: Joi.number().min(0).max(6)
+        }),
+        dayOfMonth: Joi.when('frequency', {
+          is: 'monthly',
+          then: Joi.number().min(1).max(31)
+        })
+      })
+    }).unknown(false)
+  }
+};
+
+/**
+ * Aggregated system operations validators
+ */
+const aggregatedSystemValidators = {
+  /**
+   * Validate get aggregated metrics request
+   */
+  getAggregatedMetrics: {
+    query: Joi.object({
+      systems: Joi.array().items(commonSchemas.systemId),
+      metrics: Joi.array().items(Joi.string()).min(1).required(),
+      timeRange: commonSchemas.timeRange,
+      aggregation: Joi.string().valid('avg', 'sum', 'min', 'max', 'count').default('avg'),
+      groupBy: Joi.string().valid('system', 'metric', 'time'),
+      ...commonSchemas.pagination
+    }).unknown(false)
+  },
+
+  /**
+   * Validate get system overview request
+   */
+  getSystemOverview: {
+    query: Joi.object({
+      includeOffline: Joi.boolean().default(false),
+      includeMetrics: Joi.boolean().default(true),
+      includeAlerts: Joi.boolean().default(true),
+      sortBy: Joi.string().valid('name', 'status', 'health', 'created').default('name')
+    }).unknown(false)
+  },
+
+  /**
+   * Validate perform benchmark request
+   */
+  performBenchmark: {
+    body: Joi.object({
+      benchmarkType: Joi.string().valid(
+        'performance',
+        'stress',
+        'load',
+        'endurance',
+        'spike'
+      ).required(),
+      targets: Joi.array().items(commonSchemas.systemId).min(1).required(),
+      configuration: Joi.object({
+        duration: Joi.number().min(60).max(3600).required(),
+        concurrency: Joi.number().min(1).max(1000).default(10),
+        rampUp: Joi.number().min(0).max(300).default(30),
+        metrics: Joi.array().items(Joi.string())
+      }).required(),
+      baseline: Joi.object({
+        source: Joi.string().valid('previous', 'custom', 'industry').default('previous'),
+        values: Joi.when('source', {
+          is: 'custom',
+          then: Joi.object().required()
+        })
+      }),
+      notifications: Joi.array().items(Joi.string().email())
+    }).unknown(false)
+  }
+};
+
+/**
+ * Combined system validators export
+ */
+const systemValidators = {
+  ...systemInitializationValidators,
+  ...systemHealthValidators,
+  ...systemMetricsValidators,
+  ...serviceManagementValidators,
+  ...alertManagementValidators,
+  ...monitoringControlValidators,
+  ...dashboardReportingValidators,
+  ...aggregatedSystemValidators
+};
+
+/**
+ * Validation error handler
+ */
+const handleValidationError = (error, req, res) => {
+  logger.warn('System validation error', {
+    path: req.path,
+    method: req.method,
+    error: error.details,
+    body: req.body,
+    query: req.query,
+    params: req.params
+  });
+
+  const errors = error.details.map(detail => ({
+    field: detail.path.join('.'),
+    message: detail.message,
+    type: detail.type
+  }));
+
+  return res.status(StatusCodes.BAD_REQUEST).json({
+    success: false,
+    error: {
+      code: ErrorCodes.VALIDATION_ERROR,
+      message: 'Validation failed',
+      details: errors
+    }
+  });
+};
+
+/**
+ * Validation middleware factory
+ */
+const createValidator = (schema) => {
+  return (req, res, next) => {
+    const validationOptions = {
+      abortEarly: false,
+      allowUnknown: false,
+      stripUnknown: true
+    };
+
+    // Validate params if schema exists
+    if (schema.params) {
+      const { error, value } = schema.params.validate(req.params, validationOptions);
+      if (error) {
+        return handleValidationError(error, req, res);
+      }
+      req.params = value;
+    }
+
+    // Validate query if schema exists
+    if (schema.query) {
+      const { error, value } = schema.query.validate(req.query, validationOptions);
+      if (error) {
+        return handleValidationError(error, req, res);
+      }
+      req.query = value;
+    }
+
+    // Validate body if schema exists
+    if (schema.body) {
+      const { error, value } = schema.body.validate(req.body, validationOptions);
+      if (error) {
+        return handleValidationError(error, req, res);
+      }
+      req.body = value;
+    }
+
+    next();
+  };
+};
+
+// Export validators
 module.exports = {
-  validateResourceAllocation,
-  validatePerformanceMonitoring,
-  validateProcessManagement,
-  validateLogConfiguration,
-  validateSecurityScan,
-  validateNetworkConfig,
-  validateCacheManagement,
-  validateQueueConfig,
-  handleValidationErrors
+  systemValidators,
+  createValidator,
+  handleValidationError,
+  commonSchemas,
+  VALIDATION_MESSAGES
 };

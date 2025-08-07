@@ -3,1072 +3,803 @@
 /**
  * @fileoverview Platform management controller
  * @module servers/admin-server/modules/platform-management/controllers/platform-controller
+ * @requires module:servers/admin-server/modules/platform-management/services/platform-service
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
  * @requires module:shared/lib/utils/response-formatter
  * @requires module:shared/lib/utils/async-handler
- * @requires module:servers/admin-server/modules/platform-management/services/platform-service
- * @requires module:servers/admin-server/modules/platform-management/validators/platform-validators
+ * @requires module:shared/lib/utils/constants/status-codes
  */
 
+const platformService = require('../services/platform-service');
 const logger = require('../../../../../shared/lib/utils/logger');
 const { AppError } = require('../../../../../shared/lib/utils/app-error');
-const ResponseFormatter = require('../../../../../shared/lib/utils/response-formatter');
+const responseFormatter = require('../../../../../shared/lib/utils/response-formatter');
 const { asyncHandler } = require('../../../../../shared/lib/utils/async-handler');
-console.log('AsyncHandler module:', typeof require('../../../../../shared/lib/utils/async-handler'));
-console.log('asyncHandler function:', typeof asyncHandler);
-console.log('Available exports:', Object.keys(require('../../../../../shared/lib/utils/async-handler')));
-const PlatformService = require('../services/platform-service');
-const { validatePlatformUpdate, validateVersionUpdate, validateFeatureFlag, validateIntegration } = require('../validators/platform-validators');
+const { StatusCodes } = require('../../../../../shared/lib/utils/constants/status-codes');
 
 /**
- * Controller for platform management operations
  * @class PlatformController
+ * @description Controller for platform management operations
  */
 class PlatformController {
   /**
-   * Get platform configuration
-   * @route GET /api/admin/platform
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
+   * Gets platform configuration
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getPlatformConfig = asyncHandler(async (req, res) => {
-    const { includeSecrets = false } = req.query;
-    
-    const config = await PlatformService.getPlatformConfig({
-      includeSecrets: includeSecrets === 'true' && req.user.permissions.includes('platform.secrets.view'),
-      skipCache: req.query.skipCache === 'true'
-    });
-
-    logger.info('Platform configuration retrieved', {
-      userId: req.user.id,
-      includeSecrets
-    });
-
-    return ResponseFormatter.success(res, config, 'Platform configuration retrieved successfully');
-  });
-
-  /**
-   * Update platform configuration
-   * @route PATCH /api/admin/platform
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updatePlatformConfig = asyncHandler(async (req, res) => {
-    const validatedData = validatePlatformUpdate(req.body);
-    
-    const updatedConfig = await PlatformService.updatePlatformConfig(
-      validatedData,
-      req.user.id
-    );
-
-    logger.info('Platform configuration updated', {
-      userId: req.user.id,
-      updatedFields: Object.keys(validatedData)
-    });
-
-    return ResponseFormatter.success(
-      res, 
-      updatedConfig, 
-      'Platform configuration updated successfully'
-    );
-  });
-
-  /**
-   * Update platform version
-   * @route POST /api/admin/platform/version
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updateVersion = asyncHandler(async (req, res) => {
-    const { version, force = false } = validateVersionUpdate(req.body);
-    
-    if (!force && !req.user.permissions.includes('platform.version.force')) {
-      throw new AppError(
-        'Force update requires special permissions',
-        403,
-        'INSUFFICIENT_PERMISSIONS'
-      );
-    }
-
-    const platform = await PlatformService.updateVersion(version, req.user.id);
-
-    logger.info('Platform version updated', {
-      userId: req.user.id,
-      previousVersion: platform.version.previous[platform.version.previous.length - 1].version,
-      newVersion: version
-    });
-
-    return ResponseFormatter.success(
-      res,
-      {
-        previousVersion: platform.version.previous[platform.version.previous.length - 1].version,
-        currentVersion: platform.version.current,
-        upgradedAt: new Date()
-      },
-      'Platform version updated successfully'
-    );
-  });
-
-  /**
-   * Enable maintenance mode
-   * @route POST /api/admin/platform/maintenance/enable
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  enableMaintenanceMode = asyncHandler(async (req, res) => {
-    const {
-      message = 'System maintenance in progress',
-      duration = 3600000,
-      allowedIps = []
-    } = req.body;
-
-    const platform = await PlatformService.enableMaintenanceMode(
-      { message, duration, allowedIps },
-      req.user.id
-    );
-
-    logger.warn('Maintenance mode enabled', {
-      userId: req.user.id,
-      duration,
-      endTime: platform.api.maintenanceMode.endTime
-    });
-
-    return ResponseFormatter.success(
-      res,
-      {
-        enabled: true,
-        message: platform.api.maintenanceMode.message,
-        startTime: platform.api.maintenanceMode.startTime,
-        endTime: platform.api.maintenanceMode.endTime,
-        allowedIps: platform.api.maintenanceMode.allowedIps
-      },
-      'Maintenance mode enabled successfully'
-    );
-  });
-
-  /**
-   * Disable maintenance mode
-   * @route POST /api/admin/platform/maintenance/disable
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  disableMaintenanceMode = asyncHandler(async (req, res) => {
-    const platform = await PlatformService.disableMaintenanceMode(req.user.id);
-
-    logger.info('Maintenance mode disabled', {
-      userId: req.user.id
-    });
-
-    return ResponseFormatter.success(
-      res,
-      {
-        enabled: false,
-        disabledAt: new Date()
-      },
-      'Maintenance mode disabled successfully'
-    );
-  });
-
-  /**
-   * Get feature flags
-   * @route GET /api/admin/platform/features
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getFeatureFlags = asyncHandler(async (req, res) => {
-    const features = await PlatformService.getFeatureFlags({
-      skipCache: req.query.skipCache === 'true'
-    });
-
-    return ResponseFormatter.success(res, features, 'Feature flags retrieved successfully');
-  });
-
-  /**
-   * Update feature flag
-   * @route PUT /api/admin/platform/features/:featureName
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updateFeatureFlag = asyncHandler(async (req, res) => {
-    const { featureName } = req.params;
-    const validatedConfig = validateFeatureFlag(req.body);
-    
-    const feature = await PlatformService.updateFeatureFlag(
-      featureName,
-      validatedConfig,
-      req.user.id
-    );
-
-    logger.info('Feature flag updated', {
-      userId: req.user.id,
-      feature: featureName,
-      enabled: validatedConfig.enabled
-    });
-
-    return ResponseFormatter.success(
-      res,
-      {
-        featureName,
-        config: feature
-      },
-      'Feature flag updated successfully'
-    );
-  });
-
-  /**
-   * Check feature flag status
-   * @route GET /api/admin/platform/features/:featureName/check
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  checkFeatureFlag = asyncHandler(async (req, res) => {
-    const { featureName } = req.params;
-    const { userId, organizationId } = req.query;
-    
-    const enabled = await PlatformService.isFeatureEnabled(featureName, {
-      userId,
-      organizationId
-    });
-
-    return ResponseFormatter.success(
-      res,
-      {
-        featureName,
-        enabled,
-        context: { userId, organizationId }
-      },
-      'Feature flag status retrieved'
-    );
-  });
-
-  /**
-   * Get platform integrations
-   * @route GET /api/admin/platform/integrations
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getIntegrations = asyncHandler(async (req, res) => {
-    const platform = await PlatformService.getPlatformConfig({
-      includeSecrets: false
-    });
-
-    const integrations = platform.integrations.map(integration => ({
-      id: integration._id,
-      name: integration.name,
-      type: integration.type,
-      provider: integration.provider,
-      enabled: integration.enabled,
-      config: integration.config
-    }));
-
-    return ResponseFormatter.success(
-      res,
-      integrations,
-      'Platform integrations retrieved successfully'
-    );
-  });
-
-  /**
-   * Add platform integration
-   * @route POST /api/admin/platform/integrations
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  addIntegration = asyncHandler(async (req, res) => {
-    const validatedData = validateIntegration(req.body);
-    
-    const integration = await PlatformService.addIntegration(
-      validatedData,
-      req.user.id
-    );
-
-    logger.info('Platform integration added', {
-      userId: req.user.id,
-      integration: integration.name,
-      type: integration.type
-    });
-
-    return ResponseFormatter.success(
-      res,
-      integration,
-      'Integration added successfully',
-      201
-    );
-  });
-
-  /**
-   * Update platform integration
-   * @route PUT /api/admin/platform/integrations/:integrationId
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updateIntegration = asyncHandler(async (req, res) => {
-    const { integrationId } = req.params;
-    const validatedData = validateIntegration(req.body, true);
-    
-    const integration = await PlatformService.updateIntegration(
-      integrationId,
-      validatedData,
-      req.user.id
-    );
-
-    logger.info('Platform integration updated', {
-      userId: req.user.id,
-      integrationId,
-      integration: integration.name
-    });
-
-    return ResponseFormatter.success(
-      res,
-      integration,
-      'Integration updated successfully'
-    );
-  });
-
-  /**
-   * Delete platform integration
-   * @route DELETE /api/admin/platform/integrations/:integrationId
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  deleteIntegration = asyncHandler(async (req, res) => {
-    const { integrationId } = req.params;
-    
-    // Integration deletion is done by disabling it
-    const integration = await PlatformService.updateIntegration(
-      integrationId,
-      { enabled: false },
-      req.user.id
-    );
-
-    logger.info('Platform integration disabled', {
-      userId: req.user.id,
-      integrationId,
-      integration: integration.name
-    });
-
-    return ResponseFormatter.success(
-      res,
-      { id: integrationId, enabled: false },
-      'Integration disabled successfully'
-    );
-  });
-
-  /**
-   * Get platform status
-   * @route GET /api/admin/platform/status
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformStatus = asyncHandler(async (req, res) => {
-    const status = await PlatformService.getPlatformStatus();
-
-    return ResponseFormatter.success(res, status, 'Platform status retrieved successfully');
-  });
-
-  /**
-   * Update platform status
-   * @route POST /api/admin/platform/status
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updatePlatformStatus = asyncHandler(async (req, res) => {
-    const { services } = req.body;
-    
-    if (!Array.isArray(services)) {
-      throw new AppError('Services must be an array', 400, 'INVALID_SERVICES');
-    }
-
-    const status = await PlatformService.updatePlatformStatus(services);
-
-    logger.info('Platform status updated', {
-      userId: req.user.id,
-      overallStatus: status.overall
-    });
-
-    return ResponseFormatter.success(
-      res,
-      status,
-      'Platform status updated successfully'
-    );
-  });
-
-  /**
-   * Record platform incident
-   * @route POST /api/admin/platform/incidents
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  recordIncident = asyncHandler(async (req, res) => {
-    const { title, severity, description } = req.body;
-    
-    if (!title || !severity) {
-      throw new AppError('Title and severity are required', 400, 'MISSING_REQUIRED_FIELDS');
-    }
-
-    const incident = await PlatformService.recordIncident(
-      { title, severity, description },
-      req.user.id
-    );
-
-    logger.error('Platform incident recorded', {
-      userId: req.user.id,
-      incident: title,
-      severity
-    });
-
-    return ResponseFormatter.success(
-      res,
-      incident,
-      'Incident recorded successfully',
-      201
-    );
-  });
-
-  /**
-   * Check resource limits
-   * @route GET /api/admin/platform/limits/:resource
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  checkResourceLimit = asyncHandler(async (req, res) => {
-    const { resource } = req.params;
-    const { currentUsage } = req.query;
-    
-    if (!currentUsage || isNaN(currentUsage)) {
-      throw new AppError('Current usage must be a valid number', 400, 'INVALID_USAGE');
-    }
-
-    const result = await PlatformService.checkResourceLimit(
-      resource,
-      parseFloat(currentUsage)
-    );
-
-    return ResponseFormatter.success(
-      res,
-      result,
-      'Resource limit check completed'
-    );
-  });
-
-  /**
-   * Perform platform health check
-   * @route GET /api/admin/platform/health
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  performHealthCheck = asyncHandler(async (req, res) => {
-    const health = await PlatformService.performHealthCheck();
-
-    const statusCode = health.healthy ? 200 : 503;
-    
-    return ResponseFormatter.success(
-      res,
-      health,
-      health.healthy ? 'Platform is healthy' : 'Platform health check failed',
-      statusCode
-    );
-  });
-
-  /**
-   * Get public platform configuration
-   * @route GET /api/admin/platform/public
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPublicConfig = asyncHandler(async (req, res) => {
-    const config = await PlatformService.getPublicConfig();
-
-    return ResponseFormatter.success(
-      res,
-      config,
-      'Public configuration retrieved successfully'
-    );
-  });
-
-  /**
-   * Get platform overview
-   * @route GET /api/admin/platform/overview
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformOverview = async (req, res) => {
+  getPlatformConfiguration = asyncHandler(async (req, res, next) => {
     try {
-      const overview = await PlatformService.getPlatformOverview();
+      const { environment, includeInactive, noCache } = req.query;
 
-      logger.info('Platform overview retrieved', {
-        userId: req.user.id
+      logger.info('Getting platform configuration', {
+        environment,
+        includeInactive,
+        userId: req.user?.id
       });
 
-      return ResponseFormatter.success(res, overview, 'Platform overview retrieved successfully');
+      const options = {
+        environment,
+        includeInactive: includeInactive === 'true',
+        fromCache: noCache !== 'true'
+      };
+
+      const configuration = await platformService.getPlatformConfiguration(options);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          configuration,
+          'Platform configuration retrieved successfully'
+        )
+      );
     } catch (error) {
-      logger.error('Failed to get platform overview', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
+      logger.error('Failed to get platform configuration', {
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
     }
-  };
+  });
 
   /**
-   * Get platform statistics
-   * @route GET /api/admin/platform/statistics
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
+   * Creates platform configuration
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getPlatformStatistics = async (req, res) => {
+  createPlatformConfiguration = asyncHandler(async (req, res, next) => {
     try {
-      const { timeRange, skipCache } = req.query;
-      
-      const statistics = await PlatformService.getPlatformStatistics({
+      const platformData = req.body;
+      const userId = req.user.id;
+
+      logger.info('Creating platform configuration', {
+        environment: platformData.deployment?.environment,
+        userId
+      });
+
+      const configuration = await platformService.createPlatformConfiguration(
+        platformData,
+        userId
+      );
+
+      return res.status(StatusCodes.CREATED).json(
+        responseFormatter.success(
+          configuration,
+          'Platform configuration created successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to create platform configuration', {
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Updates platform configuration
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  updatePlatformConfiguration = asyncHandler(async (req, res, next) => {
+    try {
+      const { platformId } = req.params;
+      const updates = req.body;
+      const userId = req.user.id;
+
+      logger.info('Updating platform configuration', {
+        platformId,
+        fieldsToUpdate: Object.keys(updates),
+        userId
+      });
+
+      const configuration = await platformService.updatePlatformConfiguration(
+        platformId,
+        updates,
+        userId
+      );
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          configuration,
+          'Platform configuration updated successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to update platform configuration', {
+        platformId: req.params.platformId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Manages feature flag
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  manageFeatureFlag = asyncHandler(async (req, res, next) => {
+    try {
+      const { platformId, featureName } = req.params;
+      const { action, options } = req.body;
+      const userId = req.user.id;
+
+      logger.info('Managing feature flag', {
+        platformId,
+        featureName,
+        action: action.type,
+        userId
+      });
+
+      const feature = await platformService.manageFeatureFlag(
+        platformId,
+        featureName,
+        action,
+        userId
+      );
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          feature,
+          `Feature flag ${action.type} successfully`
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to manage feature flag', {
+        platformId: req.params.platformId,
+        featureName: req.params.featureName,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets feature flags for tenant
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getFeatureFlagsForTenant = asyncHandler(async (req, res, next) => {
+    try {
+      const { tenantId } = req.params;
+      const { environment = 'production', noCache } = req.query;
+
+      logger.info('Getting feature flags for tenant', {
+        tenantId,
+        environment,
+        userId: req.user?.id
+      });
+
+      const options = {
+        environment,
+        fromCache: noCache !== 'true'
+      };
+
+      const features = await platformService.getFeatureFlagsForTenant(tenantId, options);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          features,
+          'Feature flags retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get feature flags for tenant', {
+        tenantId: req.params.tenantId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Searches feature flags
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  searchFeatureFlags = asyncHandler(async (req, res, next) => {
+    try {
+      const searchCriteria = {
+        query: req.query.q,
+        enabled: req.query.enabled === 'true' ? true : req.query.enabled === 'false' ? false : undefined,
+        hasRollout: req.query.hasRollout === 'true',
+        environment: req.query.environment || 'production',
+        page: parseInt(req.query.page) || 1,
+        limit: parseInt(req.query.limit) || 20
+      };
+
+      logger.info('Searching feature flags', {
+        criteria: searchCriteria,
+        userId: req.user?.id
+      });
+
+      const results = await platformService.searchFeatureFlags(searchCriteria);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          results,
+          'Feature flags search completed'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to search feature flags', {
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Records deployment
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  recordDeployment = asyncHandler(async (req, res, next) => {
+    try {
+      const { platformId } = req.params;
+      const deploymentInfo = req.body;
+      const userId = req.user.id;
+
+      logger.info('Recording deployment', {
+        platformId,
+        version: deploymentInfo.version,
+        environment: deploymentInfo.environment,
+        userId
+      });
+
+      const deployment = await platformService.recordDeployment(
+        platformId,
+        deploymentInfo,
+        userId
+      );
+
+      return res.status(StatusCodes.CREATED).json(
+        responseFormatter.success(
+          deployment,
+          'Deployment recorded successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to record deployment', {
+        platformId: req.params.platformId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Updates system module
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  updateSystemModule = asyncHandler(async (req, res, next) => {
+    try {
+      const { platformId, moduleName } = req.params;
+      const updates = req.body;
+      const userId = req.user.id;
+
+      logger.info('Updating system module', {
+        platformId,
+        moduleName,
+        updates: Object.keys(updates),
+        userId
+      });
+
+      const module = await platformService.updateSystemModule(
+        platformId,
+        moduleName,
+        updates,
+        userId
+      );
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          module,
+          'System module updated successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to update system module', {
+        platformId: req.params.platformId,
+        moduleName: req.params.moduleName,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Performs health check
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  performHealthCheck = asyncHandler(async (req, res, next) => {
+    try {
+      const { platformId } = req.params;
+
+      logger.info('Performing platform health check', {
+        platformId,
+        userId: req.user?.id
+      });
+
+      const healthResults = await platformService.performHealthCheck(platformId);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          healthResults,
+          'Health check completed successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to perform health check', {
+        platformId: req.params.platformId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets platform statistics
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getPlatformStatistics = asyncHandler(async (req, res, next) => {
+    try {
+      const { platformId } = req.params;
+      const { timeRange = '24h' } = req.query;
+
+      logger.info('Getting platform statistics', {
+        platformId,
         timeRange,
-        skipCache: skipCache === 'true'
+        userId: req.user?.id
       });
 
-      logger.info('Platform statistics retrieved', {
-        userId: req.user.id,
-        timeRange
-      });
-
-      return ResponseFormatter.success(res, statistics, 'Platform statistics retrieved successfully');
-    } catch (error) {
-      logger.error('Failed to get platform statistics', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Get platform settings
-   * @route GET /api/admin/platform/settings
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformSettings = async (req, res) => {
-    try {
-      const settings = await PlatformService.getPlatformSettings();
-
-      logger.info('Platform settings retrieved', {
-        userId: req.user.id
-      });
-
-      return ResponseFormatter.success(res, settings, 'Platform settings retrieved successfully');
-    } catch (error) {
-      logger.error('Failed to get platform settings', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Update platform settings
-   * @route PUT /api/admin/platform/settings
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updatePlatformSettings = async (req, res) => {
-    try {
-      const updatedSettings = await PlatformService.updatePlatformSettings(
-        req.body,
-        req.user.id
+      const statistics = await platformService.getPlatformStatistics(
+        platformId,
+        { timeRange }
       );
 
-      logger.info('Platform settings updated', {
-        userId: req.user.id,
-        settingsUpdated: Object.keys(req.body)
-      });
-
-      return ResponseFormatter.success(res, updatedSettings, 'Platform settings updated successfully');
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          statistics,
+          'Platform statistics retrieved successfully'
+        )
+      );
     } catch (error) {
-      logger.error('Failed to update platform settings', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
+      logger.error('Failed to get platform statistics', {
+        platformId: req.params.platformId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
     }
-  };
+  });
 
   /**
-   * Reset platform settings to defaults
-   * @route POST /api/admin/platform/settings/reset
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
+   * Gets all feature flags
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  resetPlatformSettings = async (req, res) => {
+  getAllFeatureFlags = asyncHandler(async (req, res, next) => {
     try {
-      const resetSettings = await PlatformService.resetPlatformSettings(req.user.id);
+      const { platformId } = req.params;
 
-      logger.warn('Platform settings reset to defaults', {
-        userId: req.user.id
+      logger.info('Getting all feature flags', {
+        platformId,
+        userId: req.user?.id
       });
 
-      return ResponseFormatter.success(res, resetSettings, 'Platform settings reset successfully');
-    } catch (error) {
-      logger.error('Failed to reset platform settings', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Get platform modules
-   * @route GET /api/admin/platform/modules
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformModules = async (req, res) => {
-    try {
-      const modules = await PlatformService.getPlatformModules();
-
-      logger.info('Platform modules retrieved', {
-        userId: req.user.id,
-        moduleCount: modules.length
+      const platform = await platformService.getPlatformConfiguration({
+        environment: req.query.environment
       });
 
-      return ResponseFormatter.success(res, modules, 'Platform modules retrieved successfully');
+      const featureFlags = platform.featureFlags.map(flag => ({
+        name: flag.name,
+        enabled: flag.enabled,
+        description: flag.description,
+        rolloutPercentage: flag.rolloutPercentage,
+        enabledTenants: flag.enabledTenants?.length || 0,
+        disabledTenants: flag.disabledTenants?.length || 0,
+        metadata: flag.metadata,
+        lastModified: flag.lastModified,
+        modifiedBy: flag.modifiedBy
+      }));
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          {
+            featureFlags,
+            total: featureFlags.length,
+            active: featureFlags.filter(f => f.enabled).length
+          },
+          'Feature flags retrieved successfully'
+        )
+      );
     } catch (error) {
-      logger.error('Failed to get platform modules', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
+      logger.error('Failed to get all feature flags', {
+        platformId: req.params.platformId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
     }
-  };
+  });
 
   /**
-   * Update platform module
-   * @route PUT /api/admin/platform/modules/:moduleId
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
+   * Gets system modules
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  updatePlatformModule = async (req, res) => {
+  getSystemModules = asyncHandler(async (req, res, next) => {
     try {
-      const { moduleId } = req.params;
-      
-      const updatedModule = await PlatformService.updatePlatformModule(
-        moduleId,
-        req.body,
-        req.user.id
+      const { platformId } = req.params;
+      const { status } = req.query;
+
+      logger.info('Getting system modules', {
+        platformId,
+        status,
+        userId: req.user?.id
+      });
+
+      const platform = await platformService.getPlatformConfiguration({
+        environment: req.query.environment
+      });
+
+      let modules = platform.systemModules;
+
+      // Filter by status if provided
+      if (status) {
+        modules = modules.filter(m => m.health.status === status);
+      }
+
+      const modulesSummary = {
+        modules,
+        total: modules.length,
+        enabled: modules.filter(m => m.enabled).length,
+        byStatus: {
+          healthy: modules.filter(m => m.health.status === 'healthy').length,
+          degraded: modules.filter(m => m.health.status === 'degraded').length,
+          unhealthy: modules.filter(m => m.health.status === 'unhealthy').length,
+          unknown: modules.filter(m => m.health.status === 'unknown').length
+        }
+      };
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          modulesSummary,
+          'System modules retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get system modules', {
+        platformId: req.params.platformId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets deployment history
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getDeploymentHistory = asyncHandler(async (req, res, next) => {
+    try {
+      const { platformId } = req.params;
+      const { limit = 10 } = req.query;
+
+      logger.info('Getting deployment history', {
+        platformId,
+        limit,
+        userId: req.user?.id
+      });
+
+      const platform = await platformService.getPlatformConfiguration({
+        environment: req.query.environment
+      });
+
+      const deploymentHistory = [
+        {
+          version: platform.deployment.version,
+          environment: platform.deployment.environment,
+          deployedAt: platform.deployment.deployedAt,
+          deployedBy: platform.deployment.deployedBy,
+          commitHash: platform.deployment.commitHash,
+          branch: platform.deployment.branch,
+          buildInfo: platform.deployment.buildInfo,
+          current: true
+        },
+        ...platform.deployment.rollbackHistory.slice(0, limit - 1).map(rollback => ({
+          ...rollback,
+          current: false
+        }))
+      ];
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          {
+            deployments: deploymentHistory,
+            total: deploymentHistory.length + 1,
+            currentVersion: platform.deployment.version
+          },
+          'Deployment history retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get deployment history', {
+        platformId: req.params.platformId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets platform issues
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getPlatformIssues = asyncHandler(async (req, res, next) => {
+    try {
+      const { platformId } = req.params;
+      const { severity, resolved } = req.query;
+
+      logger.info('Getting platform issues', {
+        platformId,
+        severity,
+        resolved,
+        userId: req.user?.id
+      });
+
+      const platform = await platformService.getPlatformConfiguration({
+        environment: req.query.environment
+      });
+
+      let issues = platform.status.issues || [];
+
+      // Apply filters
+      if (severity) {
+        issues = issues.filter(i => i.severity === severity);
+      }
+
+      if (resolved !== undefined) {
+        const showResolved = resolved === 'true';
+        issues = issues.filter(i => showResolved ? !!i.resolvedAt : !i.resolvedAt);
+      }
+
+      const issuesSummary = {
+        issues,
+        total: issues.length,
+        bySeverity: {
+          critical: issues.filter(i => i.severity === 'critical').length,
+          high: issues.filter(i => i.severity === 'high').length,
+          medium: issues.filter(i => i.severity === 'medium').length,
+          low: issues.filter(i => i.severity === 'low').length
+        },
+        active: issues.filter(i => !i.resolvedAt).length,
+        resolved: issues.filter(i => !!i.resolvedAt).length
+      };
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          issuesSummary,
+          'Platform issues retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get platform issues', {
+        platformId: req.params.platformId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Updates platform status
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  updatePlatformStatus = asyncHandler(async (req, res, next) => {
+    try {
+      const { platformId } = req.params;
+      const { operational, message } = req.body;
+      const userId = req.user.id;
+
+      logger.info('Updating platform status', {
+        platformId,
+        operational,
+        userId
+      });
+
+      const updates = {
+        status: {
+          operational,
+          message
+        }
+      };
+
+      const platform = await platformService.updatePlatformConfiguration(
+        platformId,
+        updates,
+        userId
       );
 
-      logger.info('Platform module updated', {
-        userId: req.user.id,
-        moduleId,
-        updates: Object.keys(req.body)
-      });
-
-      return ResponseFormatter.success(res, updatedModule, 'Platform module updated successfully');
-    } catch (error) {
-      logger.error('Failed to update platform module', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Enable platform module
-   * @route POST /api/admin/platform/modules/:moduleId/enable
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  enablePlatformModule = async (req, res) => {
-    try {
-      const { moduleId } = req.params;
-      
-      const moduleStatus = await PlatformService.enablePlatformModule(moduleId, req.user.id);
-
-      logger.info('Platform module enabled', {
-        userId: req.user.id,
-        moduleId
-      });
-
-      return ResponseFormatter.success(res, moduleStatus, 'Platform module enabled successfully');
-    } catch (error) {
-      logger.error('Failed to enable platform module', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Disable platform module
-   * @route POST /api/admin/platform/modules/:moduleId/disable
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  disablePlatformModule = async (req, res) => {
-    try {
-      const { moduleId } = req.params;
-      
-      const moduleStatus = await PlatformService.disablePlatformModule(moduleId, req.user.id);
-
-      logger.info('Platform module disabled', {
-        userId: req.user.id,
-        moduleId
-      });
-
-      return ResponseFormatter.success(res, moduleStatus, 'Platform module disabled successfully');
-    } catch (error) {
-      logger.error('Failed to disable platform module', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Get platform deployments
-   * @route GET /api/admin/platform/deployments
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformDeployments = async (req, res) => {
-    try {
-      const { limit, status } = req.query;
-      
-      const deployments = await PlatformService.getPlatformDeployments({
-        limit: limit ? parseInt(limit) : undefined,
-        status
-      });
-
-      logger.info('Platform deployments retrieved', {
-        userId: req.user.id,
-        count: deployments.length
-      });
-
-      return ResponseFormatter.success(res, deployments, 'Platform deployments retrieved successfully');
-    } catch (error) {
-      logger.error('Failed to get platform deployments', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Create platform deployment
-   * @route POST /api/admin/platform/deployments
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  createPlatformDeployment = async (req, res) => {
-    try {
-      const deployment = await PlatformService.createPlatformDeployment(
-        req.body,
-        req.user.id
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          {
+            status: platform.status,
+            platformId: platform.platformId
+          },
+          'Platform status updated successfully'
+        )
       );
-
-      logger.info('Platform deployment created', {
-        userId: req.user.id,
-        deploymentId: deployment.id,
-        version: deployment.version
-      });
-
-      return ResponseFormatter.success(res, deployment, 'Platform deployment created successfully', 201);
     } catch (error) {
-      logger.error('Failed to create platform deployment', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
+      logger.error('Failed to update platform status', {
+        platformId: req.params.platformId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
     }
-  };
+  });
 
   /**
-   * Get platform deployment details
-   * @route GET /api/admin/platform/deployments/:deploymentId
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
+   * Bulk updates feature flags
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getPlatformDeploymentDetails = async (req, res) => {
+  bulkUpdateFeatureFlags = asyncHandler(async (req, res, next) => {
     try {
-      const { deploymentId } = req.params;
-      
-      const deployment = await PlatformService.getPlatformDeploymentDetails(deploymentId);
+      const { platformId } = req.params;
+      const { features } = req.body;
+      const userId = req.user.id;
 
-      logger.info('Platform deployment details retrieved', {
-        userId: req.user.id,
-        deploymentId
+      logger.info('Bulk updating feature flags', {
+        platformId,
+        featureCount: features.length,
+        userId
       });
 
-      return ResponseFormatter.success(res, deployment, 'Platform deployment details retrieved successfully');
-    } catch (error) {
-      logger.error('Failed to get platform deployment details', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
+      const results = [];
+      const errors = [];
 
-  /**
-   * Rollback platform deployment
-   * @route POST /api/admin/platform/deployments/:deploymentId/rollback
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  rollbackPlatformDeployment = async (req, res) => {
-    try {
-      const { deploymentId } = req.params;
-      
-      const rollback = await PlatformService.rollbackPlatformDeployment(
-        deploymentId,
-        req.user.id
+      for (const feature of features) {
+        try {
+          const result = await platformService.manageFeatureFlag(
+            platformId,
+            feature.name,
+            feature.action,
+            userId
+          );
+          results.push({
+            featureName: feature.name,
+            success: true,
+            result
+          });
+        } catch (error) {
+          errors.push({
+            featureName: feature.name,
+            success: false,
+            error: error.message
+          });
+          logger.error('Failed to update feature flag in bulk operation', {
+            featureName: feature.name,
+            error: error.message
+          });
+        }
+      }
+
+      const response = {
+        results,
+        errors,
+        summary: {
+          total: features.length,
+          successful: results.length,
+          failed: errors.length
+        }
+      };
+
+      const statusCode = errors.length === 0 ? StatusCodes.OK : StatusCodes.PARTIAL_CONTENT;
+      const message = errors.length === 0 ? 
+        'All feature flags updated successfully' : 
+        `${results.length} feature flags updated, ${errors.length} failed`;
+
+      return res.status(statusCode).json(
+        responseFormatter.success(response, message)
       );
-
-      logger.warn('Platform deployment rollback initiated', {
-        userId: req.user.id,
-        deploymentId
-      });
-
-      return ResponseFormatter.success(res, rollback, 'Platform deployment rollback initiated successfully');
     } catch (error) {
-      logger.error('Failed to rollback platform deployment', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
+      logger.error('Failed to bulk update feature flags', {
+        platformId: req.params.platformId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
     }
-  };
-
-  /**
-   * Get platform resources
-   * @route GET /api/admin/platform/resources
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformResources = async (req, res) => {
-    try {
-      const resources = await PlatformService.getPlatformResources();
-
-      logger.info('Platform resources retrieved', {
-        userId: req.user.id
-      });
-
-      return ResponseFormatter.success(res, resources, 'Platform resources retrieved successfully');
-    } catch (error) {
-      logger.error('Failed to get platform resources', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Get platform resource usage
-   * @route GET /api/admin/platform/resources/usage
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformResourceUsage = async (req, res) => {
-    try {
-      const { timeRange } = req.query;
-      
-      const usage = await PlatformService.getPlatformResourceUsage({
-        timeRange
-      });
-
-      logger.info('Platform resource usage retrieved', {
-        userId: req.user.id,
-        timeRange
-      });
-
-      return ResponseFormatter.success(res, usage, 'Platform resource usage retrieved successfully');
-    } catch (error) {
-      logger.error('Failed to get platform resource usage', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Update platform resource limits
-   * @route PUT /api/admin/platform/resources/limits
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updatePlatformResourceLimits = async (req, res) => {
-    try {
-      const updatedLimits = await PlatformService.updatePlatformResourceLimits(
-        req.body,
-        req.user.id
-      );
-
-      logger.info('Platform resource limits updated', {
-        userId: req.user.id,
-        limits: Object.keys(req.body)
-      });
-
-      return ResponseFormatter.success(res, updatedLimits, 'Platform resource limits updated successfully');
-    } catch (error) {
-      logger.error('Failed to update platform resource limits', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Get platform API endpoints
-   * @route GET /api/admin/platform/api/endpoints
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformAPIEndpoints = async (req, res) => {
-    try {
-      const endpoints = await PlatformService.getPlatformAPIEndpoints();
-
-      logger.info('Platform API endpoints retrieved', {
-        userId: req.user.id,
-        endpointCount: endpoints.length
-      });
-
-      return ResponseFormatter.success(res, endpoints, 'Platform API endpoints retrieved successfully');
-    } catch (error) {
-      logger.error('Failed to get platform API endpoints', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Get platform API usage
-   * @route GET /api/admin/platform/api/usage
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformAPIUsage = async (req, res) => {
-    try {
-      const { timeRange } = req.query;
-      
-      const usage = await PlatformService.getPlatformAPIUsage({
-        timeRange
-      });
-
-      logger.info('Platform API usage retrieved', {
-        userId: req.user.id,
-        timeRange
-      });
-
-      return ResponseFormatter.success(res, usage, 'Platform API usage retrieved successfully');
-    } catch (error) {
-      logger.error('Failed to get platform API usage', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Update platform API rate limits
-   * @route PUT /api/admin/platform/api/rate-limits
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updatePlatformAPIRateLimits = async (req, res) => {
-    try {
-      const updatedLimits = await PlatformService.updatePlatformAPIRateLimits(
-        req.body,
-        req.user.id
-      );
-
-      logger.info('Platform API rate limits updated', {
-        userId: req.user.id,
-        limits: Object.keys(req.body)
-      });
-
-      return ResponseFormatter.success(res, updatedLimits, 'Platform API rate limits updated successfully');
-    } catch (error) {
-      logger.error('Failed to update platform API rate limits', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Get platform analytics dashboard
-   * @route GET /api/admin/platform/analytics/dashboard
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformAnalyticsDashboard = async (req, res) => {
-    try {
-      const { timeRange } = req.query;
-      
-      const dashboard = await PlatformService.getPlatformAnalyticsDashboard({
-        timeRange
-      });
-
-      logger.info('Platform analytics dashboard retrieved', {
-        userId: req.user.id,
-        timeRange
-      });
-
-      return ResponseFormatter.success(res, dashboard, 'Platform analytics dashboard retrieved successfully');
-    } catch (error) {
-      logger.error('Failed to get platform analytics dashboard', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Get platform trends
-   * @route GET /api/admin/platform/analytics/trends
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPlatformTrends = async (req, res) => {
-    try {
-      const { metric, timeRange } = req.query;
-      
-      const trends = await PlatformService.getPlatformTrends({
-        metric,
-        timeRange
-      });
-
-      logger.info('Platform trends retrieved', {
-        userId: req.user.id,
-        metric,
-        timeRange
-      });
-
-      return ResponseFormatter.success(res, trends, 'Platform trends retrieved successfully');
-    } catch (error) {
-      logger.error('Failed to get platform trends', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
-
-  /**
-   * Export platform analytics
-   * @route POST /api/admin/platform/analytics/export
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  exportPlatformAnalytics = async (req, res) => {
-    try {
-      const exportJob = await PlatformService.exportPlatformAnalytics(
-        req.body,
-        req.user.id
-      );
-
-      logger.info('Platform analytics export requested', {
-        userId: req.user.id,
-        exportId: exportJob.id,
-        format: exportJob.format
-      });
-
-      return ResponseFormatter.success(res, exportJob, 'Platform analytics export initiated successfully', 202);
-    } catch (error) {
-      logger.error('Failed to export platform analytics', error);
-      return ResponseFormatter.error(res, error.message, error.statusCode || 500);
-    }
-  };
+  });
 }
 
+// Export singleton instance
 module.exports = new PlatformController();

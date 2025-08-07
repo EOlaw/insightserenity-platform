@@ -1,467 +1,974 @@
 'use strict';
 
 /**
- * @fileoverview System management controller for platform-wide operations
+ * @fileoverview System health and monitoring controller
  * @module servers/admin-server/modules/platform-management/controllers/system-controller
+ * @requires module:servers/admin-server/modules/platform-management/services/system-service
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
  * @requires module:shared/lib/utils/response-formatter
  * @requires module:shared/lib/utils/async-handler
- * @requires module:servers/admin-server/modules/platform-management/services/system-service
- * @requires module:servers/admin-server/modules/platform-management/validators/system-validators
+ * @requires module:shared/lib/utils/constants/status-codes
  */
 
+const systemService = require('../services/system-service');
 const logger = require('../../../../../shared/lib/utils/logger');
-const AppError = require('../../../../../shared/lib/utils/app-error');
-const ResponseFormatter = require('../../../../../shared/lib/utils/response-formatter');
+const { AppError } = require('../../../../../shared/lib/utils/app-error');
+const responseFormatter = require('../../../../../shared/lib/utils/response-formatter');
 const { asyncHandler } = require('../../../../../shared/lib/utils/async-handler');
-const SystemService = require('../services/system-service');
-const { 
-  validateSystemSettings,
-  validateResourceAllocation,
-  validatePerformanceConfig,
-  validateSecurityConfig,
-  validateBackupConfig
-} = require('../validators/system-validators');
+const { StatusCodes } = require('../../../../../shared/lib/utils/constants/status-codes');
 
 /**
- * Controller for system-wide management operations
  * @class SystemController
+ * @description Controller for system health and monitoring operations
  */
 class SystemController {
   /**
-   * Get system information
-   * @route GET /api/admin/system/info
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
+   * Initializes system monitoring
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getSystemInfo = asyncHandler(async (req, res) => {
-    const { detailed = false } = req.query;
-    
-    const systemInfo = await SystemService.getSystemInfo({
-      detailed: detailed === 'true',
-      userId: req.user.id
-    });
+  initializeSystem = asyncHandler(async (req, res, next) => {
+    try {
+      const systemInfo = req.body;
+      const userId = req.user.id;
 
-    logger.info('System information retrieved', {
-      userId: req.user.id,
-      detailed
-    });
-
-    return ResponseFormatter.success(res, systemInfo, 'System information retrieved successfully');
-  });
-
-  /**
-   * Get system metrics
-   * @route GET /api/admin/system/metrics
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getSystemMetrics = asyncHandler(async (req, res) => {
-    const { 
-      timeRange = '1h',
-      interval = '5m',
-      metrics = 'all'
-    } = req.query;
-
-    const systemMetrics = await SystemService.getSystemMetrics({
-      timeRange,
-      interval,
-      metrics: metrics.split(','),
-      skipCache: req.query.skipCache === 'true'
-    });
-
-    return ResponseFormatter.success(res, systemMetrics, 'System metrics retrieved successfully');
-  });
-
-  /**
-   * Update system settings
-   * @route PATCH /api/admin/system/settings
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updateSystemSettings = asyncHandler(async (req, res) => {
-    const validatedData = validateSystemSettings(req.body);
-    
-    const updatedSettings = await SystemService.updateSystemSettings(
-      validatedData,
-      req.user.id
-    );
-
-    logger.info('System settings updated', {
-      userId: req.user.id,
-      updatedFields: Object.keys(validatedData)
-    });
-
-    return ResponseFormatter.success(
-      res,
-      updatedSettings,
-      'System settings updated successfully'
-    );
-  });
-
-  /**
-   * Get resource utilization
-   * @route GET /api/admin/system/resources
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getResourceUtilization = asyncHandler(async (req, res) => {
-    const resources = await SystemService.getResourceUtilization();
-
-    const warningThreshold = 80;
-    const criticalResources = Object.entries(resources)
-      .filter(([_, data]) => data.percentage > warningThreshold)
-      .map(([resource]) => resource);
-
-    if (criticalResources.length > 0) {
-      logger.warn('High resource utilization detected', {
-        userId: req.user.id,
-        criticalResources
+      logger.info('Initializing system monitoring', {
+        hostname: systemInfo.hostname,
+        environment: systemInfo.environment,
+        userId
       });
+
+      const system = await systemService.initializeSystem(systemInfo, userId);
+
+      return res.status(StatusCodes.CREATED).json(
+        responseFormatter.success(
+          system,
+          'System monitoring initialized successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to initialize system', {
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets system health status
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getSystemHealth = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+      const { detailed, noCache } = req.query;
+
+      logger.info('Getting system health', {
+        systemId,
+        detailed,
+        userId: req.user?.id
+      });
+
+      const options = {
+        fromCache: noCache !== 'true',
+        detailed: detailed === 'true'
+      };
+
+      const health = await systemService.getSystemHealth(systemId, options);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          health,
+          'System health retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get system health', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Updates system metrics
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  updateSystemMetrics = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+      const metrics = req.body.metrics || null;
+
+      logger.info('Updating system metrics', {
+        systemId,
+        hasCustomMetrics: !!metrics,
+        userId: req.user?.id
+      });
+
+      const updatedMetrics = await systemService.updateSystemMetrics(systemId, metrics);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          updatedMetrics,
+          'System metrics updated successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to update system metrics', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Updates service health
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  updateServiceHealth = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId, serviceName } = req.params;
+      const healthData = req.body;
+
+      logger.info('Updating service health', {
+        systemId,
+        serviceName,
+        status: healthData.status,
+        userId: req.user?.id
+      });
+
+      const service = await systemService.updateServiceHealth(
+        systemId,
+        serviceName,
+        healthData
+      );
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          service,
+          'Service health updated successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to update service health', {
+        systemId: req.params.systemId,
+        serviceName: req.params.serviceName,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Creates system alert
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  createSystemAlert = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+      const alertData = req.body;
+
+      logger.info('Creating system alert', {
+        systemId,
+        type: alertData.type,
+        severity: alertData.severity,
+        userId: req.user?.id
+      });
+
+      const alert = await systemService.createSystemAlert(systemId, alertData);
+
+      return res.status(StatusCodes.CREATED).json(
+        responseFormatter.success(
+          alert,
+          'System alert created successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to create system alert', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Acknowledges system alert
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  acknowledgeAlert = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId, alertId } = req.params;
+      const userId = req.user.id;
+
+      logger.info('Acknowledging system alert', {
+        systemId,
+        alertId,
+        userId
+      });
+
+      const alert = await systemService.acknowledgeAlert(systemId, alertId, userId);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          alert,
+          'Alert acknowledged successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to acknowledge alert', {
+        systemId: req.params.systemId,
+        alertId: req.params.alertId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Resolves system alert
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  resolveAlert = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId, alertId } = req.params;
+      const { notes } = req.body;
+      const userId = req.user.id;
+
+      logger.info('Resolving system alert', {
+        systemId,
+        alertId,
+        userId
+      });
+
+      const resolution = {
+        userId,
+        notes: notes || 'Alert resolved'
+      };
+
+      const alert = await systemService.resolveAlert(systemId, alertId, resolution);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          alert,
+          'Alert resolved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to resolve alert', {
+        systemId: req.params.systemId,
+        alertId: req.params.alertId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets system metrics history
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getMetricsHistory = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+      const { 
+        startDate,
+        endDate,
+        granularity = 'hour',
+        metrics = 'cpu,memory,disk,network'
+      } = req.query;
+
+      logger.info('Getting metrics history', {
+        systemId,
+        startDate,
+        endDate,
+        granularity,
+        userId: req.user?.id
+      });
+
+      const options = {
+        startDate: startDate ? new Date(startDate) : new Date(Date.now() - 24 * 60 * 60 * 1000),
+        endDate: endDate ? new Date(endDate) : new Date(),
+        granularity,
+        metrics: metrics.split(',')
+      };
+
+      const history = await systemService.getMetricsHistory(systemId, options);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          {
+            history,
+            period: {
+              start: options.startDate,
+              end: options.endDate
+            },
+            granularity,
+            dataPoints: history.length
+          },
+          'Metrics history retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get metrics history', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets active alerts
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getActiveAlerts = asyncHandler(async (req, res, next) => {
+    try {
+      const {
+        environment,
+        severity,
+        acknowledged,
+        page = 1,
+        limit = 50
+      } = req.query;
+
+      logger.info('Getting active alerts', {
+        environment,
+        severity,
+        acknowledged,
+        userId: req.user?.id
+      });
+
+      const filters = {
+        environment,
+        severity,
+        acknowledged: acknowledged === 'true' ? true : acknowledged === 'false' ? false : undefined,
+        page: parseInt(page),
+        limit: parseInt(limit)
+      };
+
+      const results = await systemService.getActiveAlerts(filters);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          results,
+          'Active alerts retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get active alerts', {
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets aggregated metrics
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getAggregatedMetrics = asyncHandler(async (req, res, next) => {
+    try {
+      const {
+        environment,
+        startDate,
+        endDate
+      } = req.query;
+
+      logger.info('Getting aggregated metrics', {
+        environment,
+        startDate,
+        endDate,
+        userId: req.user?.id
+      });
+
+      const options = {
+        environment,
+        startDate: startDate ? new Date(startDate) : new Date(Date.now() - 24 * 60 * 60 * 1000),
+        endDate: endDate ? new Date(endDate) : new Date()
+      };
+
+      const metrics = await systemService.getAggregatedMetrics(options);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          metrics,
+          'Aggregated metrics retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get aggregated metrics', {
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Updates monitoring configuration
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  updateMonitoringConfig = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+      const config = req.body;
+      const userId = req.user.id;
+
+      logger.info('Updating monitoring configuration', {
+        systemId,
+        configKeys: Object.keys(config),
+        userId
+      });
+
+      const updatedConfig = await systemService.updateMonitoringConfig(
+        systemId,
+        config,
+        userId
+      );
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          updatedConfig,
+          'Monitoring configuration updated successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to update monitoring configuration', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Performs system health check
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  performHealthCheck = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+
+      logger.info('Performing system health check', {
+        systemId,
+        userId: req.user?.id
+      });
+
+      const healthCheck = await systemService.performHealthCheck(systemId);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          healthCheck,
+          'Health check completed successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to perform health check', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets performance statistics
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getPerformanceStats = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+      const { timeRange = '1h', noCache } = req.query;
+
+      logger.info('Getting performance statistics', {
+        systemId,
+        timeRange,
+        userId: req.user?.id
+      });
+
+      const options = {
+        timeRange,
+        fromCache: noCache !== 'true'
+      };
+
+      const stats = await systemService.getPerformanceStats(systemId, options);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          stats,
+          'Performance statistics retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get performance statistics', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Starts system monitoring
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  startMonitoring = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+
+      logger.info('Starting system monitoring', {
+        systemId,
+        userId: req.user?.id
+      });
+
+      await systemService.startMonitoring(systemId);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          { systemId, status: 'monitoring_started' },
+          'System monitoring started successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to start monitoring', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Stops system monitoring
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  stopMonitoring = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+
+      logger.info('Stopping system monitoring', {
+        systemId,
+        userId: req.user?.id
+      });
+
+      await systemService.stopMonitoring(systemId);
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          { systemId, status: 'monitoring_stopped' },
+          'System monitoring stopped successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to stop monitoring', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets system services status
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getServicesStatus = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+      const { status } = req.query;
+
+      logger.info('Getting services status', {
+        systemId,
+        statusFilter: status,
+        userId: req.user?.id
+      });
+
+      const health = await systemService.getSystemHealth(systemId, {
+        detailed: true,
+        fromCache: false
+      });
+
+      let services = health.services || [];
+
+      // Filter by status if provided
+      if (status) {
+        services = services.filter(s => s.status === status);
+      }
+
+      const servicesSummary = {
+        services,
+        total: services.length,
+        byStatus: {
+          healthy: services.filter(s => s.status === 'healthy').length,
+          degraded: services.filter(s => s.status === 'degraded').length,
+          unhealthy: services.filter(s => s.status === 'unhealthy').length,
+          offline: services.filter(s => s.status === 'offline').length,
+          unknown: services.filter(s => s.status === 'unknown').length
+        }
+      };
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          servicesSummary,
+          'Services status retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get services status', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets system alert history
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getAlertHistory = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+      const {
+        severity,
+        startDate,
+        endDate,
+        resolved,
+        limit = 100
+      } = req.query;
+
+      logger.info('Getting alert history', {
+        systemId,
+        severity,
+        startDate,
+        endDate,
+        userId: req.user?.id
+      });
+
+      const health = await systemService.getSystemHealth(systemId, {
+        detailed: true,
+        fromCache: false
+      });
+
+      let alerts = health.activeAlerts || [];
+
+      // Apply filters
+      if (severity) {
+        alerts = alerts.filter(a => a.severity === severity);
+      }
+
+      if (startDate) {
+        const start = new Date(startDate);
+        alerts = alerts.filter(a => new Date(a.triggeredAt) >= start);
+      }
+
+      if (endDate) {
+        const end = new Date(endDate);
+        alerts = alerts.filter(a => new Date(a.triggeredAt) <= end);
+      }
+
+      if (resolved !== undefined) {
+        const showResolved = resolved === 'true';
+        alerts = alerts.filter(a => showResolved ? !!a.resolvedAt : !a.resolvedAt);
+      }
+
+      // Sort by triggered time (newest first)
+      alerts.sort((a, b) => new Date(b.triggeredAt) - new Date(a.triggeredAt));
+
+      // Limit results
+      alerts = alerts.slice(0, parseInt(limit));
+
+      const alertsSummary = {
+        alerts,
+        total: alerts.length,
+        bySeverity: {
+          critical: alerts.filter(a => a.severity === 'critical').length,
+          error: alerts.filter(a => a.severity === 'error').length,
+          warning: alerts.filter(a => a.severity === 'warning').length,
+          info: alerts.filter(a => a.severity === 'info').length
+        },
+        active: alerts.filter(a => !a.resolvedAt).length,
+        resolved: alerts.filter(a => !!a.resolvedAt).length
+      };
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          alertsSummary,
+          'Alert history retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get alert history', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Gets system dashboard data
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  getSystemDashboard = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+      const { timeRange = '1h' } = req.query;
+
+      logger.info('Getting system dashboard data', {
+        systemId,
+        timeRange,
+        userId: req.user?.id
+      });
+
+      // Get multiple data points in parallel
+      const [health, stats, metrics] = await Promise.all([
+        systemService.getSystemHealth(systemId, { detailed: false }),
+        systemService.getPerformanceStats(systemId, { timeRange }),
+        systemService.getMetricsHistory(systemId, {
+          granularity: timeRange === '1h' ? 'minute' : 'hour',
+          metrics: ['cpu', 'memory']
+        })
+      ]);
+
+      const dashboard = {
+        summary: {
+          systemId,
+          hostname: health.hostname,
+          environment: health.environment,
+          status: health.status,
+          uptime: health.uptime,
+          lastCheck: health.lastCheck
+        },
+        currentMetrics: health.metrics,
+        services: health.services,
+        alerts: {
+          active: health.alerts.active,
+          critical: health.alerts.critical
+        },
+        performance: {
+          cpu: stats.cpu,
+          memory: stats.memory,
+          responseTime: stats.responseTime,
+          requestRate: stats.requestRate,
+          errorRate: stats.errorRate,
+          availability: stats.availability
+        },
+        recentHistory: {
+          timeRange,
+          dataPoints: metrics.length,
+          metrics: metrics.slice(-20) // Last 20 data points for charts
+        }
+      };
+
+      return res.status(StatusCodes.OK).json(
+        responseFormatter.success(
+          dashboard,
+          'System dashboard data retrieved successfully'
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to get system dashboard', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Exports system metrics
+   * @async
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   * @returns {Promise<void>}
+   */
+  exportMetrics = asyncHandler(async (req, res, next) => {
+    try {
+      const { systemId } = req.params;
+      const {
+        startDate,
+        endDate,
+        format = 'json',
+        metrics = 'all'
+      } = req.query;
+
+      logger.info('Exporting system metrics', {
+        systemId,
+        startDate,
+        endDate,
+        format,
+        userId: req.user?.id
+      });
+
+      const options = {
+        startDate: startDate ? new Date(startDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        endDate: endDate ? new Date(endDate) : new Date(),
+        granularity: 'raw',
+        metrics: metrics === 'all' ? ['cpu', 'memory', 'disk', 'network'] : metrics.split(',')
+      };
+
+      const history = await systemService.getMetricsHistory(systemId, options);
+
+      // Format based on requested format
+      let exportData;
+      let contentType;
+      let filename;
+
+      switch (format) {
+        case 'csv':
+          exportData = this.#convertToCSV(history);
+          contentType = 'text/csv';
+          filename = `system-metrics-${systemId}-${Date.now()}.csv`;
+          break;
+
+        case 'json':
+        default:
+          exportData = JSON.stringify({
+            systemId,
+            period: {
+              start: options.startDate,
+              end: options.endDate
+            },
+            metrics: history
+          }, null, 2);
+          contentType = 'application/json';
+          filename = `system-metrics-${systemId}-${Date.now()}.json`;
+          break;
+      }
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+      return res.status(StatusCodes.OK).send(exportData);
+    } catch (error) {
+      logger.error('Failed to export metrics', {
+        systemId: req.params.systemId,
+        error: error.message,
+        userId: req.user?.id
+      });
+      next(error);
+    }
+  });
+
+  /**
+   * Converts metrics to CSV format
+   * @private
+   * @param {Array} metrics - Metrics data
+   * @returns {string} CSV formatted data
+   */
+  #convertToCSV(metrics) {
+    if (!metrics || metrics.length === 0) {
+      return 'timestamp,cpu_usage,memory_percentage,disk_percentage\n';
     }
 
-    return ResponseFormatter.success(res, resources, 'Resource utilization retrieved successfully');
-  });
+    const headers = ['timestamp', 'cpu_usage', 'memory_percentage', 'disk_percentage'];
+    const rows = metrics.map(m => [
+      m.timestamp,
+      m.cpu?.usage || 0,
+      m.memory?.percentage || 0,
+      m.disk?.percentage || 0
+    ]);
 
-  /**
-   * Update resource allocation
-   * @route PUT /api/admin/system/resources/:resource
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updateResourceAllocation = asyncHandler(async (req, res) => {
-    const { resource } = req.params;
-    const validatedData = validateResourceAllocation(req.body);
-
-    const allocation = await SystemService.updateResourceAllocation(
-      resource,
-      validatedData,
-      req.user.id
-    );
-
-    logger.info('Resource allocation updated', {
-      userId: req.user.id,
-      resource,
-      newAllocation: validatedData
-    });
-
-    return ResponseFormatter.success(
-      res,
-      allocation,
-      'Resource allocation updated successfully'
-    );
-  });
-
-  /**
-   * Get performance configuration
-   * @route GET /api/admin/system/performance
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getPerformanceConfig = asyncHandler(async (req, res) => {
-    const config = await SystemService.getPerformanceConfig();
-
-    return ResponseFormatter.success(
-      res,
-      config,
-      'Performance configuration retrieved successfully'
-    );
-  });
-
-  /**
-   * Update performance configuration
-   * @route PUT /api/admin/system/performance
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updatePerformanceConfig = asyncHandler(async (req, res) => {
-    const validatedData = validatePerformanceConfig(req.body);
-
-    const config = await SystemService.updatePerformanceConfig(
-      validatedData,
-      req.user.id
-    );
-
-    logger.info('Performance configuration updated', {
-      userId: req.user.id,
-      updatedSettings: Object.keys(validatedData)
-    });
-
-    return ResponseFormatter.success(
-      res,
-      config,
-      'Performance configuration updated successfully'
-    );
-  });
-
-  /**
-   * Get security configuration
-   * @route GET /api/admin/system/security
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getSecurityConfig = asyncHandler(async (req, res) => {
-    const { includeSecrets = false } = req.query;
-    
-    const config = await SystemService.getSecurityConfig({
-      includeSecrets: includeSecrets === 'true' && req.user.permissions.includes('system.security.secrets')
-    });
-
-    logger.info('Security configuration retrieved', {
-      userId: req.user.id,
-      includeSecrets
-    });
-
-    return ResponseFormatter.success(
-      res,
-      config,
-      'Security configuration retrieved successfully'
-    );
-  });
-
-  /**
-   * Update security configuration
-   * @route PUT /api/admin/system/security
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updateSecurityConfig = asyncHandler(async (req, res) => {
-    const validatedData = validateSecurityConfig(req.body);
-
-    const config = await SystemService.updateSecurityConfig(
-      validatedData,
-      req.user.id
-    );
-
-    logger.warn('Security configuration updated', {
-      userId: req.user.id,
-      updatedSettings: Object.keys(validatedData)
-    });
-
-    return ResponseFormatter.success(
-      res,
-      config,
-      'Security configuration updated successfully'
-    );
-  });
-
-  /**
-   * Get system logs
-   * @route GET /api/admin/system/logs
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getSystemLogs = asyncHandler(async (req, res) => {
-    const {
-      level = 'info',
-      service = 'all',
-      timeRange = '1h',
-      limit = 100,
-      offset = 0
-    } = req.query;
-
-    const logs = await SystemService.getSystemLogs({
-      level,
-      service,
-      timeRange,
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
-
-    return ResponseFormatter.success(res, logs, 'System logs retrieved successfully');
-  });
-
-  /**
-   * Perform system diagnostic
-   * @route POST /api/admin/system/diagnostic
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  performDiagnostic = asyncHandler(async (req, res) => {
-    const { components = ['all'] } = req.body;
-
-    const diagnostic = await SystemService.performDiagnostic({
-      components: Array.isArray(components) ? components : [components],
-      userId: req.user.id
-    });
-
-    logger.info('System diagnostic performed', {
-      userId: req.user.id,
-      components,
-      issues: diagnostic.issues.length
-    });
-
-    return ResponseFormatter.success(
-      res,
-      diagnostic,
-      'System diagnostic completed successfully'
-    );
-  });
-
-  /**
-   * Clear system cache
-   * @route POST /api/admin/system/cache/clear
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  clearSystemCache = asyncHandler(async (req, res) => {
-    const { cacheTypes = ['all'] } = req.body;
-
-    const result = await SystemService.clearSystemCache({
-      cacheTypes: Array.isArray(cacheTypes) ? cacheTypes : [cacheTypes],
-      userId: req.user.id
-    });
-
-    logger.info('System cache cleared', {
-      userId: req.user.id,
-      cacheTypes,
-      itemsCleared: result.totalCleared
-    });
-
-    return ResponseFormatter.success(
-      res,
-      result,
-      'System cache cleared successfully'
-    );
-  });
-
-  /**
-   * Get backup configuration
-   * @route GET /api/admin/system/backup
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getBackupConfig = asyncHandler(async (req, res) => {
-    const config = await SystemService.getBackupConfig();
-
-    return ResponseFormatter.success(
-      res,
-      config,
-      'Backup configuration retrieved successfully'
-    );
-  });
-
-  /**
-   * Update backup configuration
-   * @route PUT /api/admin/system/backup
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  updateBackupConfig = asyncHandler(async (req, res) => {
-    const validatedData = validateBackupConfig(req.body);
-
-    const config = await SystemService.updateBackupConfig(
-      validatedData,
-      req.user.id
-    );
-
-    logger.info('Backup configuration updated', {
-      userId: req.user.id,
-      updatedSettings: Object.keys(validatedData)
-    });
-
-    return ResponseFormatter.success(
-      res,
-      config,
-      'Backup configuration updated successfully'
-    );
-  });
-
-  /**
-   * Trigger manual backup
-   * @route POST /api/admin/system/backup/trigger
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  triggerBackup = asyncHandler(async (req, res) => {
-    const { 
-      backupType = 'full',
-      components = ['all']
-    } = req.body;
-
-    const backup = await SystemService.triggerBackup({
-      backupType,
-      components: Array.isArray(components) ? components : [components],
-      userId: req.user.id
-    });
-
-    logger.info('Manual backup triggered', {
-      userId: req.user.id,
-      backupType,
-      backupId: backup.id
-    });
-
-    return ResponseFormatter.success(
-      res,
-      backup,
-      'Backup triggered successfully',
-      202
-    );
-  });
-
-  /**
-   * Get system notifications
-   * @route GET /api/admin/system/notifications
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  getSystemNotifications = asyncHandler(async (req, res) => {
-    const {
-      status = 'unread',
-      priority = 'all',
-      limit = 50,
-      offset = 0
-    } = req.query;
-
-    const notifications = await SystemService.getSystemNotifications({
-      status,
-      priority,
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
-
-    return ResponseFormatter.success(
-      res,
-      notifications,
-      'System notifications retrieved successfully'
-    );
-  });
-
-  /**
-   * Mark notification as read
-   * @route PATCH /api/admin/system/notifications/:notificationId/read
-   * @param {Object} req Express request object
-   * @param {Object} res Express response object
-   * @returns {Promise<void>}
-   */
-  markNotificationRead = asyncHandler(async (req, res) => {
-    const { notificationId } = req.params;
-
-    await SystemService.markNotificationRead(notificationId, req.user.id);
-
-    return ResponseFormatter.success(
-      res,
-      { notificationId, read: true },
-      'Notification marked as read'
-    );
-  });
+    return [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+  }
 }
 
+// Export singleton instance
 module.exports = new SystemController();

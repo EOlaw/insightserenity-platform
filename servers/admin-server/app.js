@@ -29,6 +29,17 @@ const SessionManager = require('../../shared/lib/security/session-manager');
 const Database = require('../../shared/lib/database');
 const { AppError } = require('../../shared/lib/utils/app-error');
 
+// Admin-specific middleware
+// const adminAuth = require('./middleware/admin-auth');
+// const ipWhitelist = require('./middleware/ip-whitelist');
+// const adminRateLimit = require('./middleware/admin-rate-limit');
+// const sessionValidation = require('./middleware/session-validation');
+// const securityHeaders = require('./middleware/security-headers');
+
+// Shared middleware imports
+// const errorHandler = require('../../shared/lib/middleware/error-handlers/error-handler');
+// const notFoundHandler = require('../../shared/lib/middleware/error-handlers/not-found-handler');
+
 // FIXED: Conditional middleware imports with error handling
 let adminAuth, ipWhitelist, adminRateLimit, sessionValidation, securityHeaders;
 try {
@@ -83,7 +94,7 @@ try {
 }
 
 // Import admin modules
-// const platformManagementRoutes = require('./modules/platform-management/routes');
+const platformManagementRoutes = require('./modules/platform-management/routes');
 // const userManagementRoutes = require('./modules/user-management/routes');
 // const organizationManagementRoutes = require('./modules/organization-management/routes');
 // const securityAdministrationRoutes = require('./modules/security-administration/routes');
@@ -925,6 +936,16 @@ class AdminApplication {
                 ]);
             };
 
+            // Admin API routes (all require authentication)
+            this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutes);
+            // this.app.use(`${apiPrefix}/users`, adminAuth, userManagementRoutes);
+            // this.app.use(`${apiPrefix}/organizations`, adminAuth, organizationManagementRoutes);
+            // this.app.use(`${apiPrefix}/security`, adminAuth, securityAdministrationRoutes);
+            // this.app.use(`${apiPrefix}/billing`, adminAuth, billingAdministrationRoutes);
+            // this.app.use(`${apiPrefix}/monitoring`, adminAuth, systemMonitoringRoutes);
+            // this.app.use(`${apiPrefix}/support`, adminAuth, supportAdministrationRoutes);
+            // this.app.use(`${apiPrefix}/analytics`, adminAuth, reportsAnalyticsRoutes);
+
             // ENHANCED: Health check with comprehensive model status
             this.app.get('/health', async (req, res) => {
                 try {
@@ -1240,16 +1261,6 @@ class AdminApplication {
             this.app.get(adminBase, (req, res) => {
                 res.redirect(`${adminBase}/dashboard`);
             });
-
-            // Admin API routes (all require authentication)
-            // this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutes);
-            // this.app.use(`${apiPrefix}/users`, adminAuth, userManagementRoutes);
-            // this.app.use(`${apiPrefix}/organizations`, adminAuth, organizationManagementRoutes);
-            // this.app.use(`${apiPrefix}/security`, adminAuth, securityAdministrationRoutes);
-            // this.app.use(`${apiPrefix}/billing`, adminAuth, billingAdministrationRoutes);
-            // this.app.use(`${apiPrefix}/monitoring`, adminAuth, systemMonitoringRoutes);
-            // this.app.use(`${apiPrefix}/support`, adminAuth, supportAdministrationRoutes);
-            // this.app.use(`${apiPrefix}/analytics`, adminAuth, reportsAnalyticsRoutes);
 
             // API documentation
             if (this.config.app.env !== 'production') {
