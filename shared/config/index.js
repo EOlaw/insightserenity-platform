@@ -65,7 +65,7 @@ const mergeConfigs = () => {
         
         // Database configuration
         database: {
-            uri: process.env.DB_URI || process.env.MONGODB_URI || 'mongodb+srv://EOlaw146:Olawalee_.146@cluster0.4wv68hn.mongodb.net/Insightserenity_dev?retryWrites=true&w=majority',
+            uri: process.env.DB_URI || process.env.MONGODB_URI || 'mongodb+srv://EOlaw146:Olawalee_.146@cluster0.4wv68hn.mongodb.net?retryWrites=true&w=majority',
             host: process.env.DB_HOST || 'localhost',
             port: parseInt(process.env.DB_PORT, 10) || 27017,
             name: process.env.DB_NAME || 'insightserenity_dev',

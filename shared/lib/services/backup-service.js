@@ -126,7 +126,7 @@ class BackupService {
           ...options.paths
         },
         database: {
-          uri: config.database?.uri || process.env.DB_URI,
+          uri: config.database?.uri || process.env.DB_URI || 'mongodb+srv://EOlaw146:Olawalee_.146@cluster0.4wv68hn.mongodb.net?retryWrites=true&w=majority',
           name: config.database?.name || 'insightserenity',
           ...options.database
         },
