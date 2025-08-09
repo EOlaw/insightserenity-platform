@@ -95,7 +95,11 @@ try {
 
 // Import admin modules
 //const platformManagementRoutes = require('./modules/platform-management/routes');
-// const userManagementRoutes = require('./modules/user-management/routes');
+
+// User management routes
+const UserManagementRoutesManager = require('./modules/user-management/routes');
+const userManagementRoutes = new UserManagementRoutesManager().getRouter();
+
 // const organizationManagementRoutes = require('./modules/organization-management/routes');
 // const securityAdministrationRoutes = require('./modules/security-administration/routes');
 // const billingAdministrationRoutes = require('./modules/billing-administration/routes');
@@ -939,6 +943,14 @@ class AdminApplication {
             // Admin API routes (all require authentication)
             // this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutes);
             // this.app.use(`${apiPrefix}/users`, adminAuth, userManagementRoutes);
+            this.app.use(`${adminBase}/users`, [
+                requestTracking, // Add distributed tracing middleware
+                adminAuth,
+                auditLogging,
+                // rateLimiting,
+                performanceMonitoring,
+                userManagementRoutes
+            ])
             // this.app.use(`${apiPrefix}/organizations`, adminAuth, organizationManagementRoutes);
             // this.app.use(`${apiPrefix}/security`, adminAuth, securityAdministrationRoutes);
             // this.app.use(`${apiPrefix}/billing`, adminAuth, billingAdministrationRoutes);
