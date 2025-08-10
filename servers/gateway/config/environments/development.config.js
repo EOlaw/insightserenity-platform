@@ -29,7 +29,7 @@ module.exports = {
 
     authentication: {
         jwt: {
-            secret: 'dev-secret-key-not-for-production'
+            secret: 'b78122d8977865a38989b9a46a8bc960e90573fba5e4634a8b64b054b690fa2a27ade7f60bfa0ff1455dfa7e930cf114702e1965f3a49af0f10c3f2d1818491a'
         }
     },
 
