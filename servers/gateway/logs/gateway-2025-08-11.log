@@ -1,0 +1,4 @@
+{"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":44896,"service":"api-gateway"},"timestamp":"2025-08-11 03:02:13.108"}
+{"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":36912,"service":"api-gateway"},"timestamp":"2025-08-11 08:17:26.267"}
+{"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":35480,"service":"api-gateway"},"timestamp":"2025-08-11 11:03:00.189"}
+{"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":15200,"service":"api-gateway"},"timestamp":"2025-08-11 11:23:37.403"}

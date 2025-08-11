@@ -1,0 +1,670 @@
+{
+  "environment": "staging",
+  "server": {
+    "port": "${PORT:8080}",
+    "host": "0.0.0.0",
+    "protocol": "https",
+    "cluster": {
+      "enabled": true,
+      "workers": "${CLUSTER_WORKERS:4}"
+    },
+    "cors": {
+      "enabled": true,
+      "origins": ["https://staging.insightserenity.com", "https://staging-app.insightserenity.com"],
+      "credentials": true,
+      "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      "allowedHeaders": ["Content-Type", "Authorization", "X-Requested-With", "X-Tenant-ID", "X-API-Key"],
+      "exposedHeaders": ["X-Total-Count", "X-Page-Count", "X-Request-ID", "X-RateLimit-Remaining"],
+      "maxAge": 86400
+    },
+    "compression": {
+      "enabled": true,
+      "level": 6,
+      "threshold": 1024,
+      "filter": ["text/html", "text/css", "application/json", "application/javascript", "text/xml", "application/xml"]
+    },
+    "timeout": {
+      "server": 120000,
+      "socket": 125000,
+      "keepAlive": 5000,
+      "headersTimeout": 60000
+    }
+  },
+  "gateway": {
+    "name": "InsightSerenity-Gateway-Staging",
+    "version": "${APP_VERSION:1.0.0}",
+    "description": "API Gateway Staging Instance",
+    "baseUrl": "https://api-staging.insightserenity.com",
+    "apiPrefix": "/api",
+    "healthCheckPath": "/health",
+    "metricsPath": "/metrics",
+    "docsPath": "/docs",
+    "maintenanceMode": false,
+    "gracefulShutdown": {
+      "enabled": true,
+      "timeout": 30000,
+      "forceTimeout": 60000,
+      "drainTimeout": 25000
+    }
+  },
+  "services": {
+    "discovery": {
+      "enabled": true,
+      "provider": "consul",
+      "refreshInterval": 30000,
+      "consul": {
+        "host": "${CONSUL_HOST:consul-staging.insightserenity.local}",
+        "port": "${CONSUL_PORT:8500}",
+        "secure": true,
+        "ca": "/etc/ssl/consul-ca.pem",
+        "cert": "/etc/ssl/consul-cert.pem",
+        "key": "/etc/ssl/consul-key.pem",
+        "token": "${CONSUL_TOKEN}",
+        "datacenter": "staging-dc1",
+        "healthCheck": {
+          "interval": "30s",
+          "timeout": "5s",
+          "deregisterAfter": "5m"
+        }
+      }
+    },
+    "registry": {
+      "adminServer": {
+        "url": "https://admin-staging.insightserenity.local",
+        "healthPath": "/health",
+        "weight": 1,
+        "version": "v1",
+        "timeout": 30000,
+        "retries": 3,
+        "instances": [
+          {
+            "id": "admin-1",
+            "host": "admin-1.staging.local",
+            "port": 3001
+          },
+          {
+            "id": "admin-2",
+            "host": "admin-2.staging.local",
+            "port": 3001
+          }
+        ]
+      },
+      "customerServices": {
+        "url": "https://services-staging.insightserenity.local",
+        "healthPath": "/health",
+        "weight": 2,
+        "version": "v1",
+        "timeout": 30000,
+        "retries": 3,
+        "instances": [
+          {
+            "id": "services-1",
+            "host": "services-1.staging.local",
+            "port": 3002
+          },
+          {
+            "id": "services-2",
+            "host": "services-2.staging.local",
+            "port": 3002
+          },
+          {
+            "id": "services-3",
+            "host": "services-3.staging.local",
+            "port": 3002
+          }
+        ]
+      },
+      "authService": {
+        "url": "https://auth-staging.insightserenity.local",
+        "healthPath": "/health",
+        "weight": 1,
+        "version": "v1",
+        "timeout": 30000,
+        "retries": 3,
+        "instances": [
+          {
+            "id": "auth-1",
+            "host": "auth-1.staging.local",
+            "port": 3003
+          },
+          {
+            "id": "auth-2",
+            "host": "auth-2.staging.local",
+            "port": 3003
+          }
+        ]
+      }
+    }
+  },
+  "routing": {
+    "defaultAlgorithm": "least-connections",
+    "fallbackAlgorithm": "round-robin",
+    "sessionAffinity": {
+      "enabled": true,
+      "cookieName": "SERVERID",
+      "timeout": 3600000,
+      "secure": true,
+      "sameSite": "strict"
+    },
+    "rules": [
+      {
+        "path": "/api/admin/*",
+        "target": "adminServer",
+        "methods": ["GET", "POST", "PUT", "DELETE"],
+        "authentication": true,
+        "authorization": ["admin", "super-admin"],
+        "rateLimit": {
+          "requests": 100,
+          "window": 60000
+        },
+        "cache": {
+          "enabled": false
+        }
+      },
+      {
+        "path": "/api/services/*",
+        "target": "customerServices",
+        "methods": ["GET", "POST", "PUT", "DELETE"],
+        "authentication": true,
+        "rateLimit": {
+          "requests": 500,
+          "window": 60000
+        },
+        "cache": {
+          "enabled": true,
+          "ttl": 60000,
+          "strategy": "stale-while-revalidate"
+        }
+      },
+      {
+        "path": "/api/auth/*",
+        "target": "authService",
+        "methods": ["POST"],
+        "authentication": false,
+        "rateLimit": {
+          "requests": 20,
+          "window": 300000
+        },
+        "cache": {
+          "enabled": false
+        }
+      },
+      {
+        "path": "/api/public/*",
+        "target": "customerServices",
+        "methods": ["GET"],
+        "authentication": false,
+        "cache": {
+          "enabled": true,
+          "ttl": 600000,
+          "strategy": "cache-first"
+        }
+      }
+    ]
+  },
+  "security": {
+    "enabled": true,
+    "helmet": {
+      "enabled": true,
+      "contentSecurityPolicy": {
+        "directives": {
+          "defaultSrc": ["'self'"],
+          "scriptSrc": ["'self'", "'unsafe-inline'", "https://cdn.insightserenity.com"],
+          "styleSrc": ["'self'", "'unsafe-inline'", "https://cdn.insightserenity.com"],
+          "imgSrc": ["'self'", "data:", "https:"],
+          "connectSrc": ["'self'", "https://api-staging.insightserenity.com"],
+          "fontSrc": ["'self'", "https://fonts.gstatic.com"],
+          "objectSrc": ["'none'"],
+          "mediaSrc": ["'self'"],
+          "frameSrc": ["'none'"]
+        }
+      },
+      "crossOriginEmbedderPolicy": true,
+      "crossOriginOpenerPolicy": true,
+      "crossOriginResourcePolicy": { "policy": "cross-origin" },
+      "dnsPrefetchControl": true,
+      "frameguard": { "action": "deny" },
+      "hidePoweredBy": true,
+      "hsts": {
+        "maxAge": 31536000,
+        "includeSubDomains": true,
+        "preload": true
+      },
+      "ieNoOpen": true,
+      "noSniff": true,
+      "originAgentCluster": true,
+      "permittedCrossDomainPolicies": false,
+      "referrerPolicy": { "policy": "strict-origin-when-cross-origin" },
+      "xssFilter": true
+    },
+    "jwt": {
+      "secret": "${JWT_SECRET}",
+      "publicKey": "${JWT_PUBLIC_KEY}",
+      "privateKey": "${JWT_PRIVATE_KEY}",
+      "issuer": "insightserenity-staging",
+      "audience": "insightserenity-api-staging",
+      "expiresIn": "1h",
+      "refreshExpiresIn": "7d",
+      "algorithm": "RS256",
+      "clockTolerance": 30
+    },
+    "apiKey": {
+      "enabled": true,
+      "header": "X-API-Key",
+      "prefix": "Bearer",
+      "storage": "redis",
+      "validation": {
+        "cache": true,
+        "cacheTTL": 300000
+      }
+    },
+    "encryption": {
+      "algorithm": "aes-256-gcm",
+      "key": "${ENCRYPTION_KEY}",
+      "saltRounds": 12,
+      "keyDerivation": "pbkdf2",
+      "iterations": 100000
+    },
+    "csrf": {
+      "enabled": true,
+      "cookie": true,
+      "ignoreMethods": ["GET", "HEAD", "OPTIONS"],
+      "secret": "${CSRF_SECRET}",
+      "sessionKey": "csrfSecret"
+    },
+    "trustProxy": true,
+    "ipWhitelist": ["${IP_WHITELIST}"],
+    "ipBlacklist": ["${IP_BLACKLIST}"],
+    "securityHeaders": {
+      "enabled": true,
+      "xFrameOptions": "DENY",
+      "xContentTypeOptions": "nosniff",
+      "xXssProtection": "1; mode=block",
+      "strictTransportSecurity": "max-age=31536000; includeSubDomains; preload",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "permissionsPolicy": "geolocation=(), microphone=(), camera=()"
+    }
+  },
+  "rateLimit": {
+    "enabled": true,
+    "global": {
+      "windowMs": 60000,
+      "max": 1000,
+      "message": "Too many requests from this IP, please try again later.",
+      "standardHeaders": true,
+      "legacyHeaders": false,
+      "skipSuccessfulRequests": false,
+      "skipFailedRequests": false
+    },
+    "api": {
+      "windowMs": 60000,
+      "max": 500
+    },
+    "auth": {
+      "windowMs": 300000,
+      "max": 10
+    },
+    "keyGenerator": "tenant-ip",
+    "store": "redis",
+    "redis": {
+      "client": "redis",
+      "sendCommand": true
+    }
+  },
+  "cache": {
+    "enabled": true,
+    "type": "redis",
+    "defaultTTL": 300000,
+    "maxSize": 1073741824,
+    "checkPeriod": 60000,
+    "redis": {
+      "host": "${REDIS_HOST:redis-staging.insightserenity.local}",
+      "port": "${REDIS_PORT:6379}",
+      "password": "${REDIS_PASSWORD}",
+      "db": 0,
+      "keyPrefix": "gateway:staging:",
+      "enableOfflineQueue": true,
+      "connectTimeout": 10000,
+      "maxRetriesPerRequest": 3,
+      "sentinels": [
+        { "host": "sentinel-1.staging.local", "port": 26379 },
+        { "host": "sentinel-2.staging.local", "port": 26379 },
+        { "host": "sentinel-3.staging.local", "port": 26379 }
+      ],
+      "name": "mymaster"
+    },
+    "strategies": {
+      "default": "network-first",
+      "api": "stale-while-revalidate",
+      "static": "cache-first"
+    },
+    "compression": {
+      "enabled": true,
+      "threshold": 1024
+    },
+    "warming": {
+      "enabled": true,
+      "interval": 300000,
+      "endpoints": [
+        { "path": "/api/public/config", "method": "GET" },
+        { "path": "/api/public/health", "method": "GET" }
+      ]
+    }
+  },
+  "monitoring": {
+    "enabled": true,
+    "metrics": {
+      "enabled": true,
+      "interval": 10000,
+      "detailed": true,
+      "includeSystemMetrics": true,
+      "prometheus": {
+        "enabled": true,
+        "port": 9090,
+        "path": "/metrics",
+        "defaultLabels": {
+          "environment": "staging",
+          "service": "api-gateway"
+        }
+      }
+    },
+    "health": {
+      "enabled": true,
+      "interval": 30000,
+      "timeout": 5000,
+      "indicators": {
+        "database": true,
+        "redis": true,
+        "services": true,
+        "disk": true,
+        "memory": true,
+        "consul": true
+      },
+      "thresholds": {
+        "memory": 90,
+        "disk": 90,
+        "responseTime": 1000
+      }
+    },
+    "tracing": {
+      "enabled": true,
+      "serviceName": "api-gateway-staging",
+      "jaeger": {
+        "host": "${JAEGER_HOST:jaeger-staging.insightserenity.local}",
+        "port": "${JAEGER_PORT:6831}",
+        "samplingRate": 0.1,
+        "logSpans": false,
+        "flushInterval": 2000,
+        "tags": {
+          "environment": "staging",
+          "version": "${APP_VERSION}"
+        }
+      },
+      "zipkin": {
+        "enabled": false,
+        "url": "http://zipkin-staging.insightserenity.local:9411/api/v2/spans"
+      }
+    },
+    "logging": {
+      "level": "info",
+      "format": "json",
+      "prettyPrint": false,
+      "colorize": false,
+      "timestamp": true,
+      "destination": "stdout",
+      "file": {
+        "enabled": true,
+        "path": "/var/log/gateway",
+        "filename": "gateway-staging.log",
+        "maxSize": "100m",
+        "maxFiles": "14d",
+        "compress": true
+      },
+      "syslog": {
+        "enabled": true,
+        "host": "syslog-staging.insightserenity.local",
+        "port": 514,
+        "protocol": "udp4",
+        "facility": "local0",
+        "tag": "gateway-staging"
+      },
+      "elasticsearch": {
+        "enabled": true,
+        "node": "https://es-staging.insightserenity.local:9200",
+        "index": "gateway-logs-staging",
+        "auth": {
+          "username": "${ES_USERNAME}",
+          "password": "${ES_PASSWORD}"
+        }
+      }
+    },
+    "alerts": {
+      "enabled": true,
+      "channels": {
+        "email": {
+          "enabled": true,
+          "smtp": {
+            "host": "${SMTP_HOST}",
+            "port": "${SMTP_PORT:587}",
+            "secure": true,
+            "auth": {
+              "user": "${SMTP_USER}",
+              "pass": "${SMTP_PASS}"
+            }
+          },
+          "from": "alerts@insightserenity.com",
+          "to": ["ops@insightserenity.com", "dev@insightserenity.com"]
+        },
+        "slack": {
+          "enabled": true,
+          "webhookUrl": "${SLACK_WEBHOOK_URL}",
+          "channel": "#staging-alerts",
+          "username": "Gateway Staging"
+        },
+        "pagerduty": {
+          "enabled": false,
+          "serviceKey": "${PAGERDUTY_SERVICE_KEY}"
+        }
+      },
+      "rules": [
+        {
+          "name": "High Error Rate",
+          "condition": "errorRate > 5",
+          "severity": "warning",
+          "channels": ["slack"]
+        },
+        {
+          "name": "Service Down",
+          "condition": "serviceHealth === false",
+          "severity": "critical",
+          "channels": ["email", "slack"]
+        },
+        {
+          "name": "High Memory Usage",
+          "condition": "memoryUsage > 85",
+          "severity": "warning",
+          "channels": ["slack"]
+        }
+      ]
+    }
+  },
+  "database": {
+    "mongodb": {
+      "uri": "${MONGODB_URI:mongodb://mongo-staging.insightserenity.local:27017/insightserenity_staging}",
+      "options": {
+        "useNewUrlParser": true,
+        "useUnifiedTopology": true,
+        "maxPoolSize": 20,
+        "minPoolSize": 5,
+        "maxIdleTimeMS": 10000,
+        "serverSelectionTimeoutMS": 5000,
+        "socketTimeoutMS": 45000,
+        "family": 4,
+        "authSource": "admin",
+        "replicaSet": "rs0",
+        "readPreference": "secondaryPreferred",
+        "readConcern": "majority",
+        "writeConcern": {
+          "w": "majority",
+          "j": true,
+          "wtimeout": 5000
+        },
+        "retryWrites": true,
+        "retryReads": true
+      }
+    }
+  },
+  "queue": {
+    "enabled": true,
+    "provider": "redis",
+    "redis": {
+      "host": "${REDIS_HOST:redis-staging.insightserenity.local}",
+      "port": "${REDIS_PORT:6379}",
+      "password": "${REDIS_PASSWORD}",
+      "db": 2,
+      "keyPrefix": "queue:staging:"
+    },
+    "options": {
+      "removeOnComplete": 100,
+      "removeOnFail": 1000,
+      "attempts": 5,
+      "backoff": {
+        "type": "exponential",
+        "delay": 5000
+      },
+      "defaultJobOptions": {
+        "removeOnComplete": true,
+        "removeOnFail": false,
+        "attempts": 3
+      }
+    },
+    "workers": {
+      "concurrency": 5,
+      "maxStalledCount": 3,
+      "stalledInterval": 30000
+    }
+  },
+  "circuitBreaker": {
+    "enabled": true,
+    "defaultConfig": {
+      "failureThreshold": 5,
+      "successThreshold": 3,
+      "timeout": 10000,
+      "resetTimeout": 60000,
+      "volumeThreshold": 20,
+      "errorThresholdPercentage": 50,
+      "halfOpenMaxAttempts": 3
+    },
+    "services": {
+      "adminServer": {
+        "failureThreshold": 3,
+        "resetTimeout": 30000
+      },
+      "customerServices": {
+        "failureThreshold": 5,
+        "resetTimeout": 45000
+      },
+      "authService": {
+        "failureThreshold": 2,
+        "resetTimeout": 20000
+      }
+    }
+  },
+  "proxy": {
+    "timeout": 30000,
+    "retries": 3,
+    "retryDelay": 2000,
+    "changeOrigin": true,
+    "ws": true,
+    "xfwd": true,
+    "secure": true,
+    "preserveHeaderKeyCase": false,
+    "followRedirects": false,
+    "selfHandleResponse": false,
+    "proxyTimeout": 30000,
+    "buffer": {
+      "request": true,
+      "response": true,
+      "maxSize": 10485760
+    }
+  },
+  "features": {
+    "multiTenancy": true,
+    "apiVersioning": true,
+    "graphql": false,
+    "websockets": true,
+    "fileUploads": true,
+    "swagger": true,
+    "compression": true,
+    "etag": true,
+    "requestId": true,
+    "correlationId": true,
+    "responseTime": true,
+    "geoRouting": false,
+    "canaryDeployments": true,
+    "abTesting": false
+  },
+  "tenant": {
+    "enabled": true,
+    "strategy": "header",
+    "headerName": "X-Tenant-ID",
+    "validation": {
+      "enabled": true,
+      "cache": true,
+      "cacheTTL": 600000,
+      "strict": true
+    },
+    "isolation": {
+      "database": true,
+      "cache": true,
+      "queue": true,
+      "storage": true
+    },
+    "rateLimit": {
+      "enabled": true,
+      "default": 1000,
+      "premium": 5000,
+      "enterprise": 10000
+    }
+  },
+  "limits": {
+    "maxRequestSize": "50mb",
+    "maxUploadSize": "100mb",
+    "maxConnections": 5000,
+    "maxConcurrentRequests": 500,
+    "requestTimeout": 30000,
+    "keepAliveTimeout": 5000,
+    "headersTimeout": 60000,
+    "maxHeaderSize": 16384,
+    "maxUrlLength": 2048,
+    "maxParameterCount": 1000
+  },
+  "performance": {
+    "clustering": true,
+    "workers": "${CLUSTER_WORKERS:4}",
+    "workerRestartDelay": 3000,
+    "workerMaxRestarts": 10,
+    "compression": true,
+    "caching": true,
+    "pooling": {
+      "enabled": true,
+      "min": 5,
+      "max": 20,
+      "idleTimeoutMillis": 30000,
+      "acquireTimeoutMillis": 30000
+    },
+    "http2": {
+      "enabled": false,
+      "push": false
+    }
+  },
+  "experimental": {
+    "http2": false,
+    "quic": false,
+    "brotli": true,
+    "avif": false,
+    "earlyHints": false,
+    "serverTiming": true,
+    "http3": false
+  }
+}

@@ -56,6 +56,7 @@
         "axios": "^1.11.0",
         "bluebird": "^3.7.2",
         "body-parser": "^1.20.2",
+        "bottleneck": "^2.19.5",
         "cache-manager": "^7.1.1",
         "cache-manager-redis-store": "^3.0.1",
         "circuit-breaker-js": "^0.0.1",
@@ -74,6 +75,7 @@
         "express-http-proxy": "^2.0.0",
         "express-rate-limit": "^7.1.5",
         "express-session": "^1.17.3",
+        "express-slow-down": "^3.0.0",
         "express-useragent": "^1.0.15",
         "express-validator": "^7.0.1",
         "express-winston": "^4.2.0",
@@ -82,6 +84,7 @@
         "http-proxy-middleware": "^2.0.6",
         "ioredis": "^5.7.0",
         "joi": "^17.11.0",
+        "jsonpath": "^1.1.1",
         "jsonwebtoken": "^9.0.2",
         "lodash": "^4.17.21",
         "lru-cache": "^10.4.3",
@@ -105,6 +108,7 @@
         "util": "^0.12.5",
         "uuid": "^9.0.1",
         "winston": "^3.11.0",
+        "winston-daily-rotate-file": "^5.0.0",
         "ws": "^8.14.2"
     },
     "devDependencies": {

@@ -1,0 +1,413 @@
+{
+  "environment": "development",
+  "server": {
+    "port": 8080,
+    "host": "0.0.0.0",
+    "protocol": "http",
+    "cluster": {
+      "enabled": false,
+      "workers": 2
+    },
+    "cors": {
+      "enabled": true,
+      "origins": ["http://localhost:3000", "http://localhost:3001", "http://localhost:4200"],
+      "credentials": true,
+      "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      "allowedHeaders": ["Content-Type", "Authorization", "X-Requested-With", "X-Tenant-ID", "X-API-Key"],
+      "exposedHeaders": ["X-Total-Count", "X-Page-Count", "X-Request-ID"],
+      "maxAge": 86400
+    },
+    "compression": {
+      "enabled": true,
+      "level": 6,
+      "threshold": 1024,
+      "filter": ["text/html", "text/css", "application/json", "application/javascript"]
+    },
+    "timeout": {
+      "server": 120000,
+      "socket": 125000,
+      "keepAlive": 5000,
+      "headersTimeout": 60000
+    }
+  },
+  "gateway": {
+    "name": "InsightSerenity-Gateway-Dev",
+    "version": "1.0.0",
+    "description": "API Gateway Development Instance",
+    "baseUrl": "http://localhost:8080",
+    "apiPrefix": "/api",
+    "healthCheckPath": "/health",
+    "metricsPath": "/metrics",
+    "docsPath": "/docs",
+    "maintenanceMode": false,
+    "gracefulShutdown": {
+      "enabled": true,
+      "timeout": 30000,
+      "forceTimeout": 60000
+    }
+  },
+  "services": {
+    "discovery": {
+      "enabled": false,
+      "provider": "static",
+      "refreshInterval": 30000
+    },
+    "registry": {
+      "adminServer": {
+        "url": "http://localhost:3001",
+        "healthPath": "/health",
+        "weight": 1,
+        "version": "v1",
+        "timeout": 30000,
+        "retries": 3
+      },
+      "customerServices": {
+        "url": "http://localhost:3002",
+        "healthPath": "/health",
+        "weight": 1,
+        "version": "v1",
+        "timeout": 30000,
+        "retries": 3
+      },
+      "authService": {
+        "url": "http://localhost:3003",
+        "healthPath": "/health",
+        "weight": 1,
+        "version": "v1",
+        "timeout": 30000,
+        "retries": 3
+      }
+    }
+  },
+  "routing": {
+    "defaultAlgorithm": "round-robin",
+    "fallbackAlgorithm": "random",
+    "sessionAffinity": {
+      "enabled": false,
+      "cookieName": "SERVERID",
+      "timeout": 3600000
+    },
+    "rules": [
+      {
+        "path": "/api/admin/*",
+        "target": "adminServer",
+        "methods": ["GET", "POST", "PUT", "DELETE"],
+        "authentication": true,
+        "authorization": ["admin", "super-admin"],
+        "rateLimit": {
+          "requests": 100,
+          "window": 60000
+        }
+      },
+      {
+        "path": "/api/services/*",
+        "target": "customerServices",
+        "methods": ["GET", "POST", "PUT", "DELETE"],
+        "authentication": true,
+        "rateLimit": {
+          "requests": 200,
+          "window": 60000
+        }
+      },
+      {
+        "path": "/api/auth/*",
+        "target": "authService",
+        "methods": ["POST"],
+        "authentication": false,
+        "rateLimit": {
+          "requests": 10,
+          "window": 60000
+        }
+      },
+      {
+        "path": "/api/public/*",
+        "target": "customerServices",
+        "methods": ["GET"],
+        "authentication": false,
+        "cache": {
+          "enabled": true,
+          "ttl": 300000
+        }
+      }
+    ]
+  },
+  "security": {
+    "enabled": true,
+    "helmet": {
+      "enabled": true,
+      "contentSecurityPolicy": false,
+      "crossOriginEmbedderPolicy": false
+    },
+    "jwt": {
+      "secret": "dev-secret-key-change-in-production",
+      "issuer": "insightserenity-dev",
+      "audience": "insightserenity-api",
+      "expiresIn": "24h",
+      "refreshExpiresIn": "7d",
+      "algorithm": "HS256"
+    },
+    "apiKey": {
+      "enabled": true,
+      "header": "X-API-Key",
+      "prefix": "Bearer"
+    },
+    "encryption": {
+      "algorithm": "aes-256-gcm",
+      "key": "dev-encryption-key-32-bytes-long",
+      "saltRounds": 10
+    },
+    "csrf": {
+      "enabled": false,
+      "cookie": false,
+      "ignoreMethods": ["GET", "HEAD", "OPTIONS"]
+    },
+    "trustProxy": true,
+    "ipWhitelist": [],
+    "ipBlacklist": [],
+    "securityHeaders": {
+      "enabled": true,
+      "xFrameOptions": "DENY",
+      "xContentTypeOptions": "nosniff",
+      "xXssProtection": "1; mode=block",
+      "strictTransportSecurity": false,
+      "referrerPolicy": "strict-origin-when-cross-origin"
+    }
+  },
+  "rateLimit": {
+    "enabled": true,
+    "global": {
+      "windowMs": 60000,
+      "max": 1000,
+      "message": "Too many requests from this IP, please try again later.",
+      "standardHeaders": true,
+      "legacyHeaders": false
+    },
+    "api": {
+      "windowMs": 60000,
+      "max": 100
+    },
+    "auth": {
+      "windowMs": 300000,
+      "max": 5
+    },
+    "skipSuccessfulRequests": false,
+    "skipFailedRequests": false,
+    "keyGenerator": "ip",
+    "store": "memory"
+  },
+  "cache": {
+    "enabled": true,
+    "type": "memory",
+    "defaultTTL": 300000,
+    "maxSize": 104857600,
+    "checkPeriod": 60000,
+    "redis": {
+      "host": "localhost",
+      "port": 6379,
+      "password": "",
+      "db": 0,
+      "keyPrefix": "gateway:dev:",
+      "enableOfflineQueue": true,
+      "connectTimeout": 10000,
+      "maxRetriesPerRequest": 3
+    },
+    "strategies": {
+      "default": "cache-first",
+      "api": "network-first",
+      "static": "cache-only"
+    },
+    "compression": {
+      "enabled": true,
+      "threshold": 1024
+    }
+  },
+  "monitoring": {
+    "enabled": true,
+    "metrics": {
+      "enabled": true,
+      "interval": 10000,
+      "detailed": true,
+      "includeSystemMetrics": true
+    },
+    "health": {
+      "enabled": true,
+      "interval": 30000,
+      "timeout": 5000,
+      "indicators": {
+        "database": true,
+        "redis": true,
+        "services": true,
+        "disk": true,
+        "memory": true
+      }
+    },
+    "tracing": {
+      "enabled": false,
+      "serviceName": "api-gateway-dev",
+      "jaeger": {
+        "host": "localhost",
+        "port": 6831,
+        "samplingRate": 1.0,
+        "logSpans": true
+      }
+    },
+    "logging": {
+      "level": "debug",
+      "format": "json",
+      "prettyPrint": true,
+      "colorize": true,
+      "timestamp": true,
+      "destination": "console",
+      "file": {
+        "enabled": true,
+        "path": "./logs/dev",
+        "filename": "gateway-dev.log",
+        "maxSize": "10m",
+        "maxFiles": "5d",
+        "compress": false
+      },
+      "elasticsearch": {
+        "enabled": false,
+        "node": "http://localhost:9200",
+        "index": "gateway-logs-dev"
+      }
+    },
+    "alerts": {
+      "enabled": false,
+      "channels": {
+        "email": {
+          "enabled": false,
+          "smtp": {
+            "host": "localhost",
+            "port": 1025,
+            "secure": false
+          },
+          "from": "alerts@insightserenity.dev",
+          "to": ["admin@insightserenity.dev"]
+        },
+        "slack": {
+          "enabled": false,
+          "webhookUrl": ""
+        }
+      }
+    }
+  },
+  "database": {
+    "mongodb": {
+      "uri": "mongodb://localhost:27017/insightserenity_dev",
+      "options": {
+        "useNewUrlParser": true,
+        "useUnifiedTopology": true,
+        "maxPoolSize": 10,
+        "minPoolSize": 2,
+        "maxIdleTimeMS": 10000,
+        "serverSelectionTimeoutMS": 5000,
+        "socketTimeoutMS": 45000,
+        "family": 4
+      }
+    }
+  },
+  "queue": {
+    "enabled": false,
+    "provider": "memory",
+    "redis": {
+      "host": "localhost",
+      "port": 6379,
+      "password": "",
+      "db": 1
+    },
+    "options": {
+      "removeOnComplete": true,
+      "removeOnFail": false,
+      "attempts": 3,
+      "backoff": {
+        "type": "exponential",
+        "delay": 2000
+      }
+    }
+  },
+  "circuitBreaker": {
+    "enabled": true,
+    "defaultConfig": {
+      "failureThreshold": 5,
+      "successThreshold": 2,
+      "timeout": 10000,
+      "resetTimeout": 30000,
+      "volumeThreshold": 10,
+      "errorThresholdPercentage": 50
+    }
+  },
+  "proxy": {
+    "timeout": 30000,
+    "retries": 3,
+    "retryDelay": 1000,
+    "changeOrigin": true,
+    "ws": true,
+    "xfwd": true,
+    "secure": false,
+    "preserveHeaderKeyCase": false,
+    "followRedirects": false,
+    "selfHandleResponse": false
+  },
+  "features": {
+    "multiTenancy": true,
+    "apiVersioning": true,
+    "graphql": false,
+    "websockets": true,
+    "fileUploads": true,
+    "swagger": true,
+    "compression": true,
+    "etag": true,
+    "requestId": true,
+    "correlationId": true,
+    "responseTime": true
+  },
+  "tenant": {
+    "enabled": true,
+    "strategy": "header",
+    "headerName": "X-Tenant-ID",
+    "validation": {
+      "enabled": true,
+      "cache": true,
+      "cacheTTL": 300000
+    },
+    "isolation": {
+      "database": true,
+      "cache": true,
+      "queue": false
+    }
+  },
+  "limits": {
+    "maxRequestSize": "10mb",
+    "maxUploadSize": "50mb",
+    "maxConnections": 1000,
+    "maxConcurrentRequests": 100,
+    "requestTimeout": 30000,
+    "keepAliveTimeout": 5000,
+    "headersTimeout": 60000,
+    "maxHeaderSize": 8192,
+    "maxUrlLength": 2048
+  },
+  "performance": {
+    "clustering": false,
+    "workers": 2,
+    "workerRestartDelay": 1000,
+    "workerMaxRestarts": 10,
+    "compression": true,
+    "caching": true,
+    "pooling": {
+      "enabled": true,
+      "min": 2,
+      "max": 10,
+      "idleTimeoutMillis": 30000
+    }
+  },
+  "experimental": {
+    "http2": false,
+    "quic": false,
+    "brotli": false,
+    "avif": false,
+    "earlyHints": false,
+    "serverTiming": true
+  }
+}

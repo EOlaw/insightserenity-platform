@@ -1,0 +1,759 @@
+{
+  "environment": "production",
+  "server": {
+    "port": "${PORT:443}",
+    "host": "0.0.0.0",
+    "protocol": "https",
+    "cluster": {
+      "enabled": true,
+      "workers": "${CLUSTER_WORKERS:0}",
+      "schedulingPolicy": "rr"
+    },
+    "ssl": {
+      "enabled": true,
+      "key": "${SSL_KEY_PATH:/etc/ssl/private/server.key}",
+      "cert": "${SSL_CERT_PATH:/etc/ssl/certs/server.crt}",
+      "ca": "${SSL_CA_PATH:/etc/ssl/certs/ca.crt}",
+      "dhparam": "${SSL_DHPARAM_PATH:/etc/ssl/dhparam.pem}",
+      "ciphers": "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384",
+      "honorCipherOrder": true,
+      "secureOptions": "SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1",
+      "sessionTimeout": 300
+    },
+    "cors": {
+      "enabled": true,
+      "origins": ["${CORS_ORIGINS:https://app.insightserenity.com}"],
+      "credentials": true,
+      "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      "allowedHeaders": ["Content-Type", "Authorization", "X-Requested-With", "X-Tenant-ID", "X-API-Key", "X-Trace-ID"],
+      "exposedHeaders": ["X-Total-Count", "X-Page-Count", "X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+      "maxAge": 86400,
+      "preflightContinue": false,
+      "optionsSuccessStatus": 204
+    },
+    "compression": {
+      "enabled": true,
+      "level": 6,
+      "threshold": 1024,
+      "filter": ["text/html", "text/css", "text/plain", "text/xml", "application/json", "application/javascript", "application/xml", "application/rss+xml", "application/atom+xml", "image/svg+xml"],
+      "brotli": {
+        "enabled": true,
+        "quality": 4,
+        "lgwin": 22
+      }
+    },
+    "timeout": {
+      "server": 120000,
+      "socket": 125000,
+      "keepAlive": 5000,
+      "headersTimeout": 60000
+    }
+  },
+  "gateway": {
+    "name": "InsightSerenity-Gateway-Production",
+    "version": "${APP_VERSION:1.0.0}",
+    "description": "API Gateway Production Instance",
+    "baseUrl": "https://api.insightserenity.com",
+    "apiPrefix": "/api",
+    "healthCheckPath": "/health",
+    "metricsPath": "/metrics",
+    "docsPath": false,
+    "maintenanceMode": false,
+    "gracefulShutdown": {
+      "enabled": true,
+      "timeout": 45000,
+      "forceTimeout": 90000,
+      "drainTimeout": 40000,
+      "signals": ["SIGTERM", "SIGINT"]
+    }
+  },
+  "services": {
+    "discovery": {
+      "enabled": true,
+      "provider": "consul",
+      "refreshInterval": 15000,
+      "consul": {
+        "host": "${CONSUL_HOST}",
+        "port": "${CONSUL_PORT:8500}",
+        "secure": true,
+        "ca": "/etc/ssl/consul-ca.pem",
+        "cert": "/etc/ssl/consul-cert.pem",
+        "key": "/etc/ssl/consul-key.pem",
+        "token": "${CONSUL_TOKEN}",
+        "datacenter": "${CONSUL_DATACENTER:dc1}",
+        "consistencyMode": "consistent",
+        "healthCheck": {
+          "interval": "10s",
+          "timeout": "5s",
+          "deregisterAfter": "2m",
+          "deregisterCriticalServiceAfter": "10m"
+        },
+        "retry": {
+          "enabled": true,
+          "attempts": 5,
+          "interval": 5000,
+          "maxInterval": 30000
+        }
+      }
+    },
+    "registry": {}
+  },
+  "routing": {
+    "defaultAlgorithm": "least-response-time",
+    "fallbackAlgorithm": "weighted-round-robin",
+    "sessionAffinity": {
+      "enabled": true,
+      "cookieName": "__Host-SERVERID",
+      "timeout": 3600000,
+      "secure": true,
+      "httpOnly": true,
+      "sameSite": "strict",
+      "path": "/",
+      "domain": ".insightserenity.com"
+    },
+    "healthCheck": {
+      "enabled": true,
+      "interval": 10000,
+      "timeout": 5000,
+      "unhealthyThreshold": 2,
+      "healthyThreshold": 3
+    },
+    "canaryDeployment": {
+      "enabled": true,
+      "percentage": 5,
+      "cookieName": "__Host-CANARY"
+    },
+    "rules": []
+  },
+  "security": {
+    "enabled": true,
+    "helmet": {
+      "enabled": true,
+      "contentSecurityPolicy": {
+        "directives": {
+          "defaultSrc": ["'self'"],
+          "scriptSrc": ["'self'", "https://cdn.insightserenity.com"],
+          "styleSrc": ["'self'", "https://cdn.insightserenity.com"],
+          "imgSrc": ["'self'", "data:", "https:"],
+          "connectSrc": ["'self'", "https://api.insightserenity.com", "wss://ws.insightserenity.com"],
+          "fontSrc": ["'self'", "https://fonts.gstatic.com"],
+          "objectSrc": ["'none'"],
+          "mediaSrc": ["'self'"],
+          "frameSrc": ["'none'"],
+          "sandbox": ["allow-forms", "allow-scripts", "allow-same-origin"],
+          "reportUri": "/api/csp-report",
+          "upgradeInsecureRequests": []
+        },
+        "reportOnly": false
+      },
+      "crossOriginEmbedderPolicy": true,
+      "crossOriginOpenerPolicy": { "policy": "same-origin" },
+      "crossOriginResourcePolicy": { "policy": "same-origin" },
+      "dnsPrefetchControl": { "allow": false },
+      "expectCt": {
+        "maxAge": 86400,
+        "enforce": true,
+        "reportUri": "https://insightserenity.report-uri.com/r/d/ct/enforce"
+      },
+      "frameguard": { "action": "deny" },
+      "hidePoweredBy": true,
+      "hsts": {
+        "maxAge": 63072000,
+        "includeSubDomains": true,
+        "preload": true
+      },
+      "ieNoOpen": true,
+      "noSniff": true,
+      "originAgentCluster": true,
+      "permittedCrossDomainPolicies": { "permittedPolicies": "none" },
+      "referrerPolicy": { "policy": "strict-origin-when-cross-origin" },
+      "xssFilter": true
+    },
+    "jwt": {
+      "publicKey": "${JWT_PUBLIC_KEY_PATH:/etc/ssl/jwt/public.pem}",
+      "privateKey": "${JWT_PRIVATE_KEY_PATH:/etc/ssl/jwt/private.pem}",
+      "issuer": "insightserenity",
+      "audience": "insightserenity-api",
+      "expiresIn": "15m",
+      "refreshExpiresIn": "7d",
+      "algorithm": "RS256",
+      "clockTolerance": 10,
+      "notBefore": "0s",
+      "jwtid": true
+    },
+    "apiKey": {
+      "enabled": true,
+      "header": "X-API-Key",
+      "prefix": "Bearer",
+      "storage": "redis",
+      "validation": {
+        "cache": true,
+        "cacheTTL": 600000,
+        "strict": true
+      },
+      "rotation": {
+        "enabled": true,
+        "interval": 2592000000,
+        "gracePeriod": 86400000
+      }
+    },
+    "encryption": {
+      "algorithm": "aes-256-gcm",
+      "key": "${ENCRYPTION_KEY}",
+      "saltRounds": 14,
+      "keyDerivation": "argon2id",
+      "iterations": 3,
+      "memorySize": 65536,
+      "parallelism": 4
+    },
+    "csrf": {
+      "enabled": true,
+      "cookie": true,
+      "ignoreMethods": ["GET", "HEAD", "OPTIONS"],
+      "secret": "${CSRF_SECRET}",
+      "sessionKey": "__Host-csrfSecret",
+      "value": "function",
+      "ignorePaths": ["/api/webhooks"]
+    },
+    "trustProxy": ["loopback", "linklocal", "uniquelocal"],
+    "ipWhitelist": "${IP_WHITELIST}",
+    "ipBlacklist": "${IP_BLACKLIST}",
+    "geoBlocking": {
+      "enabled": true,
+      "allowedCountries": "${GEO_ALLOWED_COUNTRIES}",
+      "blockedCountries": "${GEO_BLOCKED_COUNTRIES}"
+    },
+    "securityHeaders": {
+      "enabled": true,
+      "xFrameOptions": "DENY",
+      "xContentTypeOptions": "nosniff",
+      "xXssProtection": "1; mode=block",
+      "strictTransportSecurity": "max-age=63072000; includeSubDomains; preload",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "permissionsPolicy": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
+      "reportTo": {
+        "group": "default",
+        "max_age": 31536000,
+        "endpoints": [
+          {
+            "url": "https://insightserenity.report-uri.com/a/d/g"
+          }
+        ],
+        "include_subdomains": true
+      }
+    },
+    "waf": {
+      "enabled": true,
+      "rules": "${WAF_RULES_PATH:/etc/waf/rules.json}",
+      "mode": "blocking",
+      "customRules": true,
+      "owasp": {
+        "enabled": true,
+        "paranoia": 2,
+        "anomalyThreshold": 5
+      }
+    }
+  },
+  "rateLimit": {
+    "enabled": true,
+    "global": {
+      "windowMs": 60000,
+      "max": 10000,
+      "message": "Too many requests, please try again later.",
+      "standardHeaders": true,
+      "legacyHeaders": false,
+      "skipSuccessfulRequests": false,
+      "skipFailedRequests": false,
+      "keyGenerator": "function"
+    },
+    "api": {
+      "windowMs": 60000,
+      "max": 1000
+    },
+    "auth": {
+      "windowMs": 900000,
+      "max": 5
+    },
+    "keyGenerator": "tenant-user-ip",
+    "store": "redis-cluster",
+    "redis": {
+      "client": "redis-cluster",
+      "sendCommand": true
+    },
+    "distributed": true,
+    "blockDuration": 86400000
+  },
+  "cache": {
+    "enabled": true,
+    "type": "redis-cluster",
+    "defaultTTL": 300000,
+    "maxSize": 10737418240,
+    "checkPeriod": 60000,
+    "redis": {
+      "cluster": true,
+      "nodes": [
+        { "host": "${REDIS_NODE1_HOST}", "port": "${REDIS_NODE1_PORT:6379}" },
+        { "host": "${REDIS_NODE2_HOST}", "port": "${REDIS_NODE2_PORT:6379}" },
+        { "host": "${REDIS_NODE3_HOST}", "port": "${REDIS_NODE3_PORT:6379}" },
+        { "host": "${REDIS_NODE4_HOST}", "port": "${REDIS_NODE4_PORT:6379}" },
+        { "host": "${REDIS_NODE5_HOST}", "port": "${REDIS_NODE5_PORT:6379}" },
+        { "host": "${REDIS_NODE6_HOST}", "port": "${REDIS_NODE6_PORT:6379}" }
+      ],
+      "password": "${REDIS_PASSWORD}",
+      "keyPrefix": "gateway:prod:",
+      "enableOfflineQueue": false,
+      "connectTimeout": 5000,
+      "maxRetriesPerRequest": 2,
+      "enableReadyCheck": true,
+      "retryStrategy": "function",
+      "redisOptions": {
+        "tls": {
+          "rejectUnauthorized": true,
+          "ca": "${REDIS_CA_CERT}",
+          "cert": "${REDIS_CLIENT_CERT}",
+          "key": "${REDIS_CLIENT_KEY}"
+        }
+      }
+    },
+    "strategies": {
+      "default": "stale-while-revalidate",
+      "api": "network-first",
+      "static": "cache-first",
+      "dynamic": "network-only"
+    },
+    "compression": {
+      "enabled": true,
+      "threshold": 1024,
+      "algorithms": ["gzip", "br"]
+    },
+    "warming": {
+      "enabled": true,
+      "interval": 180000,
+      "concurrent": 5,
+      "endpoints": "${CACHE_WARM_ENDPOINTS}"
+    },
+    "cdn": {
+      "enabled": true,
+      "provider": "cloudflare",
+      "purgeApi": "${CDN_PURGE_API}",
+      "zones": "${CDN_ZONES}"
+    }
+  },
+  "monitoring": {
+    "enabled": true,
+    "metrics": {
+      "enabled": true,
+      "interval": 10000,
+      "detailed": true,
+      "includeSystemMetrics": true,
+      "prometheus": {
+        "enabled": true,
+        "port": 9090,
+        "path": "/metrics",
+        "authentication": true,
+        "defaultLabels": {
+          "environment": "production",
+          "service": "api-gateway",
+          "region": "${AWS_REGION}",
+          "cluster": "${CLUSTER_NAME}"
+        },
+        "buckets": [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+      },
+      "statsd": {
+        "enabled": true,
+        "host": "${STATSD_HOST}",
+        "port": "${STATSD_PORT:8125}",
+        "prefix": "gateway.prod.",
+        "cacheDns": true
+      }
+    },
+    "health": {
+      "enabled": true,
+      "interval": 10000,
+      "timeout": 5000,
+      "indicators": {
+        "database": true,
+        "redis": true,
+        "services": true,
+        "disk": true,
+        "memory": true,
+        "consul": true,
+        "custom": true
+      },
+      "thresholds": {
+        "memory": 85,
+        "disk": 85,
+        "responseTime": 500,
+        "errorRate": 1
+      },
+      "readiness": {
+        "initialDelaySeconds": 10,
+        "periodSeconds": 10,
+        "timeoutSeconds": 5,
+        "successThreshold": 1,
+        "failureThreshold": 3
+      },
+      "liveness": {
+        "initialDelaySeconds": 30,
+        "periodSeconds": 30,
+        "timeoutSeconds": 10,
+        "successThreshold": 1,
+        "failureThreshold": 3
+      }
+    },
+    "tracing": {
+      "enabled": true,
+      "serviceName": "api-gateway",
+      "jaeger": {
+        "host": "${JAEGER_HOST}",
+        "port": "${JAEGER_PORT:6831}",
+        "samplingRate": 0.001,
+        "logSpans": false,
+        "flushInterval": 1000,
+        "tags": {
+          "environment": "production",
+          "version": "${APP_VERSION}",
+          "region": "${AWS_REGION}"
+        },
+        "reporter": {
+          "logSpans": false,
+          "agentHost": "${JAEGER_AGENT_HOST}",
+          "agentPort": "${JAEGER_AGENT_PORT:6831}"
+        },
+        "sampler": {
+          "type": "adaptive",
+          "param": 0.001,
+          "hostPort": "${JAEGER_SAMPLER_HOST}:${JAEGER_SAMPLER_PORT:5778}"
+        }
+      },
+      "propagation": ["jaeger", "w3c"]
+    },
+    "logging": {
+      "level": "warn",
+      "format": "json",
+      "prettyPrint": false,
+      "colorize": false,
+      "timestamp": true,
+      "destination": "stdout",
+      "file": {
+        "enabled": false
+      },
+      "syslog": {
+        "enabled": true,
+        "host": "${SYSLOG_HOST}",
+        "port": "${SYSLOG_PORT:514}",
+        "protocol": "tcp",
+        "facility": "local0",
+        "tag": "gateway",
+        "tls": {
+          "enabled": true,
+          "ca": "${SYSLOG_CA_CERT}",
+          "cert": "${SYSLOG_CLIENT_CERT}",
+          "key": "${SYSLOG_CLIENT_KEY}"
+        }
+      },
+      "elasticsearch": {
+        "enabled": true,
+        "nodes": ["${ES_NODE1}", "${ES_NODE2}", "${ES_NODE3}"],
+        "index": "gateway-logs-prod",
+        "type": "_doc",
+        "auth": {
+          "username": "${ES_USERNAME}",
+          "password": "${ES_PASSWORD}"
+        },
+        "tls": {
+          "rejectUnauthorized": true,
+          "ca": "${ES_CA_CERT}"
+        },
+        "maxRetries": 3,
+        "requestTimeout": 30000,
+        "sniffOnStart": true,
+        "sniffInterval": 60000
+      },
+      "cloudwatch": {
+        "enabled": true,
+        "region": "${AWS_REGION}",
+        "logGroupName": "/aws/gateway/production",
+        "logStreamName": "${HOSTNAME}",
+        "uploadRate": 2000,
+        "retentionInDays": 30
+      }
+    },
+    "alerts": {
+      "enabled": true,
+      "channels": {
+        "email": {
+          "enabled": false
+        },
+        "slack": {
+          "enabled": true,
+          "webhookUrl": "${SLACK_WEBHOOK_URL}",
+          "channel": "#production-alerts",
+          "username": "Gateway Production",
+          "iconEmoji": ":rotating_light:"
+        },
+        "pagerduty": {
+          "enabled": true,
+          "serviceKey": "${PAGERDUTY_SERVICE_KEY}",
+          "routingKey": "${PAGERDUTY_ROUTING_KEY}"
+        },
+        "opsgenie": {
+          "enabled": true,
+          "apiKey": "${OPSGENIE_API_KEY}",
+          "region": "us"
+        }
+      },
+      "rules": "${ALERT_RULES_PATH:/etc/gateway/alerts.json}"
+    },
+    "apm": {
+      "enabled": true,
+      "provider": "datadog",
+      "datadog": {
+        "apiKey": "${DATADOG_API_KEY}",
+        "appKey": "${DATADOG_APP_KEY}",
+        "site": "datadoghq.com",
+        "env": "production",
+        "service": "api-gateway",
+        "version": "${APP_VERSION}",
+        "tags": ["env:production", "service:gateway"],
+        "profiling": {
+          "enabled": true
+        },
+        "runtimeMetrics": true,
+        "logInjection": true
+      }
+    }
+  },
+  "database": {
+    "mongodb": {
+      "uri": "${MONGODB_URI}",
+      "options": {
+        "useNewUrlParser": true,
+        "useUnifiedTopology": true,
+        "maxPoolSize": 50,
+        "minPoolSize": 10,
+        "maxIdleTimeMS": 10000,
+        "serverSelectionTimeoutMS": 5000,
+        "socketTimeoutMS": 45000,
+        "family": 4,
+        "authSource": "admin",
+        "replicaSet": "${MONGODB_REPLICA_SET}",
+        "readPreference": "primaryPreferred",
+        "readConcern": "majority",
+        "writeConcern": {
+          "w": "majority",
+          "j": true,
+          "wtimeout": 5000
+        },
+        "retryWrites": true,
+        "retryReads": true,
+        "tls": true,
+        "tlsCAFile": "${MONGODB_CA_CERT}",
+        "tlsCertificateKeyFile": "${MONGODB_CLIENT_CERT}",
+        "tlsAllowInvalidHostnames": false,
+        "tlsAllowInvalidCertificates": false,
+        "compressors": ["snappy", "zlib"]
+      }
+    }
+  },
+  "queue": {
+    "enabled": true,
+    "provider": "redis-cluster",
+    "redis": {
+      "cluster": true,
+      "nodes": "${REDIS_CLUSTER_NODES}",
+      "password": "${REDIS_PASSWORD}",
+      "db": 1,
+      "keyPrefix": "queue:prod:",
+      "tls": {
+        "enabled": true
+      }
+    },
+    "options": {
+      "removeOnComplete": 1000,
+      "removeOnFail": 10000,
+      "attempts": 5,
+      "backoff": {
+        "type": "exponential",
+        "delay": 10000,
+        "maxDelay": 3600000
+      },
+      "defaultJobOptions": {
+        "removeOnComplete": 100,
+        "removeOnFail": 1000,
+        "attempts": 3,
+        "timeout": 30000
+      }
+    },
+    "workers": {
+      "concurrency": 10,
+      "maxStalledCount": 1,
+      "stalledInterval": 30000
+    }
+  },
+  "circuitBreaker": {
+    "enabled": true,
+    "defaultConfig": {
+      "failureThreshold": 10,
+      "successThreshold": 5,
+      "timeout": 5000,
+      "resetTimeout": 30000,
+      "volumeThreshold": 50,
+      "errorThresholdPercentage": 25,
+      "halfOpenMaxAttempts": 5,
+      "monitoringInterval": 5000
+    }
+  },
+  "proxy": {
+    "timeout": 15000,
+    "retries": 3,
+    "retryDelay": 1000,
+    "changeOrigin": true,
+    "ws": true,
+    "xfwd": true,
+    "secure": true,
+    "preserveHeaderKeyCase": false,
+    "followRedirects": false,
+    "selfHandleResponse": false,
+    "proxyTimeout": 15000,
+    "buffer": {
+      "request": true,
+      "response": true,
+      "maxSize": 52428800
+    },
+    "agent": {
+      "keepAlive": true,
+      "keepAliveMsecs": 1000,
+      "maxSockets": 200,
+      "maxFreeSockets": 20,
+      "timeout": 60000,
+      "freeSocketTimeout": 15000
+    }
+  },
+  "features": {
+    "multiTenancy": true,
+    "apiVersioning": true,
+    "graphql": false,
+    "websockets": true,
+    "fileUploads": true,
+    "swagger": false,
+    "compression": true,
+    "etag": true,
+    "requestId": true,
+    "correlationId": true,
+    "responseTime": true,
+    "geoRouting": true,
+    "canaryDeployments": true,
+    "abTesting": true,
+    "featureFlags": true
+  },
+  "tenant": {
+    "enabled": true,
+    "strategy": "header",
+    "headerName": "X-Tenant-ID",
+    "validation": {
+      "enabled": true,
+      "cache": true,
+      "cacheTTL": 900000,
+      "strict": true,
+      "database": true
+    },
+    "isolation": {
+      "database": true,
+      "cache": true,
+      "queue": true,
+      "storage": true,
+      "metrics": true
+    },
+    "rateLimit": {
+      "enabled": true,
+      "tiers": {
+        "free": 100,
+        "starter": 1000,
+        "professional": 5000,
+        "enterprise": 50000,
+        "unlimited": -1
+      }
+    },
+    "quotas": {
+      "enabled": true,
+      "storage": {
+        "free": 1073741824,
+        "starter": 10737418240,
+        "professional": 107374182400,
+        "enterprise": 1099511627776
+      }
+    }
+  },
+  "limits": {
+    "maxRequestSize": "100mb",
+    "maxUploadSize": "500mb",
+    "maxConnections": 50000,
+    "maxConcurrentRequests": 5000,
+    "requestTimeout": 15000,
+    "keepAliveTimeout": 5000,
+    "headersTimeout": 60000,
+    "maxHeaderSize": 16384,
+    "maxUrlLength": 2048,
+    "maxParameterCount": 1000
+  },
+  "performance": {
+    "clustering": true,
+    "workers": 0,
+    "schedulingPolicy": "rr",
+    "workerRestartDelay": 5000,
+    "workerMaxRestarts": 5,
+    "compression": true,
+    "caching": true,
+    "pooling": {
+      "enabled": true,
+      "min": 10,
+      "max": 100,
+      "idleTimeoutMillis": 30000,
+      "acquireTimeoutMillis": 30000,
+      "evictionRunIntervalMillis": 60000
+    },
+    "http2": {
+      "enabled": true,
+      "push": true,
+      "allowHTTP1": true,
+      "initialWindowSize": 1048576,
+      "maxFrameSize": 16384,
+      "maxConcurrentStreams": 100,
+      "maxHeaderListSize": 32768
+    },
+    "optimization": {
+      "nodeOptions": "--max-old-space-size=4096 --optimize-for-size",
+      "v8Options": {
+        "max_old_space_size": 4096,
+        "max_semi_space_size": 64,
+        "max_executable_size": 2048
+      }
+    }
+  },
+  "experimental": {
+    "http2": true,
+    "http3": false,
+    "quic": false,
+    "brotli": true,
+    "avif": true,
+    "earlyHints": true,
+    "serverTiming": false,
+    "serverPush": true
+  },
+  "disaster-recovery": {
+    "enabled": true,
+    "backup": {
+      "enabled": true,
+      "schedule": "0 2 * * *",
+      "retention": 30,
+      "location": "s3://backup-bucket/gateway/"
+    },
+    "failover": {
+      "enabled": true,
+      "regions": ["us-east-1", "us-west-2", "eu-west-1"],
+      "healthCheckInterval": 5000,
+      "failoverThreshold": 3
+    }
+  }
+}

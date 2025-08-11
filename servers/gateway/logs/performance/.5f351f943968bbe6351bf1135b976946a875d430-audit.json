@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 30
+    },
+    "auditLog": "D:\\insightserenity-platform\\servers\\gateway\\logs\\performance\\.5f351f943968bbe6351bf1135b976946a875d430-audit.json",
+    "files": [
+        {
+            "date": 1754899333058,
+            "name": "D:\\insightserenity-platform\\servers\\gateway\\logs\\performance\\performance-2025-08-11.log",
+            "hash": "ce9e621672f1ef1bad0488b1c2d27f96464a9d1c1ae47e9012dc9bce0b23cf45"
+        }
+    ],
+    "hashType": "sha256"
+}

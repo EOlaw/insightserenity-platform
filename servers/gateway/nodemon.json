@@ -1,0 +1,53 @@
+{
+  "restartable": "rs",
+  "ignore": [
+    ".git",
+    "node_modules/**/node_modules",
+    "*.test.js",
+    "*.spec.js",
+    "coverage",
+    "logs",
+    ".nyc_output",
+    ".vscode",
+    ".idea",
+    "*.log",
+    "*.pid",
+    "*.seed",
+    "*.pid.lock",
+    ".DS_Store",
+    "Thumbs.db"
+  ],
+  "verbose": true,
+  "execMap": {
+    "js": "node",
+    "ts": "ts-node"
+  },
+  "watch": [
+    "servers/gateway/**/*.js",
+    "servers/gateway/**/*.json",
+    "shared/**/*.js",
+    "shared/**/*.json",
+    ".env",
+    "servers/gateway/.env"
+  ],
+  "env": {
+    "NODE_ENV": "development",
+    "DEBUG": "gateway:*",
+    "LOG_LEVEL": "debug",
+    "LOG_PRETTY_PRINT": "true",
+    "LOG_COLORIZE": "true"
+  },
+  "ext": "js,json,env",
+  "delay": "2500",
+  "events": {
+    "restart": "echo '\\n========================================\\nRestarting API Gateway...\\n========================================\\n'",
+    "crash": "echo '\\n========================================\\nAPI Gateway crashed! Waiting for file changes...\\n========================================\\n'",
+    "exit": "echo '\\n========================================\\nAPI Gateway exited cleanly\\n========================================\\n'",
+    "start": "echo '\\n========================================\\nStarting API Gateway in development mode\\n========================================\\n'"
+  },
+  "signal": "SIGUSR2",
+  "stdout": true,
+  "colours": true,
+  "runOnChangeOnly": false,
+  "legacyWatch": false
+}
