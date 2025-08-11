@@ -1,523 +1,615 @@
+'use strict';
+
 /**
- * Service Registry
- * Manages service discovery and registration
+ * @fileoverview Service Registry - Service discovery and registration management
+ * @module servers/gateway/services/service-registry
+ * @requires events
+ * @requires axios
  */
 
+const { EventEmitter } = require('events');
 const axios = require('axios');
-const Consul = require('consul');
-const { Etcd3 } = require('etcd3');
-const EventEmitter = require('events');
 
 /**
- * Service Registry Class
+ * ServiceRegistry class manages service discovery, registration, and health monitoring.
+ * It maintains a registry of available backend services and their health status.
+ * 
+ * @class ServiceRegistry
+ * @extends EventEmitter
  */
 class ServiceRegistry extends EventEmitter {
+    /**
+     * Creates an instance of ServiceRegistry
+     * @constructor
+     * @param {Object} config - Service registry configuration
+     */
     constructor(config) {
         super();
-        this.config = config;
+        this.config = config || {};
         this.services = new Map();
-        this.discoveryClient = null;
-        this.refreshInterval = null;
-        this.healthCheckers = new Map();
+        this.healthChecks = new Map();
+        this.discoveryInterval = null;
+        this.isInitialized = false;
+        this.discoveryMethods = {
+            'static': this.discoverStaticServices.bind(this),
+            'consul': this.discoverConsulServices.bind(this),
+            'kubernetes': this.discoverKubernetesServices.bind(this),
+            'eureka': this.discoverEurekaServices.bind(this)
+        };
     }
 
     /**
-     * Initialize service registry
+     * Initializes the service registry
+     * @async
+     * @returns {Promise<void>}
      */
     async initialize() {
-        // Load static services from configuration
-        await this.loadStaticServices();
-
-        // Initialize service discovery if enabled
-        if (this.config.discovery?.enabled) {
-            await this.initializeDiscovery();
+        if (this.isInitialized) {
+            return;
         }
-
-        // Start service refresh
-        this.startServiceRefresh();
-    }
-
-    /**
-     * Load static services from configuration
-     */
-    async loadStaticServices() {
-        // Admin Server
-        if (this.config.adminServer) {
-            this.registerService('admin-server', {
-                name: 'admin-server',
-                instances: [{
-                    id: 'admin-server-1',
-                    url: this.config.adminServer.url,
-                    host: this.parseHost(this.config.adminServer.url),
-                    port: this.parsePort(this.config.adminServer.url),
-                    weight: this.config.adminServer.weight || 1,
-                    healthy: true,
-                    metadata: {
-                        version: '1.0.0',
-                        region: 'default'
-                    }
-                }],
-                healthPath: this.config.adminServer.healthPath || '/health',
-                timeout: this.config.adminServer.timeout || 30000,
-                retries: this.config.adminServer.retries || 3
-            });
-        }
-
-        // Customer Services
-        if (this.config.customerServices) {
-            this.registerService('customer-services', {
-                name: 'customer-services',
-                instances: [{
-                    id: 'customer-services-1',
-                    url: this.config.customerServices.url,
-                    host: this.parseHost(this.config.customerServices.url),
-                    port: this.parsePort(this.config.customerServices.url),
-                    weight: this.config.customerServices.weight || 1,
-                    healthy: true,
-                    metadata: {
-                        version: '1.0.0',
-                        region: 'default'
-                    }
-                }],
-                healthPath: this.config.customerServices.healthPath || '/health',
-                timeout: this.config.customerServices.timeout || 30000,
-                retries: this.config.customerServices.retries || 3
-            });
-        }
-    }
-
-    /**
-     * Initialize service discovery
-     */
-    async initializeDiscovery() {
-        const discoveryConfig = this.config.discovery;
-        
-        switch (discoveryConfig.type) {
-            case 'consul':
-                await this.initializeConsul();
-                break;
-            case 'etcd':
-                await this.initializeEtcd();
-                break;
-            case 'static':
-            default:
-                // Static discovery, no initialization needed
-                break;
-        }
-    }
-
-    /**
-     * Initialize Consul discovery
-     */
-    async initializeConsul() {
-        const consulConfig = this.config.discovery.consul;
-        
-        this.discoveryClient = new Consul({
-            host: consulConfig.host || 'localhost',
-            port: consulConfig.port || 8500,
-            secure: consulConfig.secure || false,
-            promisify: true
-        });
-
-        // Watch for service changes
-        await this.watchConsulServices();
-    }
-
-    /**
-     * Initialize etcd discovery
-     */
-    async initializeEtcd() {
-        const etcdConfig = this.config.discovery.etcd;
-        
-        this.discoveryClient = new Etcd3({
-            hosts: etcdConfig.hosts || ['localhost:2379'],
-            credentials: etcdConfig.credentials
-        });
-
-        // Watch for service changes
-        await this.watchEtcdServices();
-    }
-
-    /**
-     * Watch Consul services
-     */
-    async watchConsulServices() {
-        if (!this.discoveryClient) return;
 
         try {
-            // Get all services
-            const services = await this.discoveryClient.catalog.service.list();
-            
-            for (const [serviceName, tags] of Object.entries(services)) {
-                // Get service instances
-                const instances = await this.discoveryClient.health.service(serviceName);
-                
-                const healthyInstances = instances
-                    .filter(inst => inst.Checks.every(check => check.Status === 'passing'))
-                    .map(inst => ({
-                        id: inst.Service.ID,
-                        url: `http://${inst.Service.Address}:${inst.Service.Port}`,
-                        host: inst.Service.Address,
-                        port: inst.Service.Port,
-                        weight: inst.Service.Weights?.Passing || 1,
-                        healthy: true,
-                        metadata: inst.Service.Meta || {},
-                        tags: inst.Service.Tags || []
-                    }));
+            console.log('Initializing Service Registry');
 
-                if (healthyInstances.length > 0) {
-                    this.registerService(serviceName, {
-                        name: serviceName,
-                        instances: healthyInstances,
-                        tags: tags
-                    });
+            // Load initial services based on discovery type
+            await this.discoverServices();
+
+            // Start periodic service discovery
+            if (this.config.discovery && this.config.discovery.refreshInterval) {
+                this.startDiscovery();
+            }
+
+            // Start health monitoring
+            this.startHealthMonitoring();
+
+            this.isInitialized = true;
+            console.log(`Service Registry initialized with ${this.services.size} services`);
+        } catch (error) {
+            console.error('Failed to initialize Service Registry:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Discovers services based on configured discovery method
+     * @async
+     * @returns {Promise<void>}
+     */
+    async discoverServices() {
+        const discoveryType = this.config.discovery?.type || 'static';
+        const discoveryMethod = this.discoveryMethods[discoveryType];
+
+        if (!discoveryMethod) {
+            throw new Error(`Unknown discovery type: ${discoveryType}`);
+        }
+
+        try {
+            await discoveryMethod();
+            this.emit('services:discovered', Array.from(this.services.values()));
+        } catch (error) {
+            console.error(`Service discovery failed for type ${discoveryType}:`, error);
+            this.emit('discovery:error', error);
+            
+            // Fall back to static configuration if available
+            if (discoveryType !== 'static' && this.config.registry) {
+                console.log('Falling back to static service configuration');
+                await this.discoverStaticServices();
+            }
+        }
+    }
+
+    /**
+     * Discovers services from static configuration
+     * @async
+     * @private
+     */
+    async discoverStaticServices() {
+        if (!this.config.registry || !Array.isArray(this.config.registry)) {
+            return;
+        }
+
+        for (const serviceConfig of this.config.registry) {
+            const service = this.createServiceInstance(serviceConfig);
+            await this.registerService(service);
+        }
+    }
+
+    /**
+     * Discovers services from Consul
+     * @async
+     * @private
+     */
+    async discoverConsulServices() {
+        const consulUrl = this.config.discovery.consul?.url || 'http://localhost:8500';
+        const datacenter = this.config.discovery.consul?.datacenter || 'dc1';
+        
+        try {
+            const response = await axios.get(`${consulUrl}/v1/catalog/services`, {
+                params: { dc: datacenter }
+            });
+
+            for (const serviceName of Object.keys(response.data)) {
+                // Get service instances
+                const instancesResponse = await axios.get(
+                    `${consulUrl}/v1/health/service/${serviceName}`,
+                    { params: { dc: datacenter, passing: true } }
+                );
+
+                for (const instance of instancesResponse.data) {
+                    const service = {
+                        name: instance.Service.Service,
+                        id: instance.Service.ID,
+                        url: `http://${instance.Service.Address}:${instance.Service.Port}`,
+                        tags: instance.Service.Tags,
+                        metadata: instance.Service.Meta,
+                        health: 'healthy'
+                    };
+
+                    await this.registerService(this.createServiceInstance(service));
                 }
             }
-
-            this.emit('services-updated', this.getAllServices());
         } catch (error) {
-            console.error('Error watching Consul services:', error);
+            console.error('Consul service discovery failed:', error);
+            throw error;
         }
     }
 
     /**
-     * Watch etcd services
+     * Discovers services from Kubernetes
+     * @async
+     * @private
      */
-    async watchEtcdServices() {
-        if (!this.discoveryClient) return;
-
+    async discoverKubernetesServices() {
+        const k8sConfig = this.config.discovery.kubernetes || {};
+        const namespace = k8sConfig.namespace || 'default';
+        const labelSelector = k8sConfig.labelSelector || '';
+        
         try {
-            const watcher = await this.discoveryClient.watch()
-                .prefix('/services/')
-                .create();
+            // In a real implementation, this would use the Kubernetes API
+            // For now, we'll use environment variables set by Kubernetes
+            const serviceName = process.env.KUBERNETES_SERVICE_NAME;
+            const serviceHost = process.env.KUBERNETES_SERVICE_HOST;
+            const servicePort = process.env.KUBERNETES_SERVICE_PORT;
 
-            watcher.on('put', async (res) => {
-                const serviceName = res.key.toString().split('/').pop();
-                const serviceData = JSON.parse(res.value.toString());
-                
-                this.registerService(serviceName, serviceData);
-                this.emit('service-added', serviceName, serviceData);
-            });
+            if (serviceName && serviceHost && servicePort) {
+                const service = {
+                    name: serviceName,
+                    id: `${serviceName}-${namespace}`,
+                    url: `http://${serviceHost}:${servicePort}`,
+                    namespace,
+                    health: 'healthy'
+                };
 
-            watcher.on('delete', async (res) => {
-                const serviceName = res.key.toString().split('/').pop();
-                this.deregisterService(serviceName);
-                this.emit('service-removed', serviceName);
-            });
-
-            // Load existing services
-            const services = await this.discoveryClient.getAll()
-                .prefix('/services/')
-                .strings();
-
-            for (const [key, value] of Object.entries(services)) {
-                const serviceName = key.split('/').pop();
-                const serviceData = JSON.parse(value);
-                this.registerService(serviceName, serviceData);
+                await this.registerService(this.createServiceInstance(service));
             }
-
-            this.emit('services-updated', this.getAllServices());
         } catch (error) {
-            console.error('Error watching etcd services:', error);
+            console.error('Kubernetes service discovery failed:', error);
+            throw error;
         }
     }
 
     /**
-     * Register a service
+     * Discovers services from Eureka
+     * @async
+     * @private
      */
-    registerService(name, serviceData) {
-        const service = {
-            name: name,
-            instances: serviceData.instances || [],
-            healthPath: serviceData.healthPath || '/health',
-            timeout: serviceData.timeout || 30000,
-            retries: serviceData.retries || 3,
-            metadata: serviceData.metadata || {},
-            tags: serviceData.tags || [],
-            lastUpdated: new Date()
+    async discoverEurekaServices() {
+        const eurekaUrl = this.config.discovery.eureka?.url || 'http://localhost:8761';
+        
+        try {
+            const response = await axios.get(`${eurekaUrl}/eureka/apps`, {
+                headers: { 'Accept': 'application/json' }
+            });
+
+            const applications = response.data.applications.application || [];
+            
+            for (const app of applications) {
+                for (const instance of app.instance) {
+                    const service = {
+                        name: app.name.toLowerCase(),
+                        id: instance.instanceId,
+                        url: `http://${instance.ipAddr}:${instance.port.$}`,
+                        metadata: instance.metadata,
+                        health: instance.status === 'UP' ? 'healthy' : 'unhealthy'
+                    };
+
+                    await this.registerService(this.createServiceInstance(service));
+                }
+            }
+        } catch (error) {
+            console.error('Eureka service discovery failed:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Creates a service instance from configuration
+     * @private
+     * @param {Object} config - Service configuration
+     * @returns {Object} Service instance
+     */
+    createServiceInstance(config) {
+        return {
+            id: config.id || `${config.name}-${Date.now()}`,
+            name: config.name,
+            url: config.url,
+            path: config.path || '',
+            version: config.version || 'v1',
+            protocol: config.protocol || 'http',
+            healthCheck: {
+                enabled: config.healthCheck?.enabled !== false,
+                path: config.healthCheck?.path || '/health',
+                interval: config.healthCheck?.interval || 30000,
+                timeout: config.healthCheck?.timeout || 5000,
+                unhealthyThreshold: config.healthCheck?.unhealthyThreshold || 3,
+                healthyThreshold: config.healthCheck?.healthyThreshold || 2
+            },
+            loadBalancing: {
+                weight: config.weight || 1,
+                maxConnections: config.maxConnections || 100
+            },
+            timeout: config.timeout || 30000,
+            retries: config.retries || 3,
+            requiresAuth: config.requiresAuth !== false,
+            supportsWebSocket: config.supportsWebSocket || false,
+            rateLimit: config.rateLimit,
+            circuitBreaker: config.circuitBreaker,
+            metadata: config.metadata || {},
+            tags: config.tags || [],
+            endpoints: config.endpoints || [],
+            status: 'unknown',
+            health: 'unknown',
+            lastHealthCheck: null,
+            metrics: {
+                requests: 0,
+                errors: 0,
+                totalResponseTime: 0,
+                averageResponseTime: 0
+            },
+            instances: []
         };
+    }
 
-        this.services.set(name, service);
+    /**
+     * Registers a service in the registry
+     * @async
+     * @param {Object} service - Service to register
+     * @returns {Promise<void>}
+     */
+    async registerService(service) {
+        if (!service.name || !service.url) {
+            throw new Error('Service must have a name and URL');
+        }
+
+        const existingService = this.services.get(service.name);
         
-        // Setup health checker for service
-        this.setupHealthChecker(name, service);
-        
-        console.info(`Service registered: ${name} with ${service.instances.length} instances`);
-        return service;
-    }
-
-    /**
-     * Deregister a service
-     */
-    deregisterService(name) {
-        // Stop health checker
-        const healthChecker = this.healthCheckers.get(name);
-        if (healthChecker) {
-            clearInterval(healthChecker);
-            this.healthCheckers.delete(name);
+        if (existingService) {
+            // Update existing service
+            Object.assign(existingService, service);
+            console.log(`Service updated: ${service.name}`);
+        } else {
+            // Register new service
+            this.services.set(service.name, service);
+            console.log(`Service registered: ${service.name}`);
         }
-
-        // Remove service
-        const removed = this.services.delete(name);
-        
-        if (removed) {
-            console.info(`Service deregistered: ${name}`);
-        }
-        
-        return removed;
-    }
-
-    /**
-     * Get a service
-     */
-    getService(name) {
-        return this.services.get(name);
-    }
-
-    /**
-     * Get all services
-     */
-    getAllServices() {
-        const services = {};
-        for (const [name, service] of this.services) {
-            services[name] = {
-                ...service,
-                healthyInstances: service.instances.filter(i => i.healthy).length,
-                totalInstances: service.instances.length
-            };
-        }
-        return services;
-    }
-
-    /**
-     * Get healthy instances for a service
-     */
-    getHealthyInstances(serviceName) {
-        const service = this.services.get(serviceName);
-        if (!service) {
-            return [];
-        }
-        return service.instances.filter(instance => instance.healthy);
-    }
-
-    /**
-     * Get all instances for a service
-     */
-    getAllInstances(serviceName) {
-        const service = this.services.get(serviceName);
-        return service ? service.instances : [];
-    }
-
-    /**
-     * Setup health checker for service
-     */
-    setupHealthChecker(name, service) {
-        // Clear existing health checker
-        const existingChecker = this.healthCheckers.get(name);
-        if (existingChecker) {
-            clearInterval(existingChecker);
-        }
-
-        // Create new health checker
-        const checker = setInterval(async () => {
-            await this.checkServiceHealth(name, service);
-        }, 30000); // Check every 30 seconds
-
-        this.healthCheckers.set(name, checker);
 
         // Perform initial health check
-        this.checkServiceHealth(name, service);
+        await this.checkServiceHealth(service);
+
+        this.emit('service:registered', service);
     }
 
     /**
-     * Check service health
+     * Deregisters a service from the registry
+     * @param {string} serviceName - Name of service to deregister
      */
-    async checkServiceHealth(name, service) {
-        for (const instance of service.instances) {
-            try {
-                const healthUrl = `${instance.url}${service.healthPath}`;
-                const response = await axios.get(healthUrl, {
-                    timeout: 5000,
-                    validateStatus: (status) => status === 200
-                });
-
-                const wasHealthy = instance.healthy;
-                instance.healthy = response.status === 200;
-                instance.lastHealthCheck = new Date();
-                instance.healthData = response.data;
-
-                if (wasHealthy !== instance.healthy) {
-                    this.emit('instance-health-changed', name, instance.id, instance.healthy);
-                    console.info(`Instance health changed: ${name}/${instance.id} - ${instance.healthy ? 'UP' : 'DOWN'}`);
-                }
-            } catch (error) {
-                const wasHealthy = instance.healthy;
-                instance.healthy = false;
-                instance.lastHealthCheck = new Date();
-                instance.healthError = error.message;
-
-                if (wasHealthy !== instance.healthy) {
-                    this.emit('instance-health-changed', name, instance.id, instance.healthy);
-                    console.warn(`Instance health check failed: ${name}/${instance.id} - ${error.message}`);
-                }
-            }
-        }
-    }
-
-    /**
-     * Start service refresh
-     */
-    startServiceRefresh() {
-        const refreshInterval = this.config.discovery?.refreshInterval || 30000;
+    deregisterService(serviceName) {
+        const service = this.services.get(serviceName);
         
-        this.refreshInterval = setInterval(async () => {
-            await this.refreshServices();
-        }, refreshInterval);
-    }
-
-    /**
-     * Refresh services
-     */
-    async refreshServices() {
-        if (this.config.discovery?.enabled) {
-            switch (this.config.discovery.type) {
-                case 'consul':
-                    await this.watchConsulServices();
-                    break;
-                case 'etcd':
-                    // etcd uses watchers, no need to refresh
-                    break;
-            }
-        }
-    }
-
-    /**
-     * Parse host from URL
-     */
-    parseHost(url) {
-        try {
-            const parsed = new URL(url);
-            return parsed.hostname;
-        } catch {
-            return 'localhost';
-        }
-    }
-
-    /**
-     * Parse port from URL
-     */
-    parsePort(url) {
-        try {
-            const parsed = new URL(url);
-            return parsed.port || (parsed.protocol === 'https:' ? 443 : 80);
-        } catch {
-            return 80;
-        }
-    }
-
-    /**
-     * Update instance weight
-     */
-    updateInstanceWeight(serviceName, instanceId, weight) {
-        const service = this.services.get(serviceName);
         if (service) {
-            const instance = service.instances.find(i => i.id === instanceId);
-            if (instance) {
-                instance.weight = weight;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Mark instance as unhealthy
-     */
-    markInstanceUnhealthy(serviceName, instanceId) {
-        const service = this.services.get(serviceName);
-        if (service) {
-            const instance = service.instances.find(i => i.id === instanceId);
-            if (instance) {
-                instance.healthy = false;
-                instance.lastHealthCheck = new Date();
-                this.emit('instance-health-changed', serviceName, instanceId, false);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Mark instance as healthy
-     */
-    markInstanceHealthy(serviceName, instanceId) {
-        const service = this.services.get(serviceName);
-        if (service) {
-            const instance = service.instances.find(i => i.id === instanceId);
-            if (instance) {
-                instance.healthy = true;
-                instance.lastHealthCheck = new Date();
-                this.emit('instance-health-changed', serviceName, instanceId, true);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Get service metrics
-     */
-    getServiceMetrics() {
-        const metrics = {};
-        
-        for (const [name, service] of this.services) {
-            const healthyCount = service.instances.filter(i => i.healthy).length;
-            const totalCount = service.instances.length;
+            this.services.delete(serviceName);
             
-            metrics[name] = {
-                healthy: healthyCount,
-                unhealthy: totalCount - healthyCount,
-                total: totalCount,
-                healthPercentage: totalCount > 0 ? (healthyCount / totalCount) * 100 : 0,
-                lastUpdated: service.lastUpdated
-            };
+            // Clear health check interval
+            const healthCheckInterval = this.healthChecks.get(serviceName);
+            if (healthCheckInterval) {
+                clearInterval(healthCheckInterval);
+                this.healthChecks.delete(serviceName);
+            }
+
+            console.log(`Service deregistered: ${serviceName}`);
+            this.emit('service:deregistered', service);
         }
-        
-        return metrics;
     }
 
     /**
-     * Disconnect from service discovery
+     * Gets a service by name
+     * @param {string} serviceName - Service name
+     * @returns {Object|null} Service instance or null
+     */
+    getService(serviceName) {
+        return this.services.get(serviceName) || null;
+    }
+
+    /**
+     * Gets all registered services
+     * @returns {Array} Array of services
+     */
+    getAllServices() {
+        return Array.from(this.services.values());
+    }
+
+    /**
+     * Gets healthy services
+     * @returns {Array} Array of healthy services
+     */
+    getHealthyServices() {
+        return this.getAllServices().filter(service => service.health === 'healthy');
+    }
+
+    /**
+     * Gets services by tag
+     * @param {string} tag - Tag to filter by
+     * @returns {Array} Array of services with tag
+     */
+    getServicesByTag(tag) {
+        return this.getAllServices().filter(service => 
+            service.tags && service.tags.includes(tag)
+        );
+    }
+
+    /**
+     * Selects a service instance using load balancing
+     * @param {string} serviceName - Service name
+     * @param {string} algorithm - Load balancing algorithm
+     * @returns {Object|null} Selected service instance
+     */
+    selectServiceInstance(serviceName, algorithm = 'round-robin') {
+        const service = this.getService(serviceName);
+        
+        if (!service) {
+            return null;
+        }
+
+        // For single instance services
+        if (!service.instances || service.instances.length <= 1) {
+            return service;
+        }
+
+        // Get healthy instances
+        const healthyInstances = service.instances.filter(i => i.health === 'healthy');
+        
+        if (healthyInstances.length === 0) {
+            return null;
+        }
+
+        switch (algorithm) {
+            case 'round-robin':
+                service.lastSelectedIndex = (service.lastSelectedIndex || 0) + 1;
+                return healthyInstances[service.lastSelectedIndex % healthyInstances.length];
+            
+            case 'least-connections':
+                return healthyInstances.reduce((min, instance) => 
+                    instance.connections < min.connections ? instance : min
+                );
+            
+            case 'random':
+                return healthyInstances[Math.floor(Math.random() * healthyInstances.length)];
+            
+            case 'weighted':
+                const totalWeight = healthyInstances.reduce((sum, i) => sum + i.weight, 0);
+                let random = Math.random() * totalWeight;
+                
+                for (const instance of healthyInstances) {
+                    random -= instance.weight;
+                    if (random <= 0) {
+                        return instance;
+                    }
+                }
+                return healthyInstances[0];
+            
+            default:
+                return healthyInstances[0];
+        }
+    }
+
+    /**
+     * Starts periodic service discovery
+     * @private
+     */
+    startDiscovery() {
+        const interval = this.config.discovery.refreshInterval;
+        
+        this.discoveryInterval = setInterval(async () => {
+            try {
+                await this.discoverServices();
+            } catch (error) {
+                console.error('Periodic service discovery failed:', error);
+                this.emit('discovery:error', error);
+            }
+        }, interval);
+
+        console.log(`Service discovery started with interval: ${interval}ms`);
+    }
+
+    /**
+     * Starts health monitoring for all services
+     * @private
+     */
+    startHealthMonitoring() {
+        for (const [serviceName, service] of this.services) {
+            if (service.healthCheck && service.healthCheck.enabled) {
+                this.startServiceHealthCheck(serviceName);
+            }
+        }
+    }
+
+    /**
+     * Starts health check for a specific service
+     * @private
+     * @param {string} serviceName - Service name
+     */
+    startServiceHealthCheck(serviceName) {
+        const service = this.services.get(serviceName);
+        
+        if (!service || !service.healthCheck.enabled) {
+            return;
+        }
+
+        // Clear existing health check if any
+        const existingInterval = this.healthChecks.get(serviceName);
+        if (existingInterval) {
+            clearInterval(existingInterval);
+        }
+
+        // Setup periodic health check
+        const interval = setInterval(async () => {
+            await this.checkServiceHealth(service);
+        }, service.healthCheck.interval);
+
+        this.healthChecks.set(serviceName, interval);
+    }
+
+    /**
+     * Checks health of a service
+     * @async
+     * @param {Object} service - Service to check
+     * @returns {Promise<boolean>} Health status
+     */
+    async checkServiceHealth(service) {
+        if (!service.healthCheck || !service.healthCheck.enabled) {
+            return true;
+        }
+
+        const healthUrl = `${service.url}${service.healthCheck.path}`;
+        const previousHealth = service.health;
+
+        try {
+            const response = await axios.get(healthUrl, {
+                timeout: service.healthCheck.timeout,
+                validateStatus: (status) => status === 200
+            });
+
+            service.lastHealthCheck = new Date();
+            service.healthCheckResponse = response.data;
+            
+            if (service.health !== 'healthy') {
+                service.consecutiveHealthyChecks = (service.consecutiveHealthyChecks || 0) + 1;
+                
+                if (service.consecutiveHealthyChecks >= service.healthCheck.healthyThreshold) {
+                    service.health = 'healthy';
+                    service.status = 'active';
+                    service.consecutiveUnhealthyChecks = 0;
+                    
+                    if (previousHealth !== 'healthy') {
+                        console.log(`Service ${service.name} is now healthy`);
+                        this.emit('service:healthy', service);
+                    }
+                }
+            } else {
+                service.health = 'healthy';
+                service.status = 'active';
+                service.consecutiveHealthyChecks = service.healthCheck.healthyThreshold;
+                service.consecutiveUnhealthyChecks = 0;
+            }
+
+            return true;
+        } catch (error) {
+            service.lastHealthCheck = new Date();
+            service.healthCheckError = error.message;
+            service.consecutiveUnhealthyChecks = (service.consecutiveUnhealthyChecks || 0) + 1;
+            service.consecutiveHealthyChecks = 0;
+
+            if (service.consecutiveUnhealthyChecks >= service.healthCheck.unhealthyThreshold) {
+                service.health = 'unhealthy';
+                service.status = 'inactive';
+                
+                if (previousHealth !== 'unhealthy') {
+                    console.error(`Service ${service.name} is now unhealthy:`, error.message);
+                    this.emit('service:unhealthy', service);
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /**
+     * Updates service metrics
+     * @param {string} serviceName - Service name
+     * @param {Object} metrics - Metrics to update
+     */
+    updateServiceMetrics(serviceName, metrics) {
+        const service = this.services.get(serviceName);
+        
+        if (service) {
+            if (metrics.requestCount !== undefined) {
+                service.metrics.requests += metrics.requestCount;
+            }
+            
+            if (metrics.errorCount !== undefined) {
+                service.metrics.errors += metrics.errorCount;
+            }
+            
+            if (metrics.responseTime !== undefined) {
+                service.metrics.totalResponseTime += metrics.responseTime;
+                service.metrics.averageResponseTime = 
+                    service.metrics.totalResponseTime / service.metrics.requests;
+            }
+
+            this.emit('service:metrics', { service: serviceName, metrics: service.metrics });
+        }
+    }
+
+    /**
+     * Gets service count
+     * @returns {number} Number of registered services
+     */
+    getServiceCount() {
+        return this.services.size;
+    }
+
+    /**
+     * Deregisters from service discovery
+     * @async
+     * @returns {Promise<void>}
+     */
+    async deregister() {
+        // In a real implementation, this would deregister from Consul/Eureka/etc
+        console.log('Deregistering from service discovery');
+        
+        // Clear all services
+        for (const serviceName of this.services.keys()) {
+            this.deregisterService(serviceName);
+        }
+    }
+
+    /**
+     * Disconnects and cleans up resources
+     * @async
+     * @returns {Promise<void>}
      */
     async disconnect() {
-        // Clear refresh interval
-        if (this.refreshInterval) {
-            clearInterval(this.refreshInterval);
-            this.refreshInterval = null;
+        console.log('Disconnecting Service Registry');
+
+        // Stop discovery
+        if (this.discoveryInterval) {
+            clearInterval(this.discoveryInterval);
+            this.discoveryInterval = null;
         }
 
-        // Clear health checkers
-        for (const [name, checker] of this.healthCheckers) {
-            clearInterval(checker);
+        // Stop all health checks
+        for (const [serviceName, interval] of this.healthChecks) {
+            clearInterval(interval);
         }
-        this.healthCheckers.clear();
+        this.healthChecks.clear();
 
-        // Disconnect from discovery client
-        if (this.discoveryClient) {
-            if (this.discoveryClient.close) {
-                await this.discoveryClient.close();
-            }
-            this.discoveryClient = null;
-        }
-    }
-
-    /**
-     * Cleanup resources
-     */
-    async cleanup() {
-        await this.disconnect();
+        // Clear services
         this.services.clear();
+
+        this.isInitialized = false;
         this.removeAllListeners();
+        
+        console.log('Service Registry disconnected');
     }
 }
 

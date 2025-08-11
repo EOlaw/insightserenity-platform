@@ -1,491 +1,887 @@
+'use strict';
+
 /**
- * Gateway Application
- * Core Express application with middleware and routing configuration
+ * @fileoverview Gateway Application - Core Express application configuration for API Gateway
+ * @module servers/gateway/app
+ * @requires express
+ * @requires helmet
+ * @requires compression
+ * @requires http-proxy-middleware
+ * @requires express-rate-limit
+ * @requires cors
+ * @requires module:servers/gateway/middleware/gateway-auth
+ * @requires module:servers/gateway/middleware/rate-limiting
+ * @requires module:servers/gateway/middleware/request-routing
+ * @requires module:servers/gateway/middleware/response-aggregation
+ * @requires module:servers/gateway/routes/gateway-routes
+ * @requires module:servers/gateway/routes/proxy-routes
+ * @requires module:servers/gateway/routes/health-routes
+ * @requires module:servers/gateway/policies/security-policies
+ * @requires module:servers/gateway/policies/routing-policies
+ * @requires module:servers/gateway/policies/cache-policies
  */
 
 const express = require('express');
 const helmet = require('helmet');
-const cors = require('cors');
 const compression = require('compression');
-const cookieParser = require('cookie-parser');
-const bodyParser = require('body-parser');
-const methodOverride = require('method-override');
-const responseTime = require('response-time');
+const { createProxyMiddleware } = require('http-proxy-middleware');
+const rateLimit = require('express-rate-limit');
+const cors = require('cors');
+const swaggerUi = require('swagger-ui-express');
 const { v4: uuidv4 } = require('uuid');
 
-// Middleware imports
-const { SecurityMiddleware } = require('./middleware/security-middleware');
-const { AuthenticationMiddleware } = require('./middleware/authentication-middleware');
-const { RateLimitMiddleware } = require('./middleware/rate-limit-middleware');
-const { TenantMiddleware } = require('./middleware/tenant-middleware');
-const { RequestTransformMiddleware } = require('./middleware/request-transform-middleware');
-const { ResponseTransformMiddleware } = require('./middleware/response-transform-middleware');
-const { LoggingMiddleware } = require('./middleware/logging-middleware');
-const { MetricsMiddleware } = require('./middleware/metrics-middleware');
-const { TracingMiddleware } = require('./middleware/tracing-middleware');
-const { CacheMiddleware } = require('./middleware/cache-middleware');
-const { CircuitBreakerMiddleware } = require('./middleware/circuit-breaker-middleware');
-const { ErrorHandlerMiddleware } = require('./middleware/error-handler-middleware');
-const { ValidationMiddleware } = require('./middleware/validation-middleware');
-const { CompressionMiddleware } = require('./middleware/compression-middleware');
-const { WebSocketProxy } = require('./middleware/websocket-proxy');
+// Import middleware
+const { GatewayAuthMiddleware } = require('./middleware/gateway-auth');
+const { RateLimitingMiddleware } = require('./middleware/rate-limiting');
+const { RequestRoutingMiddleware } = require('./middleware/request-routing');
+const { ResponseAggregationMiddleware } = require('./middleware/response-aggregation');
 
-// Router imports
-const { ProxyRouter } = require('./routes/proxy-router');
-const { HealthRouter } = require('./routes/health-router');
-const { MetricsRouter } = require('./routes/metrics-router');
-const { DocumentationRouter } = require('./routes/documentation-router');
-const { AdminRouter } = require('./routes/admin-router');
+// Import routes
+const { GatewayRoutesManager } = require('./routes/gateway-routes');
+const { ProxyRoutesManager } = require('./routes/proxy-routes');
+const { HealthRoutesManager } = require('./routes/health-routes');
+
+// Import policies
+const { SecurityPolicyEngine } = require('./policies/security-policies');
+const { RoutingPolicyEngine } = require('./policies/routing-policies');
+const { CachePolicyEngine } = require('./policies/cache-policies');
 
 /**
- * Gateway Application Class
+ * GatewayApplication class manages the Express application instance and configures
+ * all middleware, routes, and policies required for the API gateway functionality.
+ * It provides centralized request routing, security enforcement, rate limiting,
+ * and monitoring capabilities.
+ * 
+ * @class GatewayApplication
  */
 class GatewayApplication {
-    constructor(dependencies) {
-        this.config = dependencies.config;
-        this.logger = dependencies.logger;
-        this.serviceRegistry = dependencies.serviceRegistry;
-        this.healthMonitor = dependencies.healthMonitor;
-        this.metricsCollector = dependencies.metricsCollector;
-        this.traceManager = dependencies.traceManager;
-        this.cacheManager = dependencies.cacheManager;
+    /**
+     * Creates an instance of GatewayApplication
+     * @constructor
+     * @param {Object} components - Application components and dependencies
+     * @param {ConfigManager} components.config - Configuration manager instance
+     * @param {Logger} components.logger - Logger instance
+     * @param {ServiceRegistry} components.serviceRegistry - Service registry for discovery
+     * @param {HealthMonitor} components.healthMonitor - Health monitoring service
+     * @param {MetricsCollector} components.metricsCollector - Metrics collection service
+     * @param {TraceManager} components.traceManager - Distributed tracing manager
+     * @param {CacheManager} components.cacheManager - Cache management service
+     * @param {CircuitBreakerManager} components.circuitBreakerManager - Circuit breaker manager
+     */
+    constructor(components) {
+        this.config = components.config;
+        this.logger = components.logger;
+        this.serviceRegistry = components.serviceRegistry;
+        this.healthMonitor = components.healthMonitor;
+        this.metricsCollector = components.metricsCollector;
+        this.traceManager = components.traceManager;
+        this.cacheManager = components.cacheManager;
+        this.circuitBreakerManager = components.circuitBreakerManager;
         
         this.app = express();
-        this.middleware = {};
-        this.routers = {};
-        this.wsProxy = null;
+        this.isInitialized = false;
+        
+        // Initialize policy engines
+        this.securityPolicy = null;
+        this.routingPolicy = null;
+        this.cachePolicy = null;
+        
+        // Initialize middleware managers
+        this.gatewayAuth = null;
+        this.rateLimiter = null;
+        this.requestRouter = null;
+        this.responseAggregator = null;
+        
+        // Initialize route managers
+        this.gatewayRoutes = null;
+        this.proxyRoutes = null;
+        this.healthRoutes = null;
+        
+        // Store proxy instances for cleanup
+        this.proxyInstances = new Map();
     }
 
     /**
-     * Initialize the application
+     * Initializes the gateway application with all required components
+     * @async
+     * @returns {Promise<void>}
      */
     async initialize() {
-        this.logger.info('Initializing Gateway Application');
-        
-        // Set Express configuration
-        this.configureExpress();
-        
-        // Initialize middleware
-        await this.initializeMiddleware();
-        
-        // Setup middleware pipeline
-        this.setupMiddlewarePipeline();
-        
-        // Initialize routers
-        await this.initializeRouters();
-        
-        // Setup routes
-        this.setupRoutes();
-        
-        // Setup error handling
-        this.setupErrorHandling();
-        
-        // Initialize WebSocket proxy if enabled
-        if (this.config.get('websocket.enabled')) {
-            await this.initializeWebSocketProxy();
+        if (this.isInitialized) {
+            this.logger.warn('Gateway application already initialized');
+            return;
         }
-        
-        this.logger.info('Gateway Application Initialized Successfully');
+
+        try {
+            this.logger.info('Initializing Gateway Application');
+
+            // Initialize policy engines
+            await this.initializePolicies();
+
+            // Configure Express settings
+            this.configureExpressSettings();
+
+            // Setup global middleware
+            await this.setupGlobalMiddleware();
+
+            // Setup security middleware
+            await this.setupSecurityMiddleware();
+
+            // Setup monitoring middleware
+            this.setupMonitoringMiddleware();
+
+            // Setup routing middleware
+            await this.setupRoutingMiddleware();
+
+            // Setup API routes
+            await this.setupRoutes();
+
+            // Setup proxy routes for backend services
+            await this.setupProxyRoutes();
+
+            // Setup error handling
+            this.setupErrorHandling();
+
+            // Generate API documentation
+            await this.setupApiDocumentation();
+
+            this.isInitialized = true;
+            this.logger.info('Gateway Application initialized successfully');
+        } catch (error) {
+            this.logger.error('Failed to initialize Gateway Application', error);
+            throw error;
+        }
     }
 
     /**
-     * Configure Express settings
+     * Initializes policy engines for security, routing, and caching
+     * @private
+     * @async
      */
-    configureExpress() {
-        // Trust proxy settings
-        this.app.set('trust proxy', this.config.get('server.trustProxy', true));
+    async initializePolicies() {
+        this.securityPolicy = new SecurityPolicyEngine(
+            this.config.get('policies.security'),
+            this.logger
+        );
+        await this.securityPolicy.initialize();
+
+        this.routingPolicy = new RoutingPolicyEngine(
+            this.config.get('policies.routing'),
+            this.serviceRegistry,
+            this.logger
+        );
+        await this.routingPolicy.initialize();
+
+        this.cachePolicy = new CachePolicyEngine(
+            this.config.get('policies.cache'),
+            this.cacheManager,
+            this.logger
+        );
+        await this.cachePolicy.initialize();
+
+        this.logger.info('Policy engines initialized');
+    }
+
+    /**
+     * Configures Express application settings
+     * @private
+     */
+    configureExpressSettings() {
+        // Trust proxy settings for accurate IP addresses
+        this.app.set('trust proxy', this.config.get('server.trustProxy') || true);
         
-        // Disable X-Powered-By header
+        // Disable X-Powered-By header for security
         this.app.disable('x-powered-by');
         
-        // Set view engine if needed
-        this.app.set('view engine', 'ejs');
-        
-        // Set strict routing
+        // Set strict routing and case sensitivity
         this.app.set('strict routing', true);
-        
-        // Set case sensitive routing
         this.app.set('case sensitive routing', true);
         
-        // Set query parser
-        this.app.set('query parser', 'extended');
+        // Configure view engine if needed
+        this.app.set('view engine', 'ejs');
+        
+        // Set request size limits
+        this.app.set('json spaces', 2);
+        
+        this.logger.info('Express settings configured');
     }
 
     /**
-     * Initialize all middleware instances
+     * Sets up global middleware for all requests
+     * @private
+     * @async
      */
-    async initializeMiddleware() {
-        this.logger.info('Initializing Middleware Components');
-        
-        // Security middleware
-        this.middleware.security = new SecurityMiddleware(
-            this.config.get('security')
-        );
-        
-        // Authentication middleware
-        this.middleware.authentication = new AuthenticationMiddleware(
-            this.config.get('authentication'),
-            this.serviceRegistry
-        );
-        
-        // Rate limiting middleware
-        this.middleware.rateLimit = new RateLimitMiddleware(
-            this.config.get('rateLimit'),
-            this.cacheManager
-        );
-        
-        // Tenant detection middleware
-        this.middleware.tenant = new TenantMiddleware(
-            this.config.get('multiTenant'),
-            this.serviceRegistry
-        );
-        
-        // Request transformation middleware
-        this.middleware.requestTransform = new RequestTransformMiddleware(
-            this.config.get('transformation.request')
-        );
-        
-        // Response transformation middleware
-        this.middleware.responseTransform = new ResponseTransformMiddleware(
-            this.config.get('transformation.response')
-        );
-        
-        // Logging middleware
-        this.middleware.logging = new LoggingMiddleware(
-            this.logger,
-            this.config.get('logging')
-        );
-        
-        // Metrics middleware
-        this.middleware.metrics = new MetricsMiddleware(
-            this.metricsCollector,
-            this.config.get('metrics')
-        );
-        
-        // Tracing middleware
-        this.middleware.tracing = new TracingMiddleware(
-            this.traceManager,
-            this.config.get('tracing')
-        );
-        
-        // Cache middleware
-        this.middleware.cache = new CacheMiddleware(
-            this.cacheManager,
-            this.config.get('cache')
-        );
-        
-        // Circuit breaker middleware
-        this.middleware.circuitBreaker = new CircuitBreakerMiddleware(
-            this.config.get('circuitBreaker'),
-            this.metricsCollector
-        );
-        
-        // Validation middleware
-        this.middleware.validation = new ValidationMiddleware(
-            this.config.get('validation')
-        );
-        
-        // Compression middleware
-        this.middleware.compression = new CompressionMiddleware(
-            this.config.get('compression')
-        );
-        
-        // Error handler middleware
-        this.middleware.errorHandler = new ErrorHandlerMiddleware(
-            this.logger,
-            this.config.get('errorHandling')
-        );
-        
-        // Initialize all middleware
-        for (const [name, middleware] of Object.entries(this.middleware)) {
-            if (middleware.initialize) {
-                await middleware.initialize();
-                this.logger.debug(`Middleware initialized: ${name}`);
-            }
-        }
-    }
-
-    /**
-     * Setup middleware pipeline
-     */
-    setupMiddlewarePipeline() {
-        this.logger.info('Setting up Middleware Pipeline');
-        
-        // Add request ID to every request
+    async setupGlobalMiddleware() {
+        // Add request ID for tracing
         this.app.use((req, res, next) => {
             req.id = req.headers['x-request-id'] || uuidv4();
+            req.startTime = Date.now();
             res.setHeader('X-Request-ID', req.id);
             next();
         });
-        
-        // Response time tracking
-        this.app.use(responseTime());
-        
-        // Security headers
-        this.app.use(helmet(this.config.get('security.helmet')));
-        
-        // CORS configuration
-        this.app.use(cors(this.config.get('security.cors')));
-        
-        // Compression
-        this.app.use(compression(this.config.get('compression')));
-        
-        // Body parsing
-        this.app.use(bodyParser.json({
-            limit: this.config.get('server.bodyLimit', '10mb'),
+
+        // Add distributed tracing
+        this.app.use((req, res, next) => {
+            const span = this.traceManager.startSpan('gateway.request', {
+                'http.method': req.method,
+                'http.url': req.url,
+                'http.target': req.originalUrl,
+                'request.id': req.id
+            });
+            req.span = span;
+            
+            res.on('finish', () => {
+                span.setAttributes({
+                    'http.status_code': res.statusCode,
+                    'response.time': Date.now() - req.startTime
+                });
+                span.end();
+            });
+            
+            next();
+        });
+
+        // Parse JSON bodies
+        this.app.use(express.json({
+            limit: this.config.get('server.bodyLimit') || '10mb',
             strict: true
         }));
-        
-        this.app.use(bodyParser.urlencoded({
+
+        // Parse URL-encoded bodies
+        this.app.use(express.urlencoded({
             extended: true,
-            limit: this.config.get('server.bodyLimit', '10mb')
+            limit: this.config.get('server.bodyLimit') || '10mb'
         }));
-        
-        // Cookie parsing
-        this.app.use(cookieParser(this.config.get('security.cookieSecret')));
-        
-        // Method override
-        this.app.use(methodOverride('X-HTTP-Method-Override'));
-        
-        // Tracing middleware (must be early in pipeline)
-        this.app.use(this.middleware.tracing.getMiddleware());
-        
-        // Logging middleware
-        this.app.use(this.middleware.logging.getMiddleware());
-        
-        // Metrics collection
-        this.app.use(this.middleware.metrics.getMiddleware());
-        
-        // Security middleware
-        this.app.use(this.middleware.security.getMiddleware());
-        
-        // Rate limiting (before authentication)
-        this.app.use(this.middleware.rateLimit.getMiddleware());
-        
-        // Tenant detection
-        this.app.use(this.middleware.tenant.getMiddleware());
-        
-        // Request validation
-        this.app.use(this.middleware.validation.getMiddleware());
-        
-        // Request transformation
-        this.app.use(this.middleware.requestTransform.getMiddleware());
+
+        // Enable compression
+        this.app.use(compression({
+            level: this.config.get('server.compressionLevel') || 6,
+            threshold: 1024,
+            filter: (req, res) => {
+                if (req.headers['x-no-compression']) {
+                    return false;
+                }
+                return compression.filter(req, res);
+            }
+        }));
+
+        this.logger.info('Global middleware configured');
     }
 
     /**
-     * Initialize routers
+     * Sets up security middleware
+     * @private
+     * @async
      */
-    async initializeRouters() {
-        this.logger.info('Initializing Routers');
-        
-        // Health check router
-        this.routers.health = new HealthRouter(
-            this.healthMonitor,
-            this.config.get('healthCheck')
+    async setupSecurityMiddleware() {
+        // Configure Helmet for security headers
+        const helmetConfig = this.config.get('security.helmet') || {};
+        this.app.use(helmet({
+            contentSecurityPolicy: helmetConfig.contentSecurityPolicy || {
+                directives: {
+                    defaultSrc: ["'self'"],
+                    styleSrc: ["'self'", "'unsafe-inline'"],
+                    scriptSrc: ["'self'"],
+                    imgSrc: ["'self'", "data:", "https:"],
+                    connectSrc: ["'self'"],
+                    fontSrc: ["'self'"],
+                    objectSrc: ["'none'"],
+                    mediaSrc: ["'self'"],
+                    frameSrc: ["'none'"]
+                }
+            },
+            hsts: {
+                maxAge: 31536000,
+                includeSubDomains: true,
+                preload: true
+            }
+        }));
+
+        // Configure CORS
+        const corsConfig = this.config.get('security.cors') || {};
+        this.app.use(cors({
+            origin: corsConfig.origin || false,
+            credentials: corsConfig.credentials || true,
+            methods: corsConfig.methods || ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+            allowedHeaders: corsConfig.allowedHeaders || ['Content-Type', 'Authorization', 'X-Request-ID'],
+            exposedHeaders: corsConfig.exposedHeaders || ['X-Request-ID', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
+            maxAge: corsConfig.maxAge || 86400
+        }));
+
+        // Initialize and apply gateway authentication
+        this.gatewayAuth = new GatewayAuthMiddleware(
+            this.config.get('auth'),
+            this.securityPolicy,
+            this.logger
         );
-        
-        // Metrics router
-        this.routers.metrics = new MetricsRouter(
+        await this.gatewayAuth.initialize();
+
+        // Initialize and apply rate limiting
+        this.rateLimiter = new RateLimitingMiddleware(
+            this.config.get('rateLimiting'),
+            this.cacheManager,
             this.metricsCollector,
-            this.config.get('metrics')
+            this.logger
         );
-        
-        // Documentation router
-        this.routers.documentation = new DocumentationRouter(
-            this.config.get('documentation'),
-            this.serviceRegistry
-        );
-        
-        // Admin router
-        this.routers.admin = new AdminRouter(
-            this.config.get('admin'),
-            this.serviceRegistry,
-            this.healthMonitor,
-            this.metricsCollector
-        );
-        
-        // Main proxy router
-        this.routers.proxy = new ProxyRouter({
-            config: this.config,
-            serviceRegistry: this.serviceRegistry,
-            circuitBreaker: this.middleware.circuitBreaker,
-            cache: this.middleware.cache,
-            logger: this.logger,
-            metricsCollector: this.metricsCollector
+        await this.rateLimiter.initialize();
+
+        // Apply security policy enforcement
+        this.app.use(async (req, res, next) => {
+            try {
+                const policyResult = await this.securityPolicy.evaluate(req);
+                if (!policyResult.allowed) {
+                    return res.status(403).json({
+                        error: 'Security policy violation',
+                        message: policyResult.reason,
+                        requestId: req.id
+                    });
+                }
+                req.securityContext = policyResult.context;
+                next();
+            } catch (error) {
+                this.logger.error('Security policy evaluation failed', error);
+                next(error);
+            }
         });
+
+        this.logger.info('Security middleware configured');
+    }
+
+    /**
+     * Sets up monitoring and metrics middleware
+     * @private
+     */
+    setupMonitoringMiddleware() {
+        // Request metrics
+        this.app.use((req, res, next) => {
+            const labels = {
+                method: req.method,
+                path: req.route?.path || req.path,
+                service: req.headers['x-service-name'] || 'unknown'
+            };
+
+            // Increment request counter
+            this.metricsCollector.incrementCounter('gateway_requests_total', labels);
+
+            // Track response metrics
+            res.on('finish', () => {
+                const duration = Date.now() - req.startTime;
+                
+                // Record response time histogram
+                this.metricsCollector.recordHistogram('gateway_request_duration_ms', duration, {
+                    ...labels,
+                    status: res.statusCode
+                });
+
+                // Track status codes
+                this.metricsCollector.incrementCounter('gateway_responses_total', {
+                    ...labels,
+                    status: res.statusCode,
+                    status_class: `${Math.floor(res.statusCode / 100)}xx`
+                });
+
+                // Log slow requests
+                if (duration > (this.config.get('monitoring.slowRequestThreshold') || 5000)) {
+                    this.logger.warn('Slow request detected', {
+                        requestId: req.id,
+                        method: req.method,
+                        path: req.path,
+                        duration,
+                        status: res.statusCode
+                    });
+                }
+            });
+
+            next();
+        });
+
+        // Track active connections
+        let activeConnections = 0;
+        this.app.use((req, res, next) => {
+            activeConnections++;
+            this.metricsCollector.registerGauge('gateway_active_connections', activeConnections);
+
+            res.on('finish', () => {
+                activeConnections--;
+                this.metricsCollector.registerGauge('gateway_active_connections', activeConnections);
+            });
+
+            next();
+        });
+
+        this.logger.info('Monitoring middleware configured');
+    }
+
+    /**
+     * Sets up request routing middleware
+     * @private
+     * @async
+     */
+    async setupRoutingMiddleware() {
+        // Initialize request router
+        this.requestRouter = new RequestRoutingMiddleware(
+            this.routingPolicy,
+            this.serviceRegistry,
+            this.circuitBreakerManager,
+            this.logger
+        );
+        await this.requestRouter.initialize();
+
+        // Initialize response aggregator for composite requests
+        this.responseAggregator = new ResponseAggregationMiddleware(
+            this.config.get('aggregation'),
+            this.logger
+        );
+        await this.responseAggregator.initialize();
+
+        // Apply tenant detection for multi-tenant routing
+        this.app.use((req, res, next) => {
+            // Extract tenant from subdomain or header
+            const host = req.get('host');
+            const tenantHeader = req.get('X-Tenant-ID');
+            
+            if (tenantHeader) {
+                req.tenantId = tenantHeader;
+            } else if (host) {
+                const subdomain = host.split('.')[0];
+                if (subdomain && subdomain !== 'www') {
+                    req.tenantId = subdomain;
+                }
+            }
+
+            if (req.tenantId) {
+                req.headers['x-tenant-id'] = req.tenantId;
+            }
+
+            next();
+        });
+
+        this.logger.info('Routing middleware configured');
+    }
+
+    /**
+     * Sets up API routes
+     * @private
+     * @async
+     */
+    async setupRoutes() {
+        // Initialize health routes (no auth required)
+        this.healthRoutes = new HealthRoutesManager(
+            this.healthMonitor,
+            this.metricsCollector,
+            this.logger
+        );
+        await this.healthRoutes.initialize();
+        this.app.use('/health', this.healthRoutes.getRouter());
+
+        // Initialize gateway management routes
+        this.gatewayRoutes = new GatewayRoutesManager(
+            this.config,
+            this.serviceRegistry,
+            this.securityPolicy,
+            this.logger
+        );
+        await this.gatewayRoutes.initialize();
+        this.app.use('/gateway', 
+            this.gatewayAuth.authenticate(),
+            this.gatewayAuth.authorize(['admin', 'gateway-admin']),
+            this.gatewayRoutes.getRouter()
+        );
+
+        // Initialize proxy routes manager
+        this.proxyRoutes = new ProxyRoutesManager(
+            this.config,
+            this.serviceRegistry,
+            this.requestRouter,
+            this.logger
+        );
+        await this.proxyRoutes.initialize();
+
+        this.logger.info('API routes configured');
+    }
+
+    /**
+     * Sets up proxy routes for backend services
+     * @private
+     * @async
+     */
+    async setupProxyRoutes() {
+        const services = await this.serviceRegistry.getAllServices();
         
-        // Initialize all routers
-        for (const [name, router] of Object.entries(this.routers)) {
-            if (router.initialize) {
-                await router.initialize();
-                this.logger.debug(`Router initialized: ${name}`);
+        for (const service of services) {
+            const proxyConfig = {
+                target: service.url,
+                changeOrigin: true,
+                ws: service.supportsWebSocket || false,
+                pathRewrite: service.pathRewrite || {},
+                onProxyReq: this.handleProxyRequest.bind(this),
+                onProxyRes: this.handleProxyResponse.bind(this),
+                onError: this.handleProxyError.bind(this),
+                logLevel: 'warn',
+                timeout: service.timeout || 30000,
+                proxyTimeout: service.proxyTimeout || 30000
+            };
+
+            // Apply circuit breaker
+            const circuitBreaker = this.circuitBreakerManager.getBreaker(service.name);
+            
+            const proxyMiddleware = createProxyMiddleware(proxyConfig);
+            const wrappedProxy = async (req, res, next) => {
+                try {
+                    await circuitBreaker.fire(() => {
+                        return new Promise((resolve, reject) => {
+                            const originalEnd = res.end;
+                            res.end = function(...args) {
+                                originalEnd.apply(res, args);
+                                if (res.statusCode >= 500) {
+                                    reject(new Error(`Service error: ${res.statusCode}`));
+                                } else {
+                                    resolve();
+                                }
+                            };
+                            proxyMiddleware(req, res, (err) => {
+                                if (err) reject(err);
+                                else resolve();
+                            });
+                        });
+                    });
+                } catch (error) {
+                    if (error.message.includes('Circuit breaker is OPEN')) {
+                        res.status(503).json({
+                            error: 'Service temporarily unavailable',
+                            service: service.name,
+                            requestId: req.id
+                        });
+                    } else {
+                        next(error);
+                    }
+                }
+            };
+
+            // Store proxy instance for cleanup
+            this.proxyInstances.set(service.name, wrappedProxy);
+
+            // Apply authentication based on service configuration
+            if (service.requiresAuth) {
+                this.app.use(
+                    service.path,
+                    this.gatewayAuth.authenticate(),
+                    this.rateLimiter.apply(service.rateLimit),
+                    wrappedProxy
+                );
+            } else {
+                this.app.use(
+                    service.path,
+                    this.rateLimiter.apply(service.rateLimit),
+                    wrappedProxy
+                );
+            }
+
+            this.logger.info(`Proxy route configured for service: ${service.name}`, {
+                path: service.path,
+                target: service.url
+            });
+        }
+    }
+
+    /**
+     * Handles proxy request modification
+     * @private
+     */
+    handleProxyRequest(proxyReq, req, res) {
+        // Add gateway headers
+        proxyReq.setHeader('X-Gateway-Request-ID', req.id);
+        proxyReq.setHeader('X-Gateway-Time', new Date().toISOString());
+        proxyReq.setHeader('X-Original-IP', req.ip);
+        
+        // Add tenant context if present
+        if (req.tenantId) {
+            proxyReq.setHeader('X-Tenant-ID', req.tenantId);
+        }
+
+        // Add trace context
+        if (req.span) {
+            const traceContext = this.traceManager.getTraceContext(req.span);
+            proxyReq.setHeader('X-Trace-ID', traceContext.traceId);
+            proxyReq.setHeader('X-Span-ID', traceContext.spanId);
+        }
+
+        // Log proxy request
+        this.logger.debug('Proxying request', {
+            requestId: req.id,
+            method: req.method,
+            path: req.path,
+            target: proxyReq.getHeader('host')
+        });
+    }
+
+    /**
+     * Handles proxy response modification
+     * @private
+     */
+    handleProxyResponse(proxyRes, req, res) {
+        // Add response headers
+        proxyRes.headers['X-Gateway-Response-Time'] = Date.now() - req.startTime;
+        
+        // Cache response if applicable
+        if (req.method === 'GET' && proxyRes.statusCode === 200) {
+            const cacheKey = this.cachePolicy.generateKey(req);
+            const cacheTTL = this.cachePolicy.getTTL(req.path);
+            
+            if (cacheTTL > 0) {
+                let responseData = '';
+                proxyRes.on('data', (chunk) => {
+                    responseData += chunk;
+                });
+                proxyRes.on('end', () => {
+                    this.cacheManager.set(cacheKey, responseData, cacheTTL);
+                });
             }
         }
+
+        // Log proxy response
+        this.logger.debug('Proxy response received', {
+            requestId: req.id,
+            statusCode: proxyRes.statusCode,
+            responseTime: Date.now() - req.startTime
+        });
     }
 
     /**
-     * Setup application routes
+     * Handles proxy errors
+     * @private
      */
-    setupRoutes() {
-        this.logger.info('Setting up Routes');
-        
-        // Health and metrics routes (no authentication required)
-        this.app.use('/health', this.routers.health.getRouter());
-        this.app.use('/metrics', this.routers.metrics.getRouter());
-        
-        // Documentation route (configurable authentication)
-        if (this.config.get('documentation.enabled')) {
-            this.app.use(
-                '/docs',
-                this.config.get('documentation.requireAuth') 
-                    ? this.middleware.authentication.getMiddleware()
-                    : (req, res, next) => next(),
-                this.routers.documentation.getRouter()
-            );
+    handleProxyError(err, req, res) {
+        this.logger.error('Proxy error', {
+            requestId: req.id,
+            error: err.message,
+            code: err.code,
+            path: req.path
+        });
+
+        // Increment error metrics
+        this.metricsCollector.incrementCounter('gateway_proxy_errors_total', {
+            path: req.path,
+            error_code: err.code
+        });
+
+        // Send error response
+        if (!res.headersSent) {
+            res.status(502).json({
+                error: 'Bad Gateway',
+                message: 'Unable to reach backend service',
+                requestId: req.id
+            });
         }
-        
-        // Admin routes (always require authentication)
-        if (this.config.get('admin.enabled')) {
-            this.app.use(
-                '/admin',
-                this.middleware.authentication.getAdminMiddleware(),
-                this.routers.admin.getRouter()
-            );
+    }
+
+    /**
+     * Sets up API documentation
+     * @private
+     * @async
+     */
+    async setupApiDocumentation() {
+        try {
+            // Generate OpenAPI specification
+            const openApiSpec = await this.generateOpenApiSpec();
+            
+            // Serve Swagger UI
+            this.app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
+                customCss: '.swagger-ui .topbar { display: none }',
+                customSiteTitle: 'InsightSerenity API Gateway Documentation'
+            }));
+
+            // Serve OpenAPI spec as JSON
+            this.app.get('/openapi.json', (req, res) => {
+                res.json(openApiSpec);
+            });
+
+            this.logger.info('API documentation configured at /api-docs');
+        } catch (error) {
+            this.logger.error('Failed to setup API documentation', error);
         }
+    }
+
+    /**
+     * Generates OpenAPI specification
+     * @private
+     * @async
+     * @returns {Object} OpenAPI specification
+     */
+    async generateOpenApiSpec() {
+        const services = await this.serviceRegistry.getAllServices();
         
-        // Authentication middleware for protected routes
-        this.app.use(this.middleware.authentication.getMiddleware());
+        return {
+            openapi: '3.0.0',
+            info: {
+                title: 'InsightSerenity API Gateway',
+                version: '1.0.0',
+                description: 'Enterprise API Gateway for InsightSerenity Platform',
+                contact: {
+                    name: 'API Support',
+                    email: 'api-support@insightserenity.com'
+                }
+            },
+            servers: [
+                {
+                    url: this.config.get('server.publicUrl') || 'http://localhost:3000',
+                    description: 'API Gateway'
+                }
+            ],
+            paths: this.generateApiPaths(services),
+            components: {
+                securitySchemes: {
+                    bearerAuth: {
+                        type: 'http',
+                        scheme: 'bearer',
+                        bearerFormat: 'JWT'
+                    },
+                    apiKey: {
+                        type: 'apiKey',
+                        in: 'header',
+                        name: 'X-API-Key'
+                    }
+                }
+            },
+            security: [
+                { bearerAuth: [] }
+            ]
+        };
+    }
+
+    /**
+     * Generates API paths for OpenAPI spec
+     * @private
+     * @param {Array} services - List of services
+     * @returns {Object} API paths
+     */
+    generateApiPaths(services) {
+        const paths = {};
         
-        // Circuit breaker middleware
-        this.app.use(this.middleware.circuitBreaker.getMiddleware());
-        
-        // Cache middleware
-        this.app.use(this.middleware.cache.getMiddleware());
-        
-        // Main proxy routes
-        this.app.use('/', this.routers.proxy.getRouter());
-        
-        // Response transformation middleware
-        this.app.use(this.middleware.responseTransform.getMiddleware());
-        
+        // Add health endpoints
+        paths['/health'] = {
+            get: {
+                summary: 'Health check',
+                tags: ['Health'],
+                responses: {
+                    '200': {
+                        description: 'Service is healthy'
+                    }
+                }
+            }
+        };
+
+        // Add service endpoints
+        services.forEach(service => {
+            if (service.endpoints) {
+                service.endpoints.forEach(endpoint => {
+                    const path = `${service.path}${endpoint.path}`;
+                    if (!paths[path]) {
+                        paths[path] = {};
+                    }
+                    paths[path][endpoint.method.toLowerCase()] = {
+                        summary: endpoint.summary,
+                        description: endpoint.description,
+                        tags: [service.name],
+                        parameters: endpoint.parameters,
+                        requestBody: endpoint.requestBody,
+                        responses: endpoint.responses
+                    };
+                });
+            }
+        });
+
+        return paths;
+    }
+
+    /**
+     * Sets up error handling middleware
+     * @private
+     */
+    setupErrorHandling() {
         // 404 handler
         this.app.use((req, res) => {
             res.status(404).json({
                 error: 'Not Found',
                 message: 'The requested resource was not found',
                 path: req.path,
-                method: req.method,
                 requestId: req.id
             });
         });
-    }
 
-    /**
-     * Setup error handling
-     */
-    setupErrorHandling() {
-        // Error handler middleware (must be last)
-        this.app.use(this.middleware.errorHandler.getMiddleware());
-        
-        // Final catch-all error handler
+        // Global error handler
         this.app.use((err, req, res, next) => {
-            // Log the error
-            this.logger.error('Unhandled error in gateway', {
+            this.logger.error('Unhandled error', {
+                requestId: req.id,
                 error: err.message,
                 stack: err.stack,
-                requestId: req.id,
                 path: req.path,
                 method: req.method
             });
-            
+
+            // Increment error metrics
+            this.metricsCollector.incrementCounter('gateway_errors_total', {
+                type: err.name || 'UnknownError'
+            });
+
             // Send error response
-            if (!res.headersSent) {
-                res.status(500).json({
-                    error: 'Internal Server Error',
-                    message: process.env.NODE_ENV === 'production' 
-                        ? 'An internal error occurred'
-                        : err.message,
-                    requestId: req.id
-                });
-            }
+            const statusCode = err.statusCode || 500;
+            const message = process.env.NODE_ENV === 'production' 
+                ? 'Internal Server Error' 
+                : err.message;
+
+            res.status(statusCode).json({
+                error: err.name || 'Error',
+                message,
+                requestId: req.id,
+                ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+            });
         });
+
+        this.logger.info('Error handling configured');
     }
 
     /**
-     * Initialize WebSocket proxy
-     */
-    async initializeWebSocketProxy() {
-        this.logger.info('Initializing WebSocket Proxy');
-        
-        this.wsProxy = new WebSocketProxy({
-            config: this.config.get('websocket'),
-            serviceRegistry: this.serviceRegistry,
-            logger: this.logger,
-            authentication: this.middleware.authentication
-        });
-        
-        await this.wsProxy.initialize();
-    }
-
-    /**
-     * Attach WebSocket proxy to server
-     */
-    attachWebSocketProxy(server) {
-        if (this.wsProxy) {
-            this.wsProxy.attach(server);
-            this.logger.info('WebSocket Proxy attached to server');
-        }
-    }
-
-    /**
-     * Get Express application instance
+     * Returns the Express application instance
+     * @returns {express.Application} Express app instance
      */
     getExpressApp() {
         return this.app;
     }
 
     /**
-     * Get middleware instances
-     */
-    getMiddleware() {
-        return this.middleware;
-    }
-
-    /**
-     * Get router instances
-     */
-    getRouters() {
-        return this.routers;
-    }
-
-    /**
-     * Cleanup resources
+     * Performs cleanup operations
+     * @async
+     * @returns {Promise<void>}
      */
     async cleanup() {
-        this.logger.info('Cleaning up Gateway Application');
-        
-        // Cleanup WebSocket proxy
-        if (this.wsProxy) {
-            await this.wsProxy.cleanup();
+        try {
+            this.logger.info('Cleaning up Gateway Application');
+
+            // Cleanup proxy instances
+            this.proxyInstances.clear();
+
+            // Cleanup middleware
+            if (this.gatewayAuth) await this.gatewayAuth.cleanup();
+            if (this.rateLimiter) await this.rateLimiter.cleanup();
+            if (this.requestRouter) await this.requestRouter.cleanup();
+            if (this.responseAggregator) await this.responseAggregator.cleanup();
+
+            // Cleanup routes
+            if (this.gatewayRoutes) await this.gatewayRoutes.cleanup();
+            if (this.proxyRoutes) await this.proxyRoutes.cleanup();
+            if (this.healthRoutes) await this.healthRoutes.cleanup();
+
+            // Cleanup policies
+            if (this.securityPolicy) await this.securityPolicy.cleanup();
+            if (this.routingPolicy) await this.routingPolicy.cleanup();
+            if (this.cachePolicy) await this.cachePolicy.cleanup();
+
+            this.logger.info('Gateway Application cleanup completed');
+        } catch (error) {
+            this.logger.error('Error during application cleanup', error);
+            throw error;
         }
-        
-        // Cleanup routers
-        for (const [name, router] of Object.entries(this.routers)) {
-            if (router.cleanup) {
-                await router.cleanup();
-                this.logger.debug(`Router cleaned up: ${name}`);
-            }
-        }
-        
-        // Cleanup middleware
-        for (const [name, middleware] of Object.entries(this.middleware)) {
-            if (middleware.cleanup) {
-                await middleware.cleanup();
-                this.logger.debug(`Middleware cleaned up: ${name}`);
-            }
-        }
-        
-        this.logger.info('Gateway Application Cleanup Completed');
     }
 }
 

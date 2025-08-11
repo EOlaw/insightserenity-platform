@@ -1,547 +1,387 @@
-/**
- * Configuration Manager for API Gateway
- * Handles all configuration loading, validation, and management
- */
-
-const fs = require('fs').promises;
-const path = require('path');
-const Joi = require('joi');
-const _ = require('lodash');
+'use strict';
 
 /**
- * Configuration Manager Class
+ * @fileoverview Gateway-Specific Configuration - Core gateway settings and transformations
+ * @module servers/gateway/config/gateway-config
  */
-class ConfigManager {
-    constructor() {
-        this.config = {};
-        this.environment = process.env.NODE_ENV || 'development';
-        this.configPath = path.join(__dirname, 'environments');
-        this.schemas = this.defineSchemas();
-    }
 
+/**
+ * Gateway configuration module provides gateway-specific settings,
+ * service definitions, and configuration transformations.
+ */
+const gatewayConfig = {
     /**
-     * Define configuration schemas for validation
+     * Default gateway settings
      */
-    defineSchemas() {
-        return {
-            server: Joi.object({
-                port: Joi.number().integer().min(1).max(65535).default(3000),
-                host: Joi.string().hostname().default('0.0.0.0'),
-                timeout: Joi.number().integer().min(1000).default(120000),
-                keepAliveTimeout: Joi.number().integer().min(1000).default(65000),
-                headersTimeout: Joi.number().integer().min(1000).default(66000),
-                bodyLimit: Joi.string().default('10mb'),
-                trustProxy: Joi.boolean().default(true)
-            }),
+    defaults: {
+        // API versioning configuration
+        versioning: {
+            enabled: true,
+            type: 'header', // 'header', 'path', 'query'
+            header: 'X-API-Version',
+            defaultVersion: 'v1',
+            supportedVersions: ['v1', 'v2']
+        },
 
-            services: Joi.object({
-                adminServer: Joi.object({
-                    url: Joi.string().uri().required(),
-                    healthPath: Joi.string().default('/health'),
-                    timeout: Joi.number().integer().default(30000),
-                    retries: Joi.number().integer().default(3),
-                    weight: Joi.number().integer().default(1)
-                }),
-                customerServices: Joi.object({
-                    url: Joi.string().uri().required(),
-                    healthPath: Joi.string().default('/health'),
-                    timeout: Joi.number().integer().default(30000),
-                    retries: Joi.number().integer().default(3),
-                    weight: Joi.number().integer().default(1)
-                }),
-                discovery: Joi.object({
-                    enabled: Joi.boolean().default(false),
-                    type: Joi.string().valid('consul', 'etcd', 'static').default('static'),
-                    refreshInterval: Joi.number().integer().default(30000),
-                    consul: Joi.object({
-                        host: Joi.string().hostname(),
-                        port: Joi.number().integer(),
-                        secure: Joi.boolean().default(false)
-                    }).optional(),
-                    etcd: Joi.object({
-                        hosts: Joi.array().items(Joi.string()),
-                        credentials: Joi.object().optional()
-                    }).optional()
-                })
-            }),
-
-            routing: Joi.object({
-                rules: Joi.array().items(
-                    Joi.object({
-                        name: Joi.string().required(),
-                        path: Joi.string().required(),
-                        target: Joi.string().required(),
-                        methods: Joi.array().items(Joi.string()).default(['*']),
-                        rewrite: Joi.boolean().default(false),
-                        stripPath: Joi.boolean().default(false),
-                        preserveHostHeader: Joi.boolean().default(true),
-                        loadBalancing: Joi.string().valid('round-robin', 'least-connections', 'random').default('round-robin')
-                    })
-                ),
-                defaultTarget: Joi.string().default('customer-services')
-            }),
-
-            security: Joi.object({
-                helmet: Joi.object({
-                    contentSecurityPolicy: Joi.alternatives().try(Joi.boolean(), Joi.object()).default(false),
-                    hsts: Joi.object({
-                        maxAge: Joi.number().default(31536000),
-                        includeSubDomains: Joi.boolean().default(true),
-                        preload: Joi.boolean().default(true)
-                    }).default()
-                }).default(),
-                cors: Joi.object({
-                    origin: Joi.alternatives().try(
-                        Joi.boolean(),
-                        Joi.string(),
-                        Joi.array().items(Joi.string()),
-                        Joi.function()
-                    ).default(true),
-                    credentials: Joi.boolean().default(true),
-                    methods: Joi.array().items(Joi.string()).default(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']),
-                    allowedHeaders: Joi.array().items(Joi.string()).default(['Content-Type', 'Authorization']),
-                    exposedHeaders: Joi.array().items(Joi.string()).default(['X-Request-ID']),
-                    maxAge: Joi.number().default(86400)
-                }).default(),
-                ipWhitelist: Joi.object({
-                    enabled: Joi.boolean().default(false),
-                    ips: Joi.array().items(Joi.string()),
-                    checkHeader: Joi.string().default('X-Forwarded-For')
-                }),
-                cookieSecret: Joi.string().default('change-this-secret-in-production')
-            }),
-
-            authentication: Joi.object({
-                enabled: Joi.boolean().default(true),
-                jwt: Joi.object({
-                    secret: Joi.string().required(),
-                    publicKey: Joi.string().optional(),
-                    algorithm: Joi.string().default('HS256'),
-                    expiresIn: Joi.string().default('1h'),
-                    refreshExpiresIn: Joi.string().default('7d'),
-                    issuer: Joi.string().default('insightserenity'),
-                    audience: Joi.string().default('api-gateway')
-                }),
-                excludePaths: Joi.array().items(Joi.string()).default([
-                    '/health',
-                    '/metrics',
-                    '/docs'
-                ]),
-                sessionStore: Joi.object({
-                    type: Joi.string().valid('memory', 'redis').default('redis'),
-                    prefix: Joi.string().default('sess:'),
-                    ttl: Joi.number().default(3600)
-                })
-            }),
-
-            rateLimit: Joi.object({
-                enabled: Joi.boolean().default(true),
-                global: Joi.object({
-                    windowMs: Joi.number().default(60000),
-                    max: Joi.number().default(100),
-                    message: Joi.string().default('Too many requests'),
-                    standardHeaders: Joi.boolean().default(true),
-                    legacyHeaders: Joi.boolean().default(false)
-                }),
-                endpoints: Joi.array().items(
-                    Joi.object({
-                        path: Joi.string().required(),
-                        windowMs: Joi.number().required(),
-                        max: Joi.number().required()
-                    })
-                ),
-                store: Joi.object({
-                    type: Joi.string().valid('memory', 'redis').default('redis'),
-                    prefix: Joi.string().default('rl:'),
-                    client: Joi.any().optional()
-                })
-            }),
-
-            cache: Joi.object({
-                enabled: Joi.boolean().default(true),
-                redis: Joi.object({
-                    host: Joi.string().default('localhost'),
-                    port: Joi.number().default(6379),
-                    password: Joi.string().optional(),
-                    db: Joi.number().default(0),
-                    keyPrefix: Joi.string().default('gateway:'),
-                    retryStrategy: Joi.function().optional()
-                }),
-                ttl: Joi.object({
-                    default: Joi.number().default(300),
-                    api: Joi.number().default(60),
-                    static: Joi.number().default(3600)
-                }),
-                endpoints: Joi.array().items(
-                    Joi.object({
-                        path: Joi.string().required(),
-                        ttl: Joi.number().required(),
-                        key: Joi.function().optional()
-                    })
-                )
-            }),
-
-            circuitBreaker: Joi.object({
-                enabled: Joi.boolean().default(true),
-                timeout: Joi.number().default(30000),
-                errorThresholdPercentage: Joi.number().default(50),
-                resetTimeout: Joi.number().default(30000),
-                rollingCountTimeout: Joi.number().default(10000),
-                rollingCountBuckets: Joi.number().default(10),
-                volumeThreshold: Joi.number().default(20),
-                halfOpenRequests: Joi.number().default(3)
-            }),
-
-            multiTenant: Joi.object({
-                enabled: Joi.boolean().default(true),
-                strategy: Joi.string().valid('subdomain', 'header', 'path').default('subdomain'),
-                headerName: Joi.string().default('X-Tenant-ID'),
-                defaultTenant: Joi.string().default('default'),
-                validation: Joi.object({
-                    enabled: Joi.boolean().default(true),
-                    cache: Joi.boolean().default(true),
-                    cacheTtl: Joi.number().default(300)
-                })
-            }),
-
-            tracing: Joi.object({
-                enabled: Joi.boolean().default(true),
-                serviceName: Joi.string().default('api-gateway'),
-                endpoint: Joi.string().default('http://localhost:4318/v1/traces'),
-                samplingRate: Joi.number().min(0).max(1).default(1),
-                propagators: Joi.array().items(Joi.string()).default(['tracecontext', 'baggage']),
-                exportIntervalMillis: Joi.number().default(5000),
-                exportTimeoutMillis: Joi.number().default(10000)
-            }),
-
-            metrics: Joi.object({
-                enabled: Joi.boolean().default(true),
-                port: Joi.number().default(9090),
-                path: Joi.string().default('/metrics'),
-                defaultLabels: Joi.object().default({}),
-                buckets: Joi.array().items(Joi.number()).default([0.003, 0.03, 0.1, 0.3, 1.5, 10])
-            }),
-
-            logging: Joi.object({
-                level: Joi.string().valid('error', 'warn', 'info', 'debug', 'trace').default('info'),
-                format: Joi.string().valid('json', 'simple', 'combined').default('json'),
-                console: Joi.boolean().default(true),
-                file: Joi.object({
-                    enabled: Joi.boolean().default(false),
-                    filename: Joi.string().default('gateway.log'),
-                    maxSize: Joi.string().default('20m'),
-                    maxFiles: Joi.number().default(5),
-                    compress: Joi.boolean().default(true)
-                }),
-                excludePaths: Joi.array().items(Joi.string()).default(['/health', '/metrics'])
-            }),
-
-            websocket: Joi.object({
-                enabled: Joi.boolean().default(true),
-                path: Joi.string().default('/ws'),
-                perMessageDeflate: Joi.boolean().default(true),
-                clientTracking: Joi.boolean().default(true),
-                maxPayload: Joi.number().default(100 * 1024 * 1024)
-            }),
-
-            documentation: Joi.object({
-                enabled: Joi.boolean().default(true),
-                path: Joi.string().default('/docs'),
-                requireAuth: Joi.boolean().default(false),
-                swagger: Joi.object({
-                    title: Joi.string().default('InsightSerenity API Gateway'),
-                    version: Joi.string().default('1.0.0'),
-                    description: Joi.string().default('Enterprise API Gateway Documentation'),
-                    basePath: Joi.string().default('/'),
-                    schemes: Joi.array().items(Joi.string()).default(['https', 'http'])
-                })
-            }),
-
-            admin: Joi.object({
-                enabled: Joi.boolean().default(true),
-                path: Joi.string().default('/admin'),
-                username: Joi.string().default('admin'),
-                password: Joi.string().required()
-            }),
-
-            healthCheck: Joi.object({
-                interval: Joi.number().default(30000),
-                timeout: Joi.number().default(5000),
-                unhealthyThreshold: Joi.number().default(2),
-                healthyThreshold: Joi.number().default(3)
-            }),
-
-            compression: Joi.object({
-                enabled: Joi.boolean().default(true),
-                level: Joi.number().min(0).max(9).default(6),
-                threshold: Joi.string().default('1kb'),
-                filter: Joi.function().optional()
-            }),
-
-            transformation: Joi.object({
-                request: Joi.object({
-                    enabled: Joi.boolean().default(true),
-                    headers: Joi.object({
-                        add: Joi.object().default({}),
-                        remove: Joi.array().items(Joi.string()).default([]),
-                        modify: Joi.object().default({})
-                    }),
-                    body: Joi.object({
-                        enabled: Joi.boolean().default(false),
-                        transformations: Joi.array().items(Joi.object())
-                    })
-                }),
-                response: Joi.object({
-                    enabled: Joi.boolean().default(true),
-                    headers: Joi.object({
-                        add: Joi.object().default({}),
-                        remove: Joi.array().items(Joi.string()).default([]),
-                        modify: Joi.object().default({})
-                    }),
-                    body: Joi.object({
-                        enabled: Joi.boolean().default(false),
-                        transformations: Joi.array().items(Joi.object())
-                    })
-                })
-            }),
-
-            validation: Joi.object({
-                enabled: Joi.boolean().default(true),
-                request: Joi.object({
-                    headers: Joi.boolean().default(true),
-                    body: Joi.boolean().default(true),
-                    query: Joi.boolean().default(true),
-                    params: Joi.boolean().default(true)
-                }),
-                schemas: Joi.object().default({})
-            }),
-
-            errorHandling: Joi.object({
-                exposeErrors: Joi.boolean().default(false),
-                includeStack: Joi.boolean().default(false),
-                customHandlers: Joi.object().default({})
-            })
-        };
-    }
-
-    /**
-     * Load configuration from files and environment
-     */
-    async load() {
-        try {
-            // Load base configuration
-            const baseConfig = await this.loadConfigFile('base.config.js');
-            
-            // Load environment-specific configuration
-            const envConfig = await this.loadConfigFile(`${this.environment}.config.js`);
-            
-            // Merge configurations
-            this.config = _.merge({}, baseConfig, envConfig);
-            
-            // Override with environment variables
-            this.applyEnvironmentVariables();
-            
-            // Validate configuration
-            await this.validate();
-            
-            // Process dynamic values
-            this.processDynamicValues();
-            
-            return this.config;
-        } catch (error) {
-            throw new Error(`Failed to load configuration: ${error.message}`);
-        }
-    }
-
-    /**
-     * Load a configuration file
-     */
-    async loadConfigFile(filename) {
-        const filepath = path.join(this.configPath, filename);
-        
-        try {
-            await fs.access(filepath);
-            const config = require(filepath);
-            return typeof config === 'function' ? config() : config;
-        } catch (error) {
-            if (error.code === 'ENOENT') {
-                console.warn(`Configuration file not found: ${filename}`);
-                return {};
+        // Request/Response transformation
+        transformation: {
+            requestHeaders: {
+                add: {
+                    'X-Gateway-Version': '1.0.0',
+                    'X-Gateway-Timestamp': () => new Date().toISOString()
+                },
+                remove: ['X-Internal-Debug', 'X-Test-Mode'],
+                modify: {
+                    'User-Agent': (value) => `${value} (Gateway/1.0)`
+                }
+            },
+            responseHeaders: {
+                add: {
+                    'X-Powered-By': 'InsightSerenity Gateway',
+                    'X-Response-Time': (req, res) => `${Date.now() - req.startTime}ms`
+                },
+                remove: ['Server', 'X-AspNet-Version'],
+                security: {
+                    'X-Content-Type-Options': 'nosniff',
+                    'X-Frame-Options': 'DENY',
+                    'X-XSS-Protection': '1; mode=block',
+                    'Referrer-Policy': 'strict-origin-when-cross-origin'
+                }
             }
-            throw error;
-        }
-    }
+        },
 
-    /**
-     * Apply environment variable overrides
-     */
-    applyEnvironmentVariables() {
-        const envMappings = {
-            'GATEWAY_PORT': 'server.port',
-            'GATEWAY_HOST': 'server.host',
-            'ADMIN_SERVER_URL': 'services.adminServer.url',
-            'CUSTOMER_SERVICES_URL': 'services.customerServices.url',
-            'JWT_SECRET': 'authentication.jwt.secret',
-            'JWT_PUBLIC_KEY': 'authentication.jwt.publicKey',
-            'REDIS_HOST': 'cache.redis.host',
-            'REDIS_PORT': 'cache.redis.port',
-            'REDIS_PASSWORD': 'cache.redis.password',
-            'LOG_LEVEL': 'logging.level',
-            'TRACING_ENABLED': 'tracing.enabled',
-            'TRACING_ENDPOINT': 'tracing.endpoint',
-            'METRICS_ENABLED': 'metrics.enabled',
-            'RATE_LIMIT_ENABLED': 'rateLimit.enabled',
-            'CIRCUIT_BREAKER_ENABLED': 'circuitBreaker.enabled',
-            'MULTI_TENANT_ENABLED': 'multiTenant.enabled',
-            'ADMIN_PASSWORD': 'admin.password'
-        };
+        // Load balancing configuration
+        loadBalancing: {
+            algorithm: 'round-robin', // 'round-robin', 'least-connections', 'ip-hash', 'weighted'
+            healthCheck: {
+                enabled: true,
+                path: '/health',
+                interval: 10000,
+                timeout: 5000,
+                unhealthyThreshold: 3,
+                healthyThreshold: 2
+            },
+            stickySession: {
+                enabled: false,
+                cookieName: 'gateway-session',
+                ttl: 3600000
+            }
+        },
 
-        for (const [envVar, configPath] of Object.entries(envMappings)) {
-            const value = process.env[envVar];
-            if (value !== undefined) {
-                _.set(this.config, configPath, this.parseEnvValue(value));
+        // WebSocket configuration
+        websocket: {
+            enabled: true,
+            path: '/ws',
+            pingInterval: 30000,
+            pongTimeout: 10000,
+            maxPayload: 1048576, // 1MB
+            perMessageDeflate: {
+                zlibDeflateOptions: {
+                    chunkSize: 1024,
+                    memLevel: 7,
+                    level: 3
+                },
+                zlibInflateOptions: {
+                    chunkSize: 10 * 1024
+                },
+                threshold: 1024
+            }
+        },
+
+        // Request validation
+        validation: {
+            enabled: true,
+            strictMode: false,
+            schemas: {
+                maxDepth: 10,
+                maxProperties: 100,
+                maxItems: 1000
+            },
+            sanitization: {
+                enabled: true,
+                removeEmpty: false,
+                trimStrings: true,
+                convertTypes: true
+            }
+        },
+
+        // Error handling configuration
+        errorHandling: {
+            exposeStack: false,
+            includeRequestId: true,
+            customMessages: {
+                400: 'Invalid request',
+                401: 'Authentication required',
+                403: 'Access denied',
+                404: 'Resource not found',
+                429: 'Too many requests',
+                500: 'Internal server error',
+                502: 'Service temporarily unavailable',
+                503: 'Service unavailable',
+                504: 'Gateway timeout'
+            },
+            retryableErrors: [502, 503, 504],
+            retryConfig: {
+                retries: 3,
+                factor: 2,
+                minTimeout: 1000,
+                maxTimeout: 60000,
+                randomize: true
+            }
+        },
+
+        // Logging configuration
+        requestLogging: {
+            enabled: true,
+            excludePaths: ['/health', '/metrics', '/favicon.ico'],
+            excludeHeaders: ['authorization', 'cookie', 'x-api-key'],
+            excludeBody: ['password', 'secret', 'token', 'creditCard'],
+            maxBodyLength: 10000,
+            slowRequestThreshold: 5000
+        },
+
+        // Service mesh integration
+        serviceMesh: {
+            enabled: false,
+            type: 'istio', // 'istio', 'linkerd', 'consul'
+            sidecarPort: 15001,
+            ingressPort: 15006,
+            adminPort: 15000,
+            tracing: {
+                enabled: true,
+                samplingRate: 0.1
             }
         }
-    }
+    },
 
     /**
-     * Parse environment variable value
+     * Service-specific configurations
      */
-    parseEnvValue(value) {
-        // Boolean
-        if (value.toLowerCase() === 'true') return true;
-        if (value.toLowerCase() === 'false') return false;
-        
-        // Number
-        if (!isNaN(value) && !isNaN(parseFloat(value))) {
-            return parseFloat(value);
+    services: {
+        'admin-server': {
+            displayName: 'Admin Server',
+            description: 'Platform administration and management services',
+            endpoints: [
+                {
+                    path: '/users',
+                    method: 'GET',
+                    summary: 'List all users',
+                    description: 'Retrieve a paginated list of platform users',
+                    rateLimit: { windowMs: 60000, max: 100 },
+                    cache: { ttl: 300 }
+                },
+                {
+                    path: '/organizations',
+                    method: 'GET',
+                    summary: 'List organizations',
+                    description: 'Retrieve all organizations',
+                    rateLimit: { windowMs: 60000, max: 100 },
+                    cache: { ttl: 600 }
+                },
+                {
+                    path: '/system/config',
+                    method: 'GET',
+                    summary: 'Get system configuration',
+                    description: 'Retrieve system configuration',
+                    rateLimit: { windowMs: 60000, max: 50 },
+                    cache: { ttl: 1800 }
+                }
+            ],
+            middleware: ['auth', 'admin-only', 'audit-log'],
+            timeout: 30000,
+            retries: 2,
+            circuitBreaker: {
+                timeout: 10000,
+                errorThreshold: 50,
+                resetTimeout: 30000
+            }
+        },
+        'customer-services': {
+            displayName: 'Customer Services',
+            description: 'Customer-facing business services',
+            endpoints: [
+                {
+                    path: '/clients',
+                    method: 'GET',
+                    summary: 'List clients',
+                    description: 'Retrieve client list for the tenant',
+                    rateLimit: { windowMs: 60000, max: 200 },
+                    cache: { ttl: 300, vary: ['X-Tenant-ID'] }
+                },
+                {
+                    path: '/projects',
+                    method: 'GET',
+                    summary: 'List projects',
+                    description: 'Retrieve project list',
+                    rateLimit: { windowMs: 60000, max: 200 },
+                    cache: { ttl: 300, vary: ['X-Tenant-ID'] }
+                },
+                {
+                    path: '/consultants',
+                    method: 'GET',
+                    summary: 'List consultants',
+                    description: 'Retrieve consultant list',
+                    rateLimit: { windowMs: 60000, max: 200 },
+                    cache: { ttl: 600, vary: ['X-Tenant-ID'] }
+                }
+            ],
+            middleware: ['auth', 'tenant-context', 'subscription-check'],
+            timeout: 30000,
+            retries: 3,
+            supportsWebSocket: true,
+            webSocketPaths: ['/realtime', '/notifications'],
+            circuitBreaker: {
+                timeout: 10000,
+                errorThreshold: 50,
+                resetTimeout: 30000
+            }
         }
-        
-        // JSON
-        try {
-            return JSON.parse(value);
-        } catch {
-            return value;
-        }
-    }
+    },
 
     /**
-     * Validate configuration against schemas
+     * Apply gateway-specific transformations to configuration
+     * @param {Object} config - Configuration object to transform
      */
-    async validate() {
-        const errors = [];
-        
-        for (const [section, schema] of Object.entries(this.schemas)) {
-            const { error, value } = schema.validate(this.config[section] || {}, {
-                abortEarly: false,
-                allowUnknown: true
+    applyTransformations(config) {
+        // Merge default gateway settings
+        config.gateway = {
+            ...this.defaults,
+            ...(config.gateway || {})
+        };
+
+        // Enhance service configurations
+        if (config.services && config.services.registry) {
+            config.services.registry = config.services.registry.map(service => {
+                const serviceDefaults = this.services[service.name];
+                if (serviceDefaults) {
+                    return {
+                        ...serviceDefaults,
+                        ...service,
+                        endpoints: serviceDefaults.endpoints || service.endpoints,
+                        middleware: serviceDefaults.middleware || service.middleware
+                    };
+                }
+                return service;
             });
-            
-            if (error) {
-                errors.push(...error.details.map(detail => ({
-                    section,
-                    path: detail.path.join('.'),
-                    message: detail.message
-                })));
-            } else {
-                this.config[section] = value;
-            }
         }
-        
-        if (errors.length > 0) {
-            const errorMessage = errors.map(e => 
-                `${e.section}.${e.path}: ${e.message}`
-            ).join('\n');
-            throw new Error(`Configuration validation failed:\n${errorMessage}`);
-        }
-    }
+
+        // Add computed values
+        this.addComputedValues(config);
+
+        // Validate gateway configuration
+        this.validateGatewayConfig(config);
+    },
 
     /**
-     * Process dynamic values in configuration
+     * Add computed configuration values
+     * @param {Object} config - Configuration object
      */
-    processDynamicValues() {
-        // Add dynamic routing rules based on services
-        if (!this.config.routing || !this.config.routing.rules) {
-            this.config.routing = {
-                rules: [
-                    {
-                        name: 'admin-routes',
-                        path: '/api/admin',
-                        target: 'admin-server',
-                        stripPath: false
-                    },
-                    {
-                        name: 'customer-routes',
-                        path: '/api',
-                        target: 'customer-services',
-                        stripPath: false
-                    }
-                ],
-                defaultTarget: 'customer-services'
+    addComputedValues(config) {
+        // Calculate optimal worker count
+        const os = require('os');
+        config.gateway.workers = config.gateway.workers || {
+            count: process.env.GATEWAY_WORKERS || os.cpus().length,
+            maxMemory: process.env.WORKER_MAX_MEMORY || '1G',
+            restartOnError: true,
+            gracefulShutdownTimeout: 30000
+        };
+
+        // Set environment-specific values
+        if (config.environment === 'production') {
+            config.gateway.errorHandling.exposeStack = false;
+            config.gateway.requestLogging.excludeBody = [...config.gateway.requestLogging.excludeBody, 'data'];
+            config.gateway.validation.strictMode = true;
+        } else if (config.environment === 'development') {
+            config.gateway.errorHandling.exposeStack = true;
+            config.gateway.requestLogging.maxBodyLength = 50000;
+        }
+
+        // Configure service discovery based on environment
+        if (config.services.discovery.type === 'kubernetes' && process.env.KUBERNETES_SERVICE_HOST) {
+            config.services.discovery.kubernetes = {
+                namespace: process.env.KUBERNETES_NAMESPACE || 'default',
+                labelSelector: 'app=insightserenity',
+                port: 8080
             };
         }
-        
-        // Set default labels for metrics
-        this.config.metrics.defaultLabels = {
-            ...this.config.metrics.defaultLabels,
-            service: 'api-gateway',
-            environment: this.environment,
-            version: require('../package.json').version
-        };
-    }
+
+        // Add default retry configuration for all services
+        config.services.registry.forEach(service => {
+            if (!service.retry) {
+                service.retry = config.gateway.errorHandling.retryConfig;
+            }
+        });
+    },
 
     /**
-     * Get configuration value by path
+     * Validate gateway-specific configuration
+     * @param {Object} config - Configuration to validate
+     * @throws {Error} If configuration is invalid
      */
-    get(path, defaultValue) {
-        return _.get(this.config, path, defaultValue);
-    }
+    validateGatewayConfig(config) {
+        // Validate load balancing algorithm
+        const validAlgorithms = ['round-robin', 'least-connections', 'ip-hash', 'weighted'];
+        if (!validAlgorithms.includes(config.gateway.loadBalancing.algorithm)) {
+            throw new Error(`Invalid load balancing algorithm: ${config.gateway.loadBalancing.algorithm}`);
+        }
 
-    /**
-     * Set configuration value by path
-     */
-    set(path, value) {
-        _.set(this.config, path, value);
-    }
-
-    /**
-     * Get entire configuration
-     */
-    getAll() {
-        return _.cloneDeep(this.config);
-    }
-
-    /**
-     * Reload configuration
-     */
-    async reload() {
-        await this.load();
-    }
-
-    /**
-     * Export configuration for debugging
-     */
-    export() {
-        const safeConfig = _.cloneDeep(this.config);
-        
-        // Remove sensitive values
-        const sensitiveKeys = [
-            'authentication.jwt.secret',
-            'authentication.jwt.publicKey',
-            'cache.redis.password',
-            'admin.password',
-            'security.cookieSecret'
-        ];
-        
-        for (const key of sensitiveKeys) {
-            const value = _.get(safeConfig, key);
-            if (value) {
-                _.set(safeConfig, key, '[REDACTED]');
+        // Validate API versioning
+        if (config.gateway.versioning.enabled) {
+            const validTypes = ['header', 'path', 'query'];
+            if (!validTypes.includes(config.gateway.versioning.type)) {
+                throw new Error(`Invalid versioning type: ${config.gateway.versioning.type}`);
             }
         }
-        
-        return safeConfig;
-    }
-}
 
-module.exports = { ConfigManager };
+        // Validate WebSocket configuration
+        if (config.gateway.websocket.enabled) {
+            if (config.gateway.websocket.maxPayload > 104857600) { // 100MB
+                throw new Error('WebSocket max payload exceeds 100MB limit');
+            }
+        }
+
+        // Validate service configurations
+        config.services.registry.forEach(service => {
+            if (service.timeout < 1000) {
+                throw new Error(`Service ${service.name} timeout is too low: ${service.timeout}ms`);
+            }
+            if (service.retries > 10) {
+                throw new Error(`Service ${service.name} retry count is too high: ${service.retries}`);
+            }
+        });
+    },
+
+    /**
+     * Get service-specific configuration
+     * @param {string} serviceName - Name of the service
+     * @returns {Object} Service configuration
+     */
+    getServiceConfig(serviceName) {
+        return this.services[serviceName] || {};
+    },
+
+    /**
+     * Get default headers for transformation
+     * @returns {Object} Default headers configuration
+     */
+    getDefaultHeaders() {
+        return {
+            request: this.defaults.transformation.requestHeaders,
+            response: this.defaults.transformation.responseHeaders
+        };
+    },
+
+    /**
+     * Get retry configuration for a specific error code
+     * @param {number} statusCode - HTTP status code
+     * @returns {Object|null} Retry configuration or null if not retryable
+     */
+    getRetryConfig(statusCode) {
+        if (this.defaults.errorHandling.retryableErrors.includes(statusCode)) {
+            return this.defaults.errorHandling.retryConfig;
+        }
+        return null;
+    }
+};
+
+module.exports = gatewayConfig;
