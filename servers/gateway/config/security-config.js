@@ -14,6 +14,22 @@ const fs = require('fs');
 const path = require('path');
 
 /**
+ * Helper function to load cryptographic key from file
+ * @param {string} filePath - Path to the key file
+ * @returns {string|null} Key content or null if file doesn't exist
+ */
+const loadKeyFromFile = (filePath) => {
+    try {
+        if (fs.existsSync(filePath)) {
+            return fs.readFileSync(filePath, 'utf8');
+        }
+    } catch (error) {
+        console.warn(`Failed to load key from ${filePath}:`, error.message);
+    }
+    return null;
+};
+
+/**
  * Security configuration module providing comprehensive security policies, authentication rules,
  * authorization mechanisms, threat protection, and security enforcement for enterprise-grade
  * API gateway operations.
@@ -30,9 +46,9 @@ const securityConfig = {
             jwt: {
                 // FIXED: Properly load JWT secret from environment with fallback
                 secret: process.env.JWT_SECRET || process.env.JWT_PRIVATE_KEY || 'insightserenity-development-secret-change-in-production',
-                publicKey: process.env.JWT_PUBLIC_KEY || (process.env.JWT_PUBLIC_KEY_PATH ? this.loadKeyFromFile(process.env.JWT_PUBLIC_KEY_PATH) : null),
-                privateKey: process.env.JWT_PRIVATE_KEY || (process.env.JWT_PRIVATE_KEY_PATH ? this.loadKeyFromFile(process.env.JWT_PRIVATE_KEY_PATH) : null),
-                algorithms: (process.env.JWT_ALGORITHM || 'HS256').split(','),
+                publicKey: process.env.JWT_PUBLIC_KEY || (process.env.JWT_PUBLIC_KEY_PATH ? loadKeyFromFile(process.env.JWT_PUBLIC_KEY_PATH) : null),
+                privateKey: process.env.JWT_PRIVATE_KEY || (process.env.JWT_PRIVATE_KEY_PATH ? loadKeyFromFile(process.env.JWT_PRIVATE_KEY_PATH) : null),
+                algorithms: (process.env.JWT_ALGORITHM || 'RS256').split(','),
                 audience: process.env.JWT_AUDIENCE || 'insightserenity-api',
                 issuer: process.env.JWT_ISSUER || 'insightserenity',
                 clockTolerance: parseInt(process.env.JWT_CLOCK_TOLERANCE, 10) || 30,
@@ -510,19 +526,78 @@ const securityConfig = {
     },
 
     /**
-     * Load cryptographic key from file
+     * Load cryptographic key from file (wrapper for backward compatibility)
      * @param {string} filePath - Path to the key file
      * @returns {string|null} Key content or null if file doesn't exist
      */
     loadKeyFromFile(filePath) {
-        try {
-            if (fs.existsSync(filePath)) {
-                return fs.readFileSync(filePath, 'utf8');
-            }
-        } catch (error) {
-            console.warn(`Failed to load key from ${filePath}:`, error.message);
-        }
-        return null;
+        return loadKeyFromFile(filePath);
+    },
+
+    /**
+     * Initialize security configuration structure with safe defaults
+     * @param {Object} config - Configuration object
+     */
+    initializeSecurityStructure(config) {
+        // Initialize base security configuration
+        config.security = config.security || {};
+        
+        // Initialize authentication configuration and all nested objects
+        config.security.authentication = config.security.authentication || {};
+        config.security.authentication.jwt = config.security.authentication.jwt || {};
+        config.security.authentication.sessionManagement = config.security.authentication.sessionManagement || {};
+        config.security.authentication.apiKey = config.security.authentication.apiKey || {};
+        config.security.authentication.oauth2 = config.security.authentication.oauth2 || {};
+        
+        // Initialize authorization configuration and all nested objects
+        config.security.authorization = config.security.authorization || {};
+        config.security.authorization.rbac = config.security.authorization.rbac || {};
+        config.security.authorization.abac = config.security.authorization.abac || {};
+        
+        // Initialize rate limiting configuration
+        config.security.rateLimiting = config.security.rateLimiting || {};
+        
+        // Initialize IP filtering configuration and all nested objects
+        config.security.ipFiltering = config.security.ipFiltering || {};
+        config.security.ipFiltering.cloudflare = config.security.ipFiltering.cloudflare || {};
+        config.security.ipFiltering.geoBlocking = config.security.ipFiltering.geoBlocking || {};
+        
+        // Initialize headers configuration
+        config.security.headers = config.security.headers || {};
+        
+        // Initialize CORS configuration
+        config.security.cors = config.security.cors || {};
+        
+        // Initialize validation configuration and all nested objects
+        config.security.validation = config.security.validation || {};
+        config.security.validation.bodySize = config.security.validation.bodySize || {};
+        config.security.validation.parameterPollution = config.security.validation.parameterPollution || {};
+        config.security.validation.sqlInjection = config.security.validation.sqlInjection || {};
+        config.security.validation.xss = config.security.validation.xss || {};
+        config.security.validation.pathTraversal = config.security.validation.pathTraversal || {};
+        
+        // Initialize DDoS protection configuration and all nested objects
+        config.security.ddosProtection = config.security.ddosProtection || {};
+        config.security.ddosProtection.cloudflare = config.security.ddosProtection.cloudflare || {};
+        config.security.ddosProtection.autoBlock = config.security.ddosProtection.autoBlock || {};
+        config.security.ddosProtection.slowloris = config.security.ddosProtection.slowloris || {};
+        
+        // Initialize API key management configuration and all nested objects
+        config.security.apiKeyManagement = config.security.apiKeyManagement || {};
+        config.security.apiKeyManagement.rotation = config.security.apiKeyManagement.rotation || {};
+        config.security.apiKeyManagement.scopes = config.security.apiKeyManagement.scopes || {};
+        config.security.apiKeyManagement.validation = config.security.apiKeyManagement.validation || {};
+        
+        // Initialize audit logging configuration and all nested objects
+        config.security.auditLogging = config.security.auditLogging || {};
+        config.security.auditLogging.storage = config.security.auditLogging.storage || {};
+        
+        // Initialize threat detection configuration and all nested objects
+        config.security.threatDetection = config.security.threatDetection || {};
+        config.security.threatDetection.bruteForce = config.security.threatDetection.bruteForce || {};
+        config.security.threatDetection.anomalyDetection = config.security.threatDetection.anomalyDetection || {};
+        config.security.threatDetection.anomalyDetection.ml = config.security.threatDetection.anomalyDetection.ml || {};
+        config.security.threatDetection.botDetection = config.security.threatDetection.botDetection || {};
     },
 
     /**
@@ -534,8 +609,8 @@ const securityConfig = {
         try {
             console.log('Applying security configuration transformations...');
             
-            // Initialize security configuration with safe defaults
-            config.security = config.security || {};
+            // FIXED: Initialize security configuration structure FIRST
+            this.initializeSecurityStructure(config);
 
             // Merge security policies with environment-specific overrides
             config.security = {
@@ -588,19 +663,19 @@ const securityConfig = {
 
         jwtConfig.publicKey = jwtConfig.publicKey || 
                              process.env.JWT_PUBLIC_KEY || 
-                             (process.env.JWT_PUBLIC_KEY_PATH ? this.loadKeyFromFile(process.env.JWT_PUBLIC_KEY_PATH) : null) ||
+                             (process.env.JWT_PUBLIC_KEY_PATH ? loadKeyFromFile(process.env.JWT_PUBLIC_KEY_PATH) : null) ||
                              config.auth?.jwt?.publicKey;
 
         jwtConfig.privateKey = jwtConfig.privateKey || 
                               process.env.JWT_PRIVATE_KEY || 
-                              (process.env.JWT_PRIVATE_KEY_PATH ? this.loadKeyFromFile(process.env.JWT_PRIVATE_KEY_PATH) : null) ||
+                              (process.env.JWT_PRIVATE_KEY_PATH ? loadKeyFromFile(process.env.JWT_PRIVATE_KEY_PATH) : null) ||
                               config.auth?.jwt?.privateKey;
 
         // Map other JWT properties
         jwtConfig.algorithms = jwtConfig.algorithms || 
-                              (process.env.JWT_ALGORITHM || 'HS256').split(',') ||
+                              (process.env.JWT_ALGORITHM || 'RS256').split(',') ||
                               config.auth?.jwt?.algorithms ||
-                              ['HS256'];
+                              ['RS256'];
 
         jwtConfig.audience = jwtConfig.audience || 
                             process.env.JWT_AUDIENCE || 
@@ -640,14 +715,30 @@ const securityConfig = {
 
         if (environment === 'production') {
             // Enforce strict security in production
-            config.security.authentication.required = true;
-            config.security.authorization.enabled = true;
-            config.security.rateLimiting.enabled = true;
-            config.security.validation.enabled = true;
-            config.security.ddosProtection.enabled = true;
-            config.security.auditLogging.enabled = true;
-            config.security.threatDetection.enabled = true;
-            config.security.headers['Strict-Transport-Security'] = 'max-age=63072000; includeSubDomains; preload';
+            if (config.security.authentication) {
+                config.security.authentication.required = true;
+            }
+            if (config.security.authorization) {
+                config.security.authorization.enabled = true;
+            }
+            if (config.security.rateLimiting) {
+                config.security.rateLimiting.enabled = true;
+            }
+            if (config.security.validation) {
+                config.security.validation.enabled = true;
+            }
+            if (config.security.ddosProtection) {
+                config.security.ddosProtection.enabled = true;
+            }
+            if (config.security.auditLogging) {
+                config.security.auditLogging.enabled = true;
+            }
+            if (config.security.threatDetection) {
+                config.security.threatDetection.enabled = true;
+            }
+            if (config.security.headers) {
+                config.security.headers['Strict-Transport-Security'] = 'max-age=63072000; includeSubDomains; preload';
+            }
             
             // Disable stack traces in production
             config.security.errorHandling = {
@@ -657,17 +748,29 @@ const securityConfig = {
             };
             
             // Validate production-specific requirements
-            if (config.security.authentication.jwt.secret === 'insightserenity-development-secret-change-in-production') {
+            if (config.security.authentication && 
+                config.security.authentication.jwt && 
+                config.security.authentication.jwt.secret === 'insightserenity-development-secret-change-in-production') {
                 console.warn('WARNING: Using development JWT secret in production environment!');
             }
             
         } else if (environment === 'development') {
             // Relax some security settings for development
-            config.security.ipFiltering.enabled = false;
-            config.security.cors.origin = true; // Allow all origins in development
-            config.security.validation.sqlInjection.enabled = false;
-            config.security.ddosProtection.enabled = false;
-            config.security.threatDetection.botDetection.enabled = false;
+            if (config.security.ipFiltering) {
+                config.security.ipFiltering.enabled = false;
+            }
+            if (config.security.cors) {
+                config.security.cors.origin = true; // Allow all origins in development
+            }
+            if (config.security.validation && config.security.validation.sqlInjection) {
+                config.security.validation.sqlInjection.enabled = false;
+            }
+            if (config.security.ddosProtection) {
+                config.security.ddosProtection.enabled = false;
+            }
+            if (config.security.threatDetection && config.security.threatDetection.botDetection) {
+                config.security.threatDetection.botDetection.enabled = false;
+            }
             
             // Enable detailed error information
             config.security.errorHandling = {
@@ -678,10 +781,18 @@ const securityConfig = {
             
         } else if (environment === 'test') {
             // Test environment settings
-            config.security.rateLimiting.enabled = false;
-            config.security.auditLogging.enabled = false;
-            config.security.ddosProtection.enabled = false;
-            config.security.threatDetection.enabled = false;
+            if (config.security.rateLimiting) {
+                config.security.rateLimiting.enabled = false;
+            }
+            if (config.security.auditLogging) {
+                config.security.auditLogging.enabled = false;
+            }
+            if (config.security.ddosProtection) {
+                config.security.ddosProtection.enabled = false;
+            }
+            if (config.security.threatDetection) {
+                config.security.threatDetection.enabled = false;
+            }
             
             config.security.errorHandling = {
                 exposeStack: true,
@@ -694,7 +805,7 @@ const securityConfig = {
     },
 
     /**
-     * Enhanced security configuration validation
+     * Enhanced security configuration validation with defensive checks
      * @param {Object} config - Configuration to validate
      * @throws {Error} If configuration is invalid
      */
@@ -703,10 +814,25 @@ const securityConfig = {
         
         const errors = [];
 
-        // FIXED: Enhanced JWT validation with better error messages
-        if (config.security.authentication.jwt.enabled !== false) {
-            const jwtConfig = config.security.authentication.jwt;
-            
+        // Ensure security configuration structure exists
+        if (!config.security) {
+            errors.push('Security configuration is missing');
+            throw new Error(`Security configuration validation failed:\n${errors.join('\n')}`);
+        }
+
+        // Ensure authentication configuration exists
+        if (!config.security.authentication) {
+            config.security.authentication = {};
+        }
+
+        // Ensure JWT configuration exists
+        if (!config.security.authentication.jwt) {
+            config.security.authentication.jwt = {};
+        }
+
+        // FIXED: Enhanced JWT validation with better error messages and defensive checks
+        const jwtConfig = config.security.authentication.jwt;
+        if (jwtConfig.enabled !== false) {
             if (!jwtConfig.secret && !jwtConfig.publicKey) {
                 errors.push('JWT authentication requires either a secret key or public key to be configured. Please set JWT_SECRET environment variable or provide JWT_PUBLIC_KEY.');
             }
@@ -731,8 +857,8 @@ const securityConfig = {
             }
         }
 
-        // Validate rate limiting configuration
-        if (config.security.rateLimiting.enabled) {
+        // Validate rate limiting configuration with defensive checks
+        if (config.security.rateLimiting && config.security.rateLimiting.enabled) {
             if (!config.security.rateLimiting.storage) {
                 errors.push('Rate limiting requires storage configuration (memory or redis)');
             }
@@ -744,15 +870,20 @@ const securityConfig = {
             }
         }
 
-        // Validate CORS configuration
-        if (config.security.cors.enabled) {
+        // Validate CORS configuration with defensive checks
+        if (config.security.cors && config.security.cors.enabled) {
             if (!config.security.cors.origin && config.environment === 'production') {
                 errors.push('CORS origin must be explicitly configured in production environment');
             }
         }
 
-        // Validate audit logging configuration
-        if (config.security.auditLogging.enabled) {
+        // Validate audit logging configuration with defensive checks
+        if (config.security.auditLogging && config.security.auditLogging.enabled) {
+            // Ensure storage configuration exists
+            if (!config.security.auditLogging.storage) {
+                config.security.auditLogging.storage = {};
+            }
+            
             if (!config.security.auditLogging.storage.type) {
                 errors.push('Audit logging requires storage type configuration');
             }
@@ -764,8 +895,8 @@ const securityConfig = {
             }
         }
 
-        // Validate session configuration
-        if (config.security.authentication.sessionManagement.enabled) {
+        // Validate session configuration with defensive checks
+        if (config.security.authentication.sessionManagement && config.security.authentication.sessionManagement.enabled) {
             if (!config.security.authentication.sessionManagement.secret) {
                 errors.push('Session management requires a secret key');
             }

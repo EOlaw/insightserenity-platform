@@ -1,16 +1,18 @@
 'use strict';
 
 /**
- * @fileoverview Cache Manager Service - Enterprise-grade caching with Redis and in-memory fallback
+ * @fileoverview Cache Manager Service - Enhanced with Redis fallback and error handling
  * @module servers/gateway/services/cache-manager
- * @version 3.0.0
+ * @version 3.1.0
  * @requires ioredis
  * @requires events
  * @requires crypto
+ * @requires net
  */
 
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
+const net = require('net');
 const { promisify } = require('util');
 
 // Enhanced LRU Cache Implementation with Version Compatibility
@@ -241,16 +243,14 @@ try {
 }
 
 /**
- * Enterprise-grade Cache Manager with comprehensive caching strategies
- * Supports Redis clustering, memory caching, write-through, write-behind,
- * refresh-ahead patterns, and circuit breaker protection
+ * Enhanced Cache Manager with comprehensive Redis fallback and error handling
  * 
  * @class CacheManager
  * @extends EventEmitter
  */
 class CacheManager extends EventEmitter {
     /**
-     * Creates an instance of CacheManager with enterprise configuration
+     * Creates an instance of CacheManager with enhanced configuration
      * @constructor
      * @param {Object} config - Comprehensive cache configuration
      */
@@ -267,6 +267,11 @@ class CacheManager extends EventEmitter {
         this.redisSubClient = null;
         this.memoryCache = null;
         this.multiTierCache = null;
+        
+        // Redis availability state
+        this.redisAvailable = false;
+        this.redisLastCheck = 0;
+        this.redisCheckInterval = 30000; // 30 seconds
         
         // Performance and monitoring metrics
         this.metrics = {
@@ -289,7 +294,7 @@ class CacheManager extends EventEmitter {
         this.warmupFunctions = new Map();
         this.invalidationSubscriptions = new Set();
         
-        // Circuit breaker for Redis resilience
+        // Enhanced circuit breaker for Redis resilience
         this.circuitBreaker = {
             state: 'closed', // 'closed', 'open', 'half-open'
             failures: 0,
@@ -304,7 +309,8 @@ class CacheManager extends EventEmitter {
             writeBehind: null,
             cleanup: null,
             monitoring: null,
-            healthCheck: null
+            healthCheck: null,
+            redisAvailabilityCheck: null
         };
         
         // Key management
@@ -312,6 +318,99 @@ class CacheManager extends EventEmitter {
         this.maxKeyLength = config.maxKeyLength || 250;
         
         console.log(`Cache Manager initialized with ${this.implementationType} implementation`);
+        
+        // Setup global error handlers for Redis operations
+        this.setupGlobalErrorHandlers();
+    }
+
+    /**
+     * Setup global error handlers to prevent unhandled promise rejections
+     * @private
+     */
+    setupGlobalErrorHandlers() {
+        // Handle Redis-specific unhandled rejections
+        process.removeAllListeners('unhandledRejection');
+        process.on('unhandledRejection', (reason, promise) => {
+            if (reason && typeof reason === 'object') {
+                // Check if this is a Redis connection error
+                if (reason.message && reason.message.includes('ECONNREFUSED') && 
+                    reason.message.includes('6379')) {
+                    console.warn('Redis connection error handled gracefully:', reason.message);
+                    this.handleRedisConnectionFailure(reason);
+                    return;
+                }
+                
+                // Check if this is a MaxRetriesPerRequestError
+                if (reason.name === 'MaxRetriesPerRequestError' || 
+                    reason.message.includes('max retries per request')) {
+                    console.warn('Redis max retries error handled:', reason.message);
+                    this.handleRedisError(reason);
+                    return;
+                }
+            }
+            
+            // Log other unhandled rejections
+            console.error('Unhandled Rejection:', reason);
+        });
+    }
+
+    /**
+     * Check Redis availability with timeout
+     * @private
+     * @returns {Promise<boolean>} Redis availability status
+     */
+    async checkRedisAvailability() {
+        // Skip if Redis is explicitly disabled
+        if (this.cacheConfig.redis.enabled === false) {
+            return false;
+        }
+        
+        // Skip if Redis package is not available
+        if (!Redis) {
+            return false;
+        }
+        
+        // Use cached result if recent
+        const now = Date.now();
+        if (now - this.redisLastCheck < this.redisCheckInterval && this.redisLastCheck > 0) {
+            return this.redisAvailable;
+        }
+        
+        return new Promise((resolve) => {
+            const socket = new net.Socket();
+            let resolved = false;
+            
+            const timeout = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    socket.destroy();
+                    this.redisAvailable = false;
+                    this.redisLastCheck = now;
+                    resolve(false);
+                }
+            }, 2000);
+            
+            socket.connect(this.cacheConfig.redis.port, this.cacheConfig.redis.host, () => {
+                if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeout);
+                    socket.destroy();
+                    this.redisAvailable = true;
+                    this.redisLastCheck = now;
+                    resolve(true);
+                }
+            });
+            
+            socket.on('error', () => {
+                if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeout);
+                    this.redisAvailable = false;
+                    this.redisLastCheck = now;
+                    resolve(false);
+                }
+            });
+        });
     }
 
     /**
@@ -330,11 +429,12 @@ class CacheManager extends EventEmitter {
                 db: config.redis?.db || process.env.REDIS_DB || 0,
                 keyPrefix: config.redis?.keyPrefix || process.env.REDIS_KEY_PREFIX || 'gateway:',
                 ttl: config.redis?.ttl || 3600,
-                maxRetriesPerRequest: config.redis?.maxRetriesPerRequest || 3,
+                maxRetriesPerRequest: config.redis?.maxRetriesPerRequest || 1,
                 retryDelayOnFailover: config.redis?.retryDelayOnFailover || 100,
-                enableOfflineQueue: config.redis?.enableOfflineQueue !== false,
-                lazyConnect: config.redis?.lazyConnect !== false,
+                enableOfflineQueue: false,
+                lazyConnect: true,
                 keepAlive: config.redis?.keepAlive || 30000,
+                connectTimeout: 5000,
                 ...config.redis
             },
             memory: {
@@ -364,7 +464,7 @@ class CacheManager extends EventEmitter {
             },
             circuitBreaker: {
                 enabled: config.circuitBreaker?.enabled !== false,
-                threshold: config.circuitBreaker?.threshold || 5,
+                threshold: config.circuitBreaker?.threshold || 3,
                 timeout: config.circuitBreaker?.timeout || 30000,
                 halfOpenMaxCalls: config.circuitBreaker?.halfOpenMaxCalls || 3
             },
@@ -402,11 +502,15 @@ class CacheManager extends EventEmitter {
             // Initialize memory cache as primary fallback
             await this.initializeMemoryCache();
             
+            // Check Redis availability before attempting connection
+            const redisAvailable = await this.checkRedisAvailability();
+            
             // Initialize Redis if enabled and available
-            if (this.cacheConfig.redis.enabled && Redis) {
+            if (this.cacheConfig.redis.enabled && Redis && redisAvailable) {
                 await this.initializeRedis();
             } else {
                 console.log('Redis disabled or unavailable, operating in memory-only mode');
+                this.cacheConfig.redis.enabled = false;
             }
             
             // Setup multi-tier caching if cache-manager is available
@@ -418,6 +522,11 @@ class CacheManager extends EventEmitter {
             this.setupInvalidationSystem();
             this.startMonitoringSystem();
             this.startMaintenanceServices();
+            
+            // Start periodic Redis availability checking in development
+            if (process.env.NODE_ENV === 'development') {
+                this.startRedisAvailabilityMonitoring();
+            }
             
             // Perform cache warmup if configured
             if (this.config.warmup) {
@@ -437,6 +546,27 @@ class CacheManager extends EventEmitter {
             console.error('Failed to connect Cache Manager:', error);
             await this.handleConnectionError(error);
         }
+    }
+
+    /**
+     * Start Redis availability monitoring for development
+     * @private
+     */
+    startRedisAvailabilityMonitoring() {
+        this.intervals.redisAvailabilityCheck = setInterval(async () => {
+            if (!this.redisClient) {
+                const available = await this.checkRedisAvailability();
+                if (available && this.cacheConfig.redis.enabled !== false) {
+                    console.log('Redis became available, attempting to reconnect...');
+                    try {
+                        await this.initializeRedis();
+                        this.emit('redis:reconnected');
+                    } catch (error) {
+                        console.warn('Redis reconnection failed:', error.message);
+                    }
+                }
+            }
+        }, 30000); // Check every 30 seconds
     }
 
     /**
@@ -489,7 +619,7 @@ class CacheManager extends EventEmitter {
     }
 
     /**
-     * Initializes Redis connection with clustering and error handling
+     * Initializes Redis connection with enhanced error handling
      * @private
      * @async
      */
@@ -503,43 +633,65 @@ class CacheManager extends EventEmitter {
                 );
                 console.log('Redis cluster client initialized');
             } else {
-                // Single Redis instance
+                // Single Redis instance with enhanced error handling
                 this.redisClient = new Redis({
                     ...this.cacheConfig.redis,
                     retryDelayOnFailover: this.cacheConfig.redis.retryDelayOnFailover,
-                    enableOfflineQueue: this.cacheConfig.redis.enableOfflineQueue,
-                    lazyConnect: this.cacheConfig.redis.lazyConnect
+                    enableOfflineQueue: false,
+                    lazyConnect: true,
+                    maxRetriesPerRequest: 1
                 });
                 console.log('Redis single-instance client initialized');
             }
             
-            // Setup comprehensive Redis event handling
+            // Setup comprehensive Redis event handling with error suppression
             this.setupRedisEventHandlers(this.redisClient);
             
-            // Create dedicated pub/sub clients for cache invalidation
-            this.redisPubClient = this.redisClient.duplicate();
-            this.redisSubClient = this.redisClient.duplicate();
-            
-            // Verify connection
-            const pong = await this.redisClient.ping();
-            if (pong !== 'PONG') {
-                throw new Error('Redis ping failed');
+            // Create dedicated pub/sub clients for cache invalidation if Redis is connected
+            try {
+                this.redisPubClient = this.redisClient.duplicate();
+                this.redisSubClient = this.redisClient.duplicate();
+                
+                // Setup error handlers for pub/sub clients
+                this.setupRedisEventHandlers(this.redisPubClient);
+                this.setupRedisEventHandlers(this.redisSubClient);
+            } catch (error) {
+                console.warn('Pub/sub clients creation failed:', error.message);
             }
             
-            console.log('Redis connection established and verified');
+            // Verify connection with timeout
+            try {
+                const pong = await Promise.race([
+                    this.redisClient.ping(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Ping timeout')), 5000))
+                ]);
+                
+                if (pong !== 'PONG') {
+                    throw new Error('Redis ping failed');
+                }
+                
+                console.log('Redis connection established and verified');
+            } catch (error) {
+                console.warn('Redis ping verification failed:', error.message);
+                throw error;
+            }
             
         } catch (error) {
             console.error('Redis initialization failed:', error);
             this.handleRedisConnectionFailure(error);
+            throw error;
         }
     }
 
     /**
-     * Sets up comprehensive Redis event handlers
+     * Sets up comprehensive Redis event handlers with error suppression
      * @private
      * @param {Object} client - Redis client instance
      */
     setupRedisEventHandlers(client) {
+        // Remove all existing listeners to prevent accumulation
+        client.removeAllListeners();
+        
         client.on('connect', () => {
             console.log('Redis client connected');
             this.resetCircuitBreaker();
@@ -552,7 +704,7 @@ class CacheManager extends EventEmitter {
         });
         
         client.on('error', (error) => {
-            console.error('Redis error:', error);
+            console.warn('Redis client error (handled):', error.message);
             this.metrics.redis.errors++;
             this.handleRedisError(error);
         });
@@ -574,34 +726,60 @@ class CacheManager extends EventEmitter {
     }
 
     /**
-     * Initializes multi-tier cache with cache-manager
+     * Initializes multi-tier cache with enhanced compatibility
      * @private
      */
     initializeMultiTierCache() {
-        if (!cacheManager) return;
+        if (!cacheManager) {
+            console.log('cache-manager not available, skipping multi-tier cache');
+            return;
+        }
 
         try {
             const stores = [];
             
-            // L1: Memory cache
-            stores.push(cacheManager.caching({
-                store: 'memory',
-                max: this.cacheConfig.memory.max,
-                ttl: this.cacheConfig.memory.ttl
-            }));
+            // Check cache-manager version compatibility
+            const createMemoryStore = cacheManager.memoryStore || cacheManager.caching;
+            
+            if (typeof createMemoryStore === 'function') {
+                // Try newer cache-manager version first
+                try {
+                    stores.push(createMemoryStore({
+                        store: 'memory',
+                        max: this.cacheConfig.memory.max,
+                        ttl: this.cacheConfig.memory.ttl
+                    }));
+                } catch (error) {
+                    console.warn('New cache-manager API failed, trying legacy API');
+                    // Fallback to legacy API
+                    if (cacheManager.caching) {
+                        stores.push(cacheManager.caching({
+                            store: 'memory',
+                            max: this.cacheConfig.memory.max,
+                            ttl: this.cacheConfig.memory.ttl
+                        }));
+                    }
+                }
+            }
             
             // L2: Redis cache (if available and circuit breaker is closed)
             if (this.redisClient && this.circuitBreaker.state === 'closed' && redisStore) {
-                stores.push(cacheManager.caching({
-                    store: redisStore,
-                    redisInstance: this.redisClient,
-                    ttl: this.cacheConfig.redis.ttl
-                }));
+                try {
+                    stores.push(cacheManager.caching({
+                        store: redisStore,
+                        redisInstance: this.redisClient,
+                        ttl: this.cacheConfig.redis.ttl
+                    }));
+                } catch (error) {
+                    console.warn('Redis store initialization failed:', error.message);
+                }
             }
             
             if (stores.length > 1) {
                 this.multiTierCache = cacheManager.multiCaching(stores);
                 console.log('Multi-tier cache initialized with', stores.length, 'stores');
+            } else if (stores.length === 1) {
+                console.log('Single-tier cache initialized (memory only)');
             }
             
         } catch (error) {
@@ -632,16 +810,21 @@ class CacheManager extends EventEmitter {
             
             // L2: Redis cache (if available and circuit breaker allows)
             if (this.shouldUseRedis() && !options.skipRedis) {
-                value = await this.getFromRedis(normalizedKey);
-                if (value !== null && value !== undefined) {
-                    // Populate L1 cache if write-through is enabled
-                    if (this.cacheConfig.strategies.writeThrough) {
-                        this.setInMemory(normalizedKey, value, options.ttl);
+                try {
+                    value = await this.getFromRedis(normalizedKey);
+                    if (value !== null && value !== undefined) {
+                        // Populate L1 cache if write-through is enabled
+                        if (this.cacheConfig.strategies.writeThrough) {
+                            this.setInMemory(normalizedKey, value, options.ttl);
+                        }
+                        
+                        this.updateGetMetrics(startTime, 'redis');
+                        this.emit('cache:hit', { key: normalizedKey, source: 'redis' });
+                        return this.deserializeValue(value);
                     }
-                    
-                    this.updateGetMetrics(startTime, 'redis');
-                    this.emit('cache:hit', { key: normalizedKey, source: 'redis' });
-                    return this.deserializeValue(value);
+                } catch (error) {
+                    console.warn('Redis get operation failed, falling back to memory:', error.message);
+                    this.handleRedisError(error);
                 }
             }
             
@@ -688,10 +871,16 @@ class CacheManager extends EventEmitter {
             
             // Handle Redis operations based on strategy
             if (this.shouldUseRedis()) {
-                if (this.cacheConfig.strategies.writeBehind) {
-                    this.queueWriteBehind(normalizedKey, serializedValue, finalTTL);
-                } else if (this.cacheConfig.strategies.writeThrough || !this.cacheConfig.strategies.cacheAside) {
-                    await this.setInRedis(normalizedKey, serializedValue, finalTTL);
+                try {
+                    if (this.cacheConfig.strategies.writeBehind) {
+                        this.queueWriteBehind(normalizedKey, serializedValue, finalTTL);
+                    } else if (this.cacheConfig.strategies.writeThrough || !this.cacheConfig.strategies.cacheAside) {
+                        await this.setInRedis(normalizedKey, serializedValue, finalTTL);
+                    }
+                } catch (error) {
+                    console.warn('Redis set operation failed:', error.message);
+                    this.handleRedisError(error);
+                    // Continue with memory cache only
                 }
             }
             
@@ -765,7 +954,13 @@ class CacheManager extends EventEmitter {
      */
     async getFromRedis(key) {
         try {
-            const value = await this.redisClient.get(key);
+            const value = await Promise.race([
+                this.redisClient.get(key),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Redis get timeout')), 5000)
+                )
+            ]);
+            
             if (value !== null) {
                 this.metrics.redis.hits++;
                 this.recordCircuitBreakerSuccess();
@@ -775,7 +970,7 @@ class CacheManager extends EventEmitter {
             return null;
         } catch (error) {
             this.handleRedisError(error);
-            return null;
+            throw error;
         }
     }
 
@@ -789,11 +984,17 @@ class CacheManager extends EventEmitter {
      */
     async setInRedis(key, value, ttl) {
         try {
-            if (ttl && ttl > 0) {
-                await this.redisClient.setex(key, ttl, value);
-            } else {
-                await this.redisClient.set(key, value);
-            }
+            const operation = ttl && ttl > 0 
+                ? this.redisClient.setex(key, ttl, value)
+                : this.redisClient.set(key, value);
+                
+            await Promise.race([
+                operation,
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Redis set timeout')), 5000)
+                )
+            ]);
+            
             this.recordCircuitBreakerSuccess();
         } catch (error) {
             this.handleRedisError(error);
@@ -1368,7 +1569,12 @@ class CacheManager extends EventEmitter {
             // Redis health
             if (this.redisClient && this.shouldUseRedis()) {
                 try {
-                    const pong = await this.redisClient.ping();
+                    const pong = await Promise.race([
+                        this.redisClient.ping(),
+                        new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error('Ping timeout')), 5000)
+                        )
+                    ]);
                     health.components.redis.status = pong === 'PONG' ? 'healthy' : 'unhealthy';
                 } catch (error) {
                     health.components.redis.status = 'unhealthy';
@@ -1440,7 +1646,7 @@ class CacheManager extends EventEmitter {
      * @param {Error} error - Connection error
      */
     handleRedisConnectionFailure(error) {
-        console.error('Redis connection failed, activating circuit breaker:', error);
+        console.warn('Redis connection failed, activating circuit breaker:', error.message);
         this.openCircuitBreaker();
         this.emit('redis:connection-failed', error);
     }
@@ -1480,7 +1686,8 @@ class CacheManager extends EventEmitter {
                 circuitBreakerState: this.circuitBreaker.state,
                 writeBehindQueueSize: this.writeBehindQueue.length,
                 refreshAheadJobs: this.refreshAheadJobs.size,
-                redisConnected: !!this.redisClient && this.shouldUseRedis()
+                redisConnected: !!this.redisClient && this.shouldUseRedis(),
+                redisAvailable: this.redisAvailable
             },
             configuration: {
                 redis: this.cacheConfig.redis.enabled,

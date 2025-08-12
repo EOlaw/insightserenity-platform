@@ -1261,4 +1261,150 @@ class ShutdownHandler extends EventEmitter {
     }
 }
 
+// Global shutdown handler instance for module-level graceful shutdown
+let globalShutdownHandler = null;
+let globalShutdownRegistered = false;
+
+/**
+ * Creates and configures a graceful shutdown handler for the application
+ * @param {Object} config - Shutdown configuration
+ * @param {Object} logger - Logger instance
+ * @returns {Object} Shutdown management interface
+ */
+function gracefulShutdown(config = {}, logger = console) {
+    // Create shutdown handler if not exists
+    if (!globalShutdownHandler) {
+        globalShutdownHandler = new ShutdownHandler(config, logger);
+        
+        // Register global signal handlers once
+        if (!globalShutdownRegistered) {
+            const signals = ['SIGTERM', 'SIGINT', 'SIGUSR2'];
+            
+            signals.forEach(signal => {
+                process.on(signal, async () => {
+                    logger.info(`Received ${signal} signal - initiating graceful shutdown`);
+                    try {
+                        await globalShutdownHandler.shutdown(`signal:${signal}`);
+                        process.exit(0);
+                    } catch (error) {
+                        logger.error('Graceful shutdown failed:', error);
+                        process.exit(1);
+                    }
+                });
+            });
+            
+            globalShutdownRegistered = true;
+        }
+    }
+    
+    // Return interface for managing shutdown
+    return {
+        /**
+         * Register a server for graceful shutdown
+         * @param {string} name - Server name
+         * @param {Object} server - Server instance
+         */
+        registerServer: (name, server) => {
+            globalShutdownHandler.registerServer(name, server);
+        },
+        
+        /**
+         * Register a service for graceful shutdown
+         * @param {string} name - Service name
+         * @param {Object} service - Service instance
+         * @param {Array} dependencies - Service dependencies
+         */
+        registerService: (name, service, dependencies = []) => {
+            globalShutdownHandler.registerService(name, service, dependencies);
+        },
+        
+        /**
+         * Register a database connection for graceful shutdown
+         * @param {string} name - Database name
+         * @param {Object} connection - Database connection
+         */
+        registerDatabase: (name, connection) => {
+            globalShutdownHandler.registerDatabase(name, connection);
+        },
+        
+        /**
+         * Register a message queue for graceful shutdown
+         * @param {string} name - Queue name
+         * @param {Object} queue - Queue instance
+         */
+        registerQueue: (name, queue) => {
+            globalShutdownHandler.registerQueue(name, queue);
+        },
+        
+        /**
+         * Register a timer for cleanup
+         * @param {string} name - Timer name
+         * @param {Object} timer - Timer reference
+         */
+        registerTimer: (name, timer) => {
+            return globalShutdownHandler.registerTimer(name, timer);
+        },
+        
+        /**
+         * Register an interval for cleanup
+         * @param {string} name - Interval name
+         * @param {Object} interval - Interval reference
+         */
+        registerInterval: (name, interval) => {
+            return globalShutdownHandler.registerInterval(name, interval);
+        },
+        
+        /**
+         * Register a cleanup handler
+         * @param {Function} handler - Cleanup function
+         * @param {Object} options - Handler options
+         */
+        registerCleanupHandler: (handler, options = {}) => {
+            return globalShutdownHandler.registerCleanupHandler(handler, options);
+        },
+        
+        /**
+         * Register an emergency handler
+         * @param {Function} handler - Emergency handler function
+         */
+        registerEmergencyHandler: (handler) => {
+            globalShutdownHandler.registerEmergencyHandler(handler);
+        },
+        
+        /**
+         * Manually trigger graceful shutdown
+         * @param {string} reason - Shutdown reason
+         * @param {Object} options - Shutdown options
+         */
+        shutdown: (reason = 'manual', options = {}) => {
+            return globalShutdownHandler.shutdown(reason, options);
+        },
+        
+        /**
+         * Get shutdown metrics
+         * @returns {Object} Shutdown metrics
+         */
+        getMetrics: () => {
+            return globalShutdownHandler.getMetrics();
+        },
+        
+        /**
+         * Check if shutdown is in progress
+         * @returns {boolean} Shutdown status
+         */
+        isShuttingDown: () => {
+            return globalShutdownHandler.isShuttingDown;
+        },
+        
+        /**
+         * Get the shutdown handler instance for advanced usage
+         * @returns {ShutdownHandler} Shutdown handler instance
+         */
+        getHandler: () => {
+            return globalShutdownHandler;
+        }
+    };
+}
+
 module.exports = ShutdownHandler;
+module.exports.gracefulShutdown = gracefulShutdown;

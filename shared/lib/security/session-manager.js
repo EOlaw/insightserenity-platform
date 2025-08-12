@@ -239,7 +239,7 @@ class SessionManager {
           refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || customConfig?.jwt?.refreshExpiresIn || '7d',
           issuer: process.env.JWT_ISSUER || customConfig?.jwt?.issuer || 'insightserenity-platform',
           audience: process.env.JWT_AUDIENCE || customConfig?.jwt?.audience || 'insightserenity-users',
-          algorithm: process.env.JWT_ALGORITHM || customConfig?.jwt?.algorithm || 'HS256'
+          algorithm: process.env.JWT_ALGORITHM || customConfig?.jwt?.algorithm || 'RS256'
         },
         cache: {
           enabled: process.env.REDIS_ENABLED === 'true' || customConfig?.cache?.enabled === true,

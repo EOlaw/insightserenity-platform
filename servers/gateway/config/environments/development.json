@@ -6,11 +6,11 @@
     "protocol": "http",
     "cluster": {
       "enabled": false,
-      "workers": 2
+      "workers": 1
     },
     "cors": {
       "enabled": true,
-      "origins": ["http://localhost:3000", "http://localhost:3001", "http://localhost:4200"],
+      "origins": ["http://localhost:3000", "http://localhost:3001", "http://localhost:4001", "http://localhost:4002"],
       "credentials": true,
       "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
       "allowedHeaders": ["Content-Type", "Authorization", "X-Requested-With", "X-Tenant-ID", "X-API-Key"],
@@ -52,32 +52,33 @@
       "provider": "static",
       "refreshInterval": 30000
     },
-    "registry": {
-      "adminServer": {
-        "url": "http://localhost:3001",
+    "registry": [
+      {
+        "name": "admin-server",
+        "url": "http://localhost:4001",
+        "path": "/admin",
         "healthPath": "/health",
         "weight": 1,
         "version": "v1",
         "timeout": 30000,
-        "retries": 3
+        "retries": 3,
+        "requiresAuth": true,
+        "autoRoute": false
       },
-      "customerServices": {
-        "url": "http://localhost:3002",
+      {
+        "name": "customer-services",
+        "url": "http://localhost:4002",
+        "path": "/services",
         "healthPath": "/health",
         "weight": 1,
         "version": "v1",
         "timeout": 30000,
-        "retries": 3
-      },
-      "authService": {
-        "url": "http://localhost:3003",
-        "healthPath": "/health",
-        "weight": 1,
-        "version": "v1",
-        "timeout": 30000,
-        "retries": 3
+        "retries": 3,
+        "requiresAuth": true,
+        "autoRoute": false,
+        "supportsWebSocket": true
       }
-    }
+    ]
   },
   "routing": {
     "defaultAlgorithm": "round-robin",
@@ -87,49 +88,7 @@
       "cookieName": "SERVERID",
       "timeout": 3600000
     },
-    "rules": [
-      {
-        "path": "/api/admin/*",
-        "target": "adminServer",
-        "methods": ["GET", "POST", "PUT", "DELETE"],
-        "authentication": true,
-        "authorization": ["admin", "super-admin"],
-        "rateLimit": {
-          "requests": 100,
-          "window": 60000
-        }
-      },
-      {
-        "path": "/api/services/*",
-        "target": "customerServices",
-        "methods": ["GET", "POST", "PUT", "DELETE"],
-        "authentication": true,
-        "rateLimit": {
-          "requests": 200,
-          "window": 60000
-        }
-      },
-      {
-        "path": "/api/auth/*",
-        "target": "authService",
-        "methods": ["POST"],
-        "authentication": false,
-        "rateLimit": {
-          "requests": 10,
-          "window": 60000
-        }
-      },
-      {
-        "path": "/api/public/*",
-        "target": "customerServices",
-        "methods": ["GET"],
-        "authentication": false,
-        "cache": {
-          "enabled": true,
-          "ttl": 300000
-        }
-      }
-    ]
+    "rules": []
   },
   "security": {
     "enabled": true,
@@ -138,18 +97,23 @@
       "contentSecurityPolicy": false,
       "crossOriginEmbedderPolicy": false
     },
-    "jwt": {
-      "secret": "dev-secret-key-change-in-production",
-      "issuer": "insightserenity-dev",
-      "audience": "insightserenity-api",
-      "expiresIn": "24h",
-      "refreshExpiresIn": "7d",
-      "algorithm": "HS256"
-    },
-    "apiKey": {
-      "enabled": true,
-      "header": "X-API-Key",
-      "prefix": "Bearer"
+    "authentication": {
+      "required": true,
+      "jwt": {
+        "enabled": true,
+        "secret": "829a6a55aaec80f9d4b7f01b0d94643df6184853915e661d3c28f612e53dec424cbeba3df14b9de2ee6dd5d6f60d436e9c9eb59204a6852cf8e8ab2b4bfc532a",
+        "algorithms": ["RS256"],
+        "issuer": "insightserenity",
+        "audience": "insightserenity-api",
+        "expiresIn": "24h",
+        "refreshExpiresIn": "7d",
+        "clockTolerance": 30
+      },
+      "apiKey": {
+        "enabled": true,
+        "header": "X-API-Key",
+        "query": "api_key"
+      }
     },
     "encryption": {
       "algorithm": "aes-256-gcm",
@@ -164,6 +128,9 @@
     "trustProxy": true,
     "ipWhitelist": [],
     "ipBlacklist": [],
+    "ipFiltering": {
+      "enabled": false
+    },
     "securityHeaders": {
       "enabled": true,
       "xFrameOptions": "DENY",
@@ -184,11 +151,11 @@
     },
     "api": {
       "windowMs": 60000,
-      "max": 100
+      "max": 500
     },
     "auth": {
       "windowMs": 300000,
-      "max": 5
+      "max": 10
     },
     "skipSuccessfulRequests": false,
     "skipFailedRequests": false,
@@ -202,23 +169,39 @@
     "maxSize": 104857600,
     "checkPeriod": 60000,
     "redis": {
+      "enabled": false,
       "host": "localhost",
       "port": 6379,
       "password": "",
       "db": 0,
       "keyPrefix": "gateway:dev:",
-      "enableOfflineQueue": true,
-      "connectTimeout": 10000,
-      "maxRetriesPerRequest": 3
+      "enableOfflineQueue": false,
+      "connectTimeout": 5000,
+      "maxRetriesPerRequest": 1,
+      "lazyConnect": true
+    },
+    "memory": {
+      "max": 1000,
+      "ttl": 300,
+      "updateAgeOnGet": true
     },
     "strategies": {
       "default": "cache-first",
       "api": "network-first",
-      "static": "cache-only"
+      "static": "cache-only",
+      "writeThrough": true,
+      "writeBehind": false,
+      "refreshAhead": false
     },
     "compression": {
-      "enabled": true,
+      "enabled": false,
       "threshold": 1024
+    },
+    "circuitBreaker": {
+      "enabled": true,
+      "threshold": 3,
+      "timeout": 30000,
+      "halfOpenMaxCalls": 3
     }
   },
   "monitoring": {
@@ -234,8 +217,8 @@
       "interval": 30000,
       "timeout": 5000,
       "indicators": {
-        "database": true,
-        "redis": true,
+        "database": false,
+        "redis": false,
         "services": true,
         "disk": true,
         "memory": true
@@ -248,7 +231,7 @@
         "host": "localhost",
         "port": 6831,
         "samplingRate": 1.0,
-        "logSpans": true
+        "logSpans": false
       }
     },
     "logging": {
@@ -259,7 +242,7 @@
       "timestamp": true,
       "destination": "console",
       "file": {
-        "enabled": true,
+        "enabled": false,
         "path": "./logs/dev",
         "filename": "gateway-dev.log",
         "maxSize": "10m",
@@ -273,23 +256,7 @@
       }
     },
     "alerts": {
-      "enabled": false,
-      "channels": {
-        "email": {
-          "enabled": false,
-          "smtp": {
-            "host": "localhost",
-            "port": 1025,
-            "secure": false
-          },
-          "from": "alerts@insightserenity.dev",
-          "to": ["admin@insightserenity.dev"]
-        },
-        "slack": {
-          "enabled": false,
-          "webhookUrl": ""
-        }
-      }
+      "enabled": false
     }
   },
   "database": {
@@ -298,8 +265,8 @@
       "options": {
         "useNewUrlParser": true,
         "useUnifiedTopology": true,
-        "maxPoolSize": 10,
-        "minPoolSize": 2,
+        "maxPoolSize": 5,
+        "minPoolSize": 1,
         "maxIdleTimeMS": 10000,
         "serverSelectionTimeoutMS": 5000,
         "socketTimeoutMS": 45000,
@@ -311,6 +278,7 @@
     "enabled": false,
     "provider": "memory",
     "redis": {
+      "enabled": false,
       "host": "localhost",
       "port": 6379,
       "password": "",
@@ -372,7 +340,7 @@
       "cacheTTL": 300000
     },
     "isolation": {
-      "database": true,
+      "database": false,
       "cache": true,
       "queue": false
     }
@@ -390,15 +358,15 @@
   },
   "performance": {
     "clustering": false,
-    "workers": 2,
+    "workers": 1,
     "workerRestartDelay": 1000,
     "workerMaxRestarts": 10,
     "compression": true,
     "caching": true,
     "pooling": {
       "enabled": true,
-      "min": 2,
-      "max": 10,
+      "min": 1,
+      "max": 5,
       "idleTimeoutMillis": 30000
     }
   },

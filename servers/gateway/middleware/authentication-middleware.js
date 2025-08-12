@@ -195,7 +195,7 @@ class AuthenticationMiddleware {
     async verifyToken(token) {
         try {
             const options = {
-                algorithms: [this.jwtConfig.algorithm || 'HS256'],
+                algorithms: [this.jwtConfig.algorithm || 'RS256'],
                 issuer: this.jwtConfig.issuer,
                 audience: this.jwtConfig.audience
             };
@@ -410,7 +410,7 @@ class AuthenticationMiddleware {
                 tenantId: decoded.tenantId,
                 sessionId: decoded.sessionId
             }, this.secretKey, {
-                algorithm: this.jwtConfig.algorithm || 'HS256',
+                algorithm: this.jwtConfig.algorithm || 'RS256',
                 expiresIn: this.jwtConfig.expiresIn || '1h',
                 issuer: this.jwtConfig.issuer,
                 audience: this.jwtConfig.audience

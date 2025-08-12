@@ -282,7 +282,7 @@ class ProductionConfig {
         accessTokenExpiry: '15m',
         refreshTokenExpiry: '7d',
         rememberMeExpiry: '30d',
-        algorithm: 'HS256',
+        algorithm: 'RS256',
         issuer: 'insightserenity.com',
         audience: 'insightserenity-platform'
       },

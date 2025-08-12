@@ -62,21 +62,21 @@ class TokenService {
     accessToken: {
       secret: process.env.JWT_ACCESS_SECRET,
       expiresIn: '15m',
-      algorithm: 'HS256',
+      algorithm: 'RS256',
       issuer: 'insightserenity',
       audience: 'insightserenity-api'
     },
     refreshToken: {
       secret: process.env.JWT_REFRESH_SECRET,
       expiresIn: '7d',
-      algorithm: 'HS256',
+      algorithm: 'RS256',
       issuer: 'insightserenity',
       audience: 'insightserenity-api'
     },
     temporaryToken: {
       secret: process.env.JWT_TEMP_SECRET,
       expiresIn: '5m',
-      algorithm: 'HS256'
+      algorithm: 'RS256'
     },
     verificationToken: {
       length: 32,

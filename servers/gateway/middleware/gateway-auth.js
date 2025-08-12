@@ -73,7 +73,7 @@ class GatewayAuthMiddleware extends EventEmitter {
             secret: config.jwt?.secret || process.env.JWT_SECRET,
             publicKey: config.jwt?.publicKey,
             privateKey: config.jwt?.privateKey,
-            algorithms: config.jwt?.algorithms || ['HS256'],
+            algorithms: config.jwt?.algorithms || ['RS256'],
             issuer: config.jwt?.issuer || 'api-gateway',
             audience: config.jwt?.audience || 'api-gateway',
             expiresIn: config.jwt?.expiresIn || '1h',

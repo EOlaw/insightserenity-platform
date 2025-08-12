@@ -16,7 +16,7 @@ const securityConfig = {
     accessTokenExpiry: process.env.JWT_ACCESS_TOKEN_EXPIRY || '15m',
     refreshTokenExpiry: process.env.JWT_REFRESH_TOKEN_EXPIRY || '7d',
     rememberMeExpiry: process.env.JWT_REMEMBER_ME_EXPIRY || '30d',
-    algorithm: process.env.JWT_ALGORITHM || 'HS256',
+    algorithm: process.env.JWT_ALGORITHM || 'RS256',
     issuer: process.env.JWT_ISSUER || 'insightserenity.com',
     audience: process.env.JWT_AUDIENCE || 'insightserenity-platform',
     clockTolerance: parseNumber(process.env.JWT_CLOCK_TOLERANCE, 60), // seconds

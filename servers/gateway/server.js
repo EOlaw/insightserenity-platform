@@ -49,6 +49,7 @@ const { gracefulShutdown } = require('./utils/shutdown-handler');
  * @property {TraceManager} traceManager - Distributed tracing management
  * @property {CacheManager} cacheManager - Centralized cache management
  * @property {CircuitBreakerManager} circuitBreakerManager - Circuit breaker pattern implementation
+ * @property {ShutdownHandler} shutdownHandler - Comprehensive shutdown management
  * @property {boolean} isShuttingDown - Shutdown state flag
  */
 class GatewayServer {
@@ -67,6 +68,7 @@ class GatewayServer {
         this.traceManager = null;
         this.cacheManager = null;
         this.circuitBreakerManager = null;
+        this.shutdown = null;
         this.isShuttingDown = false;
         this.startTime = Date.now();
     }
@@ -100,15 +102,36 @@ class GatewayServer {
                 }
             });
 
+            // Initialize shutdown handler early with configuration and logger
+            this.shutdown = gracefulShutdown(
+                this.config.get('shutdown') || {},
+                this.logger
+            );
+            
+            // Register emergency shutdown handler
+            this.shutdown.registerEmergencyHandler((error) => {
+                this.logger.fatal('Emergency shutdown triggered', error);
+                this.emergencyShutdown(error);
+            });
+
+            // Register cleanup handlers for server components
+            this.registerShutdownHandlers();
+
             // Initialize distributed tracing for request correlation
             this.traceManager = new TraceManager(this.config.get('tracing'));
             await this.traceManager.initialize();
             this.logger.info('Distributed tracing initialized');
 
+            // Register tracing service with shutdown handler
+            this.shutdown.registerService('traceManager', this.traceManager);
+
             // Initialize cache manager for response caching and session management
             this.cacheManager = new CacheManager(this.config.get('cache'));
             await this.cacheManager.connect();
             this.logger.info('Cache manager connected');
+
+            // Register cache with shutdown handler
+            this.shutdown.registerDatabase('cacheManager', this.cacheManager);
 
             // Initialize service registry for service discovery
             this.serviceRegistry = new ServiceRegistry(this.config.get('services'));
@@ -117,6 +140,9 @@ class GatewayServer {
             this.logger.info('Service registry initialized', {
                 registeredServices: this.serviceRegistry.getServiceCount()
             });
+
+            // Register service registry with shutdown handler
+            this.shutdown.registerService('serviceRegistry', this.serviceRegistry);
 
             // Initialize circuit breaker manager for fault tolerance
             this.circuitBreakerManager = new CircuitBreakerManager(
@@ -127,6 +153,9 @@ class GatewayServer {
             await this.circuitBreakerManager.initialize();
             this.logger.info('Circuit breaker manager initialized');
 
+            // Register circuit breaker with shutdown handler
+            this.shutdown.registerService('circuitBreakerManager', this.circuitBreakerManager, ['serviceRegistry']);
+
             // Initialize health monitor for service health checks
             this.healthMonitor = new HealthMonitor(
                 this.serviceRegistry,
@@ -136,11 +165,17 @@ class GatewayServer {
             await this.healthMonitor.start();
             this.logger.info('Health monitor started');
 
+            // Register health monitor with shutdown handler
+            this.shutdown.registerService('healthMonitor', this.healthMonitor, ['serviceRegistry', 'circuitBreakerManager']);
+
             // Initialize metrics collector for monitoring
             this.metricsCollector = new MetricsCollector(this.config.get('metrics'));
             await this.metricsCollector.initialize();
             this.registerSystemMetrics();
             this.logger.info('Metrics collector initialized');
+
+            // Register metrics collector with shutdown handler
+            this.shutdown.registerService('metricsCollector', this.metricsCollector);
 
             // Create and configure the main application
             this.app = new GatewayApplication({
@@ -171,30 +206,66 @@ class GatewayServer {
     }
 
     /**
+     * Registers shutdown handlers for server components
+     * @private
+     */
+    registerShutdownHandlers() {
+        // Pre-shutdown cleanup
+        this.shutdown.registerCleanupHandler(async () => {
+            this.logger.info('Pre-shutdown: Stopping metrics collection');
+            if (this.systemMetricsInterval) {
+                clearInterval(this.systemMetricsInterval);
+            }
+        }, { phase: 'pre-shutdown', name: 'stop-metrics-collection', priority: 10 });
+
+        // Service cleanup handlers
+        this.shutdown.registerCleanupHandler(async () => {
+            this.logger.info('Cleanup: Stopping gateway application');
+            if (this.app) {
+                await this.app.cleanup();
+            }
+        }, { phase: 'cleanup', name: 'gateway-app-cleanup', priority: 5 });
+
+        // Listen for shutdown events from the shutdown handler
+        const shutdownHandler = this.shutdown.getHandler();
+        
+        shutdownHandler.on('shutdown:phase', (event) => {
+            this.logger.info(`Shutdown phase: ${event.phase}`);
+        });
+
+        shutdownHandler.on('shutdown:complete', (event) => {
+            this.logger.info('Shutdown completed successfully', {
+                reason: event.reason,
+                duration: event.duration,
+                metrics: event.metrics
+            });
+        });
+    }
+
+    /**
      * Registers system-level metrics for monitoring
      * @private
      */
     registerSystemMetrics() {
         // Register memory metrics
-        setInterval(() => {
+        this.systemMetricsInterval = setInterval(() => {
             const memUsage = process.memoryUsage();
             this.metricsCollector.registerGauge('gateway_memory_heap_used_bytes', memUsage.heapUsed);
             this.metricsCollector.registerGauge('gateway_memory_heap_total_bytes', memUsage.heapTotal);
             this.metricsCollector.registerGauge('gateway_memory_rss_bytes', memUsage.rss);
             this.metricsCollector.registerGauge('gateway_memory_external_bytes', memUsage.external);
-        }, 30000);
 
-        // Register CPU metrics
-        setInterval(() => {
+            // Register CPU metrics
             const cpuUsage = process.cpuUsage();
             this.metricsCollector.registerGauge('gateway_cpu_user_seconds', cpuUsage.user);
             this.metricsCollector.registerGauge('gateway_cpu_system_seconds', cpuUsage.system);
+
+            // Register uptime metric
+            this.metricsCollector.registerGauge('gateway_uptime_seconds', process.uptime());
         }, 30000);
 
-        // Register uptime metric
-        setInterval(() => {
-            this.metricsCollector.registerGauge('gateway_uptime_seconds', process.uptime());
-        }, 60000);
+        // Register the interval with shutdown handler
+        this.shutdown.registerInterval('systemMetrics', this.systemMetricsInterval);
     }
 
     /**
@@ -252,6 +323,9 @@ class GatewayServer {
 
                 this.logger.info('Gateway Server Started Successfully', serverInfo);
 
+                // Register server with shutdown handler
+                this.shutdown.registerServer('main', this.server);
+
                 // Register server status metrics
                 this.metricsCollector.registerGauge('gateway_server_status', 1, {
                     host,
@@ -259,22 +333,22 @@ class GatewayServer {
                     environment: process.env.NODE_ENV
                 });
 
+                // Configure server timeouts for production readiness
+                this.configureServerTimeouts();
+
+                // Setup server event handlers
+                this.setupServerEventHandlers();
+
+                // Enable keep-alive for better connection management
+                this.server.on('connection', (socket) => {
+                    socket.setKeepAlive(true, 60000);
+                    socket.setNoDelay(true);
+                });
+
                 // Emit server ready event
                 process.emit('gateway:ready', serverInfo);
 
                 resolve();
-            });
-
-            // Configure server timeouts for production readiness
-            this.configureServerTimeouts();
-
-            // Setup server event handlers
-            this.setupServerEventHandlers();
-
-            // Enable keep-alive for better connection management
-            this.server.on('connection', (socket) => {
-                socket.setKeepAlive(true, 60000);
-                socket.setNoDelay(true);
             });
         });
     }
@@ -390,7 +464,7 @@ class GatewayServer {
     }
 
     /**
-     * Performs graceful shutdown of the server and all components
+     * Performs graceful shutdown of the server and all components using gracefulShutdown
      * @async
      * @param {string} signal - Signal that triggered shutdown
      * @returns {Promise<void>}
@@ -402,83 +476,25 @@ class GatewayServer {
         }
 
         this.isShuttingDown = true;
-        const shutdownStartTime = Date.now();
 
-        this.logger.info(`Gateway Server Shutdown Initiated`, {
+        this.logger.info(`Gateway Server Shutdown Initiated via gracefulShutdown`, {
             signal,
             uptime: process.uptime(),
             pid: process.pid
         });
 
         try {
-            // Set shutdown deadline
-            const shutdownDeadline = setTimeout(() => {
-                this.logger.error('Graceful shutdown timeout exceeded, forcing exit');
-                process.exit(1);
-            }, this.config.get('server.shutdownTimeout') || 30000);
-
-            // Stop accepting new connections
-            if (this.server) {
-                this.logger.info('Closing server connections');
-                await this.closeServerConnections();
-            }
-
-            // Stop health monitoring
-            if (this.healthMonitor) {
-                this.logger.info('Stopping health monitor');
-                await this.healthMonitor.stop();
-            }
-
-            // Close circuit breakers
-            if (this.circuitBreakerManager) {
-                this.logger.info('Closing circuit breakers');
-                await this.circuitBreakerManager.shutdown();
-            }
-
-            // Disconnect from service registry
-            if (this.serviceRegistry) {
-                this.logger.info('Deregistering from service registry');
-                await this.serviceRegistry.deregister();
-                await this.serviceRegistry.disconnect();
-            }
-
-            // Disconnect cache
-            if (this.cacheManager) {
-                this.logger.info('Disconnecting cache');
-                await this.cacheManager.disconnect();
-            }
-
-            // Flush metrics
-            if (this.metricsCollector) {
-                this.logger.info('Flushing metrics');
-                await this.metricsCollector.flush();
-                await this.metricsCollector.shutdown();
-            }
-
-            // Flush traces
-            if (this.traceManager) {
-                this.logger.info('Flushing traces');
-                await this.traceManager.shutdown();
-            }
-
-            // Cleanup application
-            if (this.app) {
-                this.logger.info('Cleaning up application');
-                await this.app.cleanup();
-            }
-
-            clearTimeout(shutdownDeadline);
-
-            const shutdownTime = Date.now() - shutdownStartTime;
-            this.logger.info('Gateway Server Shutdown Completed', {
-                shutdownTime,
-                signal
+            // Use the comprehensive graceful shutdown function
+            await this.shutdown.shutdown(`gateway:${signal}`, {
+                forceTimeout: this.config.get('server.shutdownTimeout') || 30000,
+                continueOnError: false
             });
 
-            process.exit(0);
+            this.logger.info('Gateway Server Shutdown Completed Successfully');
         } catch (error) {
-            this.logger.error('Error during graceful shutdown', error);
-            process.exit(1);
+            this.logger.error('Gateway shutdown failed', error);
+            await this.emergencyShutdown(error);
+            throw error;
         }
     }
 
@@ -490,6 +506,11 @@ class GatewayServer {
      */
     async closeServerConnections() {
         return new Promise((resolve) => {
+            if (!this.server) {
+                resolve();
+                return;
+            }
+
             this.server.close((error) => {
                 if (error) {
                     this.logger.error('Error closing server', error);
@@ -519,11 +540,19 @@ class GatewayServer {
                 this.logger.fatal('Emergency shutdown', error);
             }
 
-            // Attempt minimal cleanup
+            // Attempt minimal cleanup using graceful shutdown emergency mode
+            if (this.shutdown) {
+                // Execute emergency handlers only
+                const shutdownHandler = this.shutdown.getHandler();
+                await shutdownHandler.executeEmergencyHandlers(error);
+            }
+
+            // Force close server
             if (this.server) {
                 this.server.close();
             }
 
+            // Force disconnect cache
             if (this.cacheManager) {
                 await this.cacheManager.disconnect();
             }
@@ -531,12 +560,45 @@ class GatewayServer {
             console.error('Error during emergency cleanup:', cleanupError);
         }
     }
+
+    /**
+     * Gets current server metrics including shutdown handler metrics
+     * @returns {Object} Combined server and shutdown metrics
+     */
+    getMetrics() {
+        const baseMetrics = {
+            uptime: process.uptime(),
+            memory: process.memoryUsage(),
+            server: {
+                listening: this.server?.listening || false,
+                connections: this.server?._connections || 0
+            },
+            services: {
+                serviceRegistry: !!this.serviceRegistry,
+                healthMonitor: !!this.healthMonitor,
+                metricsCollector: !!this.metricsCollector,
+                traceManager: !!this.traceManager,
+                cacheManager: !!this.cacheManager,
+                circuitBreakerManager: !!this.circuitBreakerManager
+            }
+        };
+
+        // Merge with graceful shutdown metrics if available
+        if (this.shutdown) {
+            return {
+                ...baseMetrics,
+                shutdown: this.shutdown.getMetrics()
+            };
+        }
+
+        return baseMetrics;
+    }
 }
 
 /**
  * ClusterManager handles multi-process deployment for production environments.
  * It manages worker processes, handles worker failures, and coordinates graceful
- * cluster-wide shutdowns.
+ * cluster-wide shutdowns using the ShutdownHandler.
  * 
  * @class ClusterManager
  */
@@ -553,6 +615,7 @@ class ClusterManager {
         });
         this.workers = new Map();
         this.isShuttingDown = false;
+        this.shutdown = null;
     }
 
     /**
@@ -606,6 +669,15 @@ class ClusterManager {
      * @private
      */
     startMaster() {
+        // Initialize graceful shutdown for master process
+        this.shutdown = gracefulShutdown({
+            cluster: {
+                enabled: true,
+                staggerDelay: 2000,
+                maxConcurrentShutdowns: 2
+            }
+        }, this.logger);
+
         this.logger.info('Master process started', {
             pid: process.pid,
             workers: this.numWorkers,
@@ -628,11 +700,42 @@ class ClusterManager {
         // Handle cluster events
         this.setupClusterEventHandlers();
 
-        // Handle master process signals
+        // Handle master process signals with graceful shutdown
         this.setupMasterSignalHandlers();
 
         // Monitor cluster health
         this.startClusterMonitoring();
+
+        // Register cluster resources with shutdown handler
+        this.registerClusterResources();
+    }
+
+    /**
+     * Registers cluster resources with shutdown handler
+     * @private
+     */
+    registerClusterResources() {
+        // Register worker management cleanup
+        this.shutdown.registerCleanupHandler(async () => {
+            this.logger.info('Initiating cluster-wide shutdown');
+            await this.coordinateClusterShutdown();
+        }, { 
+            phase: 'pre-shutdown', 
+            name: 'cluster-shutdown', 
+            priority: 100,
+            timeout: 45000 
+        });
+
+        // Register monitoring cleanup
+        this.shutdown.registerCleanupHandler(async () => {
+            if (this.clusterMonitoringInterval) {
+                clearInterval(this.clusterMonitoringInterval);
+            }
+        }, { 
+            phase: 'cleanup', 
+            name: 'cluster-monitoring', 
+            priority: 5 
+        });
     }
 
     /**
@@ -726,6 +829,9 @@ class ClusterManager {
         } else if (message.type === 'health') {
             // Update worker health status
             this.updateWorkerHealth(worker.id, message.data);
+        } else if (message.type === 'shutdown-ready') {
+            // Worker is ready for shutdown
+            this.logger.info(`Worker ${worker.id} ready for shutdown`);
         }
     }
 
@@ -744,17 +850,19 @@ class ClusterManager {
     }
 
     /**
-     * Sets up signal handlers for master process
+     * Sets up signal handlers for master process using graceful shutdown
      * @private
      */
     setupMasterSignalHandlers() {
-        const signals = ['SIGTERM', 'SIGINT', 'SIGUSR2'];
-
-        signals.forEach(signal => {
-            process.on(signal, () => this.shutdownCluster(signal));
+        // Let graceful shutdown manage signals
+        const shutdownHandler = this.shutdown.getHandler();
+        shutdownHandler.on('reload', () => this.reloadWorkers());
+        
+        // Custom cluster shutdown coordination
+        process.on('SIGUSR2', () => {
+            this.logger.info('Received SIGUSR2 - initiating rolling restart');
+            this.reloadWorkers();
         });
-
-        process.on('SIGUSR1', () => this.reloadWorkers());
     }
 
     /**
@@ -762,7 +870,7 @@ class ClusterManager {
      * @private
      */
     startClusterMonitoring() {
-        setInterval(() => {
+        this.clusterMonitoringInterval = setInterval(() => {
             const clusterHealth = {
                 workers: Object.keys(cluster.workers).length,
                 targetWorkers: this.numWorkers,
@@ -782,6 +890,9 @@ class ClusterManager {
                 }
             }
         }, 30000);
+
+        // Register monitoring interval with graceful shutdown
+        this.shutdown.registerInterval('clusterMonitoring', this.clusterMonitoringInterval);
     }
 
     /**
@@ -846,7 +957,7 @@ class ClusterManager {
     }
 
     /**
-     * Starts a worker process
+     * Starts a worker process with shutdown handler
      * @private
      * @async
      */
@@ -862,7 +973,7 @@ class ClusterManager {
                 process.send({ type: 'ready', pid: process.pid });
             }
 
-            // Handle worker signals
+            // Handle worker signals through server's shutdown handler
             this.setupWorkerSignalHandlers(server);
 
             // Setup worker health reporting
@@ -880,12 +991,8 @@ class ClusterManager {
      * @param {GatewayServer} server - Server instance to shutdown
      */
     setupWorkerSignalHandlers(server) {
-        const signals = ['SIGTERM', 'SIGINT'];
-
-        signals.forEach(signal => {
-            process.on(signal, () => server.shutdown(signal));
-        });
-
+        // Signals are already handled by server's shutdown handler
+        
         process.on('disconnect', () => {
             this.logger.warn('Worker disconnected from master');
             server.shutdown('disconnect');
@@ -909,7 +1016,7 @@ class ClusterManager {
     startWorkerHealthReporting() {
         if (!process.send) return;
 
-        setInterval(() => {
+        const healthInterval = setInterval(() => {
             process.send({
                 type: 'health',
                 data: {
@@ -919,10 +1026,15 @@ class ClusterManager {
                 }
             });
         }, 30000);
+
+        // Clean shutdown of health reporting
+        process.on('beforeExit', () => {
+            clearInterval(healthInterval);
+        });
     }
 
     /**
-     * Starts single instance for development mode
+     * Starts single instance for development mode with shutdown handler
      * @private
      * @async
      */
@@ -933,22 +1045,7 @@ class ClusterManager {
             await server.initialize();
             await server.start();
 
-            // Handle process signals
-            const signals = ['SIGTERM', 'SIGINT', 'SIGUSR2'];
-            signals.forEach(signal => {
-                process.on(signal, () => server.shutdown(signal));
-            });
-
-            // Handle uncaught exceptions
-            process.on('uncaughtException', (error) => {
-                console.error('Uncaught exception:', error);
-                server.shutdown('uncaughtException');
-            });
-
-            process.on('unhandledRejection', (reason, promise) => {
-                console.error('Unhandled rejection:', reason);
-                server.shutdown('unhandledRejection');
-            });
+            // Server's shutdown handler will manage all signals and cleanup
 
         } catch (error) {
             console.error('Failed to start server:', error);
@@ -957,18 +1054,17 @@ class ClusterManager {
     }
 
     /**
-     * Gracefully shuts down the entire cluster
+     * Gracefully shuts down the entire cluster using shutdown handler
      * @private
      * @async
-     * @param {string} signal - Signal that triggered shutdown
      */
-    async shutdownCluster(signal) {
+    async coordinateClusterShutdown() {
         if (this.isShuttingDown) {
             return;
         }
 
         this.isShuttingDown = true;
-        this.logger.info(`Cluster shutdown initiated`, { signal });
+        this.logger.info('Coordinating cluster shutdown');
 
         // Set shutdown deadline
         const shutdownDeadline = setTimeout(() => {
@@ -980,31 +1076,47 @@ class ClusterManager {
             }
 
             process.exit(1);
-        }, 30000);
+        }, 45000);
 
-        // Gracefully disconnect all workers
-        const workers = Object.values(cluster.workers);
-        const disconnectPromises = workers.map(worker => {
-            return new Promise((resolve) => {
-                worker.disconnect();
-                worker.once('exit', resolve);
+        try {
+            // Gracefully disconnect all workers with staggered shutdown
+            const workers = Object.values(cluster.workers);
+            const batchSize = 2; // Shutdown 2 workers at a time
+            
+            for (let i = 0; i < workers.length; i += batchSize) {
+                const batch = workers.slice(i, i + batchSize);
+                
+                const disconnectPromises = batch.map(worker => {
+                    return new Promise((resolve) => {
+                        worker.disconnect();
+                        worker.once('exit', resolve);
 
-                // Force kill after timeout
-                setTimeout(() => {
-                    if (!worker.isDead()) {
-                        worker.kill();
-                    }
-                    resolve();
-                }, 10000);
-            });
-        });
+                        // Force kill after timeout
+                        setTimeout(() => {
+                            if (!worker.isDead()) {
+                                worker.kill();
+                            }
+                            resolve();
+                        }, 15000);
+                    });
+                });
 
-        await Promise.all(disconnectPromises);
+                await Promise.all(disconnectPromises);
+                
+                // Stagger between batches
+                if (i + batchSize < workers.length) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            }
 
-        clearTimeout(shutdownDeadline);
+            clearTimeout(shutdownDeadline);
+            this.logger.info('All workers shutdown successfully');
 
-        this.logger.info('All workers shutdown, exiting master process');
-        process.exit(0);
+        } catch (error) {
+            clearTimeout(shutdownDeadline);
+            this.logger.error('Error during cluster shutdown', error);
+            throw error;
+        }
     }
 
     /**
