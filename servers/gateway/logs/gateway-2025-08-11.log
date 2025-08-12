@@ -6,3 +6,9 @@
 {"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":53860,"service":"api-gateway"},"timestamp":"2025-08-11 18:47:21.160"}
 {"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":15672,"service":"api-gateway"},"timestamp":"2025-08-11 18:56:36.820"}
 {"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":42212,"service":"api-gateway"},"timestamp":"2025-08-11 19:44:49.640"}
+{"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":47588,"service":"api-gateway"},"timestamp":"2025-08-11 19:59:32.022"}
+{"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":29492,"service":"api-gateway"},"timestamp":"2025-08-11 21:50:41.469"}
+{"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":51612,"service":"api-gateway"},"timestamp":"2025-08-11 21:51:49.725"}
+{"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":52908,"service":"api-gateway"},"timestamp":"2025-08-11 22:05:31.724"}
+{"level":"error","message":"Failed to initialize Gateway Application","metadata":{"hostname":"E-Olawalee","pid":3272,"service":"api-gateway"},"timestamp":"2025-08-12T03:11:08.945Z"}
+{"level":"info","message":"Logger shutting down","metadata":{"hostname":"E-Olawalee","pid":3272,"service":"api-gateway"},"timestamp":"2025-08-11 22:11:08.952"}

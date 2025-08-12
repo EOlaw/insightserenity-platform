@@ -151,6 +151,41 @@ const gatewayConfig = {
                 enabled: true,
                 samplingRate: 0.1
             }
+        },
+
+        // SSL/TLS Configuration
+        ssl: {
+            enabled: process.env.SSL_ENABLED === 'true',
+            keyPath: process.env.SSL_KEY_PATH || './ssl/private/server.key',
+            certPath: process.env.SSL_CERT_PATH || './ssl/certs/server.crt',
+            caPath: process.env.SSL_CA_PATH || './ssl/certs/ca.crt',
+            dhparamPath: process.env.SSL_DHPARAM_PATH || './ssl/certs/dhparam.pem',
+            passphrase: process.env.SSL_PASSPHRASE || '',
+            verifyClient: process.env.SSL_VERIFY_CLIENT === 'true',
+            ciphers: process.env.SSL_CIPHERS || 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384',
+            honorCipherOrder: process.env.SSL_HONOR_CIPHER_ORDER !== 'false',
+            sessionTimeout: parseInt(process.env.SSL_SESSION_TIMEOUT, 10) || 300,
+            secureOptions: null // Will be set during initialization
+        },
+
+        // Default service registry structure
+        serviceRegistry: {
+            defaultConfig: {
+                timeout: 30000,
+                retries: 3,
+                healthCheck: {
+                    enabled: true,
+                    path: '/health',
+                    interval: 30000,
+                    timeout: 5000
+                },
+                circuitBreaker: {
+                    enabled: true,
+                    timeout: 10000,
+                    errorThreshold: 50,
+                    resetTimeout: 30000
+                }
+            }
         }
     },
 
@@ -239,37 +274,161 @@ const gatewayConfig = {
     },
 
     /**
+     * Parse SSL secure options from environment variable
+     * @param {string} secureOptionsStr - String representation of secure options
+     * @returns {number} Combined secure options flags
+     */
+    parseSecureOptions(secureOptionsStr) {
+        if (!secureOptionsStr) {
+            const constants = require('constants');
+            return constants.SSL_OP_NO_SSLv2 | constants.SSL_OP_NO_SSLv3 | 
+                   constants.SSL_OP_NO_TLSv1 | constants.SSL_OP_NO_TLSv1_1;
+        }
+
+        const constants = require('constants');
+        const options = secureOptionsStr.split('|').map(opt => opt.trim());
+        let combinedOptions = 0;
+
+        for (const option of options) {
+            if (constants[option]) {
+                combinedOptions |= constants[option];
+            }
+        }
+
+        return combinedOptions;
+    },
+
+    /**
+     * Initialize service registry with default services
+     * @param {Object} config - Configuration object
+     * @returns {Array} Initialized service registry
+     */
+    initializeServiceRegistry(config) {
+        // Ensure services.registry exists and is an array
+        if (!config.services) {
+            config.services = {};
+        }
+
+        if (!config.services.registry || !Array.isArray(config.services.registry)) {
+            config.services.registry = [];
+        }
+
+        // If registry is empty, initialize with default services from environment
+        if (config.services.registry.length === 0) {
+            const defaultServices = this.createDefaultServiceRegistry();
+            config.services.registry = defaultServices;
+        }
+
+        return config.services.registry;
+    },
+
+    /**
+     * Create default service registry from environment variables
+     * @returns {Array} Default service configurations
+     */
+    createDefaultServiceRegistry() {
+        const registry = [];
+
+        // Admin Server
+        if (process.env.ADMIN_SERVER_URL) {
+            registry.push({
+                name: 'admin-server',
+                url: process.env.ADMIN_SERVER_URL,
+                path: '/admin',
+                enabled: true,
+                ...this.defaults.serviceRegistry.defaultConfig
+            });
+        }
+
+        // Customer Services
+        if (process.env.CUSTOMER_SERVICES_URL) {
+            registry.push({
+                name: 'customer-services',
+                url: process.env.CUSTOMER_SERVICES_URL,
+                path: '/services',
+                enabled: true,
+                ...this.defaults.serviceRegistry.defaultConfig
+            });
+        }
+
+        // Auth Service
+        if (process.env.AUTH_SERVICE_URL) {
+            registry.push({
+                name: 'auth-service',
+                url: process.env.AUTH_SERVICE_URL,
+                path: '/auth',
+                enabled: true,
+                ...this.defaults.serviceRegistry.defaultConfig
+            });
+        }
+
+        // Fallback to localhost if no services configured
+        if (registry.length === 0) {
+            registry.push(
+                {
+                    name: 'admin-server',
+                    url: 'http://localhost:4001',
+                    path: '/admin',
+                    enabled: true,
+                    ...this.defaults.serviceRegistry.defaultConfig
+                },
+                {
+                    name: 'customer-services',
+                    url: 'http://localhost:4002',
+                    path: '/services',
+                    enabled: true,
+                    ...this.defaults.serviceRegistry.defaultConfig
+                }
+            );
+        }
+
+        return registry;
+    },
+
+    /**
      * Apply gateway-specific transformations to configuration
      * @param {Object} config - Configuration object to transform
      */
     applyTransformations(config) {
-        // Merge default gateway settings
-        config.gateway = {
-            ...this.defaults,
-            ...(config.gateway || {})
-        };
+        try {
+            // Merge default gateway settings
+            config.gateway = {
+                ...this.defaults,
+                ...(config.gateway || {})
+            };
 
-        // Enhance service configurations
-        if (config.services && config.services.registry) {
+            // Initialize and enhance service registry
+            this.initializeServiceRegistry(config);
+
+            // Enhance service configurations with defaults
             config.services.registry = config.services.registry.map(service => {
                 const serviceDefaults = this.services[service.name];
                 if (serviceDefaults) {
                     return {
+                        ...this.defaults.serviceRegistry.defaultConfig,
                         ...serviceDefaults,
                         ...service,
                         endpoints: serviceDefaults.endpoints || service.endpoints,
                         middleware: serviceDefaults.middleware || service.middleware
                     };
                 }
-                return service;
+                return {
+                    ...this.defaults.serviceRegistry.defaultConfig,
+                    ...service
+                };
             });
+
+            // Add computed values
+            this.addComputedValues(config);
+
+            // Validate gateway configuration
+            this.validateGatewayConfig(config);
+
+            console.log('Gateway configuration transformations applied successfully');
+        } catch (error) {
+            console.error('Failed to apply gateway transformations:', error.message);
+            throw new Error(`Gateway configuration transformation failed: ${error.message}`);
         }
-
-        // Add computed values
-        this.addComputedValues(config);
-
-        // Validate gateway configuration
-        this.validateGatewayConfig(config);
     },
 
     /**
@@ -291,26 +450,52 @@ const gatewayConfig = {
             config.gateway.errorHandling.exposeStack = false;
             config.gateway.requestLogging.excludeBody = [...config.gateway.requestLogging.excludeBody, 'data'];
             config.gateway.validation.strictMode = true;
+            config.gateway.ssl.enabled = true; // Force SSL in production
         } else if (config.environment === 'development') {
             config.gateway.errorHandling.exposeStack = true;
             config.gateway.requestLogging.maxBodyLength = 50000;
+            config.gateway.ssl.enabled = process.env.SSL_ENABLED === 'true';
         }
 
         // Configure service discovery based on environment
-        if (config.services.discovery.type === 'kubernetes' && process.env.KUBERNETES_SERVICE_HOST) {
-            config.services.discovery.kubernetes = {
-                namespace: process.env.KUBERNETES_NAMESPACE || 'default',
-                labelSelector: 'app=insightserenity',
-                port: 8080
-            };
+        if (config.services && config.services.discovery) {
+            if (config.services.discovery.type === 'kubernetes' && process.env.KUBERNETES_SERVICE_HOST) {
+                config.services.discovery.kubernetes = {
+                    namespace: process.env.KUBERNETES_NAMESPACE || 'default',
+                    labelSelector: 'app=insightserenity',
+                    port: 8080
+                };
+            }
         }
 
         // Add default retry configuration for all services
-        config.services.registry.forEach(service => {
-            if (!service.retry) {
-                service.retry = config.gateway.errorHandling.retryConfig;
+        if (config.services && config.services.registry) {
+            config.services.registry.forEach(service => {
+                if (!service.retry) {
+                    service.retry = config.gateway.errorHandling.retryConfig;
+                }
+            });
+        }
+
+        // Set SSL paths and secure options based on gateway structure
+        if (config.gateway.ssl.enabled) {
+            const path = require('path');
+            const baseDir = process.cwd();
+            
+            config.gateway.ssl.keyPath = path.resolve(baseDir, config.gateway.ssl.keyPath);
+            config.gateway.ssl.certPath = path.resolve(baseDir, config.gateway.ssl.certPath);
+            
+            if (config.gateway.ssl.caPath) {
+                config.gateway.ssl.caPath = path.resolve(baseDir, config.gateway.ssl.caPath);
             }
-        });
+            
+            if (config.gateway.ssl.dhparamPath) {
+                config.gateway.ssl.dhparamPath = path.resolve(baseDir, config.gateway.ssl.dhparamPath);
+            }
+
+            // Set secure options using the parseSecureOptions method
+            config.gateway.ssl.secureOptions = this.parseSecureOptions(process.env.SSL_SECURE_OPTIONS);
+        }
     },
 
     /**
@@ -340,15 +525,36 @@ const gatewayConfig = {
             }
         }
 
+        // Validate SSL configuration
+        if (config.gateway.ssl.enabled) {
+            const fs = require('fs');
+            if (!fs.existsSync(config.gateway.ssl.keyPath)) {
+                console.warn(`SSL key file not found: ${config.gateway.ssl.keyPath}`);
+            }
+            if (!fs.existsSync(config.gateway.ssl.certPath)) {
+                console.warn(`SSL certificate file not found: ${config.gateway.ssl.certPath}`);
+            }
+        }
+
         // Validate service configurations
-        config.services.registry.forEach(service => {
-            if (service.timeout < 1000) {
-                throw new Error(`Service ${service.name} timeout is too low: ${service.timeout}ms`);
-            }
-            if (service.retries > 10) {
-                throw new Error(`Service ${service.name} retry count is too high: ${service.retries}`);
-            }
-        });
+        if (config.services && config.services.registry) {
+            config.services.registry.forEach(service => {
+                if (!service.name) {
+                    throw new Error('Service name is required');
+                }
+                if (!service.url) {
+                    throw new Error(`Service ${service.name} must have a URL`);
+                }
+                if (service.timeout && service.timeout < 1000) {
+                    throw new Error(`Service ${service.name} timeout is too low: ${service.timeout}ms`);
+                }
+                if (service.retries && service.retries > 10) {
+                    throw new Error(`Service ${service.name} retry count is too high: ${service.retries}`);
+                }
+            });
+        }
+
+        console.log('Gateway configuration validation passed');
     },
 
     /**
@@ -381,6 +587,29 @@ const gatewayConfig = {
             return this.defaults.errorHandling.retryConfig;
         }
         return null;
+    },
+
+    /**
+     * Get SSL configuration
+     * @returns {Object} SSL configuration object
+     */
+    getSSLConfig() {
+        return this.defaults.ssl;
+    },
+
+    /**
+     * Check if SSL is enabled and properly configured
+     * @param {Object} config - Configuration object
+     * @returns {boolean} Whether SSL is ready to use
+     */
+    isSSLReady(config) {
+        if (!config.gateway.ssl.enabled) {
+            return false;
+        }
+
+        const fs = require('fs');
+        return fs.existsSync(config.gateway.ssl.keyPath) && 
+               fs.existsSync(config.gateway.ssl.certPath);
     }
 };
 
