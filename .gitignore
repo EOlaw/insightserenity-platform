@@ -13,6 +13,9 @@
 # keys
 /servers/gateway/ssl/private/
 
+# logs
+/servers/gateway/logs
+
 /.pnp
 .pnp.*
 .yarn/*

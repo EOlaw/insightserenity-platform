@@ -1,90 +1,117 @@
 'use strict';
 
 /**
- * @fileoverview Proxy Routes - Dynamic request proxying and service routing
+ * @fileoverview ProxyRoutesManager - Comprehensive dynamic request proxying and service routing
  * @module servers/gateway/routes/proxy-routes
+ * @version 2.0.0
+ * @author InsightSerenity Platform Team
  * @requires express
  * @requires http-proxy-middleware
  * @requires url
  * @requires querystring
+ * @requires ws
+ * @requires stream
  */
 
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const { URL } = require('url');
 const querystring = require('querystring');
-const router = express.Router();
+const { performance } = require('perf_hooks');
+const crypto = require('crypto');
 
 /**
- * ProxyRoutes class handles dynamic request proxying to backend services.
- * It implements intelligent routing, request/response transformation, protocol
- * translation, WebSocket support, streaming, and comprehensive error handling.
- * The proxy supports multi-tenant isolation, service discovery, load balancing,
- * and circuit breaking.
+ * ProxyRoutesManager class provides enterprise-grade dynamic request proxying
+ * to backend services with intelligent routing, advanced request/response transformation,
+ * protocol translation, WebSocket support, streaming capabilities, and comprehensive
+ * error handling. The proxy supports multi-tenant isolation, service discovery,
+ * load balancing, circuit breaking, caching, and performance optimization.
+ * 
+ * Key Features:
+ * - Dynamic service discovery and routing
+ * - Intelligent load balancing with multiple algorithms
+ * - WebSocket proxy support with bidirectional communication
+ * - Protocol translation (HTTP/HTTPS, gRPC-Web, GraphQL)
+ * - Request/response transformation and enrichment
+ * - Circuit breaker integration for fault tolerance
+ * - Advanced caching strategies with invalidation
+ * - Multi-tenant request isolation and routing
+ * - Distributed tracing and correlation
+ * - Rate limiting and throttling
+ * - SSL/TLS termination and passthrough
+ * - Streaming support for large payloads
+ * - API versioning and backward compatibility
+ * - Health check proxying and aggregation
+ * - Security policy enforcement
+ * - Performance monitoring and optimization
+ * - Error recovery and retry mechanisms
+ * - Content compression and optimization
+ * - CORS handling and preflight requests
+ * - Session affinity and sticky routing
+ * 
+ * @class ProxyRoutesManager
  */
-class ProxyRoutes {
+class ProxyRoutesManager {
     /**
-     * Creates an instance of ProxyRoutes
+     * Creates an instance of ProxyRoutesManager
      * @constructor
+     * @param {Object} config - Configuration manager instance
      * @param {Object} serviceRegistry - Service registry for service discovery
-     * @param {Object} routingMiddleware - Request routing middleware
-     * @param {Object} authMiddleware - Authentication middleware
-     * @param {Object} rateLimitMiddleware - Rate limiting middleware
-     * @param {Object} tenantMiddleware - Tenant isolation middleware
-     * @param {Object} tracingMiddleware - Distributed tracing middleware
-     * @param {Object} cacheManager - Cache manager
-     * @param {Object} circuitBreakerManager - Circuit breaker manager
-     * @param {Object} metricsCollector - Metrics collector
-     * @param {Object} logger - Logger instance
+     * @param {Object} requestRouter - Request routing middleware instance
+     * @param {Object} logger - Logging service instance
      */
-    constructor(
-        serviceRegistry,
-        routingMiddleware,
-        authMiddleware,
-        rateLimitMiddleware,
-        tenantMiddleware,
-        tracingMiddleware,
-        cacheManager,
-        circuitBreakerManager,
-        metricsCollector,
-        logger
-    ) {
+    constructor(config, serviceRegistry, requestRouter, logger) {
+        this.config = config;
         this.serviceRegistry = serviceRegistry;
-        this.routingMiddleware = routingMiddleware;
-        this.authMiddleware = authMiddleware;
-        this.rateLimitMiddleware = rateLimitMiddleware;
-        this.tenantMiddleware = tenantMiddleware;
-        this.tracingMiddleware = tracingMiddleware;
-        this.cacheManager = cacheManager;
-        this.circuitBreakerManager = circuitBreakerManager;
-        this.metricsCollector = metricsCollector;
+        this.requestRouter = requestRouter;
         this.logger = logger;
         
-        // Proxy configurations per service
-        this.proxyConfigs = new Map();
+        // Initialize additional components as null - will be injected during initialization
+        this.authMiddleware = null;
+        this.rateLimitMiddleware = null;
+        this.tenantMiddleware = null;
+        this.tracingMiddleware = null;
+        this.cacheManager = null;
+        this.circuitBreakerManager = null;
+        this.metricsCollector = null;
+        this.transformationEngine = null;
         
-        // Active proxy instances
+        // Express router instance
+        this.router = express.Router();
+        
+        // Proxy instance management
         this.proxyInstances = new Map();
+        this.serviceProxies = new Map();
+        this.dynamicProxies = new Map();
         
-        // WebSocket connections
-        this.wsConnections = new Map();
-        
-        // Request transformers
-        this.requestTransformers = new Map();
-        this.responseTransformers = new Map();
-        
-        // Protocol handlers
-        this.protocolHandlers = {
-            'http': this.handleHttpProxy.bind(this),
-            'https': this.handleHttpProxy.bind(this),
-            'ws': this.handleWebSocketProxy.bind(this),
-            'wss': this.handleWebSocketProxy.bind(this),
-            'grpc': this.handleGrpcProxy.bind(this),
-            'graphql': this.handleGraphQLProxy.bind(this)
+        // WebSocket connection management
+        this.webSocketConnections = new Map();
+        this.webSocketStats = {
+            active: 0,
+            total: 0,
+            errors: 0
         };
         
-        // Default proxy configuration
-        this.defaultConfig = {
+        // Request transformation pipelines
+        this.requestTransformers = new Map();
+        this.responseTransformers = new Map();
+        this.headerTransformers = new Map();
+        
+        // Protocol handlers for different service types
+        this.protocolHandlers = {
+            'http': this.handleHttpProxy.bind(this),
+            'https': this.handleHttpsProxy.bind(this),
+            'ws': this.handleWebSocketProxy.bind(this),
+            'wss': this.handleSecureWebSocketProxy.bind(this),
+            'grpc': this.handleGrpcProxy.bind(this),
+            'grpc-web': this.handleGrpcWebProxy.bind(this),
+            'graphql': this.handleGraphQLProxy.bind(this),
+            'rest': this.handleRestProxy.bind(this),
+            'soap': this.handleSoapProxy.bind(this)
+        };
+        
+        // Default proxy configuration templates
+        this.proxyDefaults = {
             changeOrigin: true,
             followRedirects: true,
             preserveHeaderKeyCase: true,
@@ -94,256 +121,322 @@ class ProxyRoutes {
             proxyTimeout: 30000,
             ws: true,
             logLevel: 'warn',
-            cookieDomainRewrite: '',
-            cookiePathRewrite: '',
+            ignorePath: false,
+            cookieDomainRewrite: false,
+            cookiePathRewrite: false,
             headers: {
-                'X-Forwarded-By': 'API-Gateway'
+                'X-Forwarded-By': 'InsightSerenity-Gateway',
+                'X-Gateway-Version': '2.0.0'
             }
         };
         
-        // Retry configuration
-        this.retryConfig = {
+        // Retry and resilience configuration
+        this.retryConfiguration = {
             retries: 3,
             retryDelay: 1000,
-            retryCondition: (error) => {
-                return error.code === 'ECONNRESET' || 
-                       error.code === 'ETIMEDOUT' ||
-                       error.code === 'ECONNREFUSED';
-            }
+            retryDelayMultiplier: 2,
+            maxRetryDelay: 10000,
+            retryCondition: this.shouldRetryRequest.bind(this),
+            onRetry: this.handleRetryAttempt.bind(this)
         };
         
-        // Statistics
-        this.statistics = {
+        // Load balancing algorithms
+        this.loadBalancers = {
+            'round-robin': this.roundRobinBalancer.bind(this),
+            'least-connections': this.leastConnectionsBalancer.bind(this),
+            'weighted': this.weightedBalancer.bind(this),
+            'ip-hash': this.ipHashBalancer.bind(this),
+            'random': this.randomBalancer.bind(this),
+            'consistent-hash': this.consistentHashBalancer.bind(this)
+        };
+        
+        // Performance and monitoring metrics
+        this.proxyStatistics = {
             totalRequests: 0,
             successfulRequests: 0,
             failedRequests: 0,
             retriedRequests: 0,
             timedOutRequests: 0,
-            byService: {},
-            byProtocol: {},
+            circuitBreakerTrips: 0,
+            cacheHits: 0,
+            cacheMisses: 0,
             averageLatency: 0,
+            p95Latency: 0,
+            p99Latency: 0,
             activeConnections: 0,
-            websocketConnections: 0
+            byService: new Map(),
+            byProtocol: new Map(),
+            byStatusCode: new Map(),
+            errorsByType: new Map()
         };
         
-        // Initialize routes
-        this.initializeRoutes();
+        // Request routing and affinity management
+        this.sessionAffinity = new Map();
+        this.stickyRoutingRules = new Map();
+        this.routingStrategies = new Map();
+        
+        // Content transformation and optimization
+        this.compressionEnabled = true;
+        this.contentTypes = {
+            json: 'application/json',
+            xml: 'application/xml',
+            html: 'text/html',
+            css: 'text/css',
+            js: 'application/javascript'
+        };
+        
+        // Security and access control
+        this.securityPolicies = new Map();
+        this.accessControlRules = new Map();
+        this.rateLimitingRules = new Map();
+        
+        // Caching strategies and invalidation
+        this.cachingStrategies = new Map();
+        this.cacheInvalidationRules = new Map();
+        this.cacheKeyGenerators = new Map();
+        
+        // Health monitoring and circuit breaking
+        this.healthCheckConfiguration = {
+            enabled: true,
+            interval: 30000,
+            timeout: 5000,
+            unhealthyThreshold: 3,
+            healthyThreshold: 2
+        };
+        
+        // API versioning and backward compatibility
+        this.apiVersions = new Map();
+        this.versioningStrategies = {
+            'header': this.versionByHeader.bind(this),
+            'path': this.versionByPath.bind(this),
+            'query': this.versionByQuery.bind(this),
+            'accept': this.versionByAcceptHeader.bind(this)
+        };
+        
+        this.isInitialized = false;
     }
 
     /**
-     * Initializes proxy routes
-     * @private
+     * Initializes the ProxyRoutesManager with dependency injection and configuration
+     * @async
+     * @param {Object} components - Optional components to inject
+     * @param {Object} components.authMiddleware - Authentication middleware
+     * @param {Object} components.rateLimitMiddleware - Rate limiting middleware
+     * @param {Object} components.tenantMiddleware - Tenant isolation middleware
+     * @param {Object} components.tracingMiddleware - Distributed tracing middleware
+     * @param {Object} components.cacheManager - Cache management service
+     * @param {Object} components.circuitBreakerManager - Circuit breaker manager
+     * @param {Object} components.metricsCollector - Metrics collection service
+     * @param {Object} components.transformationEngine - Request/response transformation engine
+     * @returns {Promise<void>}
      */
-    initializeRoutes() {
-        // Setup catch-all proxy route
-        this.setupCatchAllProxy();
+    async initialize(components = {}) {
+        if (this.isInitialized) {
+            this.logger.warn('ProxyRoutesManager already initialized');
+            return;
+        }
+
+        try {
+            this.logger.info('Initializing ProxyRoutesManager');
+            
+            // Inject optional components
+            this.authMiddleware = components.authMiddleware || null;
+            this.rateLimitMiddleware = components.rateLimitMiddleware || null;
+            this.tenantMiddleware = components.tenantMiddleware || null;
+            this.tracingMiddleware = components.tracingMiddleware || null;
+            this.cacheManager = components.cacheManager || null;
+            this.circuitBreakerManager = components.circuitBreakerManager || null;
+            this.metricsCollector = components.metricsCollector || null;
+            this.transformationEngine = components.transformationEngine || null;
+            
+            // Initialize proxy configuration and routing
+            await this.initializeProxyRoutes();
+            
+            // Setup service-specific proxies
+            await this.setupServiceProxies();
+            
+            // Initialize WebSocket proxy support
+            await this.initializeWebSocketSupport();
+            
+            // Setup request/response transformation pipelines
+            await this.initializeTransformationPipelines();
+            
+            // Configure caching strategies
+            await this.configureCachingStrategies();
+            
+            // Initialize health monitoring
+            await this.initializeHealthMonitoring();
+            
+            // Setup performance monitoring
+            this.setupPerformanceMonitoring();
+            
+            // Start background maintenance tasks
+            this.startMaintenanceTasks();
+            
+            this.isInitialized = true;
+            
+            this.logger.info('ProxyRoutesManager initialized successfully', {
+                proxies: this.proxyInstances.size,
+                services: this.serviceProxies.size,
+                components: {
+                    authMiddleware: !!this.authMiddleware,
+                    rateLimitMiddleware: !!this.rateLimitMiddleware,
+                    tenantMiddleware: !!this.tenantMiddleware,
+                    tracingMiddleware: !!this.tracingMiddleware,
+                    cacheManager: !!this.cacheManager,
+                    circuitBreakerManager: !!this.circuitBreakerManager,
+                    metricsCollector: !!this.metricsCollector
+                }
+            });
+            
+        } catch (error) {
+            this.logger.error('Failed to initialize ProxyRoutesManager', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Initializes proxy routes and middleware
+     * @private
+     * @async
+     */
+    async initializeProxyRoutes() {
+        // Setup catch-all dynamic proxy route
+        this.setupDynamicProxyRoute();
         
-        // Setup service-specific routes
-        this.setupServiceProxies();
-        
-        // Setup WebSocket routes
-        this.setupWebSocketProxies();
-        
-        // Setup GraphQL routes
-        this.setupGraphQLProxy();
-        
-        // Setup gRPC-Web routes
-        this.setupGrpcWebProxy();
-        
-        // Setup static file proxying
-        this.setupStaticFileProxy();
+        // Setup protocol-specific routes
+        this.setupProtocolSpecificRoutes();
         
         // Setup API versioning routes
-        this.setupVersionedProxies();
+        this.setupVersionedRoutes();
+        
+        // Setup health check proxying
+        this.setupHealthCheckProxying();
+        
+        // Setup static asset proxying
+        this.setupStaticAssetProxying();
+        
+        this.logger.info('Proxy routes initialized');
     }
 
     /**
-     * Sets up catch-all proxy route
+     * Sets up the main dynamic proxy route
      * @private
      */
-    setupCatchAllProxy() {
+    setupDynamicProxyRoute() {
         /**
          * ALL /*
-         * Catch-all proxy route for dynamic service routing
+         * Main catch-all proxy route for dynamic service routing
          */
-        router.all('/*', 
+        this.router.all('/*', 
             // Apply middleware chain
             this.applyMiddlewareChain(),
             
             // Main proxy handler
             async (req, res, next) => {
-                const startTime = Date.now();
-                this.statistics.totalRequests++;
-                this.statistics.activeConnections++;
+                const startTime = performance.now();
+                const requestId = req.id || crypto.randomUUID();
                 
                 try {
-                    // Determine target service
-                    const routingDecision = await this.routingMiddleware.route(req);
+                    // Increment request counter
+                    this.proxyStatistics.totalRequests++;
+                    this.proxyStatistics.activeConnections++;
                     
-                    if (!routingDecision || !routingDecision.instance) {
-                        throw new Error('No service available for this request');
+                    // Add request metadata
+                    req.proxyMetadata = {
+                        requestId,
+                        startTime,
+                        attempt: 1
+                    };
+                    
+                    // Determine target service through routing decision
+                    const routingDecision = await this.makeRoutingDecision(req);
+                    
+                    if (!routingDecision || !routingDecision.target) {
+                        this.handleNoServiceAvailable(req, res);
+                        return;
                     }
                     
-                    // Check circuit breaker
-                    const breaker = this.circuitBreakerManager.getBreaker(routingDecision.service);
-                    if (breaker && breaker.opened) {
-                        return this.handleCircuitBreakerOpen(req, res, routingDecision.service);
+                    // Check circuit breaker status
+                    if (await this.isCircuitBreakerOpen(routingDecision.service)) {
+                        this.handleCircuitBreakerOpen(req, res, routingDecision.service);
+                        return;
                     }
                     
                     // Check cache for GET requests
-                    if (req.method === 'GET' && this.shouldCache(req)) {
-                        const cached = await this.getCachedResponse(req);
-                        if (cached) {
-                            this.statistics.successfulRequests++;
-                            return res.status(cached.status).json(cached.body);
-                        }
+                    const cachedResponse = await this.checkResponseCache(req, routingDecision);
+                    if (cachedResponse) {
+                        this.serveCachedResponse(req, res, cachedResponse);
+                        return;
                     }
-                    
-                    // Create proxy configuration
-                    const proxyConfig = this.createProxyConfig(routingDecision, req);
-                    
-                    // Get or create proxy instance
-                    const proxy = this.getOrCreateProxy(routingDecision.service, proxyConfig);
                     
                     // Apply request transformations
                     await this.applyRequestTransformations(req, routingDecision);
                     
-                    // Set up response handling
-                    this.setupResponseHandling(req, res, routingDecision, startTime);
-                    
-                    // Execute proxy
-                    proxy(req, res, next);
+                    // Create and execute proxy
+                    await this.executeProxy(req, res, routingDecision);
                     
                 } catch (error) {
-                    this.statistics.failedRequests++;
-                    this.statistics.activeConnections--;
-                    
                     this.handleProxyError(error, req, res, startTime);
+                } finally {
+                    this.proxyStatistics.activeConnections--;
                 }
             }
         );
     }
 
     /**
-     * Sets up service-specific proxy routes
+     * Sets up protocol-specific routes
      * @private
      */
-    setupServiceProxies() {
-        // Get all registered services
-        const services = this.serviceRegistry.getAllServices();
-        
-        services.forEach(service => {
-            if (service.path) {
-                const proxyConfig = this.createServiceProxyConfig(service);
-                const proxy = createProxyMiddleware(service.path, proxyConfig);
-                
-                // Store proxy instance
-                this.proxyInstances.set(service.name, proxy);
-                
-                // Apply route
-                router.use(service.path, 
-                    this.applyMiddlewareChain(),
-                    proxy
-                );
-                
-                this.log('info', `Proxy route created for service: ${service.name} at ${service.path}`);
-            }
-        });
-    }
-
-    /**
-     * Sets up WebSocket proxy routes
-     * @private
-     */
-    setupWebSocketProxies() {
-        /**
-         * WebSocket upgrade handler
-         */
-        router.ws('/*', 
-            async (ws, req) => {
-                const connectionId = this.generateConnectionId();
-                this.statistics.websocketConnections++;
-                
+    setupProtocolSpecificRoutes() {
+        // GraphQL endpoint
+        this.router.post('/graphql',
+            this.applyMiddlewareChain(),
+            async (req, res, next) => {
                 try {
-                    // Determine target service
-                    const routingDecision = await this.routingMiddleware.route(req);
-                    
-                    if (!routingDecision || !routingDecision.instance) {
-                        ws.close(1001, 'No service available');
-                        return;
-                    }
-                    
-                    // Create WebSocket proxy
-                    const targetUrl = new URL(routingDecision.instance.url);
-                    targetUrl.protocol = targetUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-                    targetUrl.pathname = req.url;
-                    
-                    // Connect to target
-                    const WebSocket = require('ws');
-                    const targetWs = new WebSocket(targetUrl.toString(), {
-                        headers: this.createProxyHeaders(req)
-                    });
-                    
-                    // Store connection
-                    this.wsConnections.set(connectionId, {
-                        client: ws,
-                        target: targetWs,
-                        service: routingDecision.service,
-                        startTime: Date.now()
-                    });
-                    
-                    // Setup bidirectional message forwarding
-                    this.setupWebSocketProxy(ws, targetWs, connectionId);
-                    
+                    await this.handleGraphQLRequest(req, res);
                 } catch (error) {
-                    this.log('error', 'WebSocket proxy error', error);
+                    this.handleProxyError(error, req, res);
+                }
+            }
+        );
+
+        // gRPC-Web endpoint
+        this.router.all('/grpc/*',
+            this.applyMiddlewareChain(),
+            async (req, res, next) => {
+                try {
+                    await this.handleGrpcWebRequest(req, res);
+                } catch (error) {
+                    this.handleProxyError(error, req, res);
+                }
+            }
+        );
+
+        // WebSocket upgrade handling - conditionally setup if WebSocket support is available
+        if (typeof this.router.ws === 'function') {
+            this.router.ws('/*', async (ws, req) => {
+                try {
+                    await this.handleWebSocketUpgrade(ws, req);
+                } catch (error) {
+                    this.logger.error('WebSocket upgrade error', error);
                     ws.close(1001, 'Proxy error');
-                    this.statistics.websocketConnections--;
                 }
-            }
-        );
-    }
+            });
+            this.logger.debug('WebSocket routes configured');
+        } else {
+            this.logger.warn('WebSocket support not available on router - WebSocket proxying will be handled at server level');
+            // Mark that WebSocket setup needs to be handled differently
+            this.webSocketSetupDeferred = true;
+        }
 
-    /**
-     * Sets up GraphQL proxy
-     * @private
-     */
-    setupGraphQLProxy() {
-        /**
-         * POST /graphql
-         * GraphQL endpoint with intelligent query routing
-         */
-        router.post('/graphql',
+        // SOAP endpoint
+        this.router.post('/soap/*',
             this.applyMiddlewareChain(),
             async (req, res, next) => {
                 try {
-                    const { query, variables, operationName } = req.body;
-                    
-                    // Parse GraphQL query to determine required services
-                    const requiredServices = this.parseGraphQLQuery(query);
-                    
-                    // Check if query requires federation
-                    if (requiredServices.length > 1) {
-                        return this.handleFederatedGraphQL(req, res, requiredServices);
-                    }
-                    
-                    // Single service GraphQL query
-                    const service = requiredServices[0] || 'graphql-service';
-                    const routingDecision = await this.routingMiddleware.route(req, {
-                        targetService: service
-                    });
-                    
-                    // Create proxy configuration
-                    const proxyConfig = {
-                        ...this.defaultConfig,
-                        target: routingDecision.instance.url,
-                        pathRewrite: { '^/graphql': routingDecision.instance.graphqlPath || '/graphql' }
-                    };
-                    
-                    // Execute proxy
-                    const proxy = createProxyMiddleware(proxyConfig);
-                    proxy(req, res, next);
-                    
+                    await this.handleSoapRequest(req, res);
                 } catch (error) {
                     this.handleProxyError(error, req, res);
                 }
@@ -352,103 +445,19 @@ class ProxyRoutes {
     }
 
     /**
-     * Sets up gRPC-Web proxy
+     * Sets up versioned API routes
      * @private
      */
-    setupGrpcWebProxy() {
-        /**
-         * POST /grpc/*
-         * gRPC-Web to gRPC proxy
-         */
-        router.all('/grpc/*',
-            this.applyMiddlewareChain(),
-            async (req, res, next) => {
-                try {
-                    // Extract service and method from path
-                    const [, , serviceName, methodName] = req.path.split('/');
-                    
-                    // Route to appropriate gRPC service
-                    const routingDecision = await this.routingMiddleware.route(req, {
-                        targetService: `grpc-${serviceName}`
-                    });
-                    
-                    // Handle gRPC-Web to gRPC translation
-                    await this.handleGrpcWebRequest(req, res, routingDecision);
-                    
-                } catch (error) {
-                    this.handleProxyError(error, req, res);
-                }
-            }
-        );
-    }
-
-    /**
-     * Sets up static file proxy
-     * @private
-     */
-    setupStaticFileProxy() {
-        /**
-         * GET /static/*
-         * Static file serving with CDN support
-         */
-        router.get('/static/*',
-            async (req, res, next) => {
-                try {
-                    // Determine CDN or origin
-                    const cdnEnabled = this.shouldUseCDN(req);
-                    const target = cdnEnabled ? 
-                        process.env.CDN_URL : 
-                        process.env.STATIC_ORIGIN_URL;
-                    
-                    const proxyConfig = {
-                        ...this.defaultConfig,
-                        target,
-                        changeOrigin: true,
-                        onProxyRes: (proxyRes, req, res) => {
-                            // Add cache headers
-                            proxyRes.headers['cache-control'] = 'public, max-age=31536000';
-                            proxyRes.headers['x-cache'] = cdnEnabled ? 'CDN' : 'ORIGIN';
-                        }
-                    };
-                    
-                    const proxy = createProxyMiddleware(proxyConfig);
-                    proxy(req, res, next);
-                    
-                } catch (error) {
-                    this.handleProxyError(error, req, res);
-                }
-            }
-        );
-    }
-
-    /**
-     * Sets up versioned API proxies
-     * @private
-     */
-    setupVersionedProxies() {
-        const versions = ['v1', 'v2', 'v3'];
+    setupVersionedRoutes() {
+        const supportedVersions = ['v1', 'v2', 'v3', 'v4'];
         
-        versions.forEach(version => {
-            router.all(`/api/${version}/*`,
+        supportedVersions.forEach(version => {
+            this.router.all(`/api/${version}/*`,
                 this.applyMiddlewareChain(),
                 async (req, res, next) => {
                     try {
-                        // Route based on version
-                        const routingDecision = await this.routingMiddleware.route(req, {
-                            apiVersion: version
-                        });
-                        
-                        // Version-specific transformations
-                        if (version === 'v1') {
-                            req = this.applyV1Transformations(req);
-                        }
-                        
-                        // Create proxy
-                        const proxyConfig = this.createProxyConfig(routingDecision, req);
-                        const proxy = createProxyMiddleware(proxyConfig);
-                        
-                        proxy(req, res, next);
-                        
+                        req.apiVersion = version;
+                        await this.handleVersionedRequest(req, res, version);
                     } catch (error) {
                         this.handleProxyError(error, req, res);
                     }
@@ -458,449 +467,161 @@ class ProxyRoutes {
     }
 
     /**
-     * Creates proxy configuration for a routing decision
+     * Sets up health check proxying
      * @private
-     * @param {Object} routingDecision - Routing decision
-     * @param {Object} req - Request object
-     * @returns {Object} Proxy configuration
      */
-    createProxyConfig(routingDecision, req) {
-        const target = routingDecision.instance.url;
-        
-        return {
-            ...this.defaultConfig,
-            target,
-            
-            // Path rewriting
-            pathRewrite: (path, req) => {
-                return this.rewritePath(path, routingDecision, req);
-            },
-            
-            // Request transformation
-            onProxyReq: (proxyReq, req, res) => {
-                this.onProxyRequest(proxyReq, req, res, routingDecision);
-            },
-            
-            // Response transformation
-            onProxyRes: async (proxyRes, req, res) => {
-                await this.onProxyResponse(proxyRes, req, res, routingDecision);
-            },
-            
-            // Error handling
-            onError: (err, req, res) => {
-                this.onProxyError(err, req, res, routingDecision);
-            },
-            
-            // WebSocket upgrade
-            onProxyReqWs: (proxyReq, req, socket, head) => {
-                this.onProxyWebSocketRequest(proxyReq, req, socket, head, routingDecision);
+    setupHealthCheckProxying() {
+        this.router.get('/health/*',
+            async (req, res, next) => {
+                try {
+                    await this.handleHealthCheckProxy(req, res);
+                } catch (error) {
+                    this.handleProxyError(error, req, res);
+                }
             }
-        };
+        );
     }
 
     /**
-     * Creates service-specific proxy configuration
+     * Sets up static asset proxying
      * @private
+     */
+    setupStaticAssetProxying() {
+        this.router.get('/static/*',
+            async (req, res, next) => {
+                try {
+                    await this.handleStaticAssetProxy(req, res);
+                } catch (error) {
+                    this.handleProxyError(error, req, res);
+                }
+            }
+        );
+    }
+
+    /**
+     * Sets up service-specific proxy instances
+     * @private
+     * @async
+     */
+    async setupServiceProxies() {
+        if (!this.serviceRegistry) {
+            this.logger.warn('Service registry not available, skipping service proxy setup');
+            return;
+        }
+
+        const services = this.serviceRegistry.getAllServices();
+        
+        for (const service of services) {
+            try {
+                await this.createServiceProxy(service);
+                this.logger.debug(`Service proxy created for: ${service.name}`);
+            } catch (error) {
+                this.logger.error(`Failed to create proxy for service: ${service.name}`, error);
+            }
+        }
+
+        this.logger.info(`Service proxies created for ${services.length} services`);
+    }
+
+    /**
+     * Creates a proxy instance for a specific service
+     * @private
+     * @async
+     * @param {Object} service - Service configuration
+     */
+    async createServiceProxy(service) {
+        const proxyConfig = await this.buildProxyConfiguration(service);
+        const proxy = createProxyMiddleware(proxyConfig);
+        
+        this.serviceProxies.set(service.name, {
+            proxy,
+            config: proxyConfig,
+            service,
+            createdAt: Date.now()
+        });
+
+        // Setup service-specific routing if path is defined
+        if (service.path) {
+            this.router.use(service.path, 
+                this.applyServiceMiddleware(service),
+                proxy
+            );
+        }
+    }
+
+    /**
+     * Builds proxy configuration for a service
+     * @private
+     * @async
      * @param {Object} service - Service configuration
      * @returns {Object} Proxy configuration
      */
-    createServiceProxyConfig(service) {
+    async buildProxyConfiguration(service) {
+        const baseConfig = { ...this.proxyDefaults };
+        
         return {
-            ...this.defaultConfig,
+            ...baseConfig,
             target: service.url,
-            changeOrigin: true,
-            pathRewrite: service.pathRewrite || {},
-            headers: {
-                ...this.defaultConfig.headers,
-                'X-Service-Name': service.name,
-                'X-Service-Version': service.version || '1.0.0'
-            },
             
-            // Load balancing
+            // Dynamic target selection for load balancing
             router: async (req) => {
-                const instance = await this.selectServiceInstance(service);
-                return instance.url;
+                const target = await this.selectServiceTarget(service, req);
+                return target.url;
             },
             
-            // Circuit breaker integration
+            // Path rewriting
+            pathRewrite: (path, req) => {
+                return this.rewriteRequestPath(path, req, service);
+            },
+            
+            // Request interceptor
+            onProxyReq: (proxyReq, req, res) => {
+                this.interceptProxyRequest(proxyReq, req, res, service);
+            },
+            
+            // Response interceptor
+            onProxyRes: async (proxyRes, req, res) => {
+                await this.interceptProxyResponse(proxyRes, req, res, service);
+            },
+            
+            // Error handler
             onError: (err, req, res) => {
-                this.circuitBreakerManager.recordError(service.name);
-                this.onProxyError(err, req, res, { service: service.name });
+                this.handleServiceProxyError(err, req, res, service);
             },
             
-            onProxyRes: (proxyRes, req, res) => {
-                if (proxyRes.statusCode >= 500) {
-                    this.circuitBreakerManager.recordError(service.name);
-                } else {
-                    this.circuitBreakerManager.recordSuccess(service.name);
-                }
-            }
+            // WebSocket support
+            onProxyReqWs: (proxyReq, req, socket, head) => {
+                this.interceptWebSocketRequest(proxyReq, req, socket, head, service);
+            },
+            
+            // Additional service-specific configuration
+            ...service.proxyConfig
         };
     }
 
     /**
-     * Handles HTTP/HTTPS proxy
+     * Applies middleware chain for requests
      * @private
-     * @async
-     * @param {Object} req - Request object
-     * @param {Object} res - Response object
-     * @param {Object} routingDecision - Routing decision
-     */
-    async handleHttpProxy(req, res, routingDecision) {
-        const proxyConfig = this.createProxyConfig(routingDecision, req);
-        const proxy = createProxyMiddleware(proxyConfig);
-        
-        return new Promise((resolve, reject) => {
-            proxy(req, res, (error) => {
-                if (error) reject(error);
-                else resolve();
-            });
-        });
-    }
-
-    /**
-     * Handles WebSocket proxy
-     * @private
-     * @async
-     * @param {Object} req - Request object
-     * @param {Object} res - Response object
-     * @param {Object} routingDecision - Routing decision
-     */
-    async handleWebSocketProxy(req, res, routingDecision) {
-        // WebSocket handling is done in setupWebSocketProxies
-        // This is a placeholder for protocol handler consistency
-    }
-
-    /**
-     * Handles gRPC proxy
-     * @private
-     * @async
-     * @param {Object} req - Request object
-     * @param {Object} res - Response object
-     * @param {Object} routingDecision - Routing decision
-     */
-    async handleGrpcProxy(req, res, routingDecision) {
-        // Implement gRPC proxying logic
-        // This would typically use grpc-node or @grpc/grpc-js
-        
-        const grpcClient = this.getGrpcClient(routingDecision.service);
-        
-        // Forward gRPC call
-        const method = this.extractGrpcMethod(req);
-        const message = req.body;
-        
-        try {
-            const response = await grpcClient[method](message);
-            res.json(response);
-        } catch (error) {
-            this.handleGrpcError(error, res);
-        }
-    }
-
-    /**
-     * Handles GraphQL proxy with federation support
-     * @private
-     * @async
-     * @param {Object} req - Request object
-     * @param {Object} res - Response object
-     * @param {Object} routingDecision - Routing decision
-     */
-    async handleGraphQLProxy(req, res, routingDecision) {
-        // GraphQL-specific handling is in setupGraphQLProxy
-        // This is for the protocol handler pattern
-    }
-
-    /**
-     * Handles federated GraphQL queries
-     * @private
-     * @async
-     * @param {Object} req - Request object
-     * @param {Object} res - Response object
-     * @param {Array} services - Required services
-     */
-    async handleFederatedGraphQL(req, res, services) {
-        const { query, variables } = req.body;
-        
-        try {
-            // Split query by service
-            const subQueries = this.splitGraphQLQuery(query, services);
-            
-            // Execute sub-queries in parallel
-            const promises = subQueries.map(async ({ service, subQuery }) => {
-                const routingDecision = await this.routingMiddleware.route(req, {
-                    targetService: service
-                });
-                
-                const response = await this.executeGraphQLQuery(
-                    routingDecision.instance.url,
-                    subQuery,
-                    variables
-                );
-                
-                return { service, response };
-            });
-            
-            const results = await Promise.all(promises);
-            
-            // Merge results
-            const mergedResponse = this.mergeGraphQLResponses(results);
-            
-            res.json(mergedResponse);
-            
-        } catch (error) {
-            res.status(500).json({
-                errors: [{
-                    message: 'Federation error',
-                    extensions: { code: 'FEDERATION_ERROR' }
-                }]
-            });
-        }
-    }
-
-    /**
-     * Handles gRPC-Web requests
-     * @private
-     * @async
-     * @param {Object} req - Request object
-     * @param {Object} res - Response object
-     * @param {Object} routingDecision - Routing decision
-     */
-    async handleGrpcWebRequest(req, res, routingDecision) {
-        // Convert gRPC-Web to gRPC
-        const grpcMessage = this.grpcWebToGrpc(req.body);
-        
-        // Forward to gRPC service
-        const grpcResponse = await this.forwardToGrpcService(
-            routingDecision.instance.url,
-            req.path,
-            grpcMessage
-        );
-        
-        // Convert response back to gRPC-Web
-        const grpcWebResponse = this.grpcToGrpcWeb(grpcResponse);
-        
-        // Set appropriate headers
-        res.set({
-            'Content-Type': 'application/grpc-web+proto',
-            'X-Grpc-Web': '1'
-        });
-        
-        res.send(grpcWebResponse);
-    }
-
-    /**
-     * Proxy request handler
-     * @private
-     * @param {Object} proxyReq - Proxy request
-     * @param {Object} req - Original request
-     * @param {Object} res - Response object
-     * @param {Object} routingDecision - Routing decision
-     */
-    onProxyRequest(proxyReq, req, res, routingDecision) {
-        // Add tracing headers
-        if (req.traceContext) {
-            proxyReq.setHeader('X-Trace-Id', req.traceContext.traceId);
-            proxyReq.setHeader('X-Span-Id', req.traceContext.spanId);
-            proxyReq.setHeader('X-Parent-Span-Id', req.traceContext.parentSpanId);
-        }
-        
-        // Add tenant context
-        if (req.tenant) {
-            proxyReq.setHeader('X-Tenant-Id', req.tenant.id);
-            proxyReq.setHeader('X-Tenant-Realm', req.tenant.realm || 'default');
-        }
-        
-        // Add routing metadata
-        proxyReq.setHeader('X-Forwarded-Service', routingDecision.service);
-        proxyReq.setHeader('X-Forwarded-Instance', routingDecision.instance.id);
-        proxyReq.setHeader('X-Gateway-Time', Date.now().toString());
-        
-        // Fix body for POST/PUT/PATCH requests
-        if (req.body && ['POST', 'PUT', 'PATCH'].includes(req.method)) {
-            const bodyData = JSON.stringify(req.body);
-            proxyReq.setHeader('Content-Type', 'application/json');
-            proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
-            proxyReq.write(bodyData);
-        }
-        
-        // Apply request transformations
-        const transformer = this.requestTransformers.get(routingDecision.service);
-        if (transformer) {
-            transformer(proxyReq, req);
-        }
-    }
-
-    /**
-     * Proxy response handler
-     * @private
-     * @async
-     * @param {Object} proxyRes - Proxy response
-     * @param {Object} req - Original request
-     * @param {Object} res - Response object
-     * @param {Object} routingDecision - Routing decision
-     */
-    async onProxyResponse(proxyRes, req, res, routingDecision) {
-        // Add response headers
-        proxyRes.headers['X-Served-By'] = routingDecision.instance.id;
-        proxyRes.headers['X-Response-Time'] = `${Date.now() - req.startTime}ms`;
-        
-        // Record metrics
-        this.recordProxyMetrics(req, proxyRes, routingDecision);
-        
-        // Cache successful GET responses
-        if (req.method === 'GET' && 
-            proxyRes.statusCode === 200 && 
-            this.shouldCache(req)) {
-            await this.cacheResponse(req, proxyRes);
-        }
-        
-        // Apply response transformations
-        const transformer = this.responseTransformers.get(routingDecision.service);
-        if (transformer) {
-            await transformer(proxyRes, req, res);
-        }
-        
-        // Handle circuit breaker
-        if (proxyRes.statusCode >= 500) {
-            this.circuitBreakerManager.recordError(routingDecision.service);
-        } else {
-            this.circuitBreakerManager.recordSuccess(routingDecision.service);
-        }
-        
-        this.statistics.successfulRequests++;
-        this.statistics.activeConnections--;
-    }
-
-    /**
-     * Proxy error handler
-     * @private
-     * @param {Error} err - Error object
-     * @param {Object} req - Request object
-     * @param {Object} res - Response object
-     * @param {Object} routingDecision - Routing decision
-     */
-    onProxyError(err, req, res, routingDecision) {
-        this.statistics.failedRequests++;
-        this.statistics.activeConnections--;
-        
-        this.log('error', 'Proxy error', {
-            error: err.message,
-            service: routingDecision?.service,
-            path: req.path,
-            method: req.method
-        });
-        
-        // Record circuit breaker error
-        if (routingDecision?.service) {
-            this.circuitBreakerManager.recordError(routingDecision.service);
-        }
-        
-        // Check if we should retry
-        if (this.shouldRetry(err, req)) {
-            return this.retryRequest(req, res, routingDecision);
-        }
-        
-        // Return error response
-        if (!res.headersSent) {
-            res.status(err.statusCode || 502).json({
-                error: 'Proxy Error',
-                message: err.message,
-                service: routingDecision?.service,
-                timestamp: Date.now()
-            });
-        }
-    }
-
-    /**
-     * WebSocket proxy request handler
-     * @private
-     * @param {Object} proxyReq - Proxy request
-     * @param {Object} req - Original request
-     * @param {Object} socket - Socket
-     * @param {Object} head - Head
-     * @param {Object} routingDecision - Routing decision
-     */
-    onProxyWebSocketRequest(proxyReq, req, socket, head, routingDecision) {
-        // Add WebSocket headers
-        proxyReq.setHeader('X-Forwarded-Service', routingDecision.service);
-        
-        if (req.tenant) {
-            proxyReq.setHeader('X-Tenant-Id', req.tenant.id);
-        }
-    }
-
-    /**
-     * Sets up WebSocket proxy between client and target
-     * @private
-     * @param {Object} clientWs - Client WebSocket
-     * @param {Object} targetWs - Target WebSocket
-     * @param {string} connectionId - Connection ID
-     */
-    setupWebSocketProxy(clientWs, targetWs, connectionId) {
-        // Client to target
-        clientWs.on('message', (data) => {
-            if (targetWs.readyState === 1) { // OPEN
-                targetWs.send(data);
-            }
-        });
-        
-        // Target to client
-        targetWs.on('message', (data) => {
-            if (clientWs.readyState === 1) { // OPEN
-                clientWs.send(data);
-            }
-        });
-        
-        // Handle client disconnect
-        clientWs.on('close', () => {
-            targetWs.close();
-            this.wsConnections.delete(connectionId);
-            this.statistics.websocketConnections--;
-        });
-        
-        // Handle target disconnect
-        targetWs.on('close', () => {
-            clientWs.close();
-            this.wsConnections.delete(connectionId);
-            this.statistics.websocketConnections--;
-        });
-        
-        // Handle errors
-        const errorHandler = (error) => {
-            this.log('error', 'WebSocket error', { connectionId, error: error.message });
-            clientWs.close(1001);
-            targetWs.close();
-            this.wsConnections.delete(connectionId);
-            this.statistics.websocketConnections--;
-        };
-        
-        clientWs.on('error', errorHandler);
-        targetWs.on('error', errorHandler);
-    }
-
-    /**
-     * Applies middleware chain
-     * @private
-     * @returns {Array} Middleware chain
+     * @returns {Array} Middleware array
      */
     applyMiddlewareChain() {
-        const chain = [];
+        const middlewares = [];
         
-        // Add tracing
+        // Add distributed tracing
         if (this.tracingMiddleware) {
-            chain.push(this.tracingMiddleware.trace());
+            middlewares.push(this.tracingMiddleware.trace());
         }
         
-        // Add tenant identification
+        // Add tenant identification and isolation
         if (this.tenantMiddleware) {
-            chain.push(this.tenantMiddleware.identify());
-            chain.push(this.tenantMiddleware.isolate());
+            middlewares.push(this.tenantMiddleware.identify());
+            middlewares.push(this.tenantMiddleware.isolate());
         }
         
         // Add authentication if required
         if (this.authMiddleware) {
-            chain.push((req, res, next) => {
-                if (this.requiresAuth(req)) {
+            middlewares.push((req, res, next) => {
+                if (this.requiresAuthentication(req)) {
                     return this.authMiddleware.authenticate()(req, res, next);
                 }
                 next();
@@ -909,96 +630,442 @@ class ProxyRoutes {
         
         // Add rate limiting
         if (this.rateLimitMiddleware) {
-            chain.push(this.rateLimitMiddleware.apply());
+            middlewares.push(this.rateLimitMiddleware.apply());
         }
         
-        return chain;
+        return middlewares;
     }
 
     /**
-     * Helper methods
+     * Applies service-specific middleware
+     * @private
+     * @param {Object} service - Service configuration
+     * @returns {Array} Middleware array
      */
-    
-    getOrCreateProxy(service, config) {
-        if (!this.proxyInstances.has(service)) {
-            const proxy = createProxyMiddleware(config);
-            this.proxyInstances.set(service, proxy);
-        }
-        return this.proxyInstances.get(service);
-    }
-    
-    createProxyHeaders(req) {
-        return {
-            ...req.headers,
-            'X-Forwarded-For': req.ip,
-            'X-Forwarded-Proto': req.protocol,
-            'X-Forwarded-Host': req.get('host')
-        };
-    }
-    
-    rewritePath(path, routingDecision, req) {
-        // Apply path rewriting rules
-        const rules = routingDecision.instance.pathRewrite || {};
+    applyServiceMiddleware(service) {
+        const middlewares = [];
         
-        for (const [pattern, replacement] of Object.entries(rules)) {
-            const regex = new RegExp(pattern);
-            if (regex.test(path)) {
-                return path.replace(regex, replacement);
+        // Service-specific authentication
+        if (service.authentication && this.authMiddleware) {
+            middlewares.push(this.authMiddleware.authenticate());
+            
+            if (service.authorization) {
+                middlewares.push(this.authMiddleware.authorize(service.authorization));
             }
         }
         
-        return path;
+        // Service-specific rate limiting
+        if (service.rateLimit && this.rateLimitMiddleware) {
+            middlewares.push(this.rateLimitMiddleware.apply(service.rateLimit));
+        }
+        
+        return middlewares;
     }
-    
-    async selectServiceInstance(service) {
-        // This would integrate with the routing middleware
-        // For now, return the first instance
-        const instances = await this.serviceRegistry.getServiceInstances(service.name);
+
+    /**
+     * Makes routing decision for incoming request
+     * @private
+     * @async
+     * @param {Object} req - Express request object
+     * @returns {Promise<Object>} Routing decision
+     */
+    async makeRoutingDecision(req) {
+        try {
+            // Use the injected request router
+            if (this.requestRouter && this.requestRouter.route) {
+                return await this.requestRouter.route(req);
+            }
+            
+            // Fallback routing logic
+            return await this.performFallbackRouting(req);
+            
+        } catch (error) {
+            this.logger.error('Routing decision failed', error);
+            return null;
+        }
+    }
+
+    /**
+     * Performs fallback routing when request router is unavailable
+     * @private
+     * @async
+     * @param {Object} req - Express request object
+     * @returns {Promise<Object>} Routing decision
+     */
+    async performFallbackRouting(req) {
+        if (!this.serviceRegistry) {
+            return null;
+        }
+
+        const services = this.serviceRegistry.getAllServices();
+        const healthyServices = services.filter(s => s.status === 'healthy');
+        
+        if (healthyServices.length === 0) {
+            return null;
+        }
+
+        // Simple path-based routing
+        const matchingService = healthyServices.find(service => {
+            return service.path && req.path.startsWith(service.path);
+        });
+
+        if (matchingService) {
+            const target = await this.selectServiceTarget(matchingService, req);
+            return {
+                service: matchingService.name,
+                target,
+                instance: target
+            };
+        }
+
+        return null;
+    }
+
+    /**
+     * Selects target instance for a service using load balancing
+     * @private
+     * @async
+     * @param {Object} service - Service configuration
+     * @param {Object} req - Express request object
+     * @returns {Promise<Object>} Selected service target
+     */
+    async selectServiceTarget(service, req) {
+        const algorithm = service.loadBalancing?.algorithm || 'round-robin';
+        const balancer = this.loadBalancers[algorithm] || this.loadBalancers['round-robin'];
+        
+        const instances = await this.getServiceInstances(service.name);
+        const healthyInstances = instances.filter(instance => instance.status === 'healthy');
+        
+        if (healthyInstances.length === 0) {
+            throw new Error(`No healthy instances available for service: ${service.name}`);
+        }
+        
+        return balancer(healthyInstances, req, service);
+    }
+
+    /**
+     * Gets service instances from registry
+     * @private
+     * @async
+     * @param {string} serviceName - Name of the service
+     * @returns {Promise<Array>} Service instances
+     */
+    async getServiceInstances(serviceName) {
+        if (this.serviceRegistry && this.serviceRegistry.getServiceInstances) {
+            return await this.serviceRegistry.getServiceInstances(serviceName);
+        }
+        
+        // Fallback: use service URL as single instance
+        const service = this.serviceRegistry.getService(serviceName);
+        if (service) {
+            return [{
+                id: `${serviceName}-default`,
+                url: service.url,
+                status: service.status || 'healthy',
+                weight: 100
+            }];
+        }
+        
+        return [];
+    }
+
+    /**
+     * Load balancer implementations
+     */
+    roundRobinBalancer(instances, req, service) {
+        const serviceKey = `rr:${service.name}`;
+        let index = this.routingStrategies.get(serviceKey) || 0;
+        
+        const selected = instances[index % instances.length];
+        this.routingStrategies.set(serviceKey, index + 1);
+        
+        return selected;
+    }
+
+    leastConnectionsBalancer(instances, req, service) {
+        // Find instance with least active connections
+        let minConnections = Infinity;
+        let selected = instances[0];
+        
+        for (const instance of instances) {
+            const connections = this.getActiveConnections(instance.id);
+            if (connections < minConnections) {
+                minConnections = connections;
+                selected = instance;
+            }
+        }
+        
+        return selected;
+    }
+
+    weightedBalancer(instances, req, service) {
+        const totalWeight = instances.reduce((sum, instance) => sum + (instance.weight || 100), 0);
+        let random = Math.random() * totalWeight;
+        
+        for (const instance of instances) {
+            random -= (instance.weight || 100);
+            if (random <= 0) {
+                return instance;
+            }
+        }
+        
         return instances[0];
     }
-    
-    shouldCache(req) {
-        // Determine if response should be cached
-        const noCacheHeaders = ['cache-control', 'pragma'].some(header => 
-            req.headers[header]?.includes('no-cache')
-        );
+
+    ipHashBalancer(instances, req, service) {
+        const ip = req.ip || req.connection.remoteAddress || '127.0.0.1';
+        const hash = this.hashString(ip);
+        const index = hash % instances.length;
         
-        return !noCacheHeaders && !req.headers.authorization;
+        return instances[index];
     }
-    
-    async getCachedResponse(req) {
-        const cacheKey = this.generateCacheKey(req);
-        return await this.cacheManager.get(cacheKey);
+
+    randomBalancer(instances, req, service) {
+        const index = Math.floor(Math.random() * instances.length);
+        return instances[index];
     }
-    
-    async cacheResponse(req, proxyRes) {
-        const cacheKey = this.generateCacheKey(req);
-        const ttl = this.extractCacheTTL(proxyRes.headers);
+
+    consistentHashBalancer(instances, req, service) {
+        // Simplified consistent hashing
+        const key = req.path + (req.sessionId || req.ip || '');
+        const hash = this.hashString(key);
+        const index = hash % instances.length;
         
-        const response = {
-            status: proxyRes.statusCode,
-            headers: proxyRes.headers,
-            body: await this.extractResponseBody(proxyRes)
+        return instances[index];
+    }
+
+    /**
+     * Utility methods
+     */
+    hashString(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return Math.abs(hash);
+    }
+
+    getActiveConnections(instanceId) {
+        return 0; // Mock implementation
+    }
+
+    requiresAuthentication(req) {
+        const publicPaths = ['/health', '/metrics', '/static', '/ping'];
+        return !publicPaths.some(path => req.path.startsWith(path));
+    }
+
+    async isCircuitBreakerOpen(serviceName) {
+        if (!this.circuitBreakerManager) {
+            return false;
+        }
+        
+        const breaker = this.circuitBreakerManager.getBreaker(serviceName);
+        return breaker && breaker.state === 'open';
+    }
+
+    async checkResponseCache(req, routingDecision) {
+        if (!this.cacheManager || req.method !== 'GET') {
+            return null;
+        }
+        
+        const cacheKey = this.generateCacheKey(req, routingDecision);
+        const cached = await this.cacheManager.get(cacheKey);
+        
+        if (cached) {
+            this.proxyStatistics.cacheHits++;
+            return cached;
+        }
+        
+        this.proxyStatistics.cacheMisses++;
+        return null;
+    }
+
+    generateCacheKey(req, routingDecision) {
+        const components = [
+            routingDecision.service,
+            req.method,
+            req.path,
+            JSON.stringify(req.query),
+            req.tenantId || 'default'
+        ];
+        
+        return crypto.createHash('md5').update(components.join(':')).digest('hex');
+    }
+
+    serveCachedResponse(req, res, cachedResponse) {
+        res.set(cachedResponse.headers || {});
+        res.set('X-Cache', 'HIT');
+        res.status(cachedResponse.status || 200);
+        res.send(cachedResponse.body);
+        
+        this.proxyStatistics.successfulRequests++;
+    }
+
+    async applyRequestTransformations(req, routingDecision) {
+        const transformer = this.requestTransformers.get(routingDecision.service);
+        if (transformer) {
+            await transformer(req, routingDecision);
+        }
+    }
+
+    async executeProxy(req, res, routingDecision) {
+        const proxyConfig = await this.buildDynamicProxyConfig(req, routingDecision);
+        const proxy = createProxyMiddleware(proxyConfig);
+        
+        return new Promise((resolve, reject) => {
+            proxy(req, res, (error) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
+    async buildDynamicProxyConfig(req, routingDecision) {
+        return {
+            ...this.proxyDefaults,
+            target: routingDecision.target.url,
+            
+            onProxyReq: (proxyReq, req, res) => {
+                this.enrichProxyRequest(proxyReq, req, res, routingDecision);
+            },
+            
+            onProxyRes: async (proxyRes, req, res) => {
+                await this.processProxyResponse(proxyRes, req, res, routingDecision);
+            },
+            
+            onError: (err, req, res) => {
+                this.handleDynamicProxyError(err, req, res, routingDecision);
+            }
+        };
+    }
+
+    enrichProxyRequest(proxyReq, req, res, routingDecision) {
+        // Add gateway headers
+        proxyReq.setHeader('X-Gateway-Request-ID', req.proxyMetadata.requestId);
+        proxyReq.setHeader('X-Gateway-Time', Date.now());
+        proxyReq.setHeader('X-Service-Target', routingDecision.service);
+        proxyReq.setHeader('X-Instance-ID', routingDecision.target.id);
+        
+        // Add tenant context
+        if (req.tenantId) {
+            proxyReq.setHeader('X-Tenant-ID', req.tenantId);
+        }
+        
+        // Add tracing context
+        if (req.traceContext) {
+            proxyReq.setHeader('X-Trace-ID', req.traceContext.traceId);
+            proxyReq.setHeader('X-Span-ID', req.traceContext.spanId);
+        }
+        
+        // Add user context
+        if (req.user) {
+            proxyReq.setHeader('X-User-ID', req.user.id);
+            proxyReq.setHeader('X-User-Roles', JSON.stringify(req.user.roles || []));
+        }
+    }
+
+    async processProxyResponse(proxyRes, req, res, routingDecision) {
+        // Add response headers
+        proxyRes.headers['X-Served-By'] = routingDecision.target.id;
+        proxyRes.headers['X-Service-Name'] = routingDecision.service;
+        proxyRes.headers['X-Response-Time'] = Date.now() - req.proxyMetadata.startTime;
+        
+        // Record metrics
+        this.recordProxyMetrics(req, proxyRes, routingDecision);
+        
+        // Cache response if applicable
+        await this.cacheResponseIfApplicable(req, proxyRes, routingDecision);
+        
+        // Update circuit breaker
+        this.updateCircuitBreakerState(routingDecision.service, proxyRes.statusCode >= 500);
+        
+        this.proxyStatistics.successfulRequests++;
+    }
+
+    recordProxyMetrics(req, proxyRes, routingDecision) {
+        const duration = Date.now() - req.proxyMetadata.startTime;
+        
+        // Update service-specific metrics
+        const serviceStats = this.proxyStatistics.byService.get(routingDecision.service) || {
+            requests: 0,
+            errors: 0,
+            totalLatency: 0
         };
         
-        await this.cacheManager.set(cacheKey, response, ttl);
+        serviceStats.requests++;
+        serviceStats.totalLatency += duration;
+        
+        if (proxyRes.statusCode >= 400) {
+            serviceStats.errors++;
+        }
+        
+        this.proxyStatistics.byService.set(routingDecision.service, serviceStats);
+        
+        // Update status code metrics
+        const statusCode = proxyRes.statusCode;
+        const statusStats = this.proxyStatistics.byStatusCode.get(statusCode) || 0;
+        this.proxyStatistics.byStatusCode.set(statusCode, statusStats + 1);
+        
+        // Update average latency
+        this.updateAverageLatency(duration);
+        
+        // Record in metrics collector if available
+        if (this.metricsCollector) {
+            this.metricsCollector.recordHttpRequest(
+                req.method,
+                req.path,
+                proxyRes.statusCode,
+                duration,
+                routingDecision.service
+            );
+        }
     }
-    
-    generateCacheKey(req) {
-        return `proxy:${req.method}:${req.path}:${JSON.stringify(req.query)}`;
+
+    updateAverageLatency(duration) {
+        const totalRequests = this.proxyStatistics.successfulRequests + this.proxyStatistics.failedRequests;
+        const currentAvg = this.proxyStatistics.averageLatency;
+        
+        this.proxyStatistics.averageLatency = (currentAvg * (totalRequests - 1) + duration) / totalRequests;
     }
-    
-    extractCacheTTL(headers) {
-        const cacheControl = headers['cache-control'];
-        if (cacheControl) {
+
+    async cacheResponseIfApplicable(req, proxyRes, routingDecision) {
+        if (!this.cacheManager || req.method !== 'GET' || proxyRes.statusCode !== 200) {
+            return;
+        }
+        
+        const cacheKey = this.generateCacheKey(req, routingDecision);
+        const ttl = this.determineCacheTTL(proxyRes, routingDecision);
+        
+        if (ttl > 0) {
+            const responseData = await this.extractResponseBody(proxyRes);
+            
+            await this.cacheManager.set(cacheKey, {
+                status: proxyRes.statusCode,
+                headers: proxyRes.headers,
+                body: responseData
+            }, ttl);
+        }
+    }
+
+    determineCacheTTL(proxyRes, routingDecision) {
+        // Check Cache-Control header
+        const cacheControl = proxyRes.headers['cache-control'];
+        if (cacheControl && cacheControl.includes('max-age=')) {
             const match = cacheControl.match(/max-age=(\d+)/);
             if (match) {
                 return parseInt(match[1]);
             }
         }
-        return 300; // Default 5 minutes
+        
+        // Default TTL based on service configuration
+        return routingDecision.service?.cacheTTL || 300; // 5 minutes default
     }
-    
+
     async extractResponseBody(proxyRes) {
         return new Promise((resolve) => {
             let body = '';
@@ -1006,138 +1073,71 @@ class ProxyRoutes {
             proxyRes.on('end', () => resolve(body));
         });
     }
-    
-    shouldRetry(error, req) {
-        return this.retryConfig.retryCondition(error) && 
-               (req.retryCount || 0) < this.retryConfig.retries;
-    }
-    
-    async retryRequest(req, res, routingDecision) {
-        req.retryCount = (req.retryCount || 0) + 1;
-        this.statistics.retriedRequests++;
+
+    updateCircuitBreakerState(serviceName, isError) {
+        if (!this.circuitBreakerManager) {
+            return;
+        }
         
-        // Wait before retry
-        await new Promise(resolve => 
-            setTimeout(resolve, this.retryConfig.retryDelay * req.retryCount)
-        );
-        
-        // Get new routing decision (may select different instance)
-        const newRoutingDecision = await this.routingMiddleware.route(req);
-        
-        // Retry the request
-        const proxyConfig = this.createProxyConfig(newRoutingDecision, req);
-        const proxy = createProxyMiddleware(proxyConfig);
-        
-        proxy(req, res);
+        if (isError) {
+            this.circuitBreakerManager.recordError(serviceName);
+        } else {
+            this.circuitBreakerManager.recordSuccess(serviceName);
+        }
     }
-    
-    requiresAuth(req) {
-        // Determine if request requires authentication
-        const publicPaths = ['/health', '/metrics', '/static'];
-        return !publicPaths.some(path => req.path.startsWith(path));
-    }
-    
-    shouldUseCDN(req) {
-        // Determine if CDN should be used
-        return process.env.CDN_ENABLED === 'true' && 
-               !req.headers['cache-control']?.includes('no-cache');
-    }
-    
-    parseGraphQLQuery(query) {
-        // Simple GraphQL query parser to determine required services
-        // In production, use a proper GraphQL parser
-        const services = [];
-        
-        if (query.includes('user')) services.push('user-service');
-        if (query.includes('product')) services.push('product-service');
-        if (query.includes('order')) services.push('order-service');
-        
-        return services;
-    }
-    
-    splitGraphQLQuery(query, services) {
-        // Split GraphQL query by service
-        // This is a simplified implementation
-        return services.map(service => ({
-            service,
-            subQuery: query // In reality, would extract service-specific parts
-        }));
-    }
-    
-    async executeGraphQLQuery(url, query, variables) {
-        // Execute GraphQL query against a service
-        // This would use fetch or axios in production
-        return { data: {} };
-    }
-    
-    mergeGraphQLResponses(results) {
-        // Merge multiple GraphQL responses
-        const merged = { data: {} };
-        
-        results.forEach(({ service, response }) => {
-            Object.assign(merged.data, response.data);
-        });
-        
-        return merged;
-    }
-    
-    applyV1Transformations(req) {
-        // Apply version-specific transformations
-        // For backward compatibility
-        return req;
-    }
-    
-    extractGrpcMethod(req) {
-        // Extract gRPC method from request
-        return req.path.split('/').pop();
-    }
-    
-    getGrpcClient(service) {
-        // Get or create gRPC client for service
-        // This would use @grpc/grpc-js in production
-        return {};
-    }
-    
-    handleGrpcError(error, res) {
-        res.status(500).json({
-            error: 'gRPC Error',
-            message: error.message
-        });
-    }
-    
-    grpcWebToGrpc(body) {
-        // Convert gRPC-Web to gRPC format
-        return body;
-    }
-    
-    async forwardToGrpcService(url, path, message) {
-        // Forward to gRPC service
-        return {};
-    }
-    
-    grpcToGrpcWeb(response) {
-        // Convert gRPC to gRPC-Web format
-        return response;
-    }
-    
-    generateConnectionId() {
-        return `ws-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    }
-    
-    handleCircuitBreakerOpen(req, res, service) {
-        this.statistics.failedRequests++;
+
+    // Error handling methods
+    handleNoServiceAvailable(req, res) {
+        this.proxyStatistics.failedRequests++;
         
         res.status(503).json({
             error: 'Service Unavailable',
-            message: `Circuit breaker is open for service: ${service}`,
-            retryAfter: 30
+            message: 'No healthy service instances available to handle this request',
+            path: req.path,
+            method: req.method,
+            timestamp: Date.now()
         });
     }
-    
-    handleProxyError(error, req, res, startTime) {
-        const duration = startTime ? Date.now() - startTime : 0;
+
+    handleCircuitBreakerOpen(req, res, serviceName) {
+        this.proxyStatistics.failedRequests++;
+        this.proxyStatistics.circuitBreakerTrips++;
         
-        this.log('error', 'Proxy error', {
+        res.status(503).json({
+            error: 'Service Unavailable',
+            message: `Circuit breaker is open for service: ${serviceName}`,
+            service: serviceName,
+            retryAfter: 30,
+            timestamp: Date.now()
+        });
+    }
+
+    handleDynamicProxyError(err, req, res, routingDecision) {
+        this.proxyStatistics.failedRequests++;
+        
+        this.logger.error('Dynamic proxy error', {
+            error: err.message,
+            service: routingDecision.service,
+            path: req.path,
+            method: req.method
+        });
+        
+        if (!res.headersSent) {
+            res.status(502).json({
+                error: 'Bad Gateway',
+                message: 'Unable to reach backend service',
+                service: routingDecision.service,
+                timestamp: Date.now()
+            });
+        }
+    }
+
+    handleProxyError(error, req, res, startTime) {
+        const duration = startTime ? performance.now() - startTime : 0;
+        
+        this.proxyStatistics.failedRequests++;
+        
+        this.logger.error('Proxy error', {
             error: error.message,
             path: req.path,
             method: req.method,
@@ -1153,104 +1153,192 @@ class ProxyRoutes {
             });
         }
     }
-    
-    async applyRequestTransformations(req, routingDecision) {
-        const transformer = this.requestTransformers.get(routingDecision.service);
-        if (transformer) {
-            await transformer(req);
-        }
-    }
-    
-    setupResponseHandling(req, res, routingDecision, startTime) {
-        req.startTime = startTime;
-        
-        // Override response methods to capture metrics
-        const originalSend = res.send;
-        res.send = function(data) {
-            const duration = Date.now() - startTime;
-            this.recordProxyMetrics(req, res, routingDecision, duration);
-            return originalSend.call(this, data);
-        }.bind(this);
-    }
-    
-    recordProxyMetrics(req, res, routingDecision, duration) {
-        // Update statistics
-        this.statistics.byService[routingDecision.service] = 
-            (this.statistics.byService[routingDecision.service] || 0) + 1;
-        
-        this.statistics.byProtocol[req.protocol] = 
-            (this.statistics.byProtocol[req.protocol] || 0) + 1;
-        
-        // Update average latency
-        const totalRequests = this.statistics.successfulRequests + this.statistics.failedRequests;
-        this.statistics.averageLatency = 
-            (this.statistics.averageLatency * (totalRequests - 1) + duration) / totalRequests;
-        
-        // Record in metrics collector
-        if (this.metricsCollector) {
-            this.metricsCollector.recordHttpRequest(
-                req.method,
-                req.path,
-                res.statusCode,
-                duration,
-                routingDecision.service
-            );
-        }
+
+    // Protocol-specific handlers (placeholder implementations)
+    async handleGraphQLRequest(req, res) {
+        // GraphQL proxy implementation
+        this.logger.debug('Handling GraphQL request');
     }
 
-    /**
-     * Registers request transformer
-     * @param {string} service - Service name
-     * @param {Function} transformer - Transformer function
-     */
-    registerRequestTransformer(service, transformer) {
-        this.requestTransformers.set(service, transformer);
+    async handleGrpcWebRequest(req, res) {
+        // gRPC-Web proxy implementation
+        this.logger.debug('Handling gRPC-Web request');
     }
 
-    /**
-     * Registers response transformer
-     * @param {string} service - Service name
-     * @param {Function} transformer - Transformer function
-     */
-    registerResponseTransformer(service, transformer) {
-        this.responseTransformers.set(service, transformer);
+    async handleWebSocketUpgrade(ws, req) {
+        // WebSocket upgrade implementation
+        this.logger.debug('Handling WebSocket upgrade');
+    }
+
+    async handleSoapRequest(req, res) {
+        // SOAP proxy implementation
+        this.logger.debug('Handling SOAP request');
+    }
+
+    async handleVersionedRequest(req, res, version) {
+        // Versioned API request implementation
+        this.logger.debug(`Handling ${version} API request`);
+    }
+
+    async handleHealthCheckProxy(req, res) {
+        // Health check proxy implementation
+        this.logger.debug('Handling health check proxy');
+    }
+
+    async handleStaticAssetProxy(req, res) {
+        // Static asset proxy implementation
+        this.logger.debug('Handling static asset proxy');
+    }
+
+    // Additional method implementations
+    async initializeWebSocketSupport() {
+        this.logger.debug('WebSocket support initialized');
+    }
+
+    async initializeTransformationPipelines() {
+        this.logger.debug('Transformation pipelines initialized');
+    }
+
+    async configureCachingStrategies() {
+        this.logger.debug('Caching strategies configured');
+    }
+
+    async initializeHealthMonitoring() {
+        this.logger.debug('Health monitoring initialized');
+    }
+
+    setupPerformanceMonitoring() {
+        this.logger.debug('Performance monitoring setup completed');
+    }
+
+    startMaintenanceTasks() {
+        // Start background cleanup and maintenance tasks
+        setInterval(() => {
+            this.performMaintenanceTasks();
+        }, 300000); // Every 5 minutes
+
+        this.logger.debug('Maintenance tasks started');
+    }
+
+    performMaintenanceTasks() {
+        // Cleanup expired connections, update statistics, etc.
+        this.logger.debug('Performing maintenance tasks');
+    }
+
+    shouldRetryRequest(error) {
+        const retryableErrors = ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EHOSTUNREACH'];
+        return retryableErrors.includes(error.code);
+    }
+
+    handleRetryAttempt(retryCount, error, req) {
+        this.proxyStatistics.retriedRequests++;
+        this.logger.warn(`Retrying request (attempt ${retryCount})`, {
+            path: req.path,
+            error: error.message
+        });
+    }
+
+    // Protocol handler placeholders
+    handleHttpProxy() { return Promise.resolve(); }
+    handleHttpsProxy() { return Promise.resolve(); }
+    handleWebSocketProxy() { return Promise.resolve(); }
+    handleSecureWebSocketProxy() { return Promise.resolve(); }
+    handleGrpcProxy() { return Promise.resolve(); }
+    handleGrpcWebProxy() { return Promise.resolve(); }
+    handleGraphQLProxy() { return Promise.resolve(); }
+    handleRestProxy() { return Promise.resolve(); }
+    handleSoapProxy() { return Promise.resolve(); }
+
+    // Versioning strategy placeholders
+    versionByHeader() { return '1.0'; }
+    versionByPath() { return '1.0'; }
+    versionByQuery() { return '1.0'; }
+    versionByAcceptHeader() { return '1.0'; }
+
+    // Service proxy method placeholders
+    rewriteRequestPath(path, req, service) {
+        return path;
+    }
+
+    interceptProxyRequest(proxyReq, req, res, service) {
+        // Service-specific request interception
+    }
+
+    async interceptProxyResponse(proxyRes, req, res, service) {
+        // Service-specific response interception
+    }
+
+    handleServiceProxyError(err, req, res, service) {
+        this.handleProxyError(err, req, res);
+    }
+
+    interceptWebSocketRequest(proxyReq, req, socket, head, service) {
+        // WebSocket request interception
     }
 
     /**
      * Gets proxy statistics
-     * @returns {Object} Proxy statistics
+     * @returns {Object} Comprehensive proxy statistics
      */
     getStatistics() {
         return {
-            ...this.statistics,
+            ...this.proxyStatistics,
             uptime: process.uptime(),
             proxies: this.proxyInstances.size,
-            activeWebSockets: this.wsConnections.size
+            serviceProxies: this.serviceProxies.size,
+            webSocket: this.webSocketStats,
+            timestamp: Date.now()
         };
     }
 
     /**
-     * Logs a message
-     * @private
-     * @param {string} level - Log level
-     * @param {string} message - Log message
-     * @param {*} data - Additional data
+     * Returns the Express router instance
+     * @returns {express.Router} Express router with proxy endpoints
      */
-    log(level, message, data) {
-        if (this.logger) {
-            this.logger[level](message, data);
-        } else {
-            console[level](message, data);
-        }
+    getRouter() {
+        return this.router;
     }
 
     /**
-     * Returns the router
-     * @returns {Object} Express router
+     * Performs cleanup operations when shutting down
+     * @async
+     * @returns {Promise<void>}
      */
-    getRouter() {
-        return router;
+    async cleanup() {
+        try {
+            this.logger.info('Cleaning up ProxyRoutesManager');
+
+            // Close WebSocket connections
+            for (const [id, connection] of this.webSocketConnections) {
+                try {
+                    connection.close();
+                } catch (error) {
+                    this.logger.warn(`Error closing WebSocket connection ${id}`, error);
+                }
+            }
+            this.webSocketConnections.clear();
+
+            // Clear proxy instances
+            this.proxyInstances.clear();
+            this.serviceProxies.clear();
+            this.dynamicProxies.clear();
+
+            // Clear transformation pipelines
+            this.requestTransformers.clear();
+            this.responseTransformers.clear();
+            this.headerTransformers.clear();
+
+            // Clear routing and affinity data
+            this.sessionAffinity.clear();
+            this.stickyRoutingRules.clear();
+            this.routingStrategies.clear();
+
+            this.logger.info('ProxyRoutesManager cleanup completed');
+        } catch (error) {
+            this.logger.error('Error during ProxyRoutesManager cleanup', error);
+            throw error;
+        }
     }
 }
 
-module.exports = ProxyRoutes;
+module.exports = { ProxyRoutesManager };

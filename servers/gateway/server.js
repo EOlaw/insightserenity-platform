@@ -30,7 +30,7 @@ const { MetricsCollector } = require('./services/metrics-collector');
 const { TraceManager } = require('./services/trace-manager');
 const { CacheManager } = require('./services/cache-manager');
 const { CircuitBreakerManager } = require('./services/circuit-breaker-manager');
-// const { gracefulShutdown } = require('./utils/shutdown-handler');
+const { gracefulShutdown } = require('./utils/shutdown-handler');
 
 /**
  * GatewayServer class orchestrates the entire gateway lifecycle including initialization,
@@ -205,13 +205,17 @@ class GatewayServer {
      */
     async performStartupHealthCheck() {
         const healthStatus = await this.healthMonitor.getSystemHealth();
-        
+
+        // FIXED: Add null safety check for components
         if (healthStatus.status === 'unhealthy') {
-            const unhealthyComponents = Object.entries(healthStatus.components)
+            const components = healthStatus.components || {};
+            const unhealthyComponents = Object.entries(components)
                 .filter(([, status]) => status === 'unhealthy')
                 .map(([name]) => name);
-            
-            throw new Error(`Critical components unhealthy: ${unhealthyComponents.join(', ')}`);
+
+            if (unhealthyComponents.length > 0) {
+                throw new Error(`Critical components unhealthy: ${unhealthyComponents.join(', ')}`);
+            }
         }
 
         this.logger.info('Startup health check passed', healthStatus);
@@ -281,12 +285,12 @@ class GatewayServer {
      */
     configureServerTimeouts() {
         const timeoutConfig = this.config.get('server.timeouts') || {};
-        
+
         this.server.timeout = timeoutConfig.request || 120000;
         this.server.keepAliveTimeout = timeoutConfig.keepAlive || 65000;
         this.server.headersTimeout = timeoutConfig.headers || 66000;
         this.server.requestTimeout = timeoutConfig.request || 120000;
-        
+
         this.logger.info('Server timeouts configured', timeoutConfig);
     }
 
@@ -509,17 +513,17 @@ class GatewayServer {
      */
     async emergencyShutdown(error) {
         console.error('EMERGENCY SHUTDOWN INITIATED:', error);
-        
+
         try {
             if (this.logger) {
                 this.logger.fatal('Emergency shutdown', error);
             }
-            
+
             // Attempt minimal cleanup
             if (this.server) {
                 this.server.close();
             }
-            
+
             if (this.cacheManager) {
                 await this.cacheManager.disconnect();
             }
@@ -543,7 +547,7 @@ class ClusterManager {
      */
     constructor() {
         this.numWorkers = this.calculateWorkerCount();
-        this.logger = new Logger({ 
+        this.logger = new Logger({
             service: 'cluster-manager',
             processType: 'master'
         });
@@ -559,14 +563,14 @@ class ClusterManager {
     calculateWorkerCount() {
         const envWorkers = parseInt(process.env.GATEWAY_WORKERS, 10);
         const cpuCount = os.cpus().length;
-        
+
         if (envWorkers && envWorkers > 0) {
             return Math.min(envWorkers, cpuCount * 2);
         }
-        
+
         // Use CPU count for production, limited workers for development
-        return process.env.NODE_ENV === 'production' 
-            ? cpuCount 
+        return process.env.NODE_ENV === 'production'
+            ? cpuCount
             : Math.min(2, cpuCount);
     }
 
@@ -592,9 +596,9 @@ class ClusterManager {
      * @returns {boolean} True if clustering should be enabled
      */
     shouldUseCluster() {
-        return process.env.NODE_ENV === 'production' && 
-               process.env.DISABLE_CLUSTERING !== 'true' &&
-               this.numWorkers > 1;
+        return process.env.NODE_ENV === 'production' &&
+            process.env.DISABLE_CLUSTERING !== 'true' &&
+            this.numWorkers > 1;
     }
 
     /**
@@ -691,10 +695,10 @@ class ClusterManager {
 
         if (!worker.exitedAfterDisconnect && !this.isShuttingDown) {
             this.logger.error('Worker died unexpectedly', exitInfo);
-            
+
             // Restart worker with exponential backoff
             const restartDelay = this.calculateRestartDelay(worker.id);
-            
+
             setTimeout(() => {
                 if (!this.isShuttingDown) {
                     this.logger.info('Restarting failed worker', {
@@ -735,7 +739,7 @@ class ClusterManager {
         const restartCount = this.workers.get(workerId)?.restartCount || 0;
         const baseDelay = 1000;
         const maxDelay = 30000;
-        
+
         return Math.min(baseDelay * Math.pow(2, restartCount), maxDelay);
     }
 
@@ -745,7 +749,7 @@ class ClusterManager {
      */
     setupMasterSignalHandlers() {
         const signals = ['SIGTERM', 'SIGINT', 'SIGUSR2'];
-        
+
         signals.forEach(signal => {
             process.on(signal, () => this.shutdownCluster(signal));
         });
@@ -772,7 +776,7 @@ class ClusterManager {
             if (clusterHealth.workers < clusterHealth.targetWorkers && !this.isShuttingDown) {
                 const deficit = clusterHealth.targetWorkers - clusterHealth.workers;
                 this.logger.warn(`Worker deficit detected, spawning ${deficit} workers`);
-                
+
                 for (let i = 0; i < deficit; i++) {
                     this.forkWorker();
                 }
@@ -816,20 +820,20 @@ class ClusterManager {
         this.logger.info('Rolling restart initiated');
 
         const workers = Object.values(cluster.workers);
-        
+
         for (const worker of workers) {
             // Fork new worker before killing old one
             const newWorker = this.forkWorker();
-            
+
             // Wait for new worker to be ready
             await new Promise((resolve) => {
                 newWorker.once('listening', resolve);
                 setTimeout(resolve, 10000); // Timeout after 10 seconds
             });
-            
+
             // Gracefully shutdown old worker
             worker.disconnect();
-            
+
             // Give old worker time to cleanup
             setTimeout(() => {
                 if (!worker.isDead()) {
@@ -848,7 +852,7 @@ class ClusterManager {
      */
     async startWorker() {
         const server = new GatewayServer();
-        
+
         try {
             await server.initialize();
             await server.start();
@@ -877,7 +881,7 @@ class ClusterManager {
      */
     setupWorkerSignalHandlers(server) {
         const signals = ['SIGTERM', 'SIGINT'];
-        
+
         signals.forEach(signal => {
             process.on(signal, () => server.shutdown(signal));
         });
@@ -924,7 +928,7 @@ class ClusterManager {
      */
     async startSingleInstance() {
         const server = new GatewayServer();
-        
+
         try {
             await server.initialize();
             await server.start();
@@ -969,12 +973,12 @@ class ClusterManager {
         // Set shutdown deadline
         const shutdownDeadline = setTimeout(() => {
             this.logger.error('Cluster shutdown deadline exceeded, forcing exit');
-            
+
             // Force kill all workers
             for (const id in cluster.workers) {
                 cluster.workers[id].kill();
             }
-            
+
             process.exit(1);
         }, 30000);
 
@@ -984,7 +988,7 @@ class ClusterManager {
             return new Promise((resolve) => {
                 worker.disconnect();
                 worker.once('exit', resolve);
-                
+
                 // Force kill after timeout
                 setTimeout(() => {
                     if (!worker.isDead()) {
@@ -998,7 +1002,7 @@ class ClusterManager {
         await Promise.all(disconnectPromises);
 
         clearTimeout(shutdownDeadline);
-        
+
         this.logger.info('All workers shutdown, exiting master process');
         process.exit(0);
     }

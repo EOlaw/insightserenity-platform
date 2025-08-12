@@ -1,6 +1,0 @@
-{"level":"error","message":"Failed to initialize Gateway Application","metadata":{"hostname":"E-Olawalee","pid":3272,"service":"api-gateway"},"timestamp":"2025-08-12T03:11:08.945Z"}
-{"level":"error","message":"Failed to initialize Gateway Application","metadata":{"hostname":"E-Olawalee","pid":40324,"service":"api-gateway"},"timestamp":"2025-08-12T03:38:47.760Z"}
-{"level":"error","message":"Failed to initialize Gateway Application","metadata":{"hostname":"E-Olawalee","pid":15992,"service":"api-gateway"},"timestamp":"2025-08-12T03:41:08.787Z"}
-{"level":"error","message":"Failed to initialize Gateway Application","metadata":{"hostname":"E-Olawalee","pid":53308,"service":"api-gateway"},"timestamp":"2025-08-12T03:41:15.377Z"}
-{"level":"error","message":"Failed to initialize Gateway Application","metadata":{"hostname":"E-Olawalee","pid":18332,"service":"api-gateway"},"timestamp":"2025-08-12T03:41:22.028Z"}
-{"level":"error","message":"Failed to initialize Gateway Application","metadata":{"hostname":"E-Olawalee","pid":37980,"service":"api-gateway"},"timestamp":"2025-08-12T03:44:46.564Z"}

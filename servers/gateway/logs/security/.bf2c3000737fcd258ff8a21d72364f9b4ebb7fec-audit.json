@@ -6,14 +6,9 @@
     "auditLog": "D:\\insightserenity-platform\\servers\\gateway\\logs\\security\\.bf2c3000737fcd258ff8a21d72364f9b4ebb7fec-audit.json",
     "files": [
         {
-            "date": 1754899332987,
-            "name": "D:\\insightserenity-platform\\servers\\gateway\\logs\\security\\security-2025-08-11.log",
-            "hash": "c0a7f107ef8a39ccf41e7002d3497b9b42cf23fe9a8ee3b8cac03000c1400d69"
-        },
-        {
-            "date": 1754974835927,
+            "date": 1754990545542,
             "name": "D:\\insightserenity-platform\\servers\\gateway\\logs\\security\\security-2025-08-12.log",
-            "hash": "f9187b1f66dd6017c1340763dbd1958fba731c7a015e2919d3f3b16edd15c20e"
+            "hash": "c83b686c050b6d2c32aabbf8b2d00a1a045db91e0d440ed188dfda5ee2d44619"
         }
     ],
     "hashType": "sha256"
