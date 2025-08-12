@@ -9,6 +9,11 @@
             "date": 1754899332724,
             "name": "D:\\insightserenity-platform\\servers\\gateway\\logs\\gateway-2025-08-11.log",
             "hash": "28d8df5a220a030dbb53181d71f8f3e5dad033e911d0208fa88b0ed393e36e31"
+        },
+        {
+            "date": 1754974835871,
+            "name": "D:\\insightserenity-platform\\servers\\gateway\\logs\\gateway-2025-08-12.log",
+            "hash": "2643b210e55e07dd965e49b0936a03579cf42384b34dbfa14869b55fbbfc230b"
         }
     ],
     "hashType": "sha256"

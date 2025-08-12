@@ -12,10 +12,25 @@
 
 const { EventEmitter } = require('events');
 const rateLimit = require('express-rate-limit');
-const RedisStore = require('rate-limit-redis');
 const slowDown = require('express-slow-down');
 const Bottleneck = require('bottleneck');
 const crypto = require('crypto');
+
+// Handle different versions of rate-limit-redis
+let RedisStore;
+try {
+    // Try newer version format
+    RedisStore = require('rate-limit-redis').default;
+} catch (error) {
+    try {
+        // Try named export
+        const { RedisStore: NamedRedisStore } = require('rate-limit-redis');
+        RedisStore = NamedRedisStore;
+    } catch (error2) {
+        // Fallback to old format
+        RedisStore = require('rate-limit-redis');
+    }
+}
 
 /**
  * RateLimitingMiddleware class provides comprehensive rate limiting and throttling
@@ -44,12 +59,12 @@ class RateLimitingMiddleware extends EventEmitter {
         this.metricsCollector = metricsCollector;
         this.logger = logger;
         this.isInitialized = false;
-        
+
         // Rate limiters storage
         this.rateLimiters = new Map();
         this.slowDownLimiters = new Map();
         this.bottlenecks = new Map();
-        
+
         // Rate limiting strategies
         this.strategies = {
             'fixed-window': this.createFixedWindowLimiter.bind(this),
@@ -58,7 +73,7 @@ class RateLimitingMiddleware extends EventEmitter {
             'leaky-bucket': this.createLeakyBucketLimiter.bind(this),
             'adaptive': this.createAdaptiveLimiter.bind(this)
         };
-        
+
         // Default configuration
         this.defaultConfig = {
             strategy: config.strategy || 'sliding-window',
@@ -73,7 +88,7 @@ class RateLimitingMiddleware extends EventEmitter {
             skipFailedRequests: config.global?.skipFailedRequests || false,
             ...config.global
         };
-        
+
         // User tier configurations
         this.tierConfigs = {
             free: {
@@ -106,10 +121,10 @@ class RateLimitingMiddleware extends EventEmitter {
             },
             ...config.tiers
         };
-        
+
         // Path-specific configurations
         this.pathConfigs = config.paths || {};
-        
+
         // Dynamic rate limiting
         this.dynamicLimiting = {
             enabled: config.dynamic?.enabled || false,
@@ -119,7 +134,7 @@ class RateLimitingMiddleware extends EventEmitter {
             targetCpu: config.dynamic?.targetCpu || 70,
             adjustmentFactor: config.dynamic?.adjustmentFactor || 0.1
         };
-        
+
         // Quota management
         this.quotaManagement = {
             enabled: config.quota?.enabled || false,
@@ -127,7 +142,7 @@ class RateLimitingMiddleware extends EventEmitter {
             resetInterval: config.quota?.resetInterval || 'daily',
             enforcement: config.quota?.enforcement || 'hard'
         };
-        
+
         // Burst handling
         this.burstHandling = {
             enabled: config.burst?.enabled !== false,
@@ -135,7 +150,7 @@ class RateLimitingMiddleware extends EventEmitter {
             duration: config.burst?.duration || 10000,
             cooldown: config.burst?.cooldown || 60000
         };
-        
+
         // Gradual backoff
         this.backoffConfig = {
             enabled: config.backoff?.enabled || false,
@@ -143,17 +158,17 @@ class RateLimitingMiddleware extends EventEmitter {
             delayMs: config.backoff?.delayMs || 100,
             maxDelayMs: config.backoff?.maxDelayMs || 5000
         };
-        
+
         // Distributed rate limiting
         this.distributedConfig = {
             enabled: config.distributed?.enabled !== false,
             prefix: config.distributed?.prefix || 'ratelimit:',
             client: null
         };
-        
+
         // Rate limit bypass tokens
         this.bypassTokens = new Set(config.bypassTokens || []);
-        
+
         // Statistics
         this.statistics = {
             totalRequests: 0,
@@ -171,21 +186,21 @@ class RateLimitingMiddleware extends EventEmitter {
                 enterprise: 0
             }
         };
-        
+
         // Request tracking for analytics
         this.requestTracking = new Map();
         this.trackingWindow = 60000; // 1 minute
-        
+
         // Quota storage
         this.quotaStorage = new Map();
-        
+
         // Burst state tracking
         this.burstStates = new Map();
-        
+
         // Dynamic rate adjustment
         this.currentRateLimits = new Map();
         this.adjustmentInterval = null;
-        
+
         // Monitoring intervals
         this.monitoringInterval = null;
         this.cleanupInterval = null;
@@ -204,32 +219,32 @@ class RateLimitingMiddleware extends EventEmitter {
 
         try {
             this.log('info', 'Initializing Rate Limiting Middleware');
-            
+
             // Setup distributed rate limiting
             if (this.distributedConfig.enabled) {
                 await this.setupDistributedRateLimiting();
             }
-            
+
             // Initialize default rate limiters
             await this.initializeDefaultLimiters();
-            
+
             // Initialize path-specific limiters
             this.initializePathLimiters();
-            
+
             // Setup monitoring
             this.startMonitoring();
-            
+
             // Setup cleanup
             this.startCleanup();
-            
+
             // Setup dynamic adjustment
             if (this.dynamicLimiting.enabled) {
                 this.startDynamicAdjustment();
             }
-            
+
             this.isInitialized = true;
             this.emit('ratelimit:initialized');
-            
+
             this.log('info', 'Rate Limiting Middleware initialized successfully');
         } catch (error) {
             this.log('error', 'Failed to initialize Rate Limiting Middleware', error);
@@ -261,19 +276,19 @@ class RateLimitingMiddleware extends EventEmitter {
         // Global rate limiter
         const globalLimiter = await this.createRateLimiter('global', this.defaultConfig);
         this.rateLimiters.set('global', globalLimiter);
-        
+
         // Create tier-specific limiters
         for (const [tier, config] of Object.entries(this.tierConfigs)) {
             const tierLimiter = await this.createRateLimiter(`tier:${tier}`, config);
             this.rateLimiters.set(`tier:${tier}`, tierLimiter);
         }
-        
+
         // Create slow down limiter for gradual backoff
         if (this.backoffConfig.enabled) {
             const slowDownLimiter = this.createSlowDownLimiter('global', this.backoffConfig);
             this.slowDownLimiters.set('global', slowDownLimiter);
         }
-        
+
         this.log('info', 'Default rate limiters initialized');
     }
 
@@ -285,13 +300,13 @@ class RateLimitingMiddleware extends EventEmitter {
         for (const [path, config] of Object.entries(this.pathConfigs)) {
             const pathLimiter = this.createRateLimiter(`path:${path}`, config);
             this.rateLimiters.set(`path:${path}`, pathLimiter);
-            
+
             if (config.slowDown) {
                 const slowDownLimiter = this.createSlowDownLimiter(`path:${path}`, config.slowDown);
                 this.slowDownLimiters.set(`path:${path}`, slowDownLimiter);
             }
         }
-        
+
         this.log('info', 'Path-specific rate limiters initialized');
     }
 
@@ -305,11 +320,11 @@ class RateLimitingMiddleware extends EventEmitter {
     createRateLimiter(name, config) {
         const strategy = config.strategy || this.defaultConfig.strategy;
         const createLimiter = this.strategies[strategy];
-        
+
         if (!createLimiter) {
             throw new Error(`Unknown rate limiting strategy: ${strategy}`);
         }
-        
+
         return createLimiter(name, config);
     }
 
@@ -333,15 +348,20 @@ class RateLimitingMiddleware extends EventEmitter {
             skipFailedRequests: config.skipFailedRequests || false,
             handler: (req, res) => this.handleRateLimitExceeded(req, res, name)
         };
-        
-        // Use Redis store if distributed
+
+        // Use Redis store if distributed and available
         if (this.distributedConfig.enabled && this.distributedConfig.client) {
-            options.store = new RedisStore({
-                client: this.distributedConfig.client,
-                prefix: `${this.distributedConfig.prefix}${name}:`
-            });
+            try {
+                options.store = new RedisStore({
+                    sendCommand: (...args) => this.distributedConfig.client.call(...args),
+                    prefix: `${this.distributedConfig.prefix}${name}:`
+                });
+            } catch (error) {
+                this.log('warn', `Failed to create Redis store for ${name}, falling back to memory store`, error);
+                // Will use default memory store if Redis fails
+            }
         }
-        
+
         return rateLimit(options);
     }
 
@@ -355,17 +375,17 @@ class RateLimitingMiddleware extends EventEmitter {
     createSlidingWindowLimiter(name, config) {
         // Similar to fixed window but with sliding window logic
         const limiter = this.createFixedWindowLimiter(name, config);
-        
+
         // Add sliding window tracking
         const originalHandler = limiter;
         return async (req, res, next) => {
             const key = this.generateKey(req, config);
             const window = await this.getSlidingWindow(key, config.windowMs);
-            
+
             if (window.count >= config.max) {
                 return this.handleRateLimitExceeded(req, res, name);
             }
-            
+
             await this.updateSlidingWindow(key, config.windowMs);
             originalHandler(req, res, next);
         };
@@ -386,9 +406,9 @@ class RateLimitingMiddleware extends EventEmitter {
             maxConcurrent: config.maxConcurrent || 10,
             minTime: config.minTime || 0
         });
-        
+
         this.bottlenecks.set(name, bottleneck);
-        
+
         return async (req, res, next) => {
             try {
                 await bottleneck.schedule(() => Promise.resolve());
@@ -413,9 +433,9 @@ class RateLimitingMiddleware extends EventEmitter {
             highWater: config.max,
             strategy: Bottleneck.strategy.LEAK
         });
-        
+
         this.bottlenecks.set(name, bottleneck);
-        
+
         return async (req, res, next) => {
             try {
                 await bottleneck.schedule(() => Promise.resolve());
@@ -437,25 +457,25 @@ class RateLimitingMiddleware extends EventEmitter {
         // Start with base limiter
         let currentLimit = config.max || this.defaultConfig.max;
         this.currentRateLimits.set(name, currentLimit);
-        
+
         return async (req, res, next) => {
             const key = this.generateKey(req, config);
             const limit = this.currentRateLimits.get(name) || currentLimit;
-            
+
             // Check current usage
             const usage = await this.getUsage(key);
-            
+
             if (usage >= limit) {
                 return this.handleRateLimitExceeded(req, res, name);
             }
-            
+
             await this.incrementUsage(key);
-            
+
             // Add rate limit headers
             res.setHeader('X-RateLimit-Limit', limit);
             res.setHeader('X-RateLimit-Remaining', Math.max(0, limit - usage - 1));
             res.setHeader('X-RateLimit-Reset', new Date(Date.now() + config.windowMs).toISOString());
-            
+
             next();
         };
     }
@@ -476,7 +496,7 @@ class RateLimitingMiddleware extends EventEmitter {
             keyGenerator: config.keyGenerator || this.defaultKeyGenerator.bind(this),
             skip: config.skip || (() => false)
         };
-        
+
         // Use Redis store if distributed
         if (this.distributedConfig.enabled && this.distributedConfig.client) {
             options.store = new RedisStore({
@@ -484,7 +504,7 @@ class RateLimitingMiddleware extends EventEmitter {
                 prefix: `${this.distributedConfig.prefix}slowdown:${name}:`
             });
         }
-        
+
         return slowDown(options);
     }
 
@@ -496,19 +516,19 @@ class RateLimitingMiddleware extends EventEmitter {
     apply(config = {}) {
         return async (req, res, next) => {
             const startTime = Date.now();
-            
+
             try {
                 this.statistics.totalRequests++;
-                
+
                 // Check bypass token
                 if (this.checkBypassToken(req)) {
                     this.statistics.bypassedRequests++;
                     return next();
                 }
-                
+
                 // Get user tier
                 const tier = this.getUserTier(req);
-                
+
                 // Check quota if enabled
                 if (this.quotaManagement.enabled) {
                     const quotaExceeded = await this.checkQuota(req, tier);
@@ -517,10 +537,10 @@ class RateLimitingMiddleware extends EventEmitter {
                         return this.handleQuotaExceeded(req, res);
                     }
                 }
-                
+
                 // Get applicable rate limiter
                 const limiter = this.getRateLimiter(req, tier);
-                
+
                 // Check burst mode
                 if (this.burstHandling.enabled) {
                     const burstActive = await this.checkBurstMode(req, tier);
@@ -530,13 +550,13 @@ class RateLimitingMiddleware extends EventEmitter {
                         config = { ...config, max: config.max * this.burstHandling.multiplier };
                     }
                 }
-                
+
                 // Apply rate limiting
                 limiter(req, res, (err) => {
                     if (err) {
                         return next(err);
                     }
-                    
+
                     // Apply slow down if configured
                     const slowDownLimiter = this.getSlowDownLimiter(req);
                     if (slowDownLimiter) {
@@ -545,14 +565,14 @@ class RateLimitingMiddleware extends EventEmitter {
                         next();
                     }
                 });
-                
+
                 // Track request
                 this.trackRequest(req, tier);
-                
+
                 // Record metrics
                 const duration = Date.now() - startTime;
                 this.emit('ratelimit:checked', { duration, tier, limited: false });
-                
+
             } catch (error) {
                 this.log('error', 'Rate limiting error', error);
                 next(error);
@@ -570,14 +590,14 @@ class RateLimitingMiddleware extends EventEmitter {
         if (req.user) {
             return req.user.tier || req.user.plan || 'free';
         }
-        
+
         // Check API key tier
         const apiKey = req.headers['x-api-key'];
         if (apiKey) {
             // Would look up API key tier from database
             return 'basic';
         }
-        
+
         return 'free';
     }
 
@@ -594,13 +614,13 @@ class RateLimitingMiddleware extends EventEmitter {
         if (pathLimiter) {
             return pathLimiter;
         }
-        
+
         // Check for tier-specific limiter
         const tierLimiter = this.rateLimiters.get(`tier:${tier}`);
         if (tierLimiter) {
             return tierLimiter;
         }
-        
+
         // Return global limiter
         return this.rateLimiters.get('global') || ((req, res, next) => next());
     }
@@ -639,7 +659,7 @@ class RateLimitingMiddleware extends EventEmitter {
                 }
             }
         }
-        
+
         return this.slowDownLimiters.get('global') || null;
     }
 
@@ -665,14 +685,14 @@ class RateLimitingMiddleware extends EventEmitter {
     async checkQuota(req, tier) {
         const userId = req.user?.id || req.ip;
         const tierConfig = this.tierConfigs[tier];
-        
+
         if (!tierConfig.daily || tierConfig.daily === -1) {
             return false;
         }
-        
+
         const quotaKey = `quota:${userId}:daily`;
         const usage = await this.getQuotaUsage(quotaKey);
-        
+
         return usage >= tierConfig.daily;
     }
 
@@ -688,7 +708,7 @@ class RateLimitingMiddleware extends EventEmitter {
             const usage = await this.cacheManager.get(key);
             return parseInt(usage) || 0;
         }
-        
+
         return this.quotaStorage.get(key) || 0;
     }
 
@@ -719,27 +739,27 @@ class RateLimitingMiddleware extends EventEmitter {
     async checkBurstMode(req, tier) {
         const userId = req.user?.id || req.ip;
         const burstKey = `burst:${userId}`;
-        
+
         const burstState = this.burstStates.get(burstKey);
-        
+
         if (!burstState) {
             // Not in burst mode
             return false;
         }
-        
+
         const now = Date.now();
-        
+
         // Check if burst has expired
         if (now > burstState.expiresAt) {
             this.burstStates.delete(burstKey);
             return false;
         }
-        
+
         // Check if in cooldown
         if (now < burstState.cooldownUntil) {
             return false;
         }
-        
+
         return true;
     }
 
@@ -751,9 +771,9 @@ class RateLimitingMiddleware extends EventEmitter {
     activateBurstMode(req) {
         const userId = req.user?.id || req.ip;
         const burstKey = `burst:${userId}`;
-        
+
         const now = Date.now();
-        
+
         this.burstStates.set(burstKey, {
             activatedAt: now,
             expiresAt: now + this.burstHandling.duration,
@@ -771,7 +791,7 @@ class RateLimitingMiddleware extends EventEmitter {
         const now = Date.now();
         const userId = req.user?.id || req.ip;
         const trackingKey = `tracking:${userId}`;
-        
+
         let tracking = this.requestTracking.get(trackingKey);
         if (!tracking) {
             tracking = {
@@ -780,21 +800,21 @@ class RateLimitingMiddleware extends EventEmitter {
             };
             this.requestTracking.set(trackingKey, tracking);
         }
-        
+
         // Add current request
         tracking.requests.push(now);
-        
+
         // Clean old requests
         const cutoff = now - this.trackingWindow;
         tracking.requests = tracking.requests.filter(time => time > cutoff);
-        
+
         // Calculate request rate
         const requestRate = (tracking.requests.length / this.trackingWindow) * 1000;
-        
+
         // Update statistics
-        this.statistics.averageRequestRate = 
+        this.statistics.averageRequestRate =
             (this.statistics.averageRequestRate + requestRate) / 2;
-        
+
         if (requestRate > this.statistics.peakRequestRate) {
             this.statistics.peakRequestRate = requestRate;
         }
@@ -810,12 +830,12 @@ class RateLimitingMiddleware extends EventEmitter {
         if (req.user) {
             return `user:${req.user.id}`;
         }
-        
+
         const apiKey = req.headers['x-api-key'];
         if (apiKey) {
             return `apikey:${apiKey}`;
         }
-        
+
         return `ip:${req.ip}`;
     }
 
@@ -842,22 +862,22 @@ class RateLimitingMiddleware extends EventEmitter {
     async getSlidingWindow(key, windowMs) {
         const now = Date.now();
         const windowStart = now - windowMs;
-        
+
         if (this.distributedConfig.enabled && this.cacheManager) {
             const data = await this.cacheManager.get(`sliding:${key}`);
             const requests = data ? JSON.parse(data) : [];
             const validRequests = requests.filter(time => time > windowStart);
-            
+
             return {
                 count: validRequests.length,
                 requests: validRequests
             };
         }
-        
+
         // Local storage fallback
         const requests = this.getLocalSlidingWindow(key);
         const validRequests = requests.filter(time => time > windowStart);
-        
+
         return {
             count: validRequests.length,
             requests: validRequests
@@ -874,9 +894,9 @@ class RateLimitingMiddleware extends EventEmitter {
     async updateSlidingWindow(key, windowMs) {
         const now = Date.now();
         const window = await this.getSlidingWindow(key, windowMs);
-        
+
         window.requests.push(now);
-        
+
         if (this.distributedConfig.enabled && this.cacheManager) {
             await this.cacheManager.set(`sliding:${key}`, JSON.stringify(window.requests), windowMs / 1000);
         } else {
@@ -917,7 +937,7 @@ class RateLimitingMiddleware extends EventEmitter {
             const usage = await this.cacheManager.get(`usage:${key}`);
             return parseInt(usage) || 0;
         }
-        
+
         return 0;
     }
 
@@ -943,10 +963,10 @@ class RateLimitingMiddleware extends EventEmitter {
      */
     handleRateLimitExceeded(req, res, limiterName) {
         this.statistics.limitedRequests++;
-        
+
         const tier = this.getUserTier(req);
         this.statistics.limitsByTier[tier] = (this.statistics.limitsByTier[tier] || 0) + 1;
-        
+
         this.log('warn', 'Rate limit exceeded', {
             limiter: limiterName,
             user: req.user?.id,
@@ -954,7 +974,7 @@ class RateLimitingMiddleware extends EventEmitter {
             path: req.path,
             tier
         });
-        
+
         this.emit('ratelimit:exceeded', {
             limiter: limiterName,
             user: req.user?.id,
@@ -962,10 +982,10 @@ class RateLimitingMiddleware extends EventEmitter {
             path: req.path,
             tier
         });
-        
+
         const message = this.defaultConfig.message;
         const retryAfter = Math.ceil(this.defaultConfig.windowMs / 1000);
-        
+
         res.status(429)
             .set('Retry-After', retryAfter)
             .json({
@@ -987,13 +1007,13 @@ class RateLimitingMiddleware extends EventEmitter {
             ip: req.ip,
             path: req.path
         });
-        
+
         this.emit('quota:exceeded', {
             user: req.user?.id,
             ip: req.ip,
             path: req.path
         });
-        
+
         res.status(429).json({
             error: 'Quota Exceeded',
             message: 'Your daily/monthly quota has been exceeded',
@@ -1009,12 +1029,12 @@ class RateLimitingMiddleware extends EventEmitter {
         this.monitoringInterval = setInterval(() => {
             this.collectMetrics();
             this.emit('ratelimit:metrics', this.getStatistics());
-            
+
             if (this.metricsCollector) {
                 this.recordMetrics();
             }
         }, 60000); // Every minute
-        
+
         this.log('info', 'Rate limit monitoring started');
     }
 
@@ -1025,24 +1045,24 @@ class RateLimitingMiddleware extends EventEmitter {
     startCleanup() {
         this.cleanupInterval = setInterval(() => {
             const now = Date.now();
-            
+
             // Clean request tracking
             for (const [key, tracking] of this.requestTracking) {
                 const cutoff = now - this.trackingWindow;
                 tracking.requests = tracking.requests.filter(time => time > cutoff);
-                
+
                 if (tracking.requests.length === 0) {
                     this.requestTracking.delete(key);
                 }
             }
-            
+
             // Clean burst states
             for (const [key, state] of this.burstStates) {
                 if (now > state.cooldownUntil) {
                     this.burstStates.delete(key);
                 }
             }
-            
+
             // Clean quota storage (local)
             if (!this.distributedConfig.enabled) {
                 // Reset daily quotas at midnight
@@ -1052,7 +1072,7 @@ class RateLimitingMiddleware extends EventEmitter {
                 }
             }
         }, 60000); // Every minute
-        
+
         this.log('info', 'Rate limit cleanup started');
     }
 
@@ -1070,7 +1090,7 @@ class RateLimitingMiddleware extends EventEmitter {
                 await this.adjustBasedOnErrors();
             }
         }, 30000); // Every 30 seconds
-        
+
         this.log('info', 'Dynamic rate adjustment started');
     }
 
@@ -1082,24 +1102,24 @@ class RateLimitingMiddleware extends EventEmitter {
     async adjustBasedOnCpu() {
         const os = require('os');
         const cpus = os.cpus();
-        
+
         // Calculate CPU usage
         let totalIdle = 0;
         let totalTick = 0;
-        
+
         cpus.forEach(cpu => {
             for (const type in cpu.times) {
                 totalTick += cpu.times[type];
             }
             totalIdle += cpu.times.idle;
         });
-        
+
         const cpuUsage = 100 - ~~(100 * totalIdle / totalTick);
-        
+
         // Adjust limits based on CPU usage
         for (const [name, currentLimit] of this.currentRateLimits) {
             let newLimit = currentLimit;
-            
+
             if (cpuUsage > this.dynamicLimiting.targetCpu) {
                 // Reduce limit
                 newLimit = Math.max(
@@ -1113,7 +1133,7 @@ class RateLimitingMiddleware extends EventEmitter {
                     currentLimit * (1 + this.dynamicLimiting.adjustmentFactor)
                 );
             }
-            
+
             if (newLimit !== currentLimit) {
                 this.currentRateLimits.set(name, Math.round(newLimit));
                 this.log('info', `Adjusted rate limit for ${name}: ${currentLimit} -> ${newLimit}`);
@@ -1130,7 +1150,7 @@ class RateLimitingMiddleware extends EventEmitter {
         // Implementation for load-based adjustment
         const avgRequestRate = this.statistics.averageRequestRate;
         const targetRate = this.dynamicLimiting.maxRate * 0.7;
-        
+
         if (avgRequestRate > targetRate) {
             // Reduce limits
             for (const [name, currentLimit] of this.currentRateLimits) {
@@ -1151,7 +1171,7 @@ class RateLimitingMiddleware extends EventEmitter {
     async adjustBasedOnErrors() {
         // Implementation for error-based adjustment
         const errorRate = this.statistics.limitedRequests / this.statistics.totalRequests;
-        
+
         if (errorRate > 0.1) {
             // Too many rate limit errors, increase limits slightly
             for (const [name, currentLimit] of this.currentRateLimits) {
@@ -1172,13 +1192,13 @@ class RateLimitingMiddleware extends EventEmitter {
         // Update request rates
         let totalRate = 0;
         let count = 0;
-        
+
         for (const tracking of this.requestTracking.values()) {
             const rate = (tracking.requests.length / this.trackingWindow) * 1000;
             totalRate += rate;
             count++;
         }
-        
+
         if (count > 0) {
             this.statistics.averageRequestRate = totalRate / count;
         }
@@ -1190,7 +1210,7 @@ class RateLimitingMiddleware extends EventEmitter {
      */
     recordMetrics() {
         if (!this.metricsCollector) return;
-        
+
         this.metricsCollector.setGauge('ratelimit_total_requests', this.statistics.totalRequests);
         this.metricsCollector.setGauge('ratelimit_limited_requests', this.statistics.limitedRequests);
         this.metricsCollector.setGauge('ratelimit_throttled_requests', this.statistics.throttledRequests);
@@ -1199,7 +1219,7 @@ class RateLimitingMiddleware extends EventEmitter {
         this.metricsCollector.setGauge('ratelimit_burst_activations', this.statistics.burstActivations);
         this.metricsCollector.setGauge('ratelimit_average_request_rate', this.statistics.averageRequestRate);
         this.metricsCollector.setGauge('ratelimit_peak_request_rate', this.statistics.peakRequestRate);
-        
+
         // Record tier-specific metrics
         for (const [tier, count] of Object.entries(this.statistics.limitsByTier)) {
             this.metricsCollector.setGauge('ratelimit_limits_by_tier', count, { tier });
@@ -1266,7 +1286,7 @@ class RateLimitingMiddleware extends EventEmitter {
      */
     async cleanup() {
         this.log('info', 'Cleaning up Rate Limiting Middleware');
-        
+
         // Clear intervals
         if (this.monitoringInterval) {
             clearInterval(this.monitoringInterval);
@@ -1277,12 +1297,12 @@ class RateLimitingMiddleware extends EventEmitter {
         if (this.adjustmentInterval) {
             clearInterval(this.adjustmentInterval);
         }
-        
+
         // Clear bottlenecks
         for (const bottleneck of this.bottlenecks.values()) {
             await bottleneck.stop();
         }
-        
+
         // Clear maps
         this.rateLimiters.clear();
         this.slowDownLimiters.clear();
@@ -1291,7 +1311,7 @@ class RateLimitingMiddleware extends EventEmitter {
         this.quotaStorage.clear();
         this.burstStates.clear();
         this.currentRateLimits.clear();
-        
+
         this.isInitialized = false;
         this.emit('ratelimit:cleanup');
     }

@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "prestart": "npm run validate:env",
-    "start": "concurrently \"npm run start:admin\" \"npm run start:services\"",
+    "start:all": "concurrently \"npm run start:gateway\" \"npm run start:admin-server\" \"npm run start:customer-services\"",
     "start:admin": "npm run start --workspace=servers/admin-server",
     "start:services": "npm run start --workspace=servers/customer-services",
     "start:gateway": "npm run start --workspace=servers/gateway",

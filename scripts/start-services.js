@@ -1,4 +1,4 @@
-// scripts/start-services.js
+// scripts/start-services.js   --- remove this file it's not needed anymore
 const { spawn } = require('child_process');
 const path = require('path');
 

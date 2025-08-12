@@ -13,22 +13,21 @@ const jwt = require('jsonwebtoken');
 const helmet = require('helmet');
 
 /**
- * SecurityPolicies class implements comprehensive security policies for the API Gateway.
+ * SecurityPolicyEngine class implements comprehensive security policies for the API Gateway.
  * It provides authentication, authorization, encryption, input validation, threat protection,
  * compliance enforcement, and security monitoring capabilities.
  */
-class SecurityPolicies {
+class SecurityPolicyEngine {
     /**
-     * Creates an instance of SecurityPolicies
+     * Creates an instance of SecurityPolicyEngine
      * @constructor
      * @param {Object} config - Security configuration
-     * @param {Object} authService - Authentication service
      * @param {Object} logger - Logger instance
      */
-    constructor(config, authService, logger) {
+    constructor(config, logger) {
         this.config = config || {};
-        this.authService = authService;
         this.logger = logger;
+        this.authService = null; // Will be set during initialization if needed
         
         // Security policies
         this.policies = new Map();
@@ -174,8 +173,92 @@ class SecurityPolicies {
         this.policyCache = new Map();
         this.policyCacheTTL = config.policyCacheTTL || 300000; // 5 minutes
         
-        // Initialize policies
-        this.initializePolicies();
+        // Initialization state
+        this.isInitialized = false;
+    }
+
+    /**
+     * Initializes the security policy engine
+     * @async
+     * @returns {Promise<void>}
+     */
+    async initialize() {
+        if (this.isInitialized) {
+            this.log('warn', 'Security policy engine already initialized');
+            return;
+        }
+
+        try {
+            // Initialize policies
+            this.initializePolicies();
+            
+            // Register policy actions
+            this.registerPolicyActions();
+            
+            this.isInitialized = true;
+            this.log('info', 'Security policy engine initialized successfully');
+            
+        } catch (error) {
+            this.log('error', 'Failed to initialize security policy engine', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Evaluates security policies for a request
+     * @async
+     * @param {Object} req - Request object
+     * @returns {Promise<Object>} Policy evaluation result
+     */
+    async evaluate(req) {
+        try {
+            const result = {
+                allowed: true,
+                reason: null,
+                context: {},
+                warnings: []
+            };
+
+            // Get applicable policies
+            const policies = this.getApplicablePolicies(req);
+            
+            // Sort policies by priority
+            policies.sort((a, b) => b.priority - a.priority);
+            
+            // Evaluate each policy
+            for (const policy of policies) {
+                if (!policy.enabled) continue;
+                
+                for (const rule of policy.rules) {
+                    if (rule.condition(req)) {
+                        const action = this.policyActions.get(rule.action);
+                        if (action) {
+                            try {
+                                await action(req, null); // Pass null for res since we're just evaluating
+                            } catch (error) {
+                                if (error instanceof SecurityPolicyError) {
+                                    result.allowed = false;
+                                    result.reason = error.message;
+                                    return result;
+                                }
+                                throw error;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return result;
+            
+        } catch (error) {
+            this.log('error', 'Policy evaluation failed', error);
+            return {
+                allowed: false,
+                reason: 'Policy evaluation error',
+                context: {},
+                warnings: []
+            };
+        }
     }
 
     /**
@@ -315,9 +398,6 @@ class SecurityPolicies {
                 }
             ]
         });
-
-        // Register policy actions
-        this.registerPolicyActions();
         
         this.log('info', 'Security policies initialized');
     }
@@ -338,12 +418,24 @@ class SecurityPolicies {
         this.policyActions.set('validate-jwt-token', async (req, res) => {
             try {
                 const token = this.extractToken(req);
-                const decoded = jwt.verify(token, this.config.jwtSecret);
+                if (!token) {
+                    throw new SecurityPolicyError('No token provided', 401);
+                }
+                
+                const jwtSecret = this.config.jwtSecret || process.env.JWT_SECRET;
+                if (!jwtSecret) {
+                    throw new SecurityPolicyError('JWT secret not configured', 500);
+                }
+                
+                const decoded = jwt.verify(token, jwtSecret);
                 req.user = decoded;
                 this.securityMetrics.authenticationAttempts++;
             } catch (error) {
                 this.securityMetrics.authenticationFailures++;
-                throw new SecurityPolicyError('Invalid token', 401);
+                if (error instanceof jwt.JsonWebTokenError) {
+                    throw new SecurityPolicyError('Invalid token', 401);
+                }
+                throw error;
             }
         });
 
@@ -442,8 +534,10 @@ class SecurityPolicies {
 
         // Compliance actions
         this.policyActions.set('enforce-gdpr', async (req, res) => {
-            // Add GDPR headers
-            res.setHeader('X-GDPR-Compliant', 'true');
+            // Add GDPR headers if response object is available
+            if (res) {
+                res.setHeader('X-GDPR-Compliant', 'true');
+            }
             
             // Check for consent
             if (!req.headers['x-user-consent'] && this.requiresConsent(req)) {
@@ -475,40 +569,6 @@ class SecurityPolicies {
             // Attach to request for later update
             req.auditEntry = auditEntry;
         });
-    }
-
-    /**
-     * Enforces security policies on a request
-     * @param {Object} req - Request object
-     * @param {Object} res - Response object
-     * @returns {Promise<void>}
-     */
-    async enforce(req, res) {
-        const policies = this.getApplicablePolicies(req);
-        
-        // Sort policies by priority
-        policies.sort((a, b) => b.priority - a.priority);
-        
-        for (const policy of policies) {
-            if (!policy.enabled) continue;
-            
-            for (const rule of policy.rules) {
-                if (rule.condition(req)) {
-                    const action = this.policyActions.get(rule.action);
-                    if (action) {
-                        try {
-                            await action(req, res);
-                        } catch (error) {
-                            if (error instanceof SecurityPolicyError) {
-                                throw error;
-                            }
-                            this.log('error', `Policy action failed: ${rule.action}`, error);
-                            throw new SecurityPolicyError('Security policy violation', 500);
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /**
@@ -721,7 +781,8 @@ class SecurityPolicies {
      */
     encrypt(value) {
         const algorithm = this.encryptionPolicies.algorithm;
-        const key = crypto.scryptSync(this.config.encryptionKey || 'default-key', 'salt', 32);
+        const encryptionKey = this.config.encryptionKey || process.env.ENCRYPTION_KEY || 'default-key-change-in-production';
+        const key = crypto.scryptSync(encryptionKey, 'salt', 32);
         const iv = crypto.randomBytes(16);
         
         const cipher = crypto.createCipheriv(algorithm, key, iv);
@@ -811,7 +872,7 @@ class SecurityPolicies {
     }
     
     isPublicEndpoint(req) {
-        const publicPaths = ['/health', '/metrics', '/docs'];
+        const publicPaths = ['/health', '/metrics', '/docs', '/api-docs', '/openapi.json'];
         return publicPaths.some(path => req.path.startsWith(path));
     }
     
@@ -901,6 +962,37 @@ class SecurityPolicies {
     }
 
     /**
+     * Performs cleanup operations
+     * @async
+     * @returns {Promise<void>}
+     */
+    async cleanup() {
+        try {
+            this.log('info', 'Cleaning up security policy engine');
+            
+            // Clear policy cache
+            this.policyCache.clear();
+            
+            // Reset metrics
+            this.securityMetrics = {
+                authenticationAttempts: 0,
+                authenticationFailures: 0,
+                authorizationDenials: 0,
+                threatDetections: 0,
+                policyViolations: 0,
+                suspiciousActivities: 0
+            };
+            
+            this.isInitialized = false;
+            this.log('info', 'Security policy engine cleanup completed');
+            
+        } catch (error) {
+            this.log('error', 'Error during security policy engine cleanup', error);
+            throw error;
+        }
+    }
+
+    /**
      * Logs a message
      * @private
      * @param {string} level - Log level
@@ -908,10 +1000,10 @@ class SecurityPolicies {
      * @param {*} data - Additional data
      */
     log(level, message, data) {
-        if (this.logger) {
+        if (this.logger && typeof this.logger[level] === 'function') {
             this.logger[level](message, data);
         } else {
-            console[level](message, data);
+            console[level] || console.log(message, data);
         }
     }
 }
@@ -927,4 +1019,4 @@ class SecurityPolicyError extends Error {
     }
 }
 
-module.exports = SecurityPolicies;
+module.exports = { SecurityPolicyEngine, SecurityPolicyError };
