@@ -13,6 +13,7 @@ const axios = require('axios');
 /**
  * ServiceRegistry class manages service discovery, registration, and health monitoring.
  * It maintains a registry of available backend services and their health status.
+ * Enhanced with independent service management and graceful degradation capabilities.
  * 
  * @class ServiceRegistry
  * @extends EventEmitter
@@ -28,6 +29,7 @@ class ServiceRegistry extends EventEmitter {
         this.config = config || {};
         this.services = new Map();
         this.healthChecks = new Map();
+        this.serviceStates = new Map();
         this.discoveryInterval = null;
         this.isInitialized = false;
         this.discoveryMethods = {
@@ -35,6 +37,14 @@ class ServiceRegistry extends EventEmitter {
             'consul': this.discoverConsulServices.bind(this),
             'kubernetes': this.discoverKubernetesServices.bind(this),
             'eureka': this.discoverEurekaServices.bind(this)
+        };
+
+        // Enhanced logging configuration for independent service management
+        this.loggingConfig = {
+            maxConsecutiveWarnings: 3,
+            errorEscalationThreshold: 5,
+            silentPeriodAfterErrors: 10,
+            successLogAfterFailures: true
         };
     }
 
@@ -59,7 +69,7 @@ class ServiceRegistry extends EventEmitter {
                 this.startDiscovery();
             }
 
-            // Start health monitoring
+            // Start health monitoring with independent service tracking
             this.startHealthMonitoring();
 
             this.isInitialized = true;
@@ -271,6 +281,31 @@ class ServiceRegistry extends EventEmitter {
     }
 
     /**
+     * Initializes service state tracking for independent management
+     * @private
+     * @param {Object} service - Service instance
+     */
+    initializeServiceState(service) {
+        if (!this.serviceStates.has(service.name)) {
+            this.serviceStates.set(service.name, {
+                consecutiveFailures: 0,
+                consecutiveSuccesses: 0,
+                totalFailures: 0,
+                totalSuccesses: 0,
+                firstFailureTime: null,
+                lastSuccessTime: null,
+                lastFailureTime: null,
+                warningCount: 0,
+                errorCount: 0,
+                silentUntil: null,
+                lastLogLevel: null,
+                availabilityStartTime: Date.now(),
+                cumulativeDowntime: 0
+            });
+        }
+    }
+
+    /**
      * Registers a service in the registry
      * @async
      * @param {Object} service - Service to register
@@ -293,7 +328,10 @@ class ServiceRegistry extends EventEmitter {
             console.log(`Service registered: ${service.name}`);
         }
 
-        // Perform initial health check
+        // Initialize independent service state tracking
+        this.initializeServiceState(service);
+
+        // Perform initial health check independently
         await this.checkServiceHealth(service);
 
         this.emit('service:registered', service);
@@ -315,6 +353,9 @@ class ServiceRegistry extends EventEmitter {
                 clearInterval(healthCheckInterval);
                 this.healthChecks.delete(serviceName);
             }
+
+            // Clean up service state tracking
+            this.serviceStates.delete(serviceName);
 
             console.log(`Service deregistered: ${serviceName}`);
             this.emit('service:deregistered', service);
@@ -432,7 +473,7 @@ class ServiceRegistry extends EventEmitter {
     }
 
     /**
-     * Starts health monitoring for all services
+     * Starts health monitoring for all services with independent tracking
      * @private
      */
     startHealthMonitoring() {
@@ -444,7 +485,7 @@ class ServiceRegistry extends EventEmitter {
     }
 
     /**
-     * Starts health check for a specific service
+     * Starts health check for a specific service with independent management
      * @private
      * @param {string} serviceName - Service name
      */
@@ -461,7 +502,7 @@ class ServiceRegistry extends EventEmitter {
             clearInterval(existingInterval);
         }
 
-        // Setup periodic health check
+        // Setup periodic health check with independent error handling
         const interval = setInterval(async () => {
             await this.checkServiceHealth(service);
         }, service.healthCheck.interval);
@@ -470,7 +511,100 @@ class ServiceRegistry extends EventEmitter {
     }
 
     /**
-     * Checks health of a service
+     * Determines appropriate log level based on service failure patterns
+     * @private
+     * @param {Object} service - Service instance
+     * @param {boolean} isSuccess - Whether the current check was successful
+     * @returns {string} Log level (info, warn, error, silent)
+     */
+    determineLogLevel(service, isSuccess) {
+        const state = this.serviceStates.get(service.name);
+        const now = Date.now();
+
+        // Check if we're in a silent period
+        if (state.silentUntil && now < state.silentUntil) {
+            return 'silent';
+        }
+
+        if (isSuccess) {
+            // Log success if recovering from failures
+            if (state.consecutiveFailures > 0 && this.loggingConfig.successLogAfterFailures) {
+                return 'info';
+            }
+            return 'silent'; // Don't log routine successful checks
+        }
+
+        // Handle failure logging
+        if (state.consecutiveFailures <= this.loggingConfig.maxConsecutiveWarnings) {
+            return 'warn';
+        }
+
+        if (state.consecutiveFailures === this.loggingConfig.errorEscalationThreshold) {
+            // Set silent period after escalating to error
+            state.silentUntil = now + (this.loggingConfig.silentPeriodAfterErrors * service.healthCheck.interval);
+            return 'error';
+        }
+
+        if (state.consecutiveFailures > this.loggingConfig.errorEscalationThreshold) {
+            return 'silent'; // Avoid log spam after initial error
+        }
+
+        return 'warn';
+    }
+
+    /**
+     * Logs service health status with appropriate level and context
+     * @private
+     * @param {Object} service - Service instance
+     * @param {string} level - Log level
+     * @param {string} message - Log message
+     * @param {Object} details - Additional details
+     */
+    logServiceHealth(service, level, message, details = {}) {
+        const state = this.serviceStates.get(service.name);
+        const contextInfo = {
+            service: service.name,
+            consecutiveFailures: state.consecutiveFailures,
+            totalFailures: state.totalFailures,
+            uptime: this.calculateServiceUptime(service.name),
+            ...details
+        };
+
+        switch (level) {
+            case 'info':
+                console.log(`Service ${service.name}: ${message}`, contextInfo);
+                break;
+            case 'warn':
+                console.warn(`Service ${service.name}: ${message}`, contextInfo);
+                break;
+            case 'error':
+                console.error(`Service ${service.name}: ${message}`, contextInfo);
+                break;
+            case 'silent':
+                // No logging for silent level
+                break;
+        }
+
+        state.lastLogLevel = level;
+    }
+
+    /**
+     * Calculates service uptime percentage
+     * @private
+     * @param {string} serviceName - Service name
+     * @returns {number} Uptime percentage
+     */
+    calculateServiceUptime(serviceName) {
+        const state = this.serviceStates.get(serviceName);
+        if (!state) return 0;
+
+        const totalTime = Date.now() - state.availabilityStartTime;
+        const uptime = totalTime - state.cumulativeDowntime;
+        return totalTime > 0 ? ((uptime / totalTime) * 100).toFixed(2) : 0;
+    }
+
+    /**
+     * Checks health of a service with enhanced SSL support and independent error handling
      * @async
      * @param {Object} service - Service to check
      * @returns {Promise<boolean>} Health status
@@ -482,50 +616,108 @@ class ServiceRegistry extends EventEmitter {
 
         const healthUrl = `${service.url}${service.healthCheck.path}`;
         const previousHealth = service.health;
+        const state = this.serviceStates.get(service.name);
+        const startTime = Date.now();
 
         try {
-            const response = await axios.get(healthUrl, {
+            const axiosConfig = {
                 timeout: service.healthCheck.timeout,
                 validateStatus: (status) => status === 200
-            });
+            };
 
+            // Apply SSL configuration for HTTPS requests with development support
+            if (healthUrl.startsWith('https://')) {
+                const https = require('https');
+                
+                // Use proxy.secure configuration or default based on environment
+                const isSecure = this.config.proxy?.secure !== false && process.env.NODE_ENV === 'production';
+                
+                axiosConfig.httpsAgent = new https.Agent({
+                    rejectUnauthorized: isSecure
+                });
+            }
+
+            const response = await axios.get(healthUrl, axiosConfig);
+
+            // Update service health information
             service.lastHealthCheck = new Date();
             service.healthCheckResponse = response.data;
             
+            // Update state tracking for success
+            state.consecutiveFailures = 0;
+            state.consecutiveSuccesses += 1;
+            state.totalSuccesses += 1;
+            state.lastSuccessTime = Date.now();
+            
+            // Calculate and update downtime if recovering from failure
+            if (state.firstFailureTime) {
+                state.cumulativeDowntime += Date.now() - state.firstFailureTime;
+                state.firstFailureTime = null;
+            }
+
+            // Determine health status based on thresholds
             if (service.health !== 'healthy') {
-                service.consecutiveHealthyChecks = (service.consecutiveHealthyChecks || 0) + 1;
-                
-                if (service.consecutiveHealthyChecks >= service.healthCheck.healthyThreshold) {
+                if (state.consecutiveSuccesses >= service.healthCheck.healthyThreshold) {
                     service.health = 'healthy';
                     service.status = 'active';
-                    service.consecutiveUnhealthyChecks = 0;
                     
                     if (previousHealth !== 'healthy') {
-                        console.log(`Service ${service.name} is now healthy`);
+                        const logLevel = this.determineLogLevel(service, true);
+                        this.logServiceHealth(service, logLevel, 'Service recovered and is now healthy', {
+                            responseTime: Date.now() - startTime,
+                            recoveryTime: state.lastFailureTime ? Date.now() - state.lastFailureTime : 0
+                        });
                         this.emit('service:healthy', service);
                     }
                 }
             } else {
                 service.health = 'healthy';
                 service.status = 'active';
-                service.consecutiveHealthyChecks = service.healthCheck.healthyThreshold;
-                service.consecutiveUnhealthyChecks = 0;
             }
 
             return true;
+
         } catch (error) {
+            // Update service health information for failure
             service.lastHealthCheck = new Date();
             service.healthCheckError = error.message;
-            service.consecutiveUnhealthyChecks = (service.consecutiveUnhealthyChecks || 0) + 1;
-            service.consecutiveHealthyChecks = 0;
+            
+            // Update state tracking for failure
+            state.consecutiveFailures += 1;
+            state.consecutiveSuccesses = 0;
+            state.totalFailures += 1;
+            state.lastFailureTime = Date.now();
+            
+            // Mark first failure time for downtime calculation
+            if (!state.firstFailureTime) {
+                state.firstFailureTime = Date.now();
+            }
 
-            if (service.consecutiveUnhealthyChecks >= service.healthCheck.unhealthyThreshold) {
+            // Determine if service should be marked as unhealthy
+            if (state.consecutiveFailures >= service.healthCheck.unhealthyThreshold) {
                 service.health = 'unhealthy';
                 service.status = 'inactive';
                 
                 if (previousHealth !== 'unhealthy') {
-                    console.error(`Service ${service.name} is now unhealthy:`, error.message);
+                    const logLevel = this.determineLogLevel(service, false);
+                    this.logServiceHealth(service, logLevel, 'Service is now unhealthy', {
+                        error: error.message,
+                        errorCode: error.code,
+                        responseTime: Date.now() - startTime,
+                        threshold: service.healthCheck.unhealthyThreshold
+                    });
                     this.emit('service:unhealthy', service);
+                }
+            } else {
+                // Log intermediate failures with appropriate level
+                const logLevel = this.determineLogLevel(service, false);
+                if (logLevel !== 'silent') {
+                    this.logServiceHealth(service, logLevel, 'Health check failed', {
+                        error: error.message,
+                        errorCode: error.code,
+                        responseTime: Date.now() - startTime,
+                        attemptsRemaining: service.healthCheck.unhealthyThreshold - state.consecutiveFailures
+                    });
                 }
             }
 
@@ -558,6 +750,35 @@ class ServiceRegistry extends EventEmitter {
 
             this.emit('service:metrics', { service: serviceName, metrics: service.metrics });
         }
+    }
+
+    /**
+     * Gets service statistics including uptime and failure information
+     * @param {string} serviceName - Service name
+     * @returns {Object} Service statistics
+     */
+    getServiceStatistics(serviceName) {
+        const service = this.services.get(serviceName);
+        const state = this.serviceStates.get(serviceName);
+        
+        if (!service || !state) {
+            return null;
+        }
+
+        return {
+            name: serviceName,
+            health: service.health,
+            status: service.status,
+            uptime: this.calculateServiceUptime(serviceName),
+            totalSuccesses: state.totalSuccesses,
+            totalFailures: state.totalFailures,
+            consecutiveFailures: state.consecutiveFailures,
+            consecutiveSuccesses: state.consecutiveSuccesses,
+            lastSuccessTime: state.lastSuccessTime,
+            lastFailureTime: state.lastFailureTime,
+            lastHealthCheck: service.lastHealthCheck,
+            metrics: service.metrics
+        };
     }
 
     /**
@@ -603,8 +824,9 @@ class ServiceRegistry extends EventEmitter {
         }
         this.healthChecks.clear();
 
-        // Clear services
+        // Clear services and state tracking
         this.services.clear();
+        this.serviceStates.clear();
 
         this.isInitialized = false;
         this.removeAllListeners();

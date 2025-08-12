@@ -1281,7 +1281,7 @@ const routingConfig = {
         registry: [
             {
                 name: 'admin-server',
-                url: process.env.ADMIN_SERVER_URL || 'http://localhost:4001',
+                url: process.env.ADMIN_SERVER_URL || 'https://localhost:4001',
                 healthPath: '/health',
                 path: '/admin',
                 requiresAuth: true,
@@ -1297,7 +1297,7 @@ const routingConfig = {
             },
             {
                 name: 'customer-services',
-                url: process.env.CUSTOMER_SERVICES_URL || 'http://localhost:4002',
+                url: process.env.CUSTOMER_SERVICES_URL || 'https://localhost:4002',
                 healthPath: '/health',
                 path: '/services',
                 requiresAuth: true,

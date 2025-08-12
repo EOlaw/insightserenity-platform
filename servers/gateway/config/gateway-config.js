@@ -367,14 +367,14 @@ const gatewayConfig = {
             registry.push(
                 {
                     name: 'admin-server',
-                    url: 'http://localhost:4001',
+                    url: 'https://localhost:4001',
                     path: '/admin',
                     enabled: true,
                     ...this.defaults.serviceRegistry.defaultConfig
                 },
                 {
                     name: 'customer-services',
-                    url: 'http://localhost:4002',
+                    url: 'https://localhost:4002',
                     path: '/services',
                     enabled: true,
                     ...this.defaults.serviceRegistry.defaultConfig

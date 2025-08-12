@@ -10,7 +10,7 @@
     },
     "cors": {
       "enabled": true,
-      "origins": ["http://localhost:3000", "http://localhost:3001", "http://localhost:4001", "http://localhost:4002"],
+      "origins": ["http://localhost:3000", "http://localhost:3001", "http://localhost:4001", "https://localhost:4001", "http://localhost:4002"],
       "credentials": true,
       "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
       "allowedHeaders": ["Content-Type", "Authorization", "X-Requested-With", "X-Tenant-ID", "X-API-Key"],
@@ -55,7 +55,7 @@
     "registry": [
       {
         "name": "admin-server",
-        "url": "http://localhost:4001",
+        "url": "https://localhost:4001",
         "path": "/admin",
         "healthPath": "/health",
         "weight": 1,
@@ -67,7 +67,7 @@
       },
       {
         "name": "customer-services",
-        "url": "http://localhost:4002",
+        "url": "https://localhost:4002",
         "path": "/services",
         "healthPath": "/health",
         "weight": 1,

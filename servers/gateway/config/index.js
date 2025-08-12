@@ -154,7 +154,7 @@ class ConfigManager {
                 registry: [
                     {
                         name: 'admin-server',
-                        url: process.env.ADMIN_SERVER_URL || 'http://localhost:4001',
+                        url: process.env.ADMIN_SERVER_URL || 'https://localhost:4001',
                         path: '/api/admin',
                         requiresAuth: true,
                         timeout: 30000,
@@ -410,14 +410,16 @@ class ConfigManager {
             if (process.env.ADMIN_SERVER_URL) {
                 envConfig.services.registry.push({
                     name: 'admin-server',
-                    url: process.env.ADMIN_SERVER_URL
+                    url: process.env.ADMIN_SERVER_URL,
+                    path: process.env.ADMIN_SERVER_PATH || '/api/admin'
                 });
             }
             
             if (process.env.CUSTOMER_SERVICES_URL) {
                 envConfig.services.registry.push({
                     name: 'customer-services',
-                    url: process.env.CUSTOMER_SERVICES_URL
+                    url: process.env.CUSTOMER_SERVICES_URL,
+                    path: process.env.CUSTOMER_SERVICES_PATH || '/api/services'
                 });
             }
         }
