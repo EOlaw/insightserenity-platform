@@ -19,7 +19,7 @@
 
 const AdminSession = require('../models/admin-session-model');
 const AdminUser = require('../models/admin-user-model');
-const User = require('../../../../../shared/lib/database/models/user-model');
+const User = require('../../../../../shared/lib/database/models/users/user-model');
 const logger = require('../../../../../shared/lib/utils/logger');
 const { AppError } = require('../../../../../shared/lib/utils/app-error');
 const HashService = require('../../../../../shared/lib/security/encryption/hash-service');

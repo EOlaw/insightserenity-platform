@@ -92,11 +92,11 @@ ENV SERVER_TYPE=admin
 USER nodejs
 
 # Expose admin port (not publicly accessible in production)
-EXPOSE 5001
+EXPOSE 4001
 
 # Health check for container orchestration
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:5001/health || exit 1
+    CMD curl -f http://localhost:4001/health || exit 1
 
 # Security: Drop all capabilities except what's needed
 # This is handled by docker-compose or k8s security context

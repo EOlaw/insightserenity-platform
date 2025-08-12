@@ -13,12 +13,8 @@
  */
 
 const cors = require('cors');
-const { getCorsConfig } = require('./cors-config');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/app-error');
-const { ERROR_CODES } = require('../utils/constants/error-codes');
-const AuditService = require('../security/audit/audit-service');
-const config = require('./helmet-config');
 
 /**
  * @class CorsMiddleware
@@ -27,13 +23,13 @@ const config = require('./helmet-config');
 class CorsMiddleware {
   /**
    * @private
-   * @type {CorsConfig}
+   * @type {Object}
    */
   #corsConfig;
 
   /**
    * @private
-   * @type {AuditService}
+   * @type {Object}
    */
   #auditService;
 
@@ -84,19 +80,39 @@ class CorsMiddleware {
         process.env.CORS_BYPASS_PATHS.split(',').map(p => p.trim()) : [],
       userAgents: process.env.CORS_BYPASS_USER_AGENTS ?
         process.env.CORS_BYPASS_USER_AGENTS.split(',').map(ua => ua.trim()) : []
+    },
+    defaultCorsOptions: {
+      origin: process.env.NODE_ENV === 'development' ? 
+        ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:4000', 'http://localhost:4001'] :
+        process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : false,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: [
+        'Origin',
+        'X-Requested-With',
+        'Content-Type',
+        'Accept',
+        'Authorization',
+        'X-API-Key',
+        'X-Tenant-ID',
+        'X-Organization-ID',
+        'X-Correlation-ID'
+      ],
+      credentials: true,
+      maxAge: 86400, // 24 hours
+      optionsSuccessStatus: 200
     }
   };
 
   /**
    * Creates CorsMiddleware instance
    * @param {Object} [options] - Middleware configuration
-   * @param {CorsConfig} [corsConfig] - CORS configuration instance
-   * @param {AuditService} [auditService] - Audit service instance
+   * @param {Object} [corsConfig] - CORS configuration instance
+   * @param {Object} [auditService] - Audit service instance
    */
   constructor(options = {}, corsConfig, auditService) {
     this.#config = { ...CorsMiddleware.#DEFAULT_CONFIG, ...options };
-    this.#corsConfig = corsConfig || getCorsConfig();
-    this.#auditService = auditService || new AuditService();
+    this.#corsConfig = corsConfig || this.#createDefaultCorsConfig();
+    this.#auditService = auditService || this.#createDefaultAuditService();
     this.#corsInstances = new Map();
     this.#originMetrics = new Map();
 
@@ -105,6 +121,55 @@ class CorsMiddleware {
       trustProxy: this.#config.trustProxy,
       auditEnabled: this.#config.auditCorsViolations
     });
+  }
+
+  /**
+   * Creates default CORS configuration
+   * @private
+   * @returns {Object} Default CORS configuration
+   */
+  #createDefaultCorsConfig() {
+    return {
+      getCorsOptions: async (context) => {
+        return this.#config.defaultCorsOptions;
+      },
+      isOriginAllowed: async (origin, context) => {
+        if (!origin) return true;
+        
+        const allowedOrigins = this.#config.defaultCorsOptions.origin;
+        if (allowedOrigins === true) return true;
+        if (allowedOrigins === false) return false;
+        if (Array.isArray(allowedOrigins)) {
+          return allowedOrigins.includes(origin);
+        }
+        if (typeof allowedOrigins === 'function') {
+          return new Promise((resolve) => {
+            allowedOrigins(origin, (err, allowed) => {
+              resolve(!err && allowed);
+            });
+          });
+        }
+        return false;
+      },
+      getConfigSummary: () => ({
+        allowedOrigins: this.#config.defaultCorsOptions.origin,
+        methods: this.#config.defaultCorsOptions.methods,
+        credentials: this.#config.defaultCorsOptions.credentials
+      })
+    };
+  }
+
+  /**
+   * Creates default audit service
+   * @private
+   * @returns {Object} Default audit service
+   */
+  #createDefaultAuditService() {
+    return {
+      logEvent: async (event) => {
+        logger.warn('CORS audit event', event);
+      }
+    };
   }
 
   /**
@@ -593,13 +658,23 @@ const getCorsMiddleware = (options) => {
   return instance;
 };
 
-module.exports = {
-  CorsMiddleware,
-  getCorsMiddleware,
-  // Export convenience methods
-  cors: (options) => getCorsMiddleware().middleware(options),
-  corsForRoutes: (routes, options) => getCorsMiddleware().forRoutes(routes, options),
-  corsForOrigins: (origins, options) => getCorsMiddleware().forOrigins(origins, options),
-  corsPreflight: (options) => getCorsMiddleware().preflight(options),
-  validateCors: (req) => getCorsMiddleware().validateRequest(req)
+/**
+ * Default CORS middleware function for direct usage
+ * @param {Object} [options] - Middleware options
+ * @returns {Function} Express middleware function
+ */
+const corsMiddleware = (options) => {
+  return getCorsMiddleware().middleware(options);
 };
+
+// Export the main function and all other methods
+module.exports = corsMiddleware;
+
+// Attach additional methods to the main export
+module.exports.CorsMiddleware = CorsMiddleware;
+module.exports.getCorsMiddleware = getCorsMiddleware;
+module.exports.cors = (options) => getCorsMiddleware().middleware(options);
+module.exports.corsForRoutes = (routes, options) => getCorsMiddleware().forRoutes(routes, options);
+module.exports.corsForOrigins = (origins, options) => getCorsMiddleware().forOrigins(origins, options);
+module.exports.corsPreflight = (options) => getCorsMiddleware().preflight(options);
+module.exports.validateCors = (req) => getCorsMiddleware().validateRequest(req);

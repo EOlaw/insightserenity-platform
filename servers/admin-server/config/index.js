@@ -53,7 +53,7 @@ class AdminConfiguration {
                 env: sharedConfig.environment?.name || process.env.NODE_ENV || 'development',
                 name: process.env.APP_NAME || 'InsightSerenity Admin Server',
                 type: 'admin',
-                port: parseInt(process.env.ADMIN_PORT, 10) || 5001,
+                port: parseInt(process.env.ADMIN_PORT, 10) || 4001,
                 host: process.env.ADMIN_HOST || '127.0.0.1',
                 url: this.buildAdminUrl(),
                 basePath: process.env.ADMIN_BASE_PATH || '/admin',
@@ -71,7 +71,7 @@ class AdminConfiguration {
 
             // Admin-specific configuration
             admin: {
-                port: parseInt(process.env.ADMIN_PORT, 10) || 5001,
+                port: parseInt(process.env.ADMIN_PORT, 10) || 4001,
                 host: process.env.ADMIN_HOST || '127.0.0.1',
                 url: this.buildAdminUrl(),
                 basePath: process.env.ADMIN_BASE_PATH || '/admin',

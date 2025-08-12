@@ -43,7 +43,7 @@ module.exports = {
     
     // Network configuration
     network: {
-        port: parseInt(process.env.ADMIN_PORT, 10) || 5001,
+        port: parseInt(process.env.ADMIN_PORT, 10) || 4001,
         host: process.env.ADMIN_HOST || '127.0.0.1',
         publicUrl: process.env.ADMIN_PUBLIC_URL || `https://admin.${process.env.DOMAIN || 'insightserenity.com'}`,
         behindProxy: parseBooleanFromEnv(process.env.ADMIN_BEHIND_PROXY, isProduction),

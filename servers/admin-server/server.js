@@ -640,7 +640,7 @@ class AdminServer extends EventEmitter {
         try {
             // Create a local admin configuration object instead of modifying the frozen config
             this.adminConfig = {
-                port: parseInt(process.env.ADMIN_PORT, 10) || 5001,
+                port: parseInt(process.env.ADMIN_PORT, 10) || 4001,
                 host: process.env.ADMIN_HOST || '127.0.0.1',
                 security: {
                     forceSSL: process.env.ADMIN_FORCE_SSL === 'true' || false,
@@ -698,7 +698,7 @@ class AdminServer extends EventEmitter {
 
             // Set minimal working configuration as fallback
             this.adminConfig = {
-                port: parseInt(process.env.ADMIN_PORT, 10) || 5001,
+                port: parseInt(process.env.ADMIN_PORT, 10) || 4001,
                 host: process.env.ADMIN_HOST || '127.0.0.1',
                 security: {
                     forceSSL: false,

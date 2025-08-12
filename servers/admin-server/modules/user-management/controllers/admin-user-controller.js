@@ -20,7 +20,7 @@ const userPermissionsService = require('../services/user-permissions-service');
 const userSessionsService = require('../services/user-sessions-service');
 const logger = require('../../../../../shared/lib/utils/logger');
 const { AppError } = require('../../../../../shared/lib/utils/app-error');
-const ResponseFormatter = require('../../../../../shared/lib/utils/response-formatter');
+const { ResponseFormatter }= require('../../../../../shared/lib/utils/response-formatter');
 const asyncHandler = require('../../../../../shared/lib/utils/async-handler');
 const CommonValidator = require('../../../../../shared/lib/utils/validators/common-validators');
 const dateHelper = require('../../../../../shared/lib/utils/helpers/date-helper');
@@ -44,7 +44,7 @@ class AdminUserController {
      * Constructor
      */
     constructor() {
-        this.#responseFormatter = new ResponseFormatter();
+        this.#responseFormatter = ResponseFormatter.getInstance();
         this.#initializeValidationRules();
         this.#initializeRateLimits();
         this.#initializeAuditConfig();

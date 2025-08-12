@@ -9,7 +9,7 @@
     "npm": ">=9.0.0"
   },
   "scripts": {
-    "start": "cross-env NODE_ENV=production node server.js",
+    "start": "cross-env NODE_ENV=production nodemon server.js",
     "dev": "cross-env NODE_ENV=development nodemon server.js",
     "dev:debug": "cross-env NODE_ENV=development nodemon --inspect server.js",
     "test": "NODE_ENV=test jest --runInBand --detectOpenHandles",
@@ -27,7 +27,7 @@
     "db:migrate": "cross-env NODE_ENV=development node ../../tools/migration/migrate.js",
     "db:rollback": "cross-env NODE_ENV=development node ../../tools/migration/rollback.js",
     "db:seed": "cross-env NODE_ENV=development node ../../tools/migration/seed.js",
-    "health:check": "curl -f http://127.0.0.1:5001/health || exit 1"
+    "health:check": "curl -f http://127.0.0.1:4001/health || exit 1"
   },
   "dependencies": {
     "@eslint/plugin-kit": "^0.3.4",

@@ -12,7 +12,7 @@
 
 const logger = require('../utils/logger');
 const CacheService = require('../services/cache-service');
-const CorsWhitelistModel = require('../database/models/cors-whitelist-model');
+const CorsWhitelistModel = require('../database/models/security/cors-whitelist-model');
 const TenantModel = require('../database/models/organizations/tenant-model');
 const config = require('./helmet-config');
 

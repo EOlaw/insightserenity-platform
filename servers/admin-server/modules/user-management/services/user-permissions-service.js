@@ -19,8 +19,8 @@
 
 const UserPermission = require('../models/user-permission-model');
 const AdminUser = require('../models/admin-user-model');
-const User = require('../../../../../shared/lib/database/models/user-model');
-const Role = require('../../../../../shared/lib/database/models/role-model');
+const User = require('../../../../../shared/lib/database/models/users/user-model');
+const Role = require('../../../../../shared/lib/database/models/users/role-model');
 const logger = require('../../../../../shared/lib/utils/logger');
 const { AppError } = require('../../../../../shared/lib/utils/app-error');
 const CacheService = require('../../../../../shared/lib/services/cache-service');

@@ -50,7 +50,19 @@ const ROLES = Object.freeze({
   
   // Basic roles
   USER: 'user',
-  GUEST: 'guest'
+  GUEST: 'guest',
+
+  // Administrative roles for admin server
+  ADMIN: Object.freeze({
+    SUPER_ADMIN: 'super_admin',
+    SYSTEM_ADMIN: 'system_admin',
+    USER_ADMIN: 'user_admin',
+    SECURITY_ADMIN: 'security_admin',
+    SUPPORT_ADMIN: 'support_admin',
+    BILLING_ADMIN: 'billing_admin',
+    COMPLIANCE_OFFICER: 'compliance_officer',
+    READ_ONLY_ADMIN: 'read_only_admin'
+  })
 });
 
 /**
@@ -79,7 +91,17 @@ const ROLE_HIERARCHY = Object.freeze({
   [ROLES.PARTNER]: 25,
   [ROLES.CANDIDATE]: 20,
   [ROLES.USER]: 10,
-  [ROLES.GUEST]: 0
+  [ROLES.GUEST]: 0,
+  
+  // Administrative role hierarchy
+  [ROLES.ADMIN.SUPER_ADMIN]: 100,
+  [ROLES.ADMIN.SYSTEM_ADMIN]: 90,
+  [ROLES.ADMIN.SECURITY_ADMIN]: 85,
+  [ROLES.ADMIN.USER_ADMIN]: 80,
+  [ROLES.ADMIN.BILLING_ADMIN]: 75,
+  [ROLES.ADMIN.SUPPORT_ADMIN]: 70,
+  [ROLES.ADMIN.COMPLIANCE_OFFICER]: 65,
+  [ROLES.ADMIN.READ_ONLY_ADMIN]: 30
 });
 
 /**
@@ -108,7 +130,17 @@ const ROLE_DISPLAY_NAMES = Object.freeze({
   [ROLES.PARTNER]: 'Partner',
   [ROLES.CANDIDATE]: 'Candidate',
   [ROLES.USER]: 'User',
-  [ROLES.GUEST]: 'Guest'
+  [ROLES.GUEST]: 'Guest',
+  
+  // Administrative role display names
+  [ROLES.ADMIN.SUPER_ADMIN]: 'Super Administrator',
+  [ROLES.ADMIN.SYSTEM_ADMIN]: 'System Administrator',
+  [ROLES.ADMIN.USER_ADMIN]: 'User Administrator',
+  [ROLES.ADMIN.SECURITY_ADMIN]: 'Security Administrator',
+  [ROLES.ADMIN.SUPPORT_ADMIN]: 'Support Administrator',
+  [ROLES.ADMIN.BILLING_ADMIN]: 'Billing Administrator',
+  [ROLES.ADMIN.COMPLIANCE_OFFICER]: 'Compliance Officer',
+  [ROLES.ADMIN.READ_ONLY_ADMIN]: 'Read-Only Administrator'
 });
 
 /**
@@ -137,7 +169,17 @@ const ROLE_DESCRIPTIONS = Object.freeze({
   [ROLES.PARTNER]: 'Partner access',
   [ROLES.CANDIDATE]: 'Job candidate access',
   [ROLES.USER]: 'Basic user access',
-  [ROLES.GUEST]: 'Guest access only'
+  [ROLES.GUEST]: 'Guest access only',
+  
+  // Administrative role descriptions
+  [ROLES.ADMIN.SUPER_ADMIN]: 'Complete system access with all administrative privileges',
+  [ROLES.ADMIN.SYSTEM_ADMIN]: 'System configuration and infrastructure management',
+  [ROLES.ADMIN.USER_ADMIN]: 'User account and role management',
+  [ROLES.ADMIN.SECURITY_ADMIN]: 'Security policies and compliance management',
+  [ROLES.ADMIN.SUPPORT_ADMIN]: 'Customer support and ticket management',
+  [ROLES.ADMIN.BILLING_ADMIN]: 'Billing and financial management',
+  [ROLES.ADMIN.COMPLIANCE_OFFICER]: 'Regulatory compliance and audit management',
+  [ROLES.ADMIN.READ_ONLY_ADMIN]: 'Read-only access to administrative functions'
 });
 
 /**
@@ -180,6 +222,16 @@ const ROLE_CATEGORIES = Object.freeze({
   BASIC: [
     ROLES.USER,
     ROLES.GUEST
+  ],
+  ADMINISTRATIVE: [
+    ROLES.ADMIN.SUPER_ADMIN,
+    ROLES.ADMIN.SYSTEM_ADMIN,
+    ROLES.ADMIN.USER_ADMIN,
+    ROLES.ADMIN.SECURITY_ADMIN,
+    ROLES.ADMIN.SUPPORT_ADMIN,
+    ROLES.ADMIN.BILLING_ADMIN,
+    ROLES.ADMIN.COMPLIANCE_OFFICER,
+    ROLES.ADMIN.READ_ONLY_ADMIN
   ]
 });
 
@@ -339,7 +391,55 @@ const ROLE_PERMISSIONS = Object.freeze({
   ],
 
   // Guest
-  [ROLES.GUEST]: []
+  [ROLES.GUEST]: [],
+
+  // Administrative roles permissions
+  [ROLES.ADMIN.SUPER_ADMIN]: ['*'],
+  
+  [ROLES.ADMIN.SYSTEM_ADMIN]: [
+    'systemAdministration.*',
+    'userManagement.read',
+    'organizationManagement.read',
+    'analyticsAdministration.*'
+  ],
+  
+  [ROLES.ADMIN.USER_ADMIN]: [
+    'userManagement.*',
+    'organizationManagement.read',
+    'supportAdministration.viewTickets'
+  ],
+  
+  [ROLES.ADMIN.SECURITY_ADMIN]: [
+    'securityAdministration.*',
+    'userManagement.read',
+    'systemAdministration.viewSystemHealth',
+    'systemAdministration.accessLogs'
+  ],
+  
+  [ROLES.ADMIN.SUPPORT_ADMIN]: [
+    'supportAdministration.*',
+    'userManagement.read',
+    'organizationManagement.read'
+  ],
+  
+  [ROLES.ADMIN.BILLING_ADMIN]: [
+    'organizationManagement.manageBilling',
+    'organizationManagement.viewFinancials',
+    'organizationManagement.manageSubscriptions',
+    'analyticsAdministration.viewReports'
+  ],
+  
+  [ROLES.ADMIN.COMPLIANCE_OFFICER]: [
+    'securityAdministration.manageCompliance',
+    'securityAdministration.performAudits',
+    'analyticsAdministration.viewReports',
+    'analyticsAdministration.exportData'
+  ],
+  
+  [ROLES.ADMIN.READ_ONLY_ADMIN]: [
+    '*.read',
+    '*.view*'
+  ]
 });
 
 /**
@@ -369,6 +469,48 @@ const ROLE_CONSTRAINTS = Object.freeze({
   [ROLES.TENANT_ADMIN]: {
     maxPerTenant: 5,
     requiresMFA: false
+  },
+  
+  // Administrative role constraints
+  [ROLES.ADMIN.SUPER_ADMIN]: {
+    maxPerPlatform: 3,
+    requiresMFA: true,
+    requiresApproval: true,
+    requiresBackgroundCheck: true
+  },
+  [ROLES.ADMIN.SYSTEM_ADMIN]: {
+    maxPerPlatform: 5,
+    requiresMFA: true,
+    requiresApproval: true
+  },
+  [ROLES.ADMIN.SECURITY_ADMIN]: {
+    maxPerPlatform: 5,
+    requiresMFA: true,
+    requiresApproval: true,
+    requiresSecurityClearance: true
+  },
+  [ROLES.ADMIN.USER_ADMIN]: {
+    maxPerPlatform: 10,
+    requiresMFA: true
+  },
+  [ROLES.ADMIN.BILLING_ADMIN]: {
+    maxPerPlatform: 5,
+    requiresMFA: true,
+    requiresFinancialApproval: true
+  },
+  [ROLES.ADMIN.SUPPORT_ADMIN]: {
+    maxPerPlatform: 20,
+    requiresMFA: false
+  },
+  [ROLES.ADMIN.COMPLIANCE_OFFICER]: {
+    maxPerPlatform: 3,
+    requiresMFA: true,
+    requiresApproval: true,
+    requiresComplianceCertification: true
+  },
+  [ROLES.ADMIN.READ_ONLY_ADMIN]: {
+    maxPerPlatform: 50,
+    requiresMFA: false
   }
 });
 
@@ -378,7 +520,11 @@ const ROLE_CONSTRAINTS = Object.freeze({
  * @returns {boolean} True if role exists
  */
 const isValidRole = (role) => {
-  return Object.values(ROLES).includes(role);
+  const allRoles = [
+    ...Object.values(ROLES),
+    ...Object.values(ROLES.ADMIN)
+  ];
+  return allRoles.includes(role);
 };
 
 /**
@@ -460,6 +606,23 @@ const getRoleInfo = (role) => {
   };
 };
 
+/**
+ * Check if role is an admin role
+ * @param {string} role - Role name
+ * @returns {boolean} True if role is administrative
+ */
+const isAdminRole = (role) => {
+  return Object.values(ROLES.ADMIN).includes(role);
+};
+
+/**
+ * Get all admin roles
+ * @returns {string[]} Array of admin role names
+ */
+const getAdminRoles = () => {
+  return Object.values(ROLES.ADMIN);
+};
+
 // Export roles and utilities
 module.exports = Object.freeze({
   ROLES,
@@ -478,5 +641,7 @@ module.exports = Object.freeze({
   getRoleCategory,
   getRolePermissions,
   roleHasPermission,
-  getRoleInfo
+  getRoleInfo,
+  isAdminRole,
+  getAdminRoles
 });
