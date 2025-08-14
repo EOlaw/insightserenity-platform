@@ -38,13 +38,13 @@ class HealthMonitor extends EventEmitter {
         this.serviceRegistry = serviceRegistry;
         this.config = config || {};
         this.circuitBreakerManager = circuitBreakerManager;
-        
+
         // Health check state
         this.isRunning = false;
         this.startTime = Date.now();
         this.lastCheckTime = null;
         this.checkInterval = null;
-        
+
         // Health status tracking
         this.healthStatus = {
             status: 'unknown',
@@ -63,12 +63,12 @@ class HealthMonitor extends EventEmitter {
                 averageResponseTime: 0
             }
         };
-        
+
         // Component health tracking
         this.componentHealth = new Map();
         this.healthHistory = [];
         this.maxHistorySize = 100;
-        
+
         // System thresholds
         this.thresholds = {
             cpu: {
@@ -92,7 +92,7 @@ class HealthMonitor extends EventEmitter {
                 critical: config.thresholds?.errorRate?.critical || 10
             }
         };
-        
+
         // Health check strategies
         this.healthCheckStrategies = {
             'http': this.performHttpHealthCheck.bind(this),
@@ -100,14 +100,14 @@ class HealthMonitor extends EventEmitter {
             'exec': this.performExecHealthCheck.bind(this),
             'grpc': this.performGrpcHealthCheck.bind(this)
         };
-        
+
         // Dependency checks
         this.dependencies = new Map();
         this.registerDefaultDependencies();
-        
+
         // Custom health checks
         this.customChecks = new Map();
-        
+
         // Kubernetes probe handlers
         this.probeHandlers = {
             liveness: this.handleLivenessProbe.bind(this),
@@ -129,25 +129,25 @@ class HealthMonitor extends EventEmitter {
 
         try {
             console.log('Starting Health Monitor');
-            
+
             // Perform initial health check
             await this.performHealthCheck();
-            
+
             // Start periodic health checks
             const interval = this.config.interval || 30000;
             this.checkInterval = setInterval(async () => {
                 await this.performHealthCheck();
             }, interval);
-            
+
             // Start resource monitoring
             this.startResourceMonitoring();
-            
+
             // Register signal handlers for health status
             this.registerSignalHandlers();
-            
+
             this.isRunning = true;
             this.emit('health-monitor:started');
-            
+
             console.log(`Health Monitor started with interval: ${interval}ms`);
         } catch (error) {
             console.error('Failed to start Health Monitor:', error);
@@ -166,20 +166,20 @@ class HealthMonitor extends EventEmitter {
         }
 
         console.log('Stopping Health Monitor');
-        
+
         // Clear check interval
         if (this.checkInterval) {
             clearInterval(this.checkInterval);
             this.checkInterval = null;
         }
-        
+
         // Clear resource monitoring
         this.stopResourceMonitoring();
-        
+
         // Update status
         this.healthStatus.status = 'stopped';
         this.isRunning = false;
-        
+
         this.emit('health-monitor:stopped');
         console.log('Health Monitor stopped');
     }
@@ -191,10 +191,10 @@ class HealthMonitor extends EventEmitter {
      */
     async performHealthCheck() {
         const checkStartTime = performance.now();
-        
+
         try {
             console.log('Performing health check');
-            
+
             // Check all components in parallel
             const [servicesHealth, systemHealth, dependenciesHealth, customHealth] = await Promise.allSettled([
                 this.checkServicesHealth(),
@@ -202,33 +202,33 @@ class HealthMonitor extends EventEmitter {
                 this.checkDependenciesHealth(),
                 this.checkCustomHealth()
             ]);
-            
+
             // Update health status
             this.healthStatus.checks.services = this.processHealthResult(servicesHealth);
             this.healthStatus.checks.system = this.processHealthResult(systemHealth);
             this.healthStatus.checks.dependencies = this.processHealthResult(dependenciesHealth);
             this.healthStatus.checks.custom = this.processHealthResult(customHealth);
-            
+
             // Calculate overall status
             this.healthStatus.status = this.calculateOverallStatus();
             this.healthStatus.timestamp = new Date().toISOString();
             this.healthStatus.uptime = Date.now() - this.startTime;
-            
+
             // Update metrics
             const checkDuration = performance.now() - checkStartTime;
             this.updateHealthMetrics(checkDuration);
-            
+
             // Store in history
             this.addToHistory(this.healthStatus);
-            
+
             // Emit health status
             this.emit('health:checked', this.healthStatus);
-            
+
             // Check for status changes
             this.checkForStatusChanges();
-            
+
             this.lastCheckTime = Date.now();
-            
+
             return this.healthStatus;
         } catch (error) {
             console.error('Health check failed:', error);
@@ -260,7 +260,7 @@ class HealthMonitor extends EventEmitter {
                 const health = await this.checkServiceHealth(service);
                 healthChecks.set(service.name, health);
                 results.services[service.name] = health;
-                
+
                 if (health.status === 'healthy') {
                     results.healthy++;
                 } else if (health.status === 'degraded') {
@@ -306,7 +306,7 @@ class HealthMonitor extends EventEmitter {
         const startTime = performance.now();
         const strategy = service.healthCheck?.type || 'http';
         const healthCheckFn = this.healthCheckStrategies[strategy];
-        
+
         if (!healthCheckFn) {
             throw new Error(`Unknown health check strategy: ${strategy}`);
         }
@@ -314,10 +314,10 @@ class HealthMonitor extends EventEmitter {
         try {
             const result = await healthCheckFn(service);
             const responseTime = performance.now() - startTime;
-            
+
             // Check if circuit breaker is open
             const circuitBreakerStatus = this.circuitBreakerManager?.getStatus(service.name);
-            
+
             return {
                 status: result.success ? 'healthy' : 'unhealthy',
                 responseTime,
@@ -328,7 +328,7 @@ class HealthMonitor extends EventEmitter {
             };
         } catch (error) {
             const responseTime = performance.now() - startTime;
-            
+
             return {
                 status: 'unhealthy',
                 responseTime,
@@ -339,25 +339,61 @@ class HealthMonitor extends EventEmitter {
     }
 
     /**
-     * Performs HTTP health check
-     * @async
-     * @private
-     * @param {Object} service - Service configuration
-     * @returns {Promise<Object>} Health check result
-     */
+ * Performs HTTP health check
+ * @async
+ * @private
+ * @param {Object} service - Service configuration
+ * @returns {Promise<Object>} Health check result
+ */
     async performHttpHealthCheck(service) {
         const url = `${service.url}${service.healthCheck?.path || '/health'}`;
         const timeout = service.healthCheck?.timeout || 5000;
-        
+
         try {
-            const response = await axios.get(url, {
+            const axiosConfig = {
                 timeout,
                 validateStatus: (status) => status >= 200 && status < 300,
                 headers: {
                     'User-Agent': 'Gateway-Health-Monitor/1.0'
                 }
-            });
-            
+            };
+
+            // Apply SSL configuration for HTTPS requests with development support
+            if (url.startsWith('https://')) {
+                const https = require('https');
+
+                // Determine SSL security based on environment and configuration
+                let rejectUnauthorized = true;
+
+                // Check for explicit proxy configuration
+                if (this.config && this.config.proxy && typeof this.config.proxy.secure === 'boolean') {
+                    rejectUnauthorized = this.config.proxy.secure;
+                } else {
+                    // Default behavior: strict in production, relaxed in development
+                    rejectUnauthorized = process.env.NODE_ENV === 'production';
+                }
+
+                // Allow override via environment variable for development flexibility
+                if (process.env.GATEWAY_REJECT_UNAUTHORIZED === 'false') {
+                    rejectUnauthorized = false;
+                }
+
+                axiosConfig.httpsAgent = new https.Agent({
+                    rejectUnauthorized: rejectUnauthorized,
+                    // Additional options for development environments
+                    ...(process.env.NODE_ENV !== 'production' && {
+                        checkServerIdentity: () => undefined // Bypass hostname verification in development
+                    })
+                });
+
+                // Log SSL configuration for debugging in development
+                if (process.env.NODE_ENV === 'development') {
+                    console.log(`Health Monitor SSL config for ${service.name}: rejectUnauthorized=${rejectUnauthorized}`);
+                }
+            }
+
+            const response = await axios.get(url, axiosConfig);
+
             return {
                 success: true,
                 details: {
@@ -389,13 +425,13 @@ class HealthMonitor extends EventEmitter {
         const net = require('net');
         const timeout = service.healthCheck?.timeout || 5000;
         const [host, port] = service.url.replace(/^tcp:\/\//, '').split(':');
-        
+
         return new Promise((resolve) => {
             const socket = new net.Socket();
             let connected = false;
-            
+
             socket.setTimeout(timeout);
-            
+
             socket.on('connect', () => {
                 connected = true;
                 socket.end();
@@ -404,7 +440,7 @@ class HealthMonitor extends EventEmitter {
                     details: { connected: true, host, port }
                 });
             });
-            
+
             socket.on('timeout', () => {
                 socket.destroy();
                 resolve({
@@ -412,14 +448,14 @@ class HealthMonitor extends EventEmitter {
                     details: { error: 'Connection timeout', host, port }
                 });
             });
-            
+
             socket.on('error', (error) => {
                 resolve({
                     success: false,
                     details: { error: error.message, host, port }
                 });
             });
-            
+
             socket.connect(parseInt(port), host);
         });
     }
@@ -434,11 +470,11 @@ class HealthMonitor extends EventEmitter {
     async performExecHealthCheck(service) {
         const { exec } = require('child_process');
         const command = service.healthCheck?.command;
-        
+
         if (!command) {
             throw new Error('Exec health check requires a command');
         }
-        
+
         return new Promise((resolve) => {
             exec(command, { timeout: service.healthCheck?.timeout || 5000 }, (error, stdout, stderr) => {
                 if (error) {
@@ -487,7 +523,7 @@ class HealthMonitor extends EventEmitter {
         const diskUsage = await this.getDiskUsage();
         const networkStats = this.getNetworkStats();
         const processHealth = this.getProcessHealth();
-        
+
         const details = {
             cpu: {
                 usage: cpuUsage,
@@ -515,21 +551,21 @@ class HealthMonitor extends EventEmitter {
             platform: os.platform(),
             hostname: os.hostname()
         };
-        
+
         // Calculate overall system health
         const statuses = [
             details.cpu.status,
             details.memory.status,
             details.disk.status
         ];
-        
+
         let status = 'healthy';
         if (statuses.includes('critical')) {
             status = 'critical';
         } else if (statuses.includes('warning')) {
             status = 'warning';
         }
-        
+
         return {
             status,
             details,
@@ -546,7 +582,7 @@ class HealthMonitor extends EventEmitter {
     async getCpuUsage() {
         return new Promise((resolve) => {
             const startMeasure = this.cpuAverage();
-            
+
             setTimeout(() => {
                 const endMeasure = this.cpuAverage();
                 const idleDiff = endMeasure.idle - startMeasure.idle;
@@ -566,14 +602,14 @@ class HealthMonitor extends EventEmitter {
         const cpus = os.cpus();
         let totalIdle = 0;
         let totalTick = 0;
-        
+
         cpus.forEach(cpu => {
             for (const type in cpu.times) {
                 totalTick += cpu.times[type];
             }
             totalIdle += cpu.times.idle;
         });
-        
+
         return {
             idle: totalIdle / cpus.length,
             total: totalTick / cpus.length
@@ -590,10 +626,10 @@ class HealthMonitor extends EventEmitter {
         const freeMemory = os.freemem();
         const usedMemory = totalMemory - freeMemory;
         const percentage = (usedMemory / totalMemory) * 100;
-        
+
         // Also get process memory usage
         const processMemory = process.memoryUsage();
-        
+
         return {
             percentage: Math.round(percentage * 100) / 100,
             total: totalMemory,
@@ -621,12 +657,12 @@ class HealthMonitor extends EventEmitter {
         try {
             const { statfs } = require('fs').promises;
             const stats = await statfs('/');
-            
+
             const total = stats.blocks * stats.bsize;
             const free = stats.bavail * stats.bsize;
             const used = total - free;
             const percentage = (used / total) * 100;
-            
+
             return {
                 percentage: Math.round(percentage * 100) / 100,
                 total,
@@ -657,11 +693,11 @@ class HealthMonitor extends EventEmitter {
             totalInterfaces: 0,
             activeInterfaces: 0
         };
-        
+
         for (const [name, addresses] of Object.entries(interfaces)) {
             stats.totalInterfaces++;
             const activeAddresses = addresses.filter(addr => !addr.internal);
-            
+
             if (activeAddresses.length > 0) {
                 stats.activeInterfaces++;
                 stats.interfaces[name] = activeAddresses.map(addr => ({
@@ -671,7 +707,7 @@ class HealthMonitor extends EventEmitter {
                 }));
             }
         }
-        
+
         return stats;
     }
 
@@ -706,12 +742,12 @@ class HealthMonitor extends EventEmitter {
             unhealthy: 0,
             dependencies: {}
         };
-        
+
         for (const [name, dependency] of this.dependencies) {
             try {
                 const health = await dependency.check();
                 results.dependencies[name] = health;
-                
+
                 if (health.status === 'healthy') {
                     results.healthy++;
                 } else {
@@ -726,11 +762,11 @@ class HealthMonitor extends EventEmitter {
                 results.unhealthy++;
             }
         }
-        
-        const status = results.unhealthy > 0 ? 
-            (results.healthy === 0 ? 'unhealthy' : 'degraded') : 
+
+        const status = results.unhealthy > 0 ?
+            (results.healthy === 0 ? 'unhealthy' : 'degraded') :
             'healthy';
-        
+
         return {
             status,
             details: results,
@@ -750,7 +786,7 @@ class HealthMonitor extends EventEmitter {
                 if (!this.config.dependencies?.redis) {
                     return { status: 'skipped', message: 'Redis not configured' };
                 }
-                
+
                 try {
                     // Check Redis connection
                     // This would use the actual Redis client in production
@@ -760,14 +796,14 @@ class HealthMonitor extends EventEmitter {
                 }
             }
         });
-        
+
         // Database dependency
         this.registerDependency('database', {
             check: async () => {
                 if (!this.config.dependencies?.database) {
                     return { status: 'skipped', message: 'Database not configured' };
                 }
-                
+
                 try {
                     // Check database connection
                     // This would use the actual database client in production
@@ -777,21 +813,21 @@ class HealthMonitor extends EventEmitter {
                 }
             }
         });
-        
+
         // External API dependency
         this.registerDependency('external-api', {
             check: async () => {
                 if (!this.config.dependencies?.externalApi) {
                     return { status: 'skipped', message: 'External API not configured' };
                 }
-                
+
                 try {
                     const response = await axios.get(this.config.dependencies.externalApi.url, {
                         timeout: 5000
                     });
-                    
-                    return { 
-                        status: 'healthy', 
+
+                    return {
+                        status: 'healthy',
                         message: 'External API is accessible',
                         responseTime: response.headers['x-response-time']
                     };
@@ -811,7 +847,7 @@ class HealthMonitor extends EventEmitter {
         if (!dependency.check || typeof dependency.check !== 'function') {
             throw new Error('Dependency must have a check function');
         }
-        
+
         this.dependencies.set(name, dependency);
         console.log(`Dependency registered: ${name}`);
     }
@@ -830,18 +866,18 @@ class HealthMonitor extends EventEmitter {
                 message: 'No custom checks configured'
             };
         }
-        
+
         const results = {
             passed: 0,
             failed: 0,
             checks: {}
         };
-        
+
         for (const [name, check] of this.customChecks) {
             try {
                 const result = await check();
                 results.checks[name] = result;
-                
+
                 if (result.passed) {
                     results.passed++;
                 } else {
@@ -856,11 +892,11 @@ class HealthMonitor extends EventEmitter {
                 results.failed++;
             }
         }
-        
-        const status = results.failed > 0 ? 
-            (results.passed === 0 ? 'unhealthy' : 'degraded') : 
+
+        const status = results.failed > 0 ?
+            (results.passed === 0 ? 'unhealthy' : 'degraded') :
             'healthy';
-        
+
         return {
             status,
             details: results,
@@ -878,7 +914,7 @@ class HealthMonitor extends EventEmitter {
         if (typeof checkFn !== 'function') {
             throw new Error('Check must be a function');
         }
-        
+
         this.customChecks.set(name, checkFn);
         console.log(`Custom health check registered: ${name}`);
     }
@@ -909,7 +945,7 @@ class HealthMonitor extends EventEmitter {
     calculateOverallStatus() {
         const checks = Object.values(this.healthStatus.checks);
         const statuses = checks.map(check => check.status);
-        
+
         if (statuses.includes('critical') || statuses.includes('error')) {
             return 'unhealthy';
         } else if (statuses.includes('unhealthy')) {
@@ -947,19 +983,19 @@ class HealthMonitor extends EventEmitter {
      */
     updateHealthMetrics(checkDuration) {
         this.healthStatus.metrics.totalChecks++;
-        
+
         if (this.healthStatus.status === 'unhealthy' || this.healthStatus.status === 'error') {
             this.healthStatus.metrics.failedChecks++;
         }
-        
-        this.healthStatus.metrics.successRate = 
-            ((this.healthStatus.metrics.totalChecks - this.healthStatus.metrics.failedChecks) / 
-            this.healthStatus.metrics.totalChecks) * 100;
-        
+
+        this.healthStatus.metrics.successRate =
+            ((this.healthStatus.metrics.totalChecks - this.healthStatus.metrics.failedChecks) /
+                this.healthStatus.metrics.totalChecks) * 100;
+
         // Update average response time
         const currentAvg = this.healthStatus.metrics.averageResponseTime;
         const totalChecks = this.healthStatus.metrics.totalChecks;
-        this.healthStatus.metrics.averageResponseTime = 
+        this.healthStatus.metrics.averageResponseTime =
             (currentAvg * (totalChecks - 1) + checkDuration) / totalChecks;
     }
 
@@ -973,7 +1009,7 @@ class HealthMonitor extends EventEmitter {
             ...status,
             timestamp: new Date().toISOString()
         });
-        
+
         // Trim history if needed
         if (this.healthHistory.length > this.maxHistorySize) {
             this.healthHistory.shift();
@@ -988,17 +1024,17 @@ class HealthMonitor extends EventEmitter {
         if (this.healthHistory.length < 2) {
             return;
         }
-        
+
         const current = this.healthHistory[this.healthHistory.length - 1];
         const previous = this.healthHistory[this.healthHistory.length - 2];
-        
+
         if (current.status !== previous.status) {
             this.emit('health:status-changed', {
                 from: previous.status,
                 to: current.status,
                 timestamp: new Date().toISOString()
             });
-            
+
             // Emit specific events for status changes
             if (current.status === 'healthy' && previous.status !== 'healthy') {
                 this.emit('health:recovered', current);
@@ -1016,7 +1052,7 @@ class HealthMonitor extends EventEmitter {
         // Monitor CPU and memory every 30 seconds
         this.resourceMonitorInterval = setInterval(() => {
             const memoryUsage = this.getMemoryUsage();
-            
+
             // Check for resource alerts
             if (memoryUsage.percentage > this.thresholds.memory.critical) {
                 this.emit('resource:critical', {
@@ -1054,7 +1090,7 @@ class HealthMonitor extends EventEmitter {
             this.healthStatus.status = 'terminating';
             this.emit('health:terminating');
         });
-        
+
         process.on('uncaughtException', (error) => {
             console.error('Uncaught exception in health monitor:', error);
             this.healthStatus.status = 'error';
@@ -1068,7 +1104,7 @@ class HealthMonitor extends EventEmitter {
      */
     handleLivenessProbe() {
         const isAlive = this.isRunning && this.healthStatus.status !== 'error';
-        
+
         return {
             status: isAlive ? 'ok' : 'error',
             timestamp: new Date().toISOString(),
@@ -1081,10 +1117,10 @@ class HealthMonitor extends EventEmitter {
      * @returns {Object} Readiness probe response
      */
     handleReadinessProbe() {
-        const isReady = this.isRunning && 
-                       (this.healthStatus.status === 'healthy' || 
-                        this.healthStatus.status === 'degraded');
-        
+        const isReady = this.isRunning &&
+            (this.healthStatus.status === 'healthy' ||
+                this.healthStatus.status === 'degraded');
+
         return {
             status: isReady ? 'ok' : 'not_ready',
             checks: this.healthStatus.checks,
@@ -1098,9 +1134,9 @@ class HealthMonitor extends EventEmitter {
      */
     handleStartupProbe() {
         const startupTime = 60000; // 1 minute startup grace period
-        const isStarted = this.isRunning && 
-                         (Date.now() - this.startTime) > startupTime;
-        
+        const isStarted = this.isRunning &&
+            (Date.now() - this.startTime) > startupTime;
+
         return {
             status: isStarted ? 'started' : 'starting',
             startTime: this.startTime,
@@ -1146,7 +1182,7 @@ class HealthMonitor extends EventEmitter {
             ...health,
             timestamp: new Date().toISOString()
         });
-        
+
         this.emit('component:health-updated', {
             component: componentName,
             health
@@ -1159,53 +1195,53 @@ class HealthMonitor extends EventEmitter {
      */
     exportPrometheusMetrics() {
         const metrics = [];
-        
+
         // Overall health status
         metrics.push(`# HELP gateway_health_status Gateway health status (1=healthy, 0=unhealthy)`);
         metrics.push(`# TYPE gateway_health_status gauge`);
         metrics.push(`gateway_health_status ${this.healthStatus.status === 'healthy' ? 1 : 0}`);
-        
+
         // Service health
         if (this.healthStatus.checks.services?.details?.services) {
             metrics.push(`# HELP gateway_service_health Service health status`);
             metrics.push(`# TYPE gateway_service_health gauge`);
-            
+
             for (const [name, health] of Object.entries(this.healthStatus.checks.services.details.services)) {
                 const value = health.status === 'healthy' ? 1 : 0;
                 metrics.push(`gateway_service_health{service="${name}"} ${value}`);
             }
         }
-        
+
         // System metrics
         if (this.healthStatus.checks.system?.details) {
             const system = this.healthStatus.checks.system.details;
-            
+
             metrics.push(`# HELP gateway_cpu_usage CPU usage percentage`);
             metrics.push(`# TYPE gateway_cpu_usage gauge`);
             metrics.push(`gateway_cpu_usage ${system.cpu?.usage || 0}`);
-            
+
             metrics.push(`# HELP gateway_memory_usage Memory usage percentage`);
             metrics.push(`# TYPE gateway_memory_usage gauge`);
             metrics.push(`gateway_memory_usage ${system.memory?.usage || 0}`);
-            
+
             metrics.push(`# HELP gateway_disk_usage Disk usage percentage`);
             metrics.push(`# TYPE gateway_disk_usage gauge`);
             metrics.push(`gateway_disk_usage ${system.disk?.usage || 0}`);
         }
-        
+
         // Health check metrics
         metrics.push(`# HELP gateway_health_checks_total Total health checks performed`);
         metrics.push(`# TYPE gateway_health_checks_total counter`);
         metrics.push(`gateway_health_checks_total ${this.healthStatus.metrics.totalChecks}`);
-        
+
         metrics.push(`# HELP gateway_health_checks_failed_total Failed health checks`);
         metrics.push(`# TYPE gateway_health_checks_failed_total counter`);
         metrics.push(`gateway_health_checks_failed_total ${this.healthStatus.metrics.failedChecks}`);
-        
+
         metrics.push(`# HELP gateway_health_check_duration_ms Average health check duration`);
         metrics.push(`# TYPE gateway_health_check_duration_ms gauge`);
         metrics.push(`gateway_health_check_duration_ms ${this.healthStatus.metrics.averageResponseTime}`);
-        
+
         return metrics.join('\n');
     }
 }

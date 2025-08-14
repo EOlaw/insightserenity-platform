@@ -99,7 +99,7 @@ class ServiceRegistry extends EventEmitter {
         } catch (error) {
             console.error(`Service discovery failed for type ${discoveryType}:`, error);
             this.emit('discovery:error', error);
-            
+
             // Fall back to static configuration if available
             if (discoveryType !== 'static' && this.config.registry) {
                 console.log('Falling back to static service configuration');
@@ -132,7 +132,7 @@ class ServiceRegistry extends EventEmitter {
     async discoverConsulServices() {
         const consulUrl = this.config.discovery.consul?.url || 'http://localhost:8500';
         const datacenter = this.config.discovery.consul?.datacenter || 'dc1';
-        
+
         try {
             const response = await axios.get(`${consulUrl}/v1/catalog/services`, {
                 params: { dc: datacenter }
@@ -173,7 +173,7 @@ class ServiceRegistry extends EventEmitter {
         const k8sConfig = this.config.discovery.kubernetes || {};
         const namespace = k8sConfig.namespace || 'default';
         const labelSelector = k8sConfig.labelSelector || '';
-        
+
         try {
             // In a real implementation, this would use the Kubernetes API
             // For now, we'll use environment variables set by Kubernetes
@@ -205,14 +205,14 @@ class ServiceRegistry extends EventEmitter {
      */
     async discoverEurekaServices() {
         const eurekaUrl = this.config.discovery.eureka?.url || 'http://localhost:8761';
-        
+
         try {
             const response = await axios.get(`${eurekaUrl}/eureka/apps`, {
                 headers: { 'Accept': 'application/json' }
             });
 
             const applications = response.data.applications.application || [];
-            
+
             for (const app of applications) {
                 for (const instance of app.instance) {
                     const service = {
@@ -317,7 +317,7 @@ class ServiceRegistry extends EventEmitter {
         }
 
         const existingService = this.services.get(service.name);
-        
+
         if (existingService) {
             // Update existing service
             Object.assign(existingService, service);
@@ -343,10 +343,10 @@ class ServiceRegistry extends EventEmitter {
      */
     deregisterService(serviceName) {
         const service = this.services.get(serviceName);
-        
+
         if (service) {
             this.services.delete(serviceName);
-            
+
             // Clear health check interval
             const healthCheckInterval = this.healthChecks.get(serviceName);
             if (healthCheckInterval) {
@@ -393,7 +393,7 @@ class ServiceRegistry extends EventEmitter {
      * @returns {Array} Array of services with tag
      */
     getServicesByTag(tag) {
-        return this.getAllServices().filter(service => 
+        return this.getAllServices().filter(service =>
             service.tags && service.tags.includes(tag)
         );
     }
@@ -406,7 +406,7 @@ class ServiceRegistry extends EventEmitter {
      */
     selectServiceInstance(serviceName, algorithm = 'round-robin') {
         const service = this.getService(serviceName);
-        
+
         if (!service) {
             return null;
         }
@@ -418,7 +418,7 @@ class ServiceRegistry extends EventEmitter {
 
         // Get healthy instances
         const healthyInstances = service.instances.filter(i => i.health === 'healthy');
-        
+
         if (healthyInstances.length === 0) {
             return null;
         }
@@ -427,19 +427,19 @@ class ServiceRegistry extends EventEmitter {
             case 'round-robin':
                 service.lastSelectedIndex = (service.lastSelectedIndex || 0) + 1;
                 return healthyInstances[service.lastSelectedIndex % healthyInstances.length];
-            
+
             case 'least-connections':
-                return healthyInstances.reduce((min, instance) => 
+                return healthyInstances.reduce((min, instance) =>
                     instance.connections < min.connections ? instance : min
                 );
-            
+
             case 'random':
                 return healthyInstances[Math.floor(Math.random() * healthyInstances.length)];
-            
+
             case 'weighted':
                 const totalWeight = healthyInstances.reduce((sum, i) => sum + i.weight, 0);
                 let random = Math.random() * totalWeight;
-                
+
                 for (const instance of healthyInstances) {
                     random -= instance.weight;
                     if (random <= 0) {
@@ -447,7 +447,7 @@ class ServiceRegistry extends EventEmitter {
                     }
                 }
                 return healthyInstances[0];
-            
+
             default:
                 return healthyInstances[0];
         }
@@ -459,7 +459,7 @@ class ServiceRegistry extends EventEmitter {
      */
     startDiscovery() {
         const interval = this.config.discovery.refreshInterval;
-        
+
         this.discoveryInterval = setInterval(async () => {
             try {
                 await this.discoverServices();
@@ -491,7 +491,7 @@ class ServiceRegistry extends EventEmitter {
      */
     startServiceHealthCheck(serviceName) {
         const service = this.services.get(serviceName);
-        
+
         if (!service || !service.healthCheck.enabled) {
             return;
         }
@@ -604,11 +604,11 @@ class ServiceRegistry extends EventEmitter {
     }
 
     /**
-     * Checks health of a service with enhanced SSL support and independent error handling
-     * @async
-     * @param {Object} service - Service to check
-     * @returns {Promise<boolean>} Health status
-     */
+ * Checks health of a service with enhanced SSL support and independent error handling
+ * @async
+ * @param {Object} service - Service to check
+ * @returns {Promise<boolean>} Health status
+ */
     async checkServiceHealth(service) {
         if (!service.healthCheck || !service.healthCheck.enabled) {
             return true;
@@ -628,13 +628,35 @@ class ServiceRegistry extends EventEmitter {
             // Apply SSL configuration for HTTPS requests with development support
             if (healthUrl.startsWith('https://')) {
                 const https = require('https');
-                
-                // Use proxy.secure configuration or default based on environment
-                const isSecure = this.config.proxy?.secure !== false && process.env.NODE_ENV === 'production';
-                
+
+                // Determine SSL security based on environment and configuration
+                let rejectUnauthorized = true;
+
+                // Check for explicit proxy configuration
+                if (this.config.proxy && typeof this.config.proxy.secure === 'boolean') {
+                    rejectUnauthorized = this.config.proxy.secure;
+                } else {
+                    // Default behavior: strict in production, relaxed in development
+                    rejectUnauthorized = process.env.NODE_ENV === 'production';
+                }
+
+                // Allow override via environment variable for development flexibility
+                if (process.env.GATEWAY_REJECT_UNAUTHORIZED === 'false') {
+                    rejectUnauthorized = false;
+                }
+
                 axiosConfig.httpsAgent = new https.Agent({
-                    rejectUnauthorized: isSecure
+                    rejectUnauthorized: rejectUnauthorized,
+                    // Additional options for development environments
+                    ...(process.env.NODE_ENV !== 'production' && {
+                        checkServerIdentity: () => undefined // Bypass hostname verification in development
+                    })
                 });
+
+                // Log SSL configuration for debugging in development
+                if (process.env.NODE_ENV === 'development') {
+                    console.log(`SSL config for ${service.name}: rejectUnauthorized=${rejectUnauthorized}`);
+                }
             }
 
             const response = await axios.get(healthUrl, axiosConfig);
@@ -642,13 +664,13 @@ class ServiceRegistry extends EventEmitter {
             // Update service health information
             service.lastHealthCheck = new Date();
             service.healthCheckResponse = response.data;
-            
+
             // Update state tracking for success
             state.consecutiveFailures = 0;
             state.consecutiveSuccesses += 1;
             state.totalSuccesses += 1;
             state.lastSuccessTime = Date.now();
-            
+
             // Calculate and update downtime if recovering from failure
             if (state.firstFailureTime) {
                 state.cumulativeDowntime += Date.now() - state.firstFailureTime;
@@ -660,7 +682,7 @@ class ServiceRegistry extends EventEmitter {
                 if (state.consecutiveSuccesses >= service.healthCheck.healthyThreshold) {
                     service.health = 'healthy';
                     service.status = 'active';
-                    
+
                     if (previousHealth !== 'healthy') {
                         const logLevel = this.determineLogLevel(service, true);
                         this.logServiceHealth(service, logLevel, 'Service recovered and is now healthy', {
@@ -681,13 +703,13 @@ class ServiceRegistry extends EventEmitter {
             // Update service health information for failure
             service.lastHealthCheck = new Date();
             service.healthCheckError = error.message;
-            
+
             // Update state tracking for failure
             state.consecutiveFailures += 1;
             state.consecutiveSuccesses = 0;
             state.totalFailures += 1;
             state.lastFailureTime = Date.now();
-            
+
             // Mark first failure time for downtime calculation
             if (!state.firstFailureTime) {
                 state.firstFailureTime = Date.now();
@@ -697,7 +719,7 @@ class ServiceRegistry extends EventEmitter {
             if (state.consecutiveFailures >= service.healthCheck.unhealthyThreshold) {
                 service.health = 'unhealthy';
                 service.status = 'inactive';
-                
+
                 if (previousHealth !== 'unhealthy') {
                     const logLevel = this.determineLogLevel(service, false);
                     this.logServiceHealth(service, logLevel, 'Service is now unhealthy', {
@@ -732,19 +754,19 @@ class ServiceRegistry extends EventEmitter {
      */
     updateServiceMetrics(serviceName, metrics) {
         const service = this.services.get(serviceName);
-        
+
         if (service) {
             if (metrics.requestCount !== undefined) {
                 service.metrics.requests += metrics.requestCount;
             }
-            
+
             if (metrics.errorCount !== undefined) {
                 service.metrics.errors += metrics.errorCount;
             }
-            
+
             if (metrics.responseTime !== undefined) {
                 service.metrics.totalResponseTime += metrics.responseTime;
-                service.metrics.averageResponseTime = 
+                service.metrics.averageResponseTime =
                     service.metrics.totalResponseTime / service.metrics.requests;
             }
 
@@ -760,7 +782,7 @@ class ServiceRegistry extends EventEmitter {
     getServiceStatistics(serviceName) {
         const service = this.services.get(serviceName);
         const state = this.serviceStates.get(serviceName);
-        
+
         if (!service || !state) {
             return null;
         }
@@ -797,7 +819,7 @@ class ServiceRegistry extends EventEmitter {
     async deregister() {
         // In a real implementation, this would deregister from Consul/Eureka/etc
         console.log('Deregistering from service discovery');
-        
+
         // Clear all services
         for (const serviceName of this.services.keys()) {
             this.deregisterService(serviceName);
@@ -830,7 +852,7 @@ class ServiceRegistry extends EventEmitter {
 
         this.isInitialized = false;
         this.removeAllListeners();
-        
+
         console.log('Service Registry disconnected');
     }
 }
