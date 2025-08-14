@@ -23,7 +23,7 @@ const { authenticate, authorize } = require('../../../../../shared/lib/auth/midd
 const rateLimit = require('../../../../../shared/lib/auth/middleware/rate-limit');
 const { CorsMiddleware } = require('../../../../../shared/lib/middleware/cors-middleware');
 const {securityHeaders} = require('../../../../../shared/lib/middleware/security/security-headers');
-const {RequestLogger} = require('../../../../../shared/lib/middleware/logging/request-logger');
+const {requestLogger} = require('../../../../../shared/lib/middleware/logging/request-logger');
 const asyncErrorHandler = require('../../../../../shared/lib/middleware/error-handlers/async-error-handler');
 const logger = require('../../../../../shared/lib/utils/logger');
 
@@ -35,7 +35,7 @@ const router = express.Router();
  */
 router.use(CorsMiddleware);
 router.use(securityHeaders());
-router.use(RequestLogger({ module: 'AdminUserRoutes' }));
+router.use(requestLogger({ module: 'AdminUserRoutes' }));
 router.use(authenticate(['jwt', 'session']));
 
 /**
