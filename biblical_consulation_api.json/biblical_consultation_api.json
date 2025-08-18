@@ -1,0 +1,405 @@
+{
+  "api": {
+    "name": "Biblical Consultation API",
+    "version": "1.0.0",
+    "description": "Comprehensive API for providing biblical wisdom and guidance for various consultation needs",
+    "base_url": "https://your-domain.com/api/v1",
+    "authentication": "Bearer Token Required"
+  },
+  
+  "endpoints": {
+    "/consultation/categories": {
+      "method": "GET",
+      "description": "Get all available consultation categories",
+      "response": {
+        "categories": [
+          {
+            "id": "leadership",
+            "name": "Leadership & Authority",
+            "description": "Biblical guidance on leadership principles and decision-making"
+          },
+          {
+            "id": "business_ethics",
+            "name": "Business Ethics & Integrity",
+            "description": "Scriptural foundations for ethical business practices"
+          },
+          {
+            "id": "conflict_resolution",
+            "name": "Conflict Resolution",
+            "description": "Biblical approaches to resolving disputes and restoring relationships"
+          },
+          {
+            "id": "financial_stewardship",
+            "name": "Financial Stewardship",
+            "description": "Biblical principles for money management and financial decisions"
+          },
+          {
+            "id": "personal_guidance",
+            "name": "Personal Life Guidance",
+            "description": "Scripture-based wisdom for personal challenges and decisions"
+          },
+          {
+            "id": "relationships",
+            "name": "Relationships & Communication",
+            "description": "Biblical foundations for healthy relationships and communication"
+          },
+          {
+            "id": "purpose_calling",
+            "name": "Purpose & Calling",
+            "description": "Discovering God's purpose and calling through Scripture"
+          },
+          {
+            "id": "wisdom_discernment",
+            "name": "Wisdom & Discernment",
+            "description": "Biblical principles for making wise and discerning choices"
+          }
+        ]
+      }
+    },
+
+    "/consultation/seek": {
+      "method": "POST",
+      "description": "Request biblical consultation on a specific topic",
+      "request_body": {
+        "category": "string (required)",
+        "specific_concern": "string (required)",
+        "context": "string (optional)",
+        "urgency_level": "string (low|medium|high)"
+      },
+      "response": {
+        "consultation_id": "string",
+        "category": "string",
+        "primary_guidance": {
+          "verse": {
+            "reference": "Proverbs 27:17",
+            "text": "As iron sharpens iron, so one person sharpens another.",
+            "translation": "NIV"
+          },
+          "application": "This passage emphasizes the importance of mutual accountability and constructive feedback in leadership relationships.",
+          "practical_steps": [
+            "Seek trusted advisors who will provide honest feedback",
+            "Create systems for regular evaluation and improvement",
+            "Welcome constructive criticism as a tool for growth"
+          ]
+        },
+        "supporting_scriptures": [
+          {
+            "reference": "Proverbs 15:22",
+            "text": "Plans fail for lack of counsel, but with many advisers they succeed.",
+            "relevance": "Emphasizes the importance of seeking multiple perspectives in decision-making"
+          },
+          {
+            "reference": "Ecclesiastes 4:12",
+            "text": "Though one may be overpowered, two can defend themselves. A cord of three strands is not quickly broken.",
+            "relevance": "Highlights the strength found in collaborative relationships"
+          }
+        ],
+        "reflection_questions": [
+          "Who are the trusted advisors in your current situation?",
+          "What systems do you have in place for receiving feedback?",
+          "How can you create more opportunities for mutual accountability?"
+        ],
+        "prayer_focus": "Ask for wisdom to receive correction gracefully and the humility to seek counsel from others.",
+        "follow_up_topics": ["accountability", "mentorship", "team_building"],
+        "timestamp": "2025-08-17T10:30:00Z"
+      }
+    },
+
+    "/consultation/wisdom-library": {
+      "method": "GET",
+      "description": "Access comprehensive biblical wisdom library organized by themes",
+      "parameters": {
+        "theme": "string (optional)",
+        "book": "string (optional)",
+        "keyword": "string (optional)",
+        "limit": "integer (default: 20)"
+      },
+      "response": {
+        "wisdom_entries": [
+          {
+            "id": "leadership_001",
+            "theme": "Servant Leadership",
+            "primary_verse": {
+              "reference": "Mark 10:43-44",
+              "text": "Not so with you. Instead, whoever wants to become great among you must be your servant, and whoever wants to be first must be slave of all.",
+              "translation": "NIV"
+            },
+            "key_principles": [
+              "True leadership involves serving others",
+              "Greatness is measured by service, not position",
+              "Leadership requires humility and sacrifice"
+            ],
+            "modern_application": "In business and organizational contexts, effective leaders prioritize the development and success of their team members over personal advancement.",
+            "related_themes": ["humility", "service", "authority"],
+            "difficulty_level": "intermediate"
+          }
+        ]
+      }
+    },
+
+    "/consultation/daily-wisdom": {
+      "method": "GET",
+      "description": "Get daily biblical wisdom for consultation practice",
+      "response": {
+        "date": "2025-08-17",
+        "theme": "Discernment in Decision Making",
+        "verse_of_the_day": {
+          "reference": "Proverbs 3:5-6",
+          "text": "Trust in the Lord with all your heart and lean not on your own understanding; in all your ways submit to him, and he will make your paths straight.",
+          "translation": "NIV"
+        },
+        "consultation_focus": "When facing difficult decisions, remember that divine wisdom surpasses human understanding.",
+        "application_areas": [
+          "Strategic business planning",
+          "Personal life transitions",
+          "Ethical dilemmas",
+          "Relationship decisions"
+        ],
+        "meditation_prompt": "Consider a current decision you're facing. How might trusting in divine wisdom change your approach?",
+        "complementary_reading": [
+          "James 1:5-8",
+          "Proverbs 2:1-15",
+          "1 Kings 3:5-14"
+        ]
+      }
+    },
+
+    "/consultation/search": {
+      "method": "GET",
+      "description": "Search biblical guidance by keywords or phrases",
+      "parameters": {
+        "query": "string (required)",
+        "category": "string (optional)",
+        "testament": "string (old|new|both, default: both)",
+        "exact_match": "boolean (default: false)"
+      },
+      "response": {
+        "search_results": [
+          {
+            "relevance_score": 0.95,
+            "verse": {
+              "reference": "Matthew 18:15-17",
+              "text": "If your brother or sister sins, go and point out their fault, just between the two of you...",
+              "translation": "NIV"
+            },
+            "context": "conflict_resolution",
+            "summary": "Biblical process for addressing interpersonal conflicts",
+            "consultation_notes": "This passage provides a clear framework for addressing conflicts in professional and personal relationships."
+          }
+        ],
+        "suggested_consultations": [
+          "Workplace conflict resolution strategies",
+          "Restoration of broken relationships",
+          "Leadership accountability practices"
+        ]
+      }
+    },
+
+    "/consultation/case-studies": {
+      "method": "GET",
+      "description": "Access biblical case studies for consultation scenarios",
+      "parameters": {
+        "category": "string (optional)",
+        "complexity": "string (basic|intermediate|advanced)"
+      },
+      "response": {
+        "case_studies": [
+          {
+            "id": "cs_001",
+            "title": "Solomon's Wisdom in Leadership Decisions",
+            "category": "leadership",
+            "biblical_reference": "1 Kings 3:16-28",
+            "scenario": "King Solomon faced a complex dispute between two women claiming to be the mother of the same child.",
+            "key_principles": [
+              "Creative problem-solving in complex situations",
+              "Using wisdom to reveal truth",
+              "Making decisions that prioritize the vulnerable"
+            ],
+            "modern_applications": [
+              "Mediating business partnership disputes",
+              "Resolving customer service conflicts",
+              "Making decisions when information is limited"
+            ],
+            "consultation_guidelines": [
+              "Look beyond surface claims to understand deeper motivations",
+              "Design solutions that reveal character and true intentions",
+              "Prioritize the welfare of those most affected by decisions"
+            ],
+            "reflection_questions": [
+              "What creative approaches could reveal the truth in this situation?",
+              "Who would be most impacted by different potential decisions?",
+              "How can wisdom be applied to find solutions that serve justice?"
+            ]
+          }
+        ]
+      }
+    },
+
+    "/consultation/prayer-guidance": {
+      "method": "POST",
+      "description": "Get biblical prayer guidance for consultation topics",
+      "request_body": {
+        "consultation_topic": "string (required)",
+        "prayer_type": "string (intercession|petition|thanksgiving|confession)"
+      },
+      "response": {
+        "prayer_framework": {
+          "foundation_verse": {
+            "reference": "Philippians 4:6-7",
+            "text": "Do not be anxious about anything, but in every situation, by prayer and petition, with thanksgiving, present your requests to God.",
+            "translation": "NIV"
+          },
+          "prayer_structure": [
+            {
+              "element": "Adoration",
+              "description": "Acknowledge God's sovereignty and wisdom",
+              "sample": "Father, we recognize Your perfect wisdom and loving guidance in all situations."
+            },
+            {
+              "element": "Confession",
+              "description": "Acknowledge any shortcomings or need for forgiveness",
+              "sample": "We confess our limitations and ask forgiveness for times we've acted without seeking Your wisdom."
+            },
+            {
+              "element": "Thanksgiving",
+              "description": "Express gratitude for guidance and provision",
+              "sample": "Thank You for the wisdom You've already provided and for Your faithful presence."
+            },
+            {
+              "element": "Supplication",
+              "description": "Present specific requests for guidance",
+              "sample": "Grant wisdom for this specific situation and clarity for the path forward."
+            }
+          ],
+          "scriptural_promises": [
+            "James 1:5 - God gives wisdom generously to those who ask",
+            "Psalm 32:8 - God promises to instruct and guide",
+            "Proverbs 16:9 - God directs our steps when we commit our plans to Him"
+          ]
+        }
+      }
+    },
+
+    "/consultation/follow-up": {
+      "method": "GET",
+      "description": "Get follow-up guidance and progress tracking",
+      "parameters": {
+        "consultation_id": "string (required)",
+        "time_period": "string (1week|1month|3months)"
+      },
+      "response": {
+        "follow_up_guidance": {
+          "progress_check": [
+            "Have you implemented the suggested biblical principles?",
+            "What changes have you observed in the situation?",
+            "What new challenges have emerged?"
+          ],
+          "continued_study": [
+            {
+              "reference": "Proverbs 4:7",
+              "focus": "Continuing to seek wisdom as the highest priority"
+            }
+          ],
+          "accountability_questions": [
+            "Who is helping you stay accountable to these principles?",
+            "How are you measuring success in applying biblical wisdom?",
+            "What adjustments need to be made to your approach?"
+          ],
+          "next_steps": [
+            "Schedule regular reflection time",
+            "Identify areas needing deeper biblical study",
+            "Seek community support for ongoing accountability"
+          ]
+        }
+      }
+    }
+  },
+
+  "consultation_themes": {
+    "leadership": {
+      "core_principles": [
+        "Servant leadership (Mark 10:43-44)",
+        "Shepherd leadership (1 Peter 5:2-3)",
+        "Humble leadership (Philippians 2:3-4)",
+        "Wise leadership (Proverbs 27:14)"
+      ],
+      "common_scenarios": [
+        "Team conflict resolution",
+        "Difficult personnel decisions",
+        "Organizational change management",
+        "Ethical leadership challenges"
+      ]
+    },
+    "business_ethics": {
+      "core_principles": [
+        "Honesty in dealings (Proverbs 11:1)",
+        "Fair treatment of workers (Leviticus 19:13)",
+        "Integrity in partnerships (Proverbs 10:9)",
+        "Stewardship of resources (Luke 16:10-12)"
+      ],
+      "common_scenarios": [
+        "Pricing and profit margin decisions",
+        "Employee compensation issues",
+        "Vendor relationship management",
+        "Environmental responsibility"
+      ]
+    },
+    "financial_stewardship": {
+      "core_principles": [
+        "God's ownership of all things (Psalm 24:1)",
+        "Faithful stewardship (Luke 16:10)",
+        "Generous giving (2 Corinthians 9:6-7)",
+        "Wise planning (Luke 14:28-30)"
+      ],
+      "common_scenarios": [
+        "Investment decisions",
+        "Debt management",
+        "Charitable giving strategies",
+        "Retirement planning"
+      ]
+    }
+  },
+
+  "api_usage_guidelines": {
+    "rate_limits": {
+      "free_tier": "100 requests per day",
+      "premium_tier": "1000 requests per day",
+      "enterprise": "Unlimited"
+    },
+    "best_practices": [
+      "Provide specific context in consultation requests",
+      "Follow up on previous consultations for continuity",
+      "Use search functionality to explore related topics",
+      "Implement prayer guidance in consultation practice"
+    ],
+    "ethical_considerations": [
+      "This API provides biblical guidance, not professional therapy",
+      "Encourage clients to seek appropriate professional help when needed",
+      "Maintain confidentiality in all consultation contexts",
+      "Use wisdom and discernment in applying biblical principles"
+    ]
+  },
+
+  "error_responses": {
+    "400": {
+      "error": "Bad Request",
+      "message": "Invalid request format or missing required parameters"
+    },
+    "401": {
+      "error": "Unauthorized",
+      "message": "Valid authentication token required"
+    },
+    "404": {
+      "error": "Not Found",
+      "message": "Requested consultation category or resource not found"
+    },
+    "429": {
+      "error": "Rate Limit Exceeded",
+      "message": "Request limit exceeded for current tier"
+    },
+    "500": {
+      "error": "Internal Server Error",
+      "message": "Server error occurred while processing consultation request"
+    }
+  }
+}
