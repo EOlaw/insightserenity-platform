@@ -1,7 +1,7 @@
 /**
- * @file Admin Application Setup - ENHANCED VERSION WITH MODEL RECOVERY
- * @description Express application configuration for administrative platform management with enhanced model handling
- * @version 3.1.0
+ * @file Admin Application Setup - ENHANCED VERSION WITH MODEL RECOVERY AND SERVICE INTEGRATION
+ * @description Express application configuration for administrative platform management with enhanced model handling and service integration
+ * @version 3.2.0
  */
 
 'use strict';
@@ -93,6 +93,18 @@ try {
     notFoundHandler = null;
 }
 
+// ENHANCED: Service Module Imports with error handling
+let UserManagementService, userManagementRoutesManager;
+try {
+    UserManagementService = require('./modules/user-management/routes');
+    const { routesManager } = require('./modules/user-management/routes');
+    userManagementRoutesManager = routesManager;
+} catch (error) {
+    logger.warn('User Management Service not available', { error: error.message });
+    UserManagementService = null;
+    userManagementRoutesManager = null;
+}
+
 // Import admin modules
 //const platformManagementRoutes = require('./modules/platform-management/routes');
 
@@ -108,7 +120,7 @@ try {
 // const reportsAnalyticsRoutes = require('./modules/reports-analytics/routes');
 
 /**
- * ENHANCED: Admin Application class with proper middleware ordering, error handling, and model management
+ * ENHANCED: Admin Application class with proper middleware ordering, error handling, model management, and service integration
  */
 class AdminApplication {
     constructor() {
@@ -118,6 +130,11 @@ class AdminApplication {
         this.requestCount = 0; // FIXED: Add request tracking
         this.modelRecoveryAttempts = 0;
         this.maxModelRecoveryAttempts = 3;
+
+        // ENHANCED: Service integration properties
+        this.serviceRegistry = new Map();
+        this.serviceMetrics = new Map();
+        this.serviceHealthChecks = new Map();
 
         // Create merged configuration with safe defaults
         this.config = this.createMergedConfiguration();
@@ -157,7 +174,8 @@ class AdminApplication {
                 features: {
                     modelRecovery: true,
                     realTimeMonitoring: process.env.ADMIN_REAL_TIME_MONITORING !== 'false',
-                    advancedAnalytics: process.env.ADMIN_ADVANCED_ANALYTICS !== 'false'
+                    advancedAnalytics: process.env.ADMIN_ADVANCED_ANALYTICS !== 'false',
+                    serviceIntegration: true // ENHANCED: Enable service integration
                 }
             };
 
@@ -207,7 +225,8 @@ class AdminApplication {
                 hasSecurity: !!mergedConfig.security,
                 hasDatabase: !!mergedConfig.database,
                 environment: mergedConfig.app.env,
-                modelRecoveryEnabled: mergedConfig.admin.features.modelRecovery
+                modelRecoveryEnabled: mergedConfig.admin.features.modelRecovery,
+                serviceIntegrationEnabled: mergedConfig.admin.features.serviceIntegration
             });
 
             return mergedConfig;
@@ -221,7 +240,7 @@ class AdminApplication {
                 admin: {
                     basePath: '/admin',
                     uploadLimit: '50mb',
-                    features: { modelRecovery: true }
+                    features: { modelRecovery: true, serviceIntegration: true }
                 },
                 security: { session: { enabled: true }, cors: { enabled: true } },
                 database: { multiTenant: { enabled: false } }
@@ -230,11 +249,11 @@ class AdminApplication {
     }
 
     /**
-     * ENHANCED: Initialize the admin application with proper ordering and model management
+     * ENHANCED: Initialize the admin application with proper ordering, model management, and service integration
      */
     async initialize() {
         try {
-            console.log('🚀 Initializing Enhanced Admin Application...');
+            console.log('🚀 Initializing Enhanced Admin Application with Service Integration...');
 
             this.setupTrustProxy();
             this.setupRequestTracking(); // FIXED: Add request tracking first
@@ -243,7 +262,13 @@ class AdminApplication {
             await this.setupSessionAndAuthentication(); // FIXED: Combined and reordered
             this.setupAuditMiddleware();
             this.setupModelAwareMiddleware(); // ENHANCED: Add model-aware middleware
-            this.setupAdminRoutes(); // ENHANCED: Setup enhanced routes
+            
+            // ENHANCED: Initialize services before routes
+            if (this.config.admin.features.serviceIntegration) {
+                await this.initializeServices();
+            }
+            
+            this.setupAdminRoutes(); // ENHANCED: Setup enhanced routes with service integration
             this.setupErrorHandling();
             this.setupAdminEventHandlers();
 
@@ -252,6 +277,132 @@ class AdminApplication {
         } catch (error) {
             console.error('❌ Enhanced Admin Application initialization failed:', error.message);
             throw error;
+        }
+    }
+
+    /**
+     * ENHANCED: Initialize all service modules with proper dependency injection and health validation
+     */
+    async initializeServices() {
+        try {
+            console.log('🔧 Initializing service modules...');
+
+            // Initialize User Management Service if available
+            if (UserManagementService && userManagementRoutesManager) {
+                try {
+                    const userService = {
+                        name: 'UserManagement',
+                        router: UserManagementService,
+                        manager: userManagementRoutesManager,
+                        basePath: '/user-management',
+                        version: userManagementRoutesManager.getConfiguration ? 
+                            userManagementRoutesManager.getConfiguration().apiVersion : 'v1',
+                        features: userManagementRoutesManager.getConfiguration ? 
+                            userManagementRoutesManager.getConfiguration().featureFlags : {},
+                        mountPath: null,
+                        initialized: true,
+                        startTime: new Date(),
+                        requestCount: 0,
+                        errorCount: 0
+                    };
+
+                    // Register service in service registry
+                    this.serviceRegistry.set('userManagement', userService);
+                    
+                    logger.info('User Management Service registered successfully', {
+                        serviceName: userService.name,
+                        basePath: userService.basePath,
+                        version: userService.version,
+                        featuresEnabled: Object.keys(userService.features).filter(key => userService.features[key])
+                    });
+                } catch (serviceError) {
+                    logger.warn('Failed to initialize User Management Service', { 
+                        error: serviceError.message 
+                    });
+                }
+            } else {
+                logger.warn('User Management Service not available for registration');
+            }
+
+            // Placeholder for additional services
+            // Example: organizationManagementService, securityAdministrationService, etc.
+
+            // Validate service health before proceeding
+            await this.validateServiceHealth();
+
+            console.log('✅ Service modules initialized successfully');
+            logger.info('Admin services initialized', {
+                totalServices: this.serviceRegistry.size,
+                services: Array.from(this.serviceRegistry.keys()),
+                servicesWithFeatures: Array.from(this.serviceRegistry.entries())
+                    .filter(([, service]) => Object.keys(service.features || {}).length > 0)
+                    .map(([name]) => name)
+            });
+
+        } catch (error) {
+            console.error('❌ Service initialization failed:', error.message);
+            logger.error('Failed to initialize services', { error: error.message });
+            throw error;
+        }
+    }
+
+    /**
+     * ENHANCED: Validate health of all registered services with comprehensive checks
+     */
+    async validateServiceHealth() {
+        try {
+            console.log('🏥 Validating service health...');
+
+            for (const [serviceName, service] of this.serviceRegistry) {
+                try {
+                    const healthInfo = {
+                        serviceName,
+                        initialized: service.initialized,
+                        hasRouter: !!service.router,
+                        hasManager: !!service.manager,
+                        startTime: service.startTime,
+                        uptime: Date.now() - (service.startTime ? service.startTime.getTime() : Date.now())
+                    };
+
+                    // Check if service manager has statistics capability
+                    if (service.manager && typeof service.manager.getStatistics === 'function') {
+                        try {
+                            const stats = service.manager.getStatistics();
+                            healthInfo.statistics = stats;
+                            healthInfo.hasStatistics = true;
+                        } catch (statsError) {
+                            logger.debug(`Service ${serviceName} statistics check failed`, { 
+                                error: statsError.message 
+                            });
+                            healthInfo.hasStatistics = false;
+                        }
+                    }
+
+                    // Store health information
+                    this.serviceHealthChecks.set(serviceName, {
+                        ...healthInfo,
+                        lastChecked: new Date(),
+                        status: 'healthy'
+                    });
+
+                    logger.info(`Service ${serviceName} health validated`, healthInfo);
+                } catch (serviceError) {
+                    logger.warn(`Service ${serviceName} health check failed`, { 
+                        error: serviceError.message 
+                    });
+                    
+                    this.serviceHealthChecks.set(serviceName, {
+                        serviceName,
+                        status: 'unhealthy',
+                        error: serviceError.message,
+                        lastChecked: new Date()
+                    });
+                }
+            }
+
+            console.log('✅ Service health validation completed');
+        } catch (error) {
+            logger.error('Service health validation failed', { error: error.message });
         }
     }
 
@@ -922,13 +1073,80 @@ class AdminApplication {
     }
 
     /**
-     * ENHANCED: Setup admin routes with model validation and recovery endpoints
+     * ENHANCED: Create service-specific middleware for enhanced monitoring and management
+     */
+    createServiceMiddleware(serviceName) {
+        return (req, res, next) => {
+            // Add service context to request
+            req.serviceContext = {
+                serviceName,
+                requestId: req.requestId,
+                startTime: Date.now(),
+                adminUser: req.user?.id || 'anonymous',
+                sessionId: req.session?.id || req.sessionID
+            };
+
+            // Track service-level metrics
+            const service = this.serviceRegistry.get(serviceName.toLowerCase());
+            if (service) {
+                service.requestCount++;
+            }
+
+            // Enhanced response tracking with service metrics
+            res.on('finish', () => {
+                const responseTime = Date.now() - req.serviceContext.startTime;
+                
+                logger.info('Service request completed', {
+                    service: serviceName,
+                    path: req.path,
+                    method: req.method,
+                    statusCode: res.statusCode,
+                    responseTime,
+                    requestId: req.requestId,
+                    user: req.serviceContext.adminUser
+                });
+
+                // Update service metrics
+                if (service) {
+                    if (res.statusCode >= 400) {
+                        service.errorCount++;
+                    }
+
+                    // Store in metrics collector
+                    const metricsKey = `${serviceName}:${req.method}:${req.path}`;
+                    if (!this.serviceMetrics.has(metricsKey)) {
+                        this.serviceMetrics.set(metricsKey, {
+                            count: 0,
+                            totalTime: 0,
+                            errors: 0,
+                            lastAccessed: new Date()
+                        });
+                    }
+
+                    const metrics = this.serviceMetrics.get(metricsKey);
+                    metrics.count++;
+                    metrics.totalTime += responseTime;
+                    metrics.lastAccessed = new Date();
+                    
+                    if (res.statusCode >= 400) {
+                        metrics.errors++;
+                    }
+                }
+            });
+
+            next();
+        };
+    }
+
+    /**
+     * ENHANCED: Setup admin routes with model validation, recovery endpoints, and service integration
      */
     setupAdminRoutes() {
         try {
-            console.log('🛤️ Setting up enhanced admin routes...');
+            console.log('🛤️ Setting up enhanced admin routes with service integration...');
 
             const adminBase = this.config.admin.basePath || '/admin';
+            const apiPrefix = `${adminBase}/api`;
 
             // Timeout wrapper for database operations
             const withTimeout = (promise, timeoutMs = 5000) => {
@@ -940,17 +1158,16 @@ class AdminApplication {
                 ]);
             };
 
+            // ENHANCED: Mount service modules with proper middleware stacks
+            if (this.config.admin.features.serviceIntegration && this.serviceRegistry.size > 0) {
+                this.mountServiceRoutes(apiPrefix);
+            }
+
+            // ENHANCED: Service management endpoints
+            this.setupServiceManagementEndpoints(apiPrefix);
+
             // Admin API routes (all require authentication)
             // this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutes);
-            // this.app.use(`${apiPrefix}/users`, adminAuth, userManagementRoutes);
-            // this.app.use(`${adminBase}/users`, [
-            //     requestTracking, // Add distributed tracing middleware
-            //     adminAuth,
-            //     auditLogging,
-            //     // rateLimiting,
-            //     performanceMonitoring,
-            //     userManagementRoutes
-            // ])
             // this.app.use(`${apiPrefix}/organizations`, adminAuth, organizationManagementRoutes);
             // this.app.use(`${apiPrefix}/security`, adminAuth, securityAdministrationRoutes);
             // this.app.use(`${apiPrefix}/billing`, adminAuth, billingAdministrationRoutes);
@@ -958,7 +1175,7 @@ class AdminApplication {
             // this.app.use(`${apiPrefix}/support`, adminAuth, supportAdministrationRoutes);
             // this.app.use(`${apiPrefix}/analytics`, adminAuth, reportsAnalyticsRoutes);
 
-            // ENHANCED: Health check with comprehensive model status
+            // ENHANCED: Health check with comprehensive model status and service information
             this.app.get('/health', async (req, res) => {
                 try {
                     const dbHealth = Database.getHealthStatus ?
@@ -968,6 +1185,19 @@ class AdminApplication {
                     const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
                     const modelErrors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
                     const seedingStatus = Database.getSeedingStatus ? Database.getSeedingStatus() : {};
+
+                    // Collect service health information
+                    const serviceHealth = {};
+                    for (const [serviceName, service] of this.serviceRegistry) {
+                        const healthCheck = this.serviceHealthChecks.get(serviceName);
+                        serviceHealth[serviceName] = {
+                            status: healthCheck ? healthCheck.status : 'unknown',
+                            requestCount: service.requestCount || 0,
+                            errorCount: service.errorCount || 0,
+                            uptime: service.startTime ? Date.now() - service.startTime.getTime() : 0,
+                            lastChecked: healthCheck ? healthCheck.lastChecked : null
+                        };
+                    }
 
                     res.status(200).json({
                         status: 'ok',
@@ -990,6 +1220,11 @@ class AdminApplication {
                             maxRecoveryAttempts: this.maxModelRecoveryAttempts,
                             recoveryEnabled: this.config.admin.features.modelRecovery
                         },
+                        services: {
+                            total: this.serviceRegistry.size,
+                            registry: serviceHealth,
+                            integrationEnabled: this.config.admin.features.serviceIntegration
+                        },
                         seeding: seedingStatus,
                         session: {
                             configured: !!req.session,
@@ -1006,7 +1241,8 @@ class AdminApplication {
                             ipWhitelist: this.config.admin.security?.ipWhitelist?.enabled || false,
                             mfa: this.config.admin.security?.requireMFA || false,
                             sessionManager: !!this.sessionManager,
-                            modelRecovery: this.config.admin.features.modelRecovery
+                            modelRecovery: this.config.admin.features.modelRecovery,
+                            serviceIntegration: this.config.admin.features.serviceIntegration
                         }
                     });
                 } catch (error) {
@@ -1181,13 +1417,23 @@ class AdminApplication {
                 }
             });
 
-            // Admin dashboard with proper response handling
+            // ENHANCED: Admin dashboard with proper response handling and service information
             this.app.get(`${adminBase}/dashboard`, async (req, res) => {
                 try {
                     const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
 
+                    // Collect service registry information
+                    const servicesSummary = Array.from(this.serviceRegistry.entries()).map(([name, service]) => ({
+                        name,
+                        basePath: service.basePath,
+                        version: service.version,
+                        requestCount: service.requestCount || 0,
+                        errorCount: service.errorCount || 0,
+                        features: Object.keys(service.features || {}).filter(key => service.features[key])
+                    }));
+
                     const responseData = {
-                        title: 'Enhanced Admin Dashboard',
+                        title: 'Enhanced Admin Dashboard with Service Integration',
                         message: 'Welcome to the Enhanced InsightSerenity Admin Dashboard',
                         user: req.user || null,
                         authenticated: !!req.user,
@@ -1210,12 +1456,18 @@ class AdminApplication {
                             recoveryAttempts: this.modelRecoveryAttempts,
                             available: req.modelStatus || {}
                         },
+                        services: {
+                            total: this.serviceRegistry.size,
+                            registry: servicesSummary,
+                            integrationEnabled: this.config.admin.features.serviceIntegration
+                        },
                         features: {
                             realTimeMonitoring: true,
                             advancedAnalytics: false,
                             bulkOperations: true,
                             sessionManager: !!this.sessionManager,
-                            modelRecovery: this.config.admin.features.modelRecovery
+                            modelRecovery: this.config.admin.features.modelRecovery,
+                            serviceIntegration: this.config.admin.features.serviceIntegration
                         },
                         timestamp: new Date().toISOString(),
                         requestId: req.requestId
@@ -1257,6 +1509,10 @@ class AdminApplication {
                             sessionManager: !!this.sessionManager
                         },
                         models: req.modelStatus || {},
+                        services: {
+                            total: this.serviceRegistry.size,
+                            available: Array.from(this.serviceRegistry.keys())
+                        },
                         requestId: req.requestId,
                         timestamp: new Date().toISOString()
                     });
@@ -1274,19 +1530,27 @@ class AdminApplication {
                 res.redirect(`${adminBase}/dashboard`);
             });
 
-            // API documentation
+            // ENHANCED: API documentation with service information
             if (this.config.app.env !== 'production') {
                 this.app.get(`${adminBase}/api-docs`, (req, res) => {
                     res.json({
-                        title: 'Enhanced Admin API Documentation',
+                        title: 'Enhanced Admin API Documentation with Service Integration',
                         version: this.config.app.version,
                         environment: this.config.app.env,
                         endpoints: this.getApiEndpoints(),
+                        services: Array.from(this.serviceRegistry.entries()).map(([name, service]) => ({
+                            name,
+                            basePath: service.basePath,
+                            version: service.version,
+                            mountPath: service.mountPath,
+                            features: service.features
+                        })),
                         features: {
                             modelManagement: true,
                             seedsManagement: true,
                             healthMonitoring: true,
-                            sessionManagement: true
+                            sessionManagement: true,
+                            serviceIntegration: this.config.admin.features.serviceIntegration
                         },
                         timestamp: new Date().toISOString(),
                         requestId: req.requestId
@@ -1294,15 +1558,265 @@ class AdminApplication {
                 });
             }
 
-            console.log('✅ Enhanced admin routes setup completed');
+            console.log('✅ Enhanced admin routes with service integration setup completed');
             logger.info('Enhanced admin routes setup completed', {
                 basePath: adminBase,
-                modelRecoveryEnabled: this.config.admin.features.modelRecovery
+                apiPrefix: apiPrefix,
+                servicesRegistered: this.serviceRegistry.size,
+                modelRecoveryEnabled: this.config.admin.features.modelRecovery,
+                serviceIntegrationEnabled: this.config.admin.features.serviceIntegration
             });
         } catch (error) {
             console.error('❌ Enhanced admin routes setup failed:', error.message);
             logger.error('Failed to setup enhanced admin routes', { error: error.message });
             throw error;
+        }
+    }
+
+    /**
+     * ENHANCED: Mount service routes with proper middleware stacks and monitoring
+     */
+    mountServiceRoutes(apiPrefix) {
+        try {
+            console.log('🔌 Mounting service routes...');
+
+            for (const [serviceName, service] of this.serviceRegistry) {
+                try {
+                    const servicePath = `${apiPrefix}/${service.version}${service.basePath}`;
+                    
+                    // Create service-specific middleware stack
+                    const serviceMiddleware = [
+                        // Service-specific monitoring middleware
+                        this.createServiceMiddleware(service.name),
+                        // Authentication middleware (with fallback)
+                        adminAuth,
+                        // Service router
+                        service.router
+                    ];
+
+                    // Mount the service
+                    this.app.use(servicePath, serviceMiddleware);
+
+                    // Update service with mount information
+                    service.mountPath = servicePath;
+                    
+                    console.log(`✅ Service ${service.name} mounted at ${servicePath}`);
+                    logger.info('Service mounted successfully', {
+                        serviceName: service.name,
+                        mountPath: servicePath,
+                        version: service.version,
+                        features: Object.keys(service.features || {}).filter(key => service.features[key])
+                    });
+
+                } catch (mountError) {
+                    logger.error(`Failed to mount service ${serviceName}`, {
+                        error: mountError.message,
+                        serviceName
+                    });
+                }
+            }
+
+            console.log('✅ Service route mounting completed');
+        } catch (error) {
+            logger.error('Service route mounting failed', { error: error.message });
+        }
+    }
+
+    /**
+     * ENHANCED: Setup service management endpoints for monitoring and administration
+     */
+    setupServiceManagementEndpoints(apiPrefix) {
+        try {
+            console.log('🛠️ Setting up service management endpoints...');
+
+            // Service registry endpoint
+            this.app.get(`${apiPrefix}/services`, (req, res) => {
+                try {
+                    const services = Array.from(this.serviceRegistry.entries()).map(([name, service]) => ({
+                        name,
+                        basePath: service.basePath,
+                        version: service.version,
+                        mountPath: service.mountPath,
+                        initialized: service.initialized,
+                        startTime: service.startTime,
+                        requestCount: service.requestCount || 0,
+                        errorCount: service.errorCount || 0,
+                        features: service.features || {}
+                    }));
+
+                    res.json({
+                        success: true,
+                        data: {
+                            total: this.serviceRegistry.size,
+                            services,
+                            integrationEnabled: this.config.admin.features.serviceIntegration
+                        },
+                        timestamp: new Date().toISOString(),
+                        requestId: req.requestId
+                    });
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        requestId: req.requestId,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            });
+
+            // Service health aggregation endpoint
+            this.app.get(`${apiPrefix}/services/health`, async (req, res) => {
+                try {
+                    const serviceHealth = {};
+                    
+                    for (const [serviceName, service] of this.serviceRegistry) {
+                        try {
+                            let serviceStats = null;
+                            if (service.manager && typeof service.manager.getStatistics === 'function') {
+                                serviceStats = service.manager.getStatistics();
+                            }
+
+                            const healthCheck = this.serviceHealthChecks.get(serviceName);
+                            
+                            serviceHealth[serviceName] = {
+                                status: healthCheck ? healthCheck.status : 'unknown',
+                                stats: serviceStats,
+                                mountPath: service.mountPath || service.basePath,
+                                version: service.version,
+                                uptime: service.startTime ? Date.now() - service.startTime.getTime() : 0,
+                                requestCount: service.requestCount || 0,
+                                errorCount: service.errorCount || 0,
+                                lastChecked: healthCheck ? healthCheck.lastChecked : null
+                            };
+                        } catch (error) {
+                            serviceHealth[serviceName] = {
+                                status: 'unhealthy',
+                                error: error.message
+                            };
+                        }
+                    }
+
+                    const overallStatus = Object.values(serviceHealth)
+                        .every(service => service.status === 'healthy') ? 'healthy' : 'degraded';
+
+                    res.json({
+                        success: true,
+                        data: {
+                            overallStatus,
+                            services: serviceHealth,
+                            timestamp: new Date().toISOString(),
+                            requestId: req.requestId
+                        }
+                    });
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        requestId: req.requestId
+                    });
+                }
+            });
+
+            // Service metrics aggregation endpoint
+            this.app.get(`${apiPrefix}/services/metrics`, async (req, res) => {
+                try {
+                    const serviceMetrics = {};
+                    
+                    for (const [serviceName, service] of this.serviceRegistry) {
+                        try {
+                            let serviceStats = null;
+                            if (service.manager && typeof service.manager.getStatistics === 'function') {
+                                serviceStats = service.manager.getStatistics();
+                            }
+
+                            serviceMetrics[serviceName] = {
+                                requestCount: service.requestCount || 0,
+                                errorCount: service.errorCount || 0,
+                                errorRate: service.requestCount > 0 ? 
+                                    ((service.errorCount || 0) / service.requestCount).toFixed(4) : '0.0000',
+                                uptime: service.startTime ? Date.now() - service.startTime.getTime() : 0,
+                                detailedStats: serviceStats
+                            };
+                        } catch (error) {
+                            serviceMetrics[serviceName] = {
+                                error: error.message,
+                                requestCount: 0,
+                                errorCount: 0
+                            };
+                        }
+                    }
+
+                    res.json({
+                        success: true,
+                        data: {
+                            services: serviceMetrics,
+                            collectedMetrics: this.serviceMetrics.size,
+                            aggregatedAt: new Date().toISOString(),
+                            requestId: req.requestId
+                        }
+                    });
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        requestId: req.requestId
+                    });
+                }
+            });
+
+            // Individual service health check endpoint
+            this.app.get(`${apiPrefix}/services/:serviceName/health`, async (req, res) => {
+                try {
+                    const serviceName = req.params.serviceName;
+                    const service = this.serviceRegistry.get(serviceName);
+
+                    if (!service) {
+                        return res.status(404).json({
+                            success: false,
+                            error: `Service '${serviceName}' not found`,
+                            availableServices: Array.from(this.serviceRegistry.keys()),
+                            requestId: req.requestId
+                        });
+                    }
+
+                    let serviceStats = null;
+                    if (service.manager && typeof service.manager.getStatistics === 'function') {
+                        serviceStats = service.manager.getStatistics();
+                    }
+
+                    const healthCheck = this.serviceHealthChecks.get(serviceName);
+
+                    res.json({
+                        success: true,
+                        data: {
+                            serviceName,
+                            status: healthCheck ? healthCheck.status : 'unknown',
+                            mountPath: service.mountPath,
+                            version: service.version,
+                            uptime: service.startTime ? Date.now() - service.startTime.getTime() : 0,
+                            requestCount: service.requestCount || 0,
+                            errorCount: service.errorCount || 0,
+                            features: service.features || {},
+                            statistics: serviceStats,
+                            lastChecked: healthCheck ? healthCheck.lastChecked : null
+                        },
+                        timestamp: new Date().toISOString(),
+                        requestId: req.requestId
+                    });
+                } catch (error) {
+                    res.status(500).json({
+                        success: false,
+                        error: error.message,
+                        requestId: req.requestId
+                    });
+                }
+            });
+
+            console.log('✅ Service management endpoints setup completed');
+            logger.info('Service management endpoints configured successfully');
+        } catch (error) {
+            console.error('❌ Service management endpoints setup failed:', error.message);
+            logger.error('Failed to setup service management endpoints', { error: error.message });
         }
     }
 
@@ -1345,6 +1859,7 @@ class AdminApplication {
                         ip: req.ip,
                         requestId: req.requestId,
                         modelStatus: req.modelStatus,
+                        serviceContext: req.serviceContext,
                         timestamp: new Date().toISOString()
                     });
 
@@ -1363,6 +1878,14 @@ class AdminApplication {
                     // Add model status if available
                     if (req.modelStatus) {
                         errorResponse.models = req.modelStatus;
+                    }
+
+                    // Add service context if available
+                    if (req.serviceContext) {
+                        errorResponse.service = {
+                            name: req.serviceContext.serviceName,
+                            requestId: req.serviceContext.requestId
+                        };
                     }
 
                     if (this.config.app.env === 'development') {
@@ -1423,6 +1946,35 @@ class AdminApplication {
                 }
             });
 
+            // ENHANCED: Handle service-related events
+            this.app.on('service:failure', async (event) => {
+                logger.error('Service failure detected in admin app', event);
+                
+                // Update service health status
+                if (event.serviceName && this.serviceHealthChecks.has(event.serviceName)) {
+                    this.serviceHealthChecks.set(event.serviceName, {
+                        ...this.serviceHealthChecks.get(event.serviceName),
+                        status: 'unhealthy',
+                        error: event.error,
+                        lastChecked: new Date()
+                    });
+                }
+            });
+
+            this.app.on('service:recovery', async (event) => {
+                logger.info('Service recovery detected in admin app', event);
+                
+                // Update service health status
+                if (event.serviceName && this.serviceHealthChecks.has(event.serviceName)) {
+                    this.serviceHealthChecks.set(event.serviceName, {
+                        ...this.serviceHealthChecks.get(event.serviceName),
+                        status: 'healthy',
+                        error: null,
+                        lastChecked: new Date()
+                    });
+                }
+            });
+
             console.log('✅ Event handlers setup completed');
             logger.info('Enhanced admin event handlers setup completed');
         } catch (error) {
@@ -1455,25 +2007,78 @@ class AdminApplication {
     }
 
     /**
+     * ENHANCED: Get service registry information for monitoring and management
+     */
+    getServiceRegistry() {
+        return Array.from(this.serviceRegistry.entries()).map(([name, service]) => ({
+            name,
+            basePath: service.basePath,
+            version: service.version,
+            mountPath: service.mountPath,
+            initialized: service.initialized,
+            startTime: service.startTime,
+            requestCount: service.requestCount || 0,
+            errorCount: service.errorCount || 0,
+            features: Object.keys(service.features || {}).filter(key => service.features[key])
+        }));
+    }
+
+    /**
+     * ENHANCED: Get comprehensive service metrics
+     */
+    getServiceMetrics() {
+        const metrics = {};
+        
+        for (const [serviceName, service] of this.serviceRegistry) {
+            metrics[serviceName] = {
+                requestCount: service.requestCount || 0,
+                errorCount: service.errorCount || 0,
+                errorRate: service.requestCount > 0 ? 
+                    ((service.errorCount || 0) / service.requestCount).toFixed(4) : '0.0000',
+                uptime: service.startTime ? Date.now() - service.startTime.getTime() : 0
+            };
+        }
+
+        return {
+            services: metrics,
+            totalServices: this.serviceRegistry.size,
+            collectedAt: new Date().toISOString()
+        };
+    }
+
+    /**
      * Start the application
      */
     async start() {
         try {
-            console.log('🚀 Starting Enhanced Admin Application...');
+            console.log('🚀 Starting Enhanced Admin Application with Service Integration...');
 
             await this.initialize();
 
             console.log('✅ Enhanced admin application started successfully');
             console.log('📍 Available routes:');
-            console.log('   - GET /health (Comprehensive health check with model status)');
-            console.log('   - GET /admin/dashboard (Enhanced dashboard)');
+            console.log('   - GET /health (Comprehensive health check with model status and service information)');
+            console.log('   - GET /admin/dashboard (Enhanced dashboard with service integration)');
             console.log('   - GET /admin/session (Session details)');
             console.log('   - GET /admin/models/status (Model status and recovery)');
             console.log('   - POST /admin/models/reload (Reload models)');
             console.log('   - POST /admin/models/force-registration (Force model registration)');
             console.log('   - GET /admin/seeds/status (Seeding status)');
             console.log('   - POST /admin/seeds/run (Run database seeds)');
-            console.log('   - GET /admin/api-docs (API documentation)');
+            console.log('   - GET /admin/api-docs (API documentation with service information)');
+
+            if (this.config.admin.features.serviceIntegration && this.serviceRegistry.size > 0) {
+                console.log('   🔌 Service Integration routes:');
+                console.log('   - GET /admin/api/services (Service registry)');
+                console.log('   - GET /admin/api/services/health (Aggregated service health)');
+                console.log('   - GET /admin/api/services/metrics (Aggregated service metrics)');
+                console.log('   - GET /admin/api/services/:serviceName/health (Individual service health)');
+                
+                // List mounted services
+                for (const [serviceName, service] of this.serviceRegistry) {
+                    console.log(`   - Service: ${service.name} mounted at ${service.mountPath || service.basePath}`);
+                }
+            }
 
             console.log('🔧 Enhanced features:');
             console.log('   - Proper middleware ordering');
@@ -1484,6 +2089,9 @@ class AdminApplication {
             console.log('   - Model recovery and management');
             console.log('   - Database seeding management');
             console.log('   - Enhanced health monitoring');
+            console.log('   - Professional service integration');
+            console.log('   - Service-level monitoring and metrics');
+            console.log('   - Centralized service health checks');
 
             logger.info('Enhanced admin application started successfully', {
                 environment: this.config.app.env,
@@ -1494,12 +2102,18 @@ class AdminApplication {
                     fallbackHandling: true,
                     modelRecovery: this.config.admin.features.modelRecovery,
                     modelManagement: true,
-                    seedsManagement: true
+                    seedsManagement: true,
+                    serviceIntegration: this.config.admin.features.serviceIntegration
                 },
                 modelRecovery: {
                     enabled: this.config.admin.features.modelRecovery,
                     attempts: this.modelRecoveryAttempts,
                     maxAttempts: this.maxModelRecoveryAttempts
+                },
+                services: {
+                    total: this.serviceRegistry.size,
+                    registered: Array.from(this.serviceRegistry.keys()),
+                    integrationEnabled: this.config.admin.features.serviceIntegration
                 }
             });
 
@@ -1525,8 +2139,25 @@ class AdminApplication {
                 await this.sessionManager.close();
             }
 
+            // Clean up service resources
+            if (this.config.admin.features.serviceIntegration) {
+                for (const [serviceName, service] of this.serviceRegistry) {
+                    try {
+                        if (service.manager && typeof service.manager.resetMetrics === 'function') {
+                            service.manager.resetMetrics();
+                        }
+                        logger.info(`Service ${serviceName} cleanup completed`);
+                    } catch (serviceError) {
+                        logger.warn(`Service ${serviceName} cleanup failed`, { error: serviceError.message });
+                    }
+                }
+            }
+
             console.log('✅ Enhanced admin application stopped successfully');
-            logger.info('Enhanced admin application stopped successfully');
+            logger.info('Enhanced admin application stopped successfully', {
+                servicesCleaned: this.serviceRegistry.size,
+                sessionManagerClosed: !!this.sessionManager
+            });
         } catch (error) {
             console.error('❌ Error stopping enhanced admin application:', error.message);
             logger.error('Error stopping admin application', { error: error.message });
