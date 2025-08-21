@@ -1,6 +1,6 @@
 /**
- * @file Admin Application Setup - ENHANCED VERSION WITH MODEL RECOVERY AND SERVICE INTEGRATION
- * @description Express application configuration for administrative platform management with enhanced model handling and service integration
+ * @file Admin Application Setup - Complete Version with All Module Imports
+ * @description Express application configuration for administrative platform management with comprehensive module integration
  * @version 3.2.0
  */
 
@@ -19,7 +19,7 @@ const helmet = require('helmet');
 const methodOverride = require('method-override');
 const morgan = require('morgan');
 const passport = require('passport');
-const session = require('express-session'); // FIXED: Direct import for proper ordering
+const session = require('express-session'); // Direct import for proper ordering
 const rateLimit = require('express-rate-limit');
 
 // Core imports from shared folder
@@ -29,18 +29,7 @@ const SessionManager = require('../../shared/lib/security/session-manager');
 const Database = require('../../shared/lib/database');
 const { AppError } = require('../../shared/lib/utils/app-error');
 
-// Admin-specific middleware
-// const adminAuth = require('./middleware/admin-auth');
-// const ipWhitelist = require('./middleware/ip-whitelist');
-// const adminRateLimit = require('./middleware/admin-rate-limit');
-// const sessionValidation = require('./middleware/session-validation');
-// const securityHeaders = require('./middleware/security-headers');
-
-// Shared middleware imports
-// const errorHandler = require('../../shared/lib/middleware/error-handlers/error-handler');
-// const notFoundHandler = require('../../shared/lib/middleware/error-handlers/not-found-handler');
-
-// FIXED: Conditional middleware imports with error handling
+// Admin-specific middleware with conditional imports and error handling
 let adminAuth, ipWhitelist, adminRateLimit, sessionValidation, securityHeaders;
 try {
     adminAuth = require('./middleware/admin-auth');
@@ -93,10 +82,21 @@ try {
     notFoundHandler = null;
 }
 
-// ENHANCED: Service Module Imports with error handling
+// Admin Module Service and Route Imports with comprehensive error handling
+let PlatformManagementService, platformManagementRoutesManager;
+try {
+    PlatformManagementService = require('./modules/platform-management/services');
+    const { routesManager } = require('./modules/platform-management/routes');
+    platformManagementRoutesManager = routesManager;
+} catch (error) {
+    logger.warn('Platform Management Service not available', { error: error.message });
+    PlatformManagementService = null;
+    platformManagementRoutesManager = null;
+}
+
 let UserManagementService, userManagementRoutesManager;
 try {
-    UserManagementService = require('./modules/user-management/routes');
+    UserManagementService = require('./modules/user-management/services');
     const { routesManager } = require('./modules/user-management/routes');
     userManagementRoutesManager = routesManager;
 } catch (error) {
@@ -105,33 +105,85 @@ try {
     userManagementRoutesManager = null;
 }
 
-// Import admin modules
-//const platformManagementRoutes = require('./modules/platform-management/routes');
+let OrganizationManagementService, organizationManagementRoutesManager;
+try {
+    OrganizationManagementService = require('./modules/organization-management/services');
+    const { routesManager } = require('./modules/organization-management/routes');
+    organizationManagementRoutesManager = routesManager;
+} catch (error) {
+    logger.warn('Organization Management Service not available', { error: error.message });
+    OrganizationManagementService = null;
+    organizationManagementRoutesManager = null;
+}
 
-// User management routes
-// const UserManagementRoutesManager = require('./modules/user-management/routes');
-// const userManagementRoutes = new UserManagementRoutesManager().getRouter();
+let SecurityAdministrationService, securityAdministrationRoutesManager;
+try {
+    SecurityAdministrationService = require('./modules/security-administration/services');
+    const { routesManager } = require('./modules/security-administration/routes');
+    securityAdministrationRoutesManager = routesManager;
+} catch (error) {
+    logger.warn('Security Administration Service not available', { error: error.message });
+    SecurityAdministrationService = null;
+    securityAdministrationRoutesManager = null;
+}
 
-// const organizationManagementRoutes = require('./modules/organization-management/routes');
-// const securityAdministrationRoutes = require('./modules/security-administration/routes');
-// const billingAdministrationRoutes = require('./modules/billing-administration/routes');
-// const systemMonitoringRoutes = require('./modules/system-monitoring/routes');
-// const supportAdministrationRoutes = require('./modules/support-administration/routes');
-// const reportsAnalyticsRoutes = require('./modules/reports-analytics/routes');
+let BillingAdministrationService, billingAdministrationRoutesManager;
+try {
+    BillingAdministrationService = require('./modules/billing-administration/services');
+    const { routesManager } = require('./modules/billing-administration/routes');
+    billingAdministrationRoutesManager = routesManager;
+} catch (error) {
+    logger.warn('Billing Administration Service not available', { error: error.message });
+    BillingAdministrationService = null;
+    billingAdministrationRoutesManager = null;
+}
+
+let SystemMonitoringService, systemMonitoringRoutesManager;
+try {
+    SystemMonitoringService = require('./modules/system-monitoring/services');
+    const { routesManager } = require('./modules/system-monitoring/routes');
+    systemMonitoringRoutesManager = routesManager;
+} catch (error) {
+    logger.warn('System Monitoring Service not available', { error: error.message });
+    SystemMonitoringService = null;
+    systemMonitoringRoutesManager = null;
+}
+
+let SupportAdministrationService, supportAdministrationRoutesManager;
+try {
+    SupportAdministrationService = require('./modules/support-administration/services');
+    const { routesManager } = require('./modules/support-administration/routes');
+    supportAdministrationRoutesManager = routesManager;
+} catch (error) {
+    logger.warn('Support Administration Service not available', { error: error.message });
+    SupportAdministrationService = null;
+    supportAdministrationRoutesManager = null;
+}
+
+// let ReportsAnalyticsService, reportsAnalyticsRoutesManager;
+// try {
+//     ReportsAnalyticsService = require('./modules/reports-analytics/services');
+//     const { routesManager } = require('./modules/reports-analytics/routes');
+//     reportsAnalyticsRoutesManager = routesManager;
+// } catch (error) {
+//     logger.warn('Reports Analytics Service not available', { error: error.message });
+//     ReportsAnalyticsService = null;
+//     reportsAnalyticsRoutesManager = null;
+// }
 
 /**
- * ENHANCED: Admin Application class with proper middleware ordering, error handling, model management, and service integration
+ * Admin Application class with proper middleware ordering, error handling, model management, and comprehensive service integration
  */
 class AdminApplication {
     constructor() {
         this.app = express();
         this.sessionManager = null;
         this.isShuttingDown = false;
-        this.requestCount = 0; // FIXED: Add request tracking
+        this.requestCount = 0; // Add request tracking
         this.modelRecoveryAttempts = 0;
         this.maxModelRecoveryAttempts = 3;
 
-        // ENHANCED: Service integration properties
+        // Service integration properties
         this.serviceRegistry = new Map();
         this.serviceMetrics = new Map();
         this.serviceHealthChecks = new Map();
@@ -175,7 +227,7 @@ class AdminApplication {
                     modelRecovery: true,
                     realTimeMonitoring: process.env.ADMIN_REAL_TIME_MONITORING !== 'false',
                     advancedAnalytics: process.env.ADMIN_ADVANCED_ANALYTICS !== 'false',
-                    serviceIntegration: true // ENHANCED: Enable service integration
+                    serviceIntegration: true // Enable service integration
                 }
             };
 
@@ -249,83 +301,83 @@ class AdminApplication {
     }
 
     /**
-     * ENHANCED: Initialize the admin application with proper ordering, model management, and service integration
+     * Initialize the admin application with proper ordering, model management, and service integration
      */
     async initialize() {
         try {
-            console.log('🚀 Initializing Enhanced Admin Application with Service Integration...');
+            console.log('🚀 Initializing Admin Application with Complete Module Integration...');
 
             this.setupTrustProxy();
-            this.setupRequestTracking(); // FIXED: Add request tracking first
+            this.setupRequestTracking(); // Add request tracking first
             this.setupSecurityMiddleware();
             this.setupAdminMiddleware();
-            await this.setupSessionAndAuthentication(); // FIXED: Combined and reordered
+            await this.setupSessionAndAuthentication(); // Combined and reordered
             this.setupAuditMiddleware();
-            this.setupModelAwareMiddleware(); // ENHANCED: Add model-aware middleware
+            this.setupModelAwareMiddleware(); // Add model-aware middleware
             
-            // ENHANCED: Initialize services before routes
+            // Initialize services before routes
             if (this.config.admin.features.serviceIntegration) {
                 await this.initializeServices();
             }
             
-            this.setupAdminRoutes(); // ENHANCED: Setup enhanced routes with service integration
+            this.setupAdminRoutes(); // Setup routes with service integration
             this.setupErrorHandling();
             this.setupAdminEventHandlers();
 
-            console.log('✅ Enhanced Admin Application initialization completed successfully');
+            console.log('✅ Admin Application initialization completed successfully');
             return this.app;
         } catch (error) {
-            console.error('❌ Enhanced Admin Application initialization failed:', error.message);
+            console.error('❌ Admin Application initialization failed:', error.message);
             throw error;
         }
     }
 
     /**
-     * ENHANCED: Initialize all service modules with proper dependency injection and health validation
+     * Initialize all service modules with proper dependency injection and health validation
      */
     async initializeServices() {
         try {
             console.log('🔧 Initializing service modules...');
 
-            // Initialize User Management Service if available
-            if (UserManagementService && userManagementRoutesManager) {
-                try {
-                    const userService = {
-                        name: 'UserManagement',
-                        router: UserManagementService,
-                        manager: userManagementRoutesManager,
-                        basePath: '/user-management',
-                        version: userManagementRoutesManager.getConfiguration ? 
-                            userManagementRoutesManager.getConfiguration().apiVersion : 'v1',
-                        features: userManagementRoutesManager.getConfiguration ? 
-                            userManagementRoutesManager.getConfiguration().featureFlags : {},
-                        mountPath: null,
-                        initialized: true,
-                        startTime: new Date(),
-                        requestCount: 0,
-                        errorCount: 0
-                    };
-
-                    // Register service in service registry
-                    this.serviceRegistry.set('userManagement', userService);
-                    
-                    logger.info('User Management Service registered successfully', {
-                        serviceName: userService.name,
-                        basePath: userService.basePath,
-                        version: userService.version,
-                        featuresEnabled: Object.keys(userService.features).filter(key => userService.features[key])
-                    });
-                } catch (serviceError) {
-                    logger.warn('Failed to initialize User Management Service', { 
-                        error: serviceError.message 
-                    });
-                }
-            } else {
-                logger.warn('User Management Service not available for registration');
+            // Initialize Platform Management Service
+            if (PlatformManagementService && platformManagementRoutesManager) {
+                this.registerService('platformManagement', PlatformManagementService, platformManagementRoutesManager, '/platform-management');
             }
 
-            // Placeholder for additional services
-            // Example: organizationManagementService, securityAdministrationService, etc.
+            // Initialize User Management Service
+            if (UserManagementService && userManagementRoutesManager) {
+                this.registerService('userManagement', UserManagementService, userManagementRoutesManager, '/user-management');
+            }
+
+            // Initialize Organization Management Service
+            if (OrganizationManagementService && organizationManagementRoutesManager) {
+                this.registerService('organizationManagement', OrganizationManagementService, organizationManagementRoutesManager, '/organization-management');
+            }
+
+            // Initialize Security Administration Service
+            if (SecurityAdministrationService && securityAdministrationRoutesManager) {
+                this.registerService('securityAdministration', SecurityAdministrationService, securityAdministrationRoutesManager, '/security-administration');
+            }
+
+            // Initialize Billing Administration Service
+            if (BillingAdministrationService && billingAdministrationRoutesManager) {
+                this.registerService('billingAdministration', BillingAdministrationService, billingAdministrationRoutesManager, '/billing-administration');
+            }
+
+            // Initialize System Monitoring Service
+            if (SystemMonitoringService && systemMonitoringRoutesManager) {
+                this.registerService('systemMonitoring', SystemMonitoringService, systemMonitoringRoutesManager, '/system-monitoring');
+            }
+
+            // Initialize Support Administration Service
+            if (SupportAdministrationService && supportAdministrationRoutesManager) {
+                this.registerService('supportAdministration', SupportAdministrationService, supportAdministrationRoutesManager, '/support-administration');
+            }
+
+            // Initialize Reports Analytics Service
+            // if (ReportsAnalyticsService && reportsAnalyticsRoutesManager) {
+            //     this.registerService('reportsAnalytics', ReportsAnalyticsService, reportsAnalyticsRoutesManager, '/reports-analytics');
+            // }
 
             // Validate service health before proceeding
             await this.validateServiceHealth();
@@ -347,7 +399,44 @@ class AdminApplication {
     }
 
     /**
-     * ENHANCED: Validate health of all registered services with comprehensive checks
+     * Register a service in the service registry with proper configuration
+     */
+    registerService(serviceName, ServiceClass, routesManager, basePath) {
+        try {
+            const service = {
+                name: serviceName,
+                router: ServiceClass,
+                manager: routesManager,
+                basePath: basePath,
+                version: routesManager.getConfiguration ? 
+                    routesManager.getConfiguration().apiVersion : 'v1',
+                features: routesManager.getConfiguration ? 
+                    routesManager.getConfiguration().featureFlags : {},
+                mountPath: null,
+                initialized: true,
+                startTime: new Date(),
+                requestCount: 0,
+                errorCount: 0
+            };
+
+            // Register service in service registry
+            this.serviceRegistry.set(serviceName, service);
+            
+            logger.info(`${serviceName} Service registered successfully`, {
+                serviceName: service.name,
+                basePath: service.basePath,
+                version: service.version,
+                featuresEnabled: Object.keys(service.features).filter(key => service.features[key])
+            });
+        } catch (serviceError) {
+            logger.warn(`Failed to initialize ${serviceName} Service`, { 
+                error: serviceError.message 
+            });
+        }
+    }
+
+    /**
+     * Validate health of all registered services with comprehensive checks
      */
     async validateServiceHealth() {
         try {
@@ -424,7 +513,7 @@ class AdminApplication {
     }
 
     /**
-     * FIXED: Setup request tracking first to prevent hanging
+     * Setup request tracking first to prevent hanging
      */
     setupRequestTracking() {
         try {
@@ -442,7 +531,7 @@ class AdminApplication {
 
                 console.log(`🔍 [${requestId}] ${req.method} ${req.path} - START (#${this.requestCount})`);
 
-                // FIXED: Essential timeout protection to prevent hanging
+                // Essential timeout protection to prevent hanging
                 const timeout = setTimeout(() => {
                     if (!res.headersSent) {
                         console.log(`⏰ [${requestId}] REQUEST TIMEOUT after 30s - ${req.method} ${req.path}`);
@@ -458,7 +547,7 @@ class AdminApplication {
                     }
                 }, 30000);
 
-                // Enhanced response tracking
+                // Response tracking
                 res.on('finish', () => {
                     clearTimeout(timeout);
                     const duration = Date.now() - startTime;
@@ -485,13 +574,13 @@ class AdminApplication {
     }
 
     /**
-     * FIXED: Setup enhanced security middleware with proper error handling
+     * Setup security middleware with proper error handling
      */
     setupSecurityMiddleware() {
         try {
             console.log('🔒 Setting up security middleware...');
 
-            // FIXED: Apply security headers with error handling
+            // Apply security headers with error handling
             try {
                 this.app.use(securityHeaders.middleware());
                 logger.info('Security headers middleware applied successfully');
@@ -507,7 +596,7 @@ class AdminApplication {
                 });
             }
 
-            // FIXED: Enhanced Helmet configuration with error handling
+            // Helmet configuration with error handling
             if (this.config.security.helmet && this.config.security.helmet.enabled) {
                 try {
                     this.app.use(helmet({
@@ -524,7 +613,7 @@ class AdminApplication {
                                 frameSrc: ["'none'"]
                             }
                         },
-                        crossOriginEmbedderPolicy: false, // FIXED: Disable to prevent blocking
+                        crossOriginEmbedderPolicy: false, // Disable to prevent blocking
                         crossOriginOpenerPolicy: false,
                         dnsPrefetchControl: { allow: false },
                         frameguard: { action: 'deny' },
@@ -542,7 +631,7 @@ class AdminApplication {
                 }
             }
 
-            // FIXED: IP Whitelist with timeout protection
+            // IP Whitelist with timeout protection
             if (this.config.admin.security && this.config.admin.security.ipWhitelist && this.config.admin.security.ipWhitelist.enabled) {
                 try {
                     // Wrap IP whitelist with timeout
@@ -568,7 +657,7 @@ class AdminApplication {
                 }
             }
 
-            // FIXED: Admin-specific CORS configuration with error handling
+            // Admin-specific CORS configuration with error handling
             if (this.config.security.cors && this.config.security.cors.enabled) {
                 try {
                     const adminCorsOptions = {
@@ -576,7 +665,7 @@ class AdminApplication {
                             const allowedOrigins = this.config.admin.security.cors?.origins ||
                                 this.config.security.cors.origins || [];
 
-                            // FIXED: Always allow in development
+                            // Always allow in development
                             if (this.config.app.env === 'development') {
                                 return callback(null, true);
                             }
@@ -603,7 +692,7 @@ class AdminApplication {
                 }
             }
 
-            // FIXED: Apply rate limiting with timeout protection
+            // Apply rate limiting with timeout protection
             try {
                 // Wrap rate limiting with timeout
                 this.app.use((req, res, next) => {
@@ -724,13 +813,13 @@ class AdminApplication {
     }
 
     /**
-     * FIXED: Setup session and authentication with proper ordering
+     * Setup session and authentication with proper ordering
      */
     async setupSessionAndAuthentication() {
         try {
             console.log('🔐 Setting up session and authentication...');
 
-            // FIXED: Setup express-session FIRST before passport
+            // Setup express-session FIRST before passport
             const sessionOptions = {
                 secret: this.config.admin.security.cookieSecret,
                 name: 'admin.sid',
@@ -753,7 +842,7 @@ class AdminApplication {
                 maxAge: sessionOptions.cookie.maxAge
             });
 
-            // FIXED: Initialize passport AFTER express-session
+            // Initialize passport AFTER express-session
             this.app.use(passport.initialize());
             this.app.use(passport.session());
 
@@ -772,7 +861,7 @@ class AdminApplication {
                 }
             });
 
-            // FIXED: Initialize SessionManager as additional layer (not replacement)
+            // Initialize SessionManager as additional layer (not replacement)
             try {
                 const sessionConfig = {
                     session: {
@@ -802,7 +891,7 @@ class AdminApplication {
                 });
             }
 
-            // FIXED: Session validation with timeout protection
+            // Session validation with timeout protection
             try {
                 this.app.use((req, res, next) => {
                     const timeout = setTimeout(() => {
@@ -884,13 +973,13 @@ class AdminApplication {
     }
 
     /**
-     * FIXED: Setup audit middleware with timeout protection
+     * Setup audit middleware with timeout protection
      */
     setupAuditMiddleware() {
         try {
             console.log('📊 Setting up audit middleware...');
 
-            // FIXED: Simple audit middleware with timeout protection
+            // Simple audit middleware with timeout protection
             this.app.use((req, res, next) => {
                 const timeout = setTimeout(() => {
                     if (!res.headersSent) {
@@ -937,7 +1026,7 @@ class AdminApplication {
     }
 
     /**
-     * ENHANCED: Setup model-aware middleware for enhanced error handling
+     * Setup model-aware middleware for error handling
      */
     setupModelAwareMiddleware() {
         try {
@@ -992,7 +1081,7 @@ class AdminApplication {
                 }
             });
 
-            // Enhanced error recovery middleware
+            // Model error recovery middleware
             this.app.use((err, req, res, next) => {
                 if (err.message && err.message.toLowerCase().includes('model')) {
                     logger.warn('Model-related error detected, attempting recovery', {
@@ -1073,7 +1162,7 @@ class AdminApplication {
     }
 
     /**
-     * ENHANCED: Create service-specific middleware for enhanced monitoring and management
+     * Create service-specific middleware for monitoring and management
      */
     createServiceMiddleware(serviceName) {
         return (req, res, next) => {
@@ -1092,7 +1181,7 @@ class AdminApplication {
                 service.requestCount++;
             }
 
-            // Enhanced response tracking with service metrics
+            // Response tracking with service metrics
             res.on('finish', () => {
                 const responseTime = Date.now() - req.serviceContext.startTime;
                 
@@ -1139,43 +1228,57 @@ class AdminApplication {
     }
 
     /**
-     * ENHANCED: Setup admin routes with model validation, recovery endpoints, and service integration
+     * Setup admin routes with model validation, recovery endpoints, and service integration
      */
     setupAdminRoutes() {
         try {
-            console.log('🛤️ Setting up enhanced admin routes with service integration...');
+            console.log('🛤️ Setting up admin routes with service integration...');
 
             const adminBase = this.config.admin.basePath || '/admin';
             const apiPrefix = `${adminBase}/api`;
 
-            // Timeout wrapper for database operations
-            const withTimeout = (promise, timeoutMs = 5000) => {
-                return Promise.race([
-                    promise,
-                    new Promise((_, reject) => {
-                        setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs);
-                    })
-                ]);
-            };
-
-            // ENHANCED: Mount service modules with proper middleware stacks
+            // Mount service modules with proper middleware stacks
             if (this.config.admin.features.serviceIntegration && this.serviceRegistry.size > 0) {
                 this.mountServiceRoutes(apiPrefix);
             }
 
-            // ENHANCED: Service management endpoints
+            // Service management endpoints
             this.setupServiceManagementEndpoints(apiPrefix);
 
             // Admin API routes (all require authentication)
-            // this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutes);
-            // this.app.use(`${apiPrefix}/organizations`, adminAuth, organizationManagementRoutes);
-            // this.app.use(`${apiPrefix}/security`, adminAuth, securityAdministrationRoutes);
-            // this.app.use(`${apiPrefix}/billing`, adminAuth, billingAdministrationRoutes);
-            // this.app.use(`${apiPrefix}/monitoring`, adminAuth, systemMonitoringRoutes);
-            // this.app.use(`${apiPrefix}/support`, adminAuth, supportAdministrationRoutes);
-            // this.app.use(`${apiPrefix}/analytics`, adminAuth, reportsAnalyticsRoutes);
+            if (platformManagementRoutesManager) {
+                this.app.use(`${apiPrefix}/platform`, adminAuth, platformManagementRoutesManager);
+            }
+            
+            if (userManagementRoutesManager) {
+                this.app.use(`${apiPrefix}/users`, adminAuth, userManagementRoutesManager);
+            }
+            
+            if (organizationManagementRoutesManager) {
+                this.app.use(`${apiPrefix}/organizations`, adminAuth, organizationManagementRoutesManager);
+            }
+            
+            if (securityAdministrationRoutesManager) {
+                this.app.use(`${apiPrefix}/security`, adminAuth, securityAdministrationRoutesManager);
+            }
+            
+            if (billingAdministrationRoutesManager) {
+                this.app.use(`${apiPrefix}/billing`, adminAuth, billingAdministrationRoutesManager);
+            }
+            
+            if (systemMonitoringRoutesManager) {
+                this.app.use(`${apiPrefix}/monitoring`, adminAuth, systemMonitoringRoutesManager);
+            }
+            
+            if (supportAdministrationRoutesManager) {
+                this.app.use(`${apiPrefix}/support`, adminAuth, supportAdministrationRoutesManager);
+            }
+            
+            // if (reportsAnalyticsRoutesManager) {
+            //     this.app.use(`${apiPrefix}/analytics`, adminAuth, reportsAnalyticsRoutesManager);
+            // }
 
-            // ENHANCED: Health check with comprehensive model status and service information
+            // Health check with comprehensive model status and service information
             this.app.get('/health', async (req, res) => {
                 try {
                     const dbHealth = Database.getHealthStatus ?
@@ -1255,7 +1358,7 @@ class AdminApplication {
                 }
             });
 
-            // ENHANCED: Model status endpoint
+            // Model status endpoint
             this.app.get(`${adminBase}/models/status`, async (req, res) => {
                 try {
                     const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
@@ -1306,7 +1409,7 @@ class AdminApplication {
                 }
             });
 
-            // ENHANCED: Model reload endpoint
+            // Model reload endpoint
             this.app.post(`${adminBase}/models/reload`, async (req, res) => {
                 try {
                     if (!Database.reloadModels) {
@@ -1336,7 +1439,7 @@ class AdminApplication {
                 }
             });
 
-            // ENHANCED: Force model registration endpoint
+            // Force model registration endpoint
             this.app.post(`${adminBase}/models/force-registration`, async (req, res) => {
                 try {
                     if (!Database.forceModelRegistration) {
@@ -1364,7 +1467,7 @@ class AdminApplication {
                 }
             });
 
-            // ENHANCED: Database seeds management
+            // Database seeds management
             this.app.get(`${adminBase}/seeds/status`, async (req, res) => {
                 try {
                     const seedingStatus = Database.getSeedingStatus ? Database.getSeedingStatus() : {};
@@ -1417,7 +1520,7 @@ class AdminApplication {
                 }
             });
 
-            // ENHANCED: Admin dashboard with proper response handling and service information
+            // Admin dashboard with proper response handling and service information
             this.app.get(`${adminBase}/dashboard`, async (req, res) => {
                 try {
                     const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
@@ -1433,8 +1536,8 @@ class AdminApplication {
                     }));
 
                     const responseData = {
-                        title: 'Enhanced Admin Dashboard with Service Integration',
-                        message: 'Welcome to the Enhanced InsightSerenity Admin Dashboard',
+                        title: 'Admin Dashboard with Complete Service Integration',
+                        message: 'Welcome to the InsightSerenity Admin Dashboard',
                         user: req.user || null,
                         authenticated: !!req.user,
                         session: {
@@ -1530,11 +1633,11 @@ class AdminApplication {
                 res.redirect(`${adminBase}/dashboard`);
             });
 
-            // ENHANCED: API documentation with service information
+            // API documentation with service information
             if (this.config.app.env !== 'production') {
                 this.app.get(`${adminBase}/api-docs`, (req, res) => {
                     res.json({
-                        title: 'Enhanced Admin API Documentation with Service Integration',
+                        title: 'Admin API Documentation with Complete Service Integration',
                         version: this.config.app.version,
                         environment: this.config.app.env,
                         endpoints: this.getApiEndpoints(),
@@ -1558,8 +1661,8 @@ class AdminApplication {
                 });
             }
 
-            console.log('✅ Enhanced admin routes with service integration setup completed');
-            logger.info('Enhanced admin routes setup completed', {
+            console.log('✅ Admin routes with service integration setup completed');
+            logger.info('Admin routes setup completed', {
                 basePath: adminBase,
                 apiPrefix: apiPrefix,
                 servicesRegistered: this.serviceRegistry.size,
@@ -1567,14 +1670,14 @@ class AdminApplication {
                 serviceIntegrationEnabled: this.config.admin.features.serviceIntegration
             });
         } catch (error) {
-            console.error('❌ Enhanced admin routes setup failed:', error.message);
-            logger.error('Failed to setup enhanced admin routes', { error: error.message });
+            console.error('❌ Admin routes setup failed:', error.message);
+            logger.error('Failed to setup admin routes', { error: error.message });
             throw error;
         }
     }
 
     /**
-     * ENHANCED: Mount service routes with proper middleware stacks and monitoring
+     * Mount service routes with proper middleware stacks and monitoring
      */
     mountServiceRoutes(apiPrefix) {
         try {
@@ -1623,7 +1726,7 @@ class AdminApplication {
     }
 
     /**
-     * ENHANCED: Setup service management endpoints for monitoring and administration
+     * Setup service management endpoints for monitoring and administration
      */
     setupServiceManagementEndpoints(apiPrefix) {
         try {
@@ -1910,7 +2013,7 @@ class AdminApplication {
             }
 
             console.log('✅ Error handling setup completed');
-            logger.info('Enhanced admin error handling setup completed successfully');
+            logger.info('Admin error handling setup completed successfully');
         } catch (error) {
             console.error('❌ Error handling setup failed:', error.message);
             logger.error('Critical failure in error handling setup', {
@@ -1937,7 +2040,7 @@ class AdminApplication {
                 logger.error('Security breach detected', event);
             });
 
-            // ENHANCED: Handle model-related events
+            // Handle model-related events
             this.app.on('model:failure', async (event) => {
                 logger.error('Model failure detected in admin app', event);
 
@@ -1946,7 +2049,7 @@ class AdminApplication {
                 }
             });
 
-            // ENHANCED: Handle service-related events
+            // Handle service-related events
             this.app.on('service:failure', async (event) => {
                 logger.error('Service failure detected in admin app', event);
                 
@@ -1976,7 +2079,7 @@ class AdminApplication {
             });
 
             console.log('✅ Event handlers setup completed');
-            logger.info('Enhanced admin event handlers setup completed');
+            logger.info('Admin event handlers setup completed');
         } catch (error) {
             console.error('❌ Event handlers setup failed:', error.message);
             logger.error('Failed to setup event handlers', { error: error.message });
@@ -2007,7 +2110,7 @@ class AdminApplication {
     }
 
     /**
-     * ENHANCED: Get service registry information for monitoring and management
+     * Get service registry information for monitoring and management
      */
     getServiceRegistry() {
         return Array.from(this.serviceRegistry.entries()).map(([name, service]) => ({
@@ -2024,7 +2127,7 @@ class AdminApplication {
     }
 
     /**
-     * ENHANCED: Get comprehensive service metrics
+     * Get comprehensive service metrics
      */
     getServiceMetrics() {
         const metrics = {};
@@ -2051,14 +2154,14 @@ class AdminApplication {
      */
     async start() {
         try {
-            console.log('🚀 Starting Enhanced Admin Application with Service Integration...');
+            console.log('🚀 Starting Admin Application with Complete Module Integration...');
 
             await this.initialize();
 
-            console.log('✅ Enhanced admin application started successfully');
+            console.log('✅ Admin application started successfully');
             console.log('📍 Available routes:');
             console.log('   - GET /health (Comprehensive health check with model status and service information)');
-            console.log('   - GET /admin/dashboard (Enhanced dashboard with service integration)');
+            console.log('   - GET /admin/dashboard (Admin dashboard with complete service integration)');
             console.log('   - GET /admin/session (Session details)');
             console.log('   - GET /admin/models/status (Model status and recovery)');
             console.log('   - POST /admin/models/reload (Reload models)');
@@ -2080,7 +2183,7 @@ class AdminApplication {
                 }
             }
 
-            console.log('🔧 Enhanced features:');
+            console.log('🔧 Complete features:');
             console.log('   - Proper middleware ordering');
             console.log('   - Express-session before Passport');
             console.log('   - Timeout protection on all middleware');
@@ -2088,12 +2191,13 @@ class AdminApplication {
             console.log('   - Fallback error handling');
             console.log('   - Model recovery and management');
             console.log('   - Database seeding management');
-            console.log('   - Enhanced health monitoring');
+            console.log('   - Complete health monitoring');
             console.log('   - Professional service integration');
             console.log('   - Service-level monitoring and metrics');
             console.log('   - Centralized service health checks');
+            console.log('   - All admin modules properly imported and mounted');
 
-            logger.info('Enhanced admin application started successfully', {
+            logger.info('Admin application started successfully', {
                 environment: this.config.app.env,
                 features: {
                     sessionManager: !!this.sessionManager,
@@ -2119,7 +2223,7 @@ class AdminApplication {
 
             return this.app;
         } catch (error) {
-            console.error('❌ Failed to start enhanced admin application:', error.message);
+            console.error('❌ Failed to start admin application:', error.message);
             logger.error('Failed to start admin application', { error: error.message });
             throw error;
         }
@@ -2130,8 +2234,8 @@ class AdminApplication {
      */
     async stop() {
         try {
-            console.log('🛑 Stopping enhanced admin application...');
-            logger.info('Stopping enhanced admin application...');
+            console.log('🛑 Stopping admin application...');
+            logger.info('Stopping admin application...');
             this.isShuttingDown = true;
 
             // Close session manager
@@ -2153,13 +2257,13 @@ class AdminApplication {
                 }
             }
 
-            console.log('✅ Enhanced admin application stopped successfully');
-            logger.info('Enhanced admin application stopped successfully', {
+            console.log('✅ Admin application stopped successfully');
+            logger.info('Admin application stopped successfully', {
                 servicesCleaned: this.serviceRegistry.size,
                 sessionManagerClosed: !!this.sessionManager
             });
         } catch (error) {
-            console.error('❌ Error stopping enhanced admin application:', error.message);
+            console.error('❌ Error stopping admin application:', error.message);
             logger.error('Error stopping admin application', { error: error.message });
             throw error;
         }

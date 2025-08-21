@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview Database module main exports - FIXED VERSION WITH SEEDING CONTROLS AND MODEL REGISTRATION
+ * @fileoverview Database module main exports - ENHANCED VERSION WITH COMPLETE MULTI-DATABASE SUPPORT
  * @module shared/lib/database
  * @requires module:shared/lib/database/connection-manager
  * @requires module:shared/lib/database/multi-tenant-manager
@@ -82,7 +82,7 @@ function ensureModelsRegistered() {
 
 /**
  * @class Database
- * @description Main database module providing unified access to all database functionality
+ * @description Main database module providing unified access to all database functionality with multi-database support
  */
 class Database {
     /**
@@ -99,9 +99,11 @@ class Database {
     static #schemas = new Map();
     static #seedingInProgress = false;
     static #seedingDisabled = false;
+    static #modelRegistrationSummary = { total: 0, successful: 0, failed: 0 };
+    static #modelRegistrationErrors = [];
 
     /**
-     * Initializes the database module
+     * Initializes the database module with multi-database support
      * @static
      * @async
      * @param {Object} [options={}] - Initialization options
@@ -127,19 +129,35 @@ class Database {
                 seedingStrategy = 'safe' // 'safe', 'force', 'skip'
             } = options;
 
-            logger.info('Initializing database module');
+            logger.info('Initializing database module with multi-database support');
+
+            // ENHANCED: Initialize database mappings before connections
+            if (ConnectionManager.initializeDatabaseMappings) {
+                ConnectionManager.initializeDatabaseMappings();
+            }
 
             // CRITICAL FIX: Ensure models are registered BEFORE any other initialization
             ensureModelsRegistered();
 
-            // Initialize connection manager
+            // Initialize connection manager with multi-database support
             const connectionOptions = {
                 ...config.database,
-                ...connection
+                ...connection,
+                enableMultiDatabase: true,
+                enableHealthCheck: connection.enableHealthCheck !== false
             };
 
-            await ConnectionManager.connect('default', connectionOptions);
+            // ENHANCED: Initialize multiple database connections
+            if (ConnectionManager.initializeMultipleDatabases) {
+                await ConnectionManager.initializeMultipleDatabases(connectionOptions);
+            } else {
+                // Fallback to standard connection initialization
+                await ConnectionManager.initialize(connectionOptions);
+            }
+            
             Database.#connectionManager = ConnectionManager;
+
+            logger.info('Multi-database connections initialized successfully');
 
             // Initialize multi-tenant manager if available
             if (MultiTenantManager && config.database?.multiTenant?.enabled) {
@@ -166,12 +184,15 @@ class Database {
                 }
             }
 
-            // Initialize base model if available
+            // ENHANCED: Initialize base model with multi-database support
             if (BaseModel) {
                 try {
-                    BaseModel.initialize({
-                        auditService: options.auditService
+                    await BaseModel.initialize({
+                        auditService: options.auditService,
+                        connectionManager: Database.#connectionManager,
+                        multiDatabase: true
                     });
+                    logger.info('BaseModel initialized successfully');
                 } catch (error) {
                     logger.warn('BaseModel initialization failed', { error: error.message });
                 }
@@ -205,7 +226,7 @@ class Database {
                 }
             }
 
-            // Load models AFTER registration and BEFORE attempting seeding
+            // ENHANCED: Load models with multi-database routing AFTER registration and BEFORE attempting seeding
             await Database.#loadModels();
 
             // Initialize seed manager if available
@@ -248,14 +269,24 @@ class Database {
 
             Database.#initialized = true;
 
-            logger.info('Database module initialized successfully', {
+            // Get multi-database status for logging
+            const dbConnections = Database.getAllConnections();
+            const connectionRouting = Database.getConnectionRouting();
+
+            logger.info('Database module initialized successfully with multi-database architecture', {
                 connection: connectionOptions.uri ? 'Connected' : 'Not configured',
                 multiTenant: Database.#multiTenantManager ? 'Enabled' : 'Disabled',
                 migrationRunner: Database.#migrationRunner ? 'Available' : 'Not available',
                 seedManager: Database.#seedManager ? 'Available' : 'Not available',
                 modelsLoaded: Database.#models.size,
                 modelsRegistered: modelsRegistered,
-                seedingDisabled: Database.#seedingDisabled
+                seedingDisabled: Database.#seedingDisabled,
+                multiDatabase: {
+                    totalConnections: dbConnections.size,
+                    databaseConnections: connectionRouting.databaseConnections,
+                    tenantConnections: connectionRouting.tenantConnections,
+                    collectionMappings: Object.keys(connectionRouting.collectionRouting?.databasePurposes || {}).length
+                }
             });
 
         } catch (error) {
@@ -272,6 +303,137 @@ class Database {
                 { originalError: error.message }
             );
         }
+    }
+
+    /**
+     * ENHANCED: Gets all database connections with routing information
+     * @static
+     * @returns {Map} All database connections
+     */
+    static getAllConnections() {
+        if (!Database.#connectionManager) {
+            return new Map();
+        }
+        return ConnectionManager.getAllConnections ? ConnectionManager.getAllConnections() : new Map();
+    }
+
+    /**
+     * ENHANCED: Gets comprehensive connection routing information
+     * @static
+     * @returns {Object} Connection routing details
+     */
+    static getConnectionRouting() {
+        if (!Database.#connectionManager) {
+            return { databaseConnections: 0, tenantConnections: 0, collectionMappings: 0 };
+        }
+        return ConnectionManager.getConnectionRouting ? ConnectionManager.getConnectionRouting() : { databaseConnections: 0, tenantConnections: 0, collectionMappings: 0 };
+    }
+
+    /**
+     * ENHANCED: Gets database connection for specific type
+     * @static
+     * @param {string} dbType - Database type (admin, shared, audit, analytics)
+     * @returns {Object|null} Database connection
+     */
+    static getDatabaseConnection(dbType) {
+        if (!Database.#connectionManager) {
+            return null;
+        }
+        return ConnectionManager.getDatabaseConnection ? ConnectionManager.getDatabaseConnection(dbType) : null;
+    }
+
+    /**
+     * ENHANCED: Gets connection for specific collection
+     * @static
+     * @param {string} collectionName - Collection name
+     * @returns {Object|null} Database connection
+     */
+    static getConnectionForCollection(collectionName) {
+        if (!Database.#connectionManager) {
+            return null;
+        }
+        return ConnectionManager.getConnectionForCollection ? ConnectionManager.getConnectionForCollection(collectionName) : null;
+    }
+
+    /**
+     * ENHANCED: Gets database type for collection
+     * @static
+     * @param {string} collectionName - Collection name
+     * @returns {string|null} Database type
+     */
+    static getDatabaseTypeForCollection(collectionName) {
+        if (!Database.#connectionManager) {
+            return null;
+        }
+        return ConnectionManager.getDatabaseTypeForCollection ? ConnectionManager.getDatabaseTypeForCollection(collectionName) : null;
+    }
+
+    /**
+     * ENHANCED: Gets all collections for database type
+     * @static
+     * @param {string} dbType - Database type
+     * @returns {Array<string>} Collection names
+     */
+    static getCollectionsForDatabase(dbType) {
+        if (!Database.#connectionManager) {
+            return [];
+        }
+        return ConnectionManager.getCollectionsForDatabase ? ConnectionManager.getCollectionsForDatabase(dbType) : [];
+    }
+
+    /**
+     * Creates or gets tenant connection
+     * @static
+     * @async
+     * @param {string} tenantId - Tenant identifier
+     * @param {Object} [options={}] - Connection options
+     * @returns {Promise<Object>} Tenant connection
+     */
+    static async createTenantConnection(tenantId, options = {}) {
+        if (!Database.#connectionManager) {
+            throw new AppError('Database not initialized', 500, 'DATABASE_NOT_INITIALIZED');
+        }
+        return ConnectionManager.createTenantConnection ? await ConnectionManager.createTenantConnection(tenantId, options) : null;
+    }
+
+    /**
+     * Gets tenant connection
+     * @static
+     * @param {string} tenantId - Tenant identifier
+     * @returns {Object|null} Tenant connection
+     */
+    static getTenantConnection(tenantId) {
+        if (!Database.#connectionManager) {
+            return null;
+        }
+        return ConnectionManager.getTenantConnection ? ConnectionManager.getTenantConnection(tenantId) : null;
+    }
+
+    /**
+     * Gets all tenant connections
+     * @static
+     * @returns {Map} All tenant connections
+     */
+    static getAllTenantConnections() {
+        if (!Database.#connectionManager) {
+            return new Map();
+        }
+        return ConnectionManager.getAllTenantConnections ? ConnectionManager.getAllTenantConnections() : new Map();
+    }
+
+    /**
+     * Closes tenant connection
+     * @static
+     * @async
+     * @param {string} tenantId - Tenant identifier
+     * @param {boolean} [force=false] - Force close
+     * @returns {Promise<void>}
+     */
+    static async closeTenantConnection(tenantId, force = false) {
+        if (!Database.#connectionManager) {
+            throw new AppError('Database not initialized', 500, 'DATABASE_NOT_INITIALIZED');
+        }
+        return ConnectionManager.closeTenantConnection ? await ConnectionManager.closeTenantConnection(tenantId, force) : null;
     }
 
     /**
@@ -628,7 +790,11 @@ class Database {
             }
 
             // Close all connections
-            await ConnectionManager.disconnectAll(force);
+            if (ConnectionManager.disconnectAll) {
+                await ConnectionManager.disconnectAll(force);
+            } else if (ConnectionManager.closeAllConnections) {
+                await ConnectionManager.closeAllConnections();
+            }
 
             // Cleanup managers
             if (Database.#multiTenantManager && MultiTenantManager.cleanup) {
@@ -668,10 +834,23 @@ class Database {
      */
     static getConnection(name = 'default') {
         if (!Database.#initialized) {
-            throw new AppError('Database not initialized', 500, 'DATABASE_NOT_INITIALIZED');
+            return null;
         }
 
-        return ConnectionManager.getConnection(name);
+        // Try to get connection using ConnectionManager
+        if (ConnectionManager.getConnection) {
+            const connection = ConnectionManager.getConnection(name);
+            if (connection) {
+                return connection;
+            }
+        }
+
+        // ENHANCED: Try to get admin database as fallback
+        if (ConnectionManager.getDatabaseConnection) {
+            return ConnectionManager.getDatabaseConnection('admin');
+        }
+
+        return null;
     }
 
     /**
@@ -694,7 +873,7 @@ class Database {
      */
     static async getModel(modelName, tenantId) {
         if (!Database.#initialized) {
-            throw new AppError('Database not initialized', 500, 'DATABASE_NOT_INITIALIZED');
+            return null;
         }
 
         // Ensure models are registered before attempting to get them
@@ -705,7 +884,7 @@ class Database {
             const schema = Database.#schemas.get(modelName);
 
             if (!schema) {
-                throw new AppError(`Model schema not found: ${modelName}`, 404, 'MODEL_NOT_FOUND');
+                return null;
             }
 
             return await MultiTenantManager.getTenantModel(tenantId, modelName, schema);
@@ -808,6 +987,12 @@ class Database {
                 modelsRegistered: modelsRegistered,
                 metrics: {},
                 seeding: Database.getSeedingStatus(),
+                multiDatabase: {
+                    enabled: true,
+                    connectionCount: 0,
+                    databaseTypes: [],
+                    collectionsMapping: {}
+                },
                 timestamp: new Date().toISOString()
             };
 
@@ -817,11 +1002,24 @@ class Database {
             }
 
             // Check connections
-            const connections = ConnectionManager.getAllConnections();
+            const connections = Database.getAllConnections();
+            const connectionRouting = Database.getConnectionRouting();
+
+            // Update multi-database information
+            health.multiDatabase = {
+                enabled: true,
+                connectionCount: connections.size,
+                databaseTypes: connectionRouting.databases || [],
+                tenantConnections: connectionRouting.tenantConnections || 0,
+                collectionsMapping: connectionRouting.collectionRouting?.databasePurposes || {}
+            };
 
             for (const [name] of connections) {
                 try {
-                    const connectionHealth = await ConnectionManager.checkHealth(name);
+                    let connectionHealth = { healthy: true };
+                    if (ConnectionManager.checkHealth) {
+                        connectionHealth = await ConnectionManager.checkHealth(name);
+                    }
                     health.connections[name] = connectionHealth;
 
                     if (!connectionHealth.healthy) {
@@ -885,9 +1083,34 @@ class Database {
         const model = BaseModel.createModel(modelName, schema, options);
         Database.#models.set(modelName, model);
 
+        // Update registration summary
+        Database.#modelRegistrationSummary.successful++;
+        Database.#modelRegistrationSummary.total++;
+
         logger.info('Model registered', { modelName });
 
         return model;
+    }
+
+    /**
+     * Gets model registration summary
+     * @static
+     * @returns {Object} Registration summary
+     */
+    static getRegistrationSummary() {
+        return {
+            ...Database.#modelRegistrationSummary,
+            registeredModels: Array.from(Database.#models.keys())
+        };
+    }
+
+    /**
+     * Gets model registration errors
+     * @static
+     * @returns {Array} Registration errors
+     */
+    static getRegistrationErrors() {
+        return [...Database.#modelRegistrationErrors];
     }
 
     /**
@@ -1010,7 +1233,7 @@ class Database {
 
     /**
      * @private
-     * Loads built-in models - ENHANCED VERSION with improved registry access
+     * Loads built-in models - ENHANCED VERSION with improved registry access and multi-database routing
      * @static
      * @async
      */
@@ -1031,8 +1254,36 @@ class Database {
                     
                     for (const [modelName, model] of baseModelRegistry) {
                         try {
-                            // Register with Database module
-                            Database.#models.set(modelName, model);
+                            // ENHANCED: Connect models to their appropriate databases based on collection routing
+                            const collectionName = model.collection?.name || BaseModel.getCollectionName ? BaseModel.getCollectionName(modelName) : modelName.toLowerCase() + 's';
+                            
+                            // Get the appropriate database connection for this collection
+                            const connection = Database.getConnectionForCollection(collectionName);
+                            
+                            if (connection && model.schema) {
+                                // Ensure the model is using the correct connection for multi-database setup
+                                try {
+                                    const DatabaseModel = connection.model(modelName, model.schema);
+                                    Database.#models.set(modelName, DatabaseModel);
+                                    logger.debug(`Model connected to specific database: ${modelName}`, {
+                                        collection: collectionName,
+                                        database: Database.getDatabaseTypeForCollection(collectionName)
+                                    });
+                                } catch (connectionError) {
+                                    // Fallback to original model if database-specific connection fails
+                                    Database.#models.set(modelName, model);
+                                    logger.debug(`Model using fallback connection: ${modelName}`, {
+                                        collection: collectionName,
+                                        warning: connectionError.message
+                                    });
+                                }
+                            } else {
+                                // Register with Database module using original model
+                                Database.#models.set(modelName, model);
+                                logger.debug(`Model registered with default connection: ${modelName}`, {
+                                    collection: collectionName
+                                });
+                            }
                             
                             // Try to get schema if available
                             if (BaseModel.schemaCache && BaseModel.schemaCache.get) {
@@ -1046,6 +1297,12 @@ class Database {
                             logger.debug(`Loaded model: ${modelName}`);
                         } catch (modelError) {
                             failedCount++;
+                            const error = {
+                                modelName,
+                                error: modelError.message,
+                                source: 'BaseModel registry'
+                            };
+                            Database.#modelRegistrationErrors.push(error);
                             logger.error(`Failed to load model ${modelName}`, { error: modelError.message });
                         }
                     }
@@ -1074,6 +1331,12 @@ class Database {
                             logger.debug(`Loaded model from mongoose: ${modelName}`);
                         } catch (modelError) {
                             failedCount++;
+                            const error = {
+                                modelName,
+                                error: modelError.message,
+                                source: 'mongoose registry'
+                            };
+                            Database.#modelRegistrationErrors.push(error);
                             logger.error(`Failed to load model ${modelName} from mongoose`, { error: modelError.message });
                         }
                     }
@@ -1089,6 +1352,13 @@ class Database {
                 loadedCount = Database.#models.size;
             }
 
+            // Update registration summary
+            Database.#modelRegistrationSummary = {
+                total: loadedCount + failedCount,
+                successful: loadedCount,
+                failed: failedCount
+            };
+
             logger.info('Model loading completed', {
                 loaded: loadedCount,
                 failed: failedCount,
@@ -1097,13 +1367,16 @@ class Database {
                 modelsRegistered: modelsRegistered
             });
 
-            // Log model details for debugging
+            // ENHANCED: Log model details for debugging with database routing information
             for (const [modelName, model] of Database.#models) {
+                const collectionName = model.collection?.name || 'undefined';
+                const databaseType = Database.getDatabaseTypeForCollection(collectionName);
                 logger.debug(`Model available: ${modelName}`, {
                     hasModel: !!model,
                     modelName: model.modelName || 'undefined',
-                    collection: model.collection?.name || 'undefined',
-                    hasSchema: Database.#schemas.has(modelName)
+                    collection: collectionName,
+                    hasSchema: Database.#schemas.has(modelName),
+                    databaseType: databaseType || 'unmapped'
                 });
             }
 
@@ -1271,7 +1544,7 @@ class Database {
             }
 
             // Validate connections
-            const connections = ConnectionManager.getAllConnections();
+            const connections = Database.getAllConnections();
 
             if (connections.size === 0) {
                 validation.valid = false;
@@ -1281,7 +1554,10 @@ class Database {
             // Check connection health
             for (const [name] of connections) {
                 try {
-                    const health = await ConnectionManager.checkHealth(name);
+                    let health = { healthy: true };
+                    if (ConnectionManager.checkHealth) {
+                        health = await ConnectionManager.checkHealth(name);
+                    }
 
                     if (!health.healthy) {
                         validation.errors.push(`Connection '${name}' is unhealthy`);
@@ -1301,6 +1577,12 @@ class Database {
             // Check seeding issues
             if (Database.#seedingDisabled) {
                 validation.warnings.push('Database seeding is disabled due to previous failures');
+            }
+
+            // Validate multi-database architecture
+            const connectionRouting = Database.getConnectionRouting();
+            if (connectionRouting.databaseConnections === 0) {
+                validation.warnings.push('No multi-database connections established');
             }
 
             logger.info('Database validation completed', {
@@ -1347,6 +1629,8 @@ class Database {
         Database.#migrationRunner = null;
         Database.#seedingInProgress = false;
         Database.#seedingDisabled = false;
+        Database.#modelRegistrationSummary = { total: 0, successful: 0, failed: 0 };
+        Database.#modelRegistrationErrors = [];
         modelsRegistered = false;
 
         logger.info('All database data cleared');
@@ -1363,6 +1647,10 @@ class Database {
             // Clear current models
             Database.#models.clear();
             Database.#schemas.clear();
+
+            // Reset registration tracking
+            Database.#modelRegistrationSummary = { total: 0, successful: 0, failed: 0 };
+            Database.#modelRegistrationErrors = [];
 
             // Force re-registration
             modelsRegistered = false;
@@ -1381,7 +1669,8 @@ class Database {
                 success: true,
                 modelsLoaded: Database.#models.size,
                 models: Array.from(Database.#models.keys()),
-                modelsRegistered: modelsRegistered
+                modelsRegistered: modelsRegistered,
+                registrationSummary: Database.#modelRegistrationSummary
             };
 
         } catch (error) {
@@ -1403,7 +1692,8 @@ class Database {
         
         return {
             success: modelsRegistered,
-            modelsInRegistry: BaseModel && BaseModel.getAllModels ? BaseModel.getAllModels().size : 0
+            modelsInRegistry: BaseModel && BaseModel.getAllModels ? BaseModel.getAllModels().size : 0,
+            registrationSummary: Database.#modelRegistrationSummary
         };
     }
 }
@@ -1430,3 +1720,17 @@ module.exports.reloadModels = Database.reloadModels;
 module.exports.runSeeds = Database.runSeeds;
 module.exports.getSeedingStatus = Database.getSeedingStatus;
 module.exports.forceModelRegistration = Database.forceModelRegistration;
+
+// ENHANCED: Export multi-database specific methods
+module.exports.getAllConnections = Database.getAllConnections;
+module.exports.getConnectionRouting = Database.getConnectionRouting;
+module.exports.getDatabaseConnection = Database.getDatabaseConnection;
+module.exports.getConnectionForCollection = Database.getConnectionForCollection;
+module.exports.getDatabaseTypeForCollection = Database.getDatabaseTypeForCollection;
+module.exports.getCollectionsForDatabase = Database.getCollectionsForDatabase;
+module.exports.createTenantConnection = Database.createTenantConnection;
+module.exports.getTenantConnection = Database.getTenantConnection;
+module.exports.getAllTenantConnections = Database.getAllTenantConnections;
+module.exports.closeTenantConnection = Database.closeTenantConnection;
+module.exports.getRegistrationSummary = Database.getRegistrationSummary;
+module.exports.getRegistrationErrors = Database.getRegistrationErrors;

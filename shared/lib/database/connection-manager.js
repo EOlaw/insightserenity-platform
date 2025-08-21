@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview Database connection manager with pooling, retry strategy, and health monitoring
+ * @fileoverview Database connection manager with pooling, retry strategy, health monitoring, and multi-database support
  * @module shared/lib/database/connection-manager
  * @requires mongoose
  * @requires module:shared/lib/utils/logger
@@ -16,7 +16,7 @@ const config = require('../../config');
 
 /**
  * @class ConnectionManager
- * @description Manages database connections with pooling, retry logic, and health monitoring
+ * @description Manages database connections with pooling, retry logic, health monitoring, and multi-database architecture support
  */
 class ConnectionManager {
   /**
@@ -54,6 +54,74 @@ class ConnectionManager {
   static #connections = new Map();
   static #healthCheckIntervals = new Map();
   static #connectionStats = new Map();
+  static #databaseConnections = new Map();
+  static #tenantConnections = new Map();
+  
+  // ENHANCED: Multi-database architecture support
+  static #databaseTypeMapping = new Map();
+  static #collectionToDatabase = new Map();
+  static #databasePurposes = new Map();
+
+  /**
+   * ENHANCED: Initialize database type mappings for multi-database architecture
+   */
+  static initializeDatabaseMappings() {
+    try {
+      // Define database purposes and their collection mappings
+      const databaseMappings = {
+        admin: {
+          purpose: 'Administrative operations, user management, system configuration',
+          collections: [
+            'users', 'user_profiles', 'user_activities', 'login_history',
+            'roles', 'permissions', 'organizations', 'organization_members',
+            'organization_invitations', 'tenants', 'system_configurations',
+            'security_incidents', 'sessions'
+          ]
+        },
+        shared: {
+          purpose: 'Shared resources, common data, cross-tenant information',
+          collections: [
+            'subscription_plans', 'features', 'system_settings',
+            'webhooks', 'api_integrations', 'notifications',
+            'oauth_providers', 'passkeys'
+          ]
+        },
+        audit: {
+          purpose: 'Audit trails, compliance logging, security monitoring',
+          collections: [
+            'audit_logs', 'audit_alerts', 'audit_exports',
+            'audit_retention_policies', 'compliance_mappings',
+            'data_breaches', 'erasure_logs', 'processing_activities'
+          ]
+        },
+        analytics: {
+          purpose: 'Analytics data, usage metrics, performance tracking',
+          collections: [
+            'api_usage', 'usage_records', 'performance_metrics',
+            'user_analytics', 'system_metrics'
+          ]
+        }
+      };
+
+      // Store database purposes
+      for (const [dbType, config] of Object.entries(databaseMappings)) {
+        ConnectionManager.#databasePurposes.set(dbType, config);
+        
+        // Map collections to their respective databases
+        for (const collection of config.collections) {
+          ConnectionManager.#collectionToDatabase.set(collection, dbType);
+        }
+      }
+
+      logger.info('Database mappings initialized', {
+        databaseTypes: Object.keys(databaseMappings),
+        totalCollections: ConnectionManager.#collectionToDatabase.size
+      });
+
+    } catch (error) {
+      logger.error('Failed to initialize database mappings', { error: error.message });
+    }
+  }
 
   /**
    * Establishes a database connection with retry logic
@@ -160,6 +228,455 @@ class ConnectionManager {
   }
 
   /**
+   * ENHANCED: Initializes multiple database connections based on configuration with complete collection mapping
+   * @static
+   * @async
+   * @param {Object} [databaseConfig=config.database] - Database configuration
+   * @param {Object} [options={}] - Connection options
+   * @returns {Promise<Object>} Object containing all established connections
+   * @throws {AppError} If any database connection fails
+   */
+  static async initializeMultipleDatabases(databaseConfig = config.database, options = {}) {
+    try {
+      logger.info('Initializing multiple database connections with collection mapping');
+
+      // Initialize database mappings first
+      ConnectionManager.initializeDatabaseMappings();
+
+      const connections = {};
+      const baseUri = databaseConfig.uri.replace(/\/[^/?]+(\?.*)?$/, '');
+      
+      // Get database configuration from environment/config
+      const databaseNames = databaseConfig.databases || {
+        admin: process.env.DB_NAME_ADMIN || 'insightserenity_dev_admin',
+        shared: process.env.DB_NAME_SHARED || 'insightserenity_dev_shared', 
+        audit: process.env.DB_NAME_AUDIT || 'insightserenity_dev_audit',
+        analytics: process.env.DB_NAME_ANALYTICS || 'insightserenity_dev_analytics'
+      };
+
+      // Remove tenantPrefix from direct connection as it's handled separately
+      const { tenantPrefix, ...directDatabases } = databaseNames;
+      
+      // Initialize connections for each configured database
+      for (const [dbType, dbName] of Object.entries(directDatabases)) {
+        try {
+          const connectionName = `${dbType}_connection`;
+          const dbUri = `${baseUri}/${dbName}`;
+          
+          logger.info(`Connecting to ${dbType} database`, { 
+            connectionName, 
+            database: dbName 
+          });
+
+          const connection = await ConnectionManager.connect(connectionName, {
+            uri: dbUri,
+            mongoOptions: {
+              ...databaseConfig.options,
+              ...options.mongoOptions
+            },
+            enableHealthCheck: options.enableHealthCheck !== false,
+            healthCheckInterval: options.healthCheckInterval || 30000,
+            retryOptions: options.retryOptions || {}
+          });
+
+          connections[dbType] = connection;
+          ConnectionManager.#databaseConnections.set(dbType, connection);
+
+          // ENHANCED: Map database type to connection name for routing
+          ConnectionManager.#databaseTypeMapping.set(dbType, connectionName);
+
+          // ENHANCED: Verify collections and setup collection routing
+          await ConnectionManager.#setupCollectionRouting(dbType, connection);
+
+          logger.info(`Successfully connected to ${dbType} database`, {
+            connectionName,
+            database: dbName,
+            readyState: connection.readyState,
+            collectionsConfigured: ConnectionManager.#databasePurposes.get(dbType)?.collections?.length || 0
+          });
+
+        } catch (error) {
+          logger.error(`Failed to connect to ${dbType} database`, {
+            database: dbName,
+            error: error.message
+          });
+
+          // In development, continue with other connections
+          if (config.environment?.isDevelopment) {
+            logger.warn(`Continuing initialization despite ${dbType} database connection failure`);
+            continue;
+          }
+
+          throw new AppError(
+            `Failed to connect to ${dbType} database`,
+            500,
+            'MULTI_DATABASE_CONNECTION_ERROR',
+            { 
+              databaseType: dbType,
+              databaseName: dbName,
+              originalError: error.message 
+            }
+          );
+        }
+      }
+
+      const connectedDatabases = Object.keys(connections);
+      
+      // ENHANCED: Log collection mapping summary
+      const collectionSummary = {};
+      for (const dbType of connectedDatabases) {
+        const purpose = ConnectionManager.#databasePurposes.get(dbType);
+        if (purpose) {
+          collectionSummary[dbType] = {
+            purpose: purpose.purpose,
+            collections: purpose.collections.length,
+            expectedCollections: purpose.collections
+          };
+        }
+      }
+
+      logger.info('Multiple database initialization completed with collection mapping', {
+        totalDatabases: connectedDatabases.length,
+        connectedDatabases,
+        totalConnections: ConnectionManager.#connections.size,
+        collectionMapping: collectionSummary,
+        collectionRouting: {
+          totalMappedCollections: ConnectionManager.#collectionToDatabase.size,
+          collectionsPerDatabase: Array.from(ConnectionManager.#databasePurposes.entries()).reduce((acc, [db, config]) => {
+            acc[db] = config.collections.length;
+            return acc;
+          }, {})
+        }
+      });
+
+      return connections;
+
+    } catch (error) {
+      logger.error('Failed to initialize multiple databases', error);
+
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw new AppError(
+        'Multiple database initialization failed',
+        500,
+        'MULTI_DATABASE_INIT_ERROR',
+        { originalError: error.message }
+      );
+    }
+  }
+
+  /**
+   * ENHANCED: Setup collection routing for a specific database
+   * @static
+   * @async
+   * @param {string} dbType - Database type (admin, shared, audit, analytics)
+   * @param {Object} connection - Database connection
+   */
+  static async #setupCollectionRouting(dbType, connection) {
+    try {
+      const purpose = ConnectionManager.#databasePurposes.get(dbType);
+      if (!purpose) {
+        logger.warn(`No purpose configuration found for database type: ${dbType}`);
+        return;
+      }
+
+      // Verify collections exist or can be created
+      const existingCollections = await connection.db.listCollections().toArray();
+      const existingNames = existingCollections.map(c => c.name);
+
+      const routingInfo = {
+        expected: purpose.collections.length,
+        existing: 0,
+        missing: [],
+        canCreate: true
+      };
+
+      for (const collectionName of purpose.collections) {
+        if (existingNames.includes(collectionName)) {
+          routingInfo.existing++;
+        } else {
+          routingInfo.missing.push(collectionName);
+        }
+      }
+
+      logger.info(`Collection routing setup for ${dbType}`, {
+        expected: routingInfo.expected,
+        existing: routingInfo.existing,
+        missing: routingInfo.missing.length,
+        missingCollections: routingInfo.missing.slice(0, 5), // Limit log output
+        coverage: routingInfo.expected > 0 ? (routingInfo.existing / routingInfo.expected * 100).toFixed(1) + '%' : '100%'
+      });
+
+    } catch (error) {
+      logger.error(`Failed to setup collection routing for ${dbType}`, {
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * ENHANCED: Gets a database-specific connection with automatic routing
+   * @static
+   * @param {string} dbType - Database type (admin, shared, audit, analytics)
+   * @returns {mongoose.Connection|null} Database connection or null
+   */
+  static getDatabaseConnection(dbType) {
+    // First check direct database connections
+    const directConnection = ConnectionManager.#databaseConnections.get(dbType);
+    if (directConnection) {
+      return directConnection;
+    }
+
+    // Fall back to connection name pattern
+    const connectionName = `${dbType}_connection`;
+    return ConnectionManager.#connections.get(connectionName) || null;
+  }
+
+  /**
+   * ENHANCED: Get database connection for a specific collection
+   * @static
+   * @param {string} collectionName - Name of the collection
+   * @returns {mongoose.Connection|null} Database connection for the collection
+   */
+  static getConnectionForCollection(collectionName) {
+    const dbType = ConnectionManager.#collectionToDatabase.get(collectionName);
+    if (dbType) {
+      return ConnectionManager.getDatabaseConnection(dbType);
+    }
+
+    // Default fallback to admin database for unmapped collections
+    logger.debug(`Collection ${collectionName} not mapped, using admin database`);
+    return ConnectionManager.getDatabaseConnection('admin') || 
+           ConnectionManager.getConnection('default');
+  }
+
+  /**
+   * ENHANCED: Get database type for a collection
+   * @static
+   * @param {string} collectionName - Name of the collection
+   * @returns {string|null} Database type or null if not mapped
+   */
+  static getDatabaseTypeForCollection(collectionName) {
+    return ConnectionManager.#collectionToDatabase.get(collectionName) || null;
+  }
+
+  /**
+   * ENHANCED: Get all collections for a database type
+   * @static
+   * @param {string} dbType - Database type
+   * @returns {Array<string>} Array of collection names
+   */
+  static getCollectionsForDatabase(dbType) {
+    const purpose = ConnectionManager.#databasePurposes.get(dbType);
+    return purpose ? purpose.collections : [];
+  }
+
+  /**
+   * ENHANCED: Get database routing information
+   * @static
+   * @returns {Object} Comprehensive routing information
+   */
+  static getConnectionRouting() {
+    return {
+      databases: Array.from(ConnectionManager.#databaseConnections.keys()),
+      tenants: Array.from(ConnectionManager.#tenantConnections.keys()),
+      totalConnections: ConnectionManager.#connections.size,
+      databaseConnections: ConnectionManager.#databaseConnections.size,
+      tenantConnections: ConnectionManager.#tenantConnections.size,
+      collectionRouting: {
+        totalMappedCollections: ConnectionManager.#collectionToDatabase.size,
+        collectionToDatabase: Object.fromEntries(ConnectionManager.#collectionToDatabase),
+        databasePurposes: Object.fromEntries(
+          Array.from(ConnectionManager.#databasePurposes.entries()).map(([db, config]) => [
+            db, 
+            {
+              purpose: config.purpose,
+              collections: config.collections
+            }
+          ])
+        )
+      },
+      connectionMapping: {
+        databases: Object.fromEntries(
+          Array.from(ConnectionManager.#databaseConnections.entries())
+            .map(([key, conn]) => [key, {
+              name: conn.name,
+              readyState: conn.readyState,
+              host: conn.host,
+              port: conn.port,
+              databaseName: conn.db?.databaseName
+            }])
+        ),
+        tenants: Object.fromEntries(
+          Array.from(ConnectionManager.#tenantConnections.entries())
+            .map(([key, conn]) => [key, {
+              name: conn.name,
+              readyState: conn.readyState,
+              host: conn.host,
+              port: conn.port,
+              databaseName: conn.db?.databaseName
+            }])
+        )
+      }
+    };
+  }
+
+  /**
+   * Creates or gets a tenant-specific database connection
+   * @static
+   * @async
+   * @param {string} tenantId - Tenant identifier
+   * @param {Object} [options={}] - Connection options
+   * @returns {Promise<mongoose.Connection>} Tenant database connection
+   * @throws {AppError} If tenant connection fails
+   */
+  static async createTenantConnection(tenantId, options = {}) {
+    try {
+      if (!tenantId) {
+        throw new AppError('Tenant ID is required', 400, 'MISSING_TENANT_ID');
+      }
+
+      // Check if tenant connection already exists
+      const existingConnection = ConnectionManager.#tenantConnections.get(tenantId);
+      if (existingConnection && existingConnection.readyState === ConnectionManager.#CONNECTION_STATES.CONNECTED) {
+        logger.info('Reusing existing tenant connection', { tenantId });
+        return existingConnection;
+      }
+
+      const tenantPrefix = config.database?.databases?.tenantPrefix || 'tenant_';
+      const tenantDbName = `${tenantPrefix}${tenantId}`;
+      const baseUri = config.database.uri.replace(/\/[^/?]+(\?.*)?$/, '');
+      const tenantUri = `${baseUri}/${tenantDbName}`;
+
+      const connectionName = `tenant_${tenantId}`;
+
+      logger.info('Creating tenant database connection', {
+        tenantId,
+        tenantDbName,
+        connectionName
+      });
+
+      const connection = await ConnectionManager.connect(connectionName, {
+        uri: tenantUri,
+        mongoOptions: {
+          ...config.database.options,
+          ...options.mongoOptions
+        },
+        enableHealthCheck: options.enableHealthCheck !== false,
+        healthCheckInterval: options.healthCheckInterval || 30000,
+        retryOptions: options.retryOptions || {}
+      });
+
+      // Store tenant connection
+      ConnectionManager.#tenantConnections.set(tenantId, connection);
+
+      logger.info('Tenant database connection established', {
+        tenantId,
+        tenantDbName,
+        connectionName,
+        readyState: connection.readyState
+      });
+
+      return connection;
+
+    } catch (error) {
+      logger.error('Failed to create tenant connection', {
+        tenantId,
+        error: error.message
+      });
+
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw new AppError(
+        'Tenant connection creation failed',
+        500,
+        'TENANT_CONNECTION_ERROR',
+        { 
+          tenantId,
+          originalError: error.message 
+        }
+      );
+    }
+  }
+
+  /**
+   * Gets a tenant database connection
+   * @static
+   * @param {string} tenantId - Tenant identifier
+   * @returns {mongoose.Connection|null} Tenant connection or null
+   */
+  static getTenantConnection(tenantId) {
+    if (!tenantId) {
+      return null;
+    }
+
+    // Check direct tenant connections
+    const directConnection = ConnectionManager.#tenantConnections.get(tenantId);
+    if (directConnection) {
+      return directConnection;
+    }
+
+    // Fall back to connection name pattern
+    const connectionName = `tenant_${tenantId}`;
+    return ConnectionManager.#connections.get(connectionName) || null;
+  }
+
+  /**
+   * Lists all tenant connections
+   * @static
+   * @returns {Map<string, mongoose.Connection>} All tenant connections
+   */
+  static getAllTenantConnections() {
+    return new Map(ConnectionManager.#tenantConnections);
+  }
+
+  /**
+   * Closes a tenant database connection
+   * @static
+   * @async
+   * @param {string} tenantId - Tenant identifier
+   * @param {boolean} [force=false] - Force close connection
+   * @returns {Promise<void>}
+   */
+  static async closeTenantConnection(tenantId, force = false) {
+    try {
+      if (!tenantId) {
+        throw new AppError('Tenant ID is required', 400, 'MISSING_TENANT_ID');
+      }
+
+      const connectionName = `tenant_${tenantId}`;
+      
+      // Close the connection
+      await ConnectionManager.disconnect(connectionName, force);
+
+      // Remove from tenant connections map
+      ConnectionManager.#tenantConnections.delete(tenantId);
+
+      logger.info('Tenant connection closed', { tenantId, forced: force });
+
+    } catch (error) {
+      logger.error('Failed to close tenant connection', {
+        tenantId,
+        error: error.message
+      });
+
+      throw new AppError(
+        'Tenant connection closure failed',
+        500,
+        'TENANT_DISCONNECT_ERROR',
+        { 
+          tenantId,
+          originalError: error.message 
+        }
+      );
+    }
+  }
+
+  /**
    * Disconnects from database
    * @static
    * @async
@@ -185,6 +702,21 @@ class ConnectionManager {
 
       // Remove from connections map
       ConnectionManager.#connections.delete(connectionName);
+
+      // Remove from specialized maps if applicable
+      for (const [dbType, conn] of ConnectionManager.#databaseConnections) {
+        if (conn === connection) {
+          ConnectionManager.#databaseConnections.delete(dbType);
+          break;
+        }
+      }
+
+      for (const [tenantId, conn] of ConnectionManager.#tenantConnections) {
+        if (conn === connection) {
+          ConnectionManager.#tenantConnections.delete(tenantId);
+          break;
+        }
+      }
 
       // Update stats
       const stats = ConnectionManager.#connectionStats.get(connectionName);
@@ -602,6 +1134,11 @@ class ConnectionManager {
   static clearAll() {
     ConnectionManager.#connections.clear();
     ConnectionManager.#connectionStats.clear();
+    ConnectionManager.#databaseConnections.clear();
+    ConnectionManager.#tenantConnections.clear();
+    ConnectionManager.#databaseTypeMapping.clear();
+    ConnectionManager.#collectionToDatabase.clear();
+    ConnectionManager.#databasePurposes.clear();
     
     // Clear all health check intervals
     ConnectionManager.#healthCheckIntervals.forEach(intervalId => {

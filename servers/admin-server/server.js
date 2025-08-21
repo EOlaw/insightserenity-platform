@@ -1,7 +1,7 @@
 /**
- * @file Admin Server Entry Point - ENHANCED VERSION WITH MODEL RECOVERY
- * @description Enterprise administration server with enhanced security, monitoring, and model recovery
- * @version 3.1.0
+ * @file Admin Server Entry Point - ENHANCED VERSION WITH MULTI-DATABASE INTEGRATION
+ * @description Enterprise administration server with multi-database architecture support
+ * @version 3.2.0
  */
 
 'use strict';
@@ -64,7 +64,7 @@ const HealthMonitor = require('../../shared/lib/utils/health-monitor');
 const SecurityManager = require('../../shared/lib/security/security-manager');
 
 /**
- * Admin Server class for platform administration with enhanced model recovery
+ * Admin Server class for platform administration with multi-database architecture
  * @class AdminServer
  */
 class AdminServer extends EventEmitter {
@@ -81,10 +81,15 @@ class AdminServer extends EventEmitter {
         this.mergedConfig = null;
         this.modelRecoveryAttempts = 0;
         this.maxModelRecoveryAttempts = 3;
+        
+        // Multi-database tracking
+        this.databaseConnections = new Map();
+        this.databaseHealthStatus = new Map();
+        this.databaseCollectionMapping = new Map();
     }
 
     /**
-     * Initialize and start the admin server with enhanced model recovery
+     * Initialize and start the admin server with multi-database architecture
      * @returns {Promise<http.Server|https.Server>} The server instance
      * @throws {Error} If server initialization fails
      */
@@ -110,6 +115,9 @@ class AdminServer extends EventEmitter {
             // Initialize database connection EARLY - before security verification
             await Database.initialize();
 
+            // ENHANCED: Initialize multi-database connections and validate architecture
+            await this.initializeMultiDatabaseArchitecture();
+
             // ENHANCED: Validate and recover models after database initialization
             await this.validateAndRecoverModels();
 
@@ -134,12 +142,18 @@ class AdminServer extends EventEmitter {
                     realTimeMonitoring: String(this.adminConfig?.features?.realTimeMonitoring || false),
                     advancedSecurity: String(this.adminConfig?.security?.advanced || false),
                     modelRecovery: String(true),
+                    multiDatabase: String(true),
                     redisEnabled: process.env.REDIS_ENABLED === 'true',
                     memoryFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true'
+                },
+                databases: {
+                    total: this.databaseConnections.size,
+                    connected: Array.from(this.databaseConnections.keys()),
+                    collectionsMapping: Object.fromEntries(this.databaseCollectionMapping)
                 }
             });
 
-            // Verify admin security prerequisites
+            // Verify admin security prerequisites with multi-database support
             await this.verifySecurityPrerequisites();
 
             // Initialize the Express application - FIXED: await the promise
@@ -149,17 +163,19 @@ class AdminServer extends EventEmitter {
                 throw new Error('Failed to initialize Admin Express application');
             }
 
-            // Initialize health monitoring with model status
+            // Initialize health monitoring with multi-database status
             this.healthMonitor = new HealthMonitor({
                 checkInterval: this.adminConfig.monitoring.healthCheckInterval || 30000,
-                services: ['database', 'redis', 'auth', 'audit', 'models'],
+                services: ['database', 'redis', 'auth', 'audit', 'models', 'multi-database'],
                 customChecks: {
                     adminSessions: () => this.checkAdminSessions(),
                     securityStatus: () => this.checkSecurityStatus(),
                     environmentConfig: () => this.checkEnvironmentConfig(),
                     auditSystem: () => this.checkAuditSystemHealth(),
                     modelStatus: () => this.checkModelStatus(),
-                    modelRecovery: () => this.checkModelRecoveryStatus()
+                    modelRecovery: () => this.checkModelRecoveryStatus(),
+                    multiDatabaseHealth: () => this.checkMultiDatabaseHealth(),
+                    databaseCollectionMapping: () => this.checkDatabaseCollectionMapping()
                 }
             });
 
@@ -186,7 +202,7 @@ class AdminServer extends EventEmitter {
             this.setupSecurityMonitoring();
             this.setupModelRecoveryMonitoring();
 
-            // Log server startup success
+            // Log server startup success with detailed multi-database information
             logger.info('Admin server startup completed successfully', {
                 version: config.app?.version || '1.0.0',
                 environment: config.app?.env || 'development',
@@ -197,7 +213,20 @@ class AdminServer extends EventEmitter {
                 auditEnabled: auditConfig?.enabled || false,
                 auditStorageType: auditConfig?.storage?.type || 'hybrid',
                 modelRecoveryEnabled: true,
-                modelsHealthy: await this.getModelsHealthStatus()
+                modelsHealthy: await this.getModelsHealthStatus(),
+                multiDatabaseArchitecture: {
+                    enabled: true,
+                    totalDatabases: this.databaseConnections.size,
+                    databases: Array.from(this.databaseConnections.keys()),
+                    collectionsPerDatabase: Object.fromEntries(
+                        Array.from(this.databaseCollectionMapping.entries()).map(([db, collections]) => 
+                            [db, collections.length]
+                        )
+                    ),
+                    healthyDatabases: Array.from(this.databaseHealthStatus.entries())
+                        .filter(([db, status]) => status.healthy)
+                        .map(([db]) => db).length
+                }
             });
 
             return this.server;
@@ -210,6 +239,10 @@ class AdminServer extends EventEmitter {
                     ssl: this.shouldUseSSL() ? 'enabled' : 'disabled',
                     redis: process.env.REDIS_ENABLED,
                     environment: process.env.NODE_ENV
+                },
+                databases: {
+                    configured: this.databaseConnections.size,
+                    healthy: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length
                 }
             });
 
@@ -218,13 +251,275 @@ class AdminServer extends EventEmitter {
     }
 
     /**
-     * ENHANCED: Validate and recover models with comprehensive error handling
+     * ENHANCED: Initialize multi-database architecture for admin operations
+     */
+    async initializeMultiDatabaseArchitecture() {
+        try {
+            logger.info('Initializing multi-database architecture for admin server');
+
+            // Get all available database connections from the Database module
+            const availableConnections = Database.getAllConnections();
+            const databaseRouting = Database.getConnectionRouting();
+
+            logger.info('Available database connections', {
+                totalConnections: availableConnections.size,
+                databaseConnections: databaseRouting.databaseConnections,
+                tenantConnections: databaseRouting.tenantConnections
+            });
+
+            // Map database types to their specific purposes and collections
+            const databasePurposes = {
+                admin: {
+                    purpose: 'Administrative operations, user management, system configuration',
+                    collections: [
+                        'users', 'user_profiles', 'user_activities', 'login_history',
+                        'roles', 'permissions', 'organizations', 'organization_members',
+                        'organization_invitations', 'tenants', 'system_configurations',
+                        'security_incidents', 'sessions'
+                    ]
+                },
+                shared: {
+                    purpose: 'Shared resources, common data, cross-tenant information',
+                    collections: [
+                        'subscription_plans', 'features', 'system_settings',
+                        'webhooks', 'api_integrations', 'notifications',
+                        'oauth_providers', 'passkeys'
+                    ]
+                },
+                audit: {
+                    purpose: 'Audit trails, compliance logging, security monitoring',
+                    collections: [
+                        'audit_logs', 'audit_alerts', 'audit_exports',
+                        'audit_retention_policies', 'compliance_mappings',
+                        'data_breaches', 'erasure_logs', 'processing_activities'
+                    ]
+                },
+                analytics: {
+                    purpose: 'Analytics data, usage metrics, performance tracking',
+                    collections: [
+                        'api_usage', 'usage_records', 'performance_metrics',
+                        'user_analytics', 'system_metrics'
+                    ]
+                }
+            };
+
+            // Initialize each database connection and verify collections
+            for (const [dbType, config] of Object.entries(databasePurposes)) {
+                try {
+                    // Get database connection
+                    const connection = Database.getDatabaseConnection(dbType);
+                    
+                    if (connection) {
+                        // Store connection reference
+                        this.databaseConnections.set(dbType, connection);
+                        
+                        // Map collections to this database
+                        this.databaseCollectionMapping.set(dbType, config.collections);
+                        
+                        // Verify database health
+                        const healthStatus = await this.verifyDatabaseHealth(dbType, connection, config);
+                        this.databaseHealthStatus.set(dbType, healthStatus);
+                        
+                        logger.info(`Database ${dbType} initialized successfully`, {
+                            purpose: config.purpose,
+                            collections: config.collections.length,
+                            healthy: healthStatus.healthy,
+                            connectionName: connection.name,
+                            databaseName: connection.db?.databaseName
+                        });
+                    } else {
+                        logger.warn(`Database connection for ${dbType} not available`, {
+                            expectedPurpose: config.purpose,
+                            expectedCollections: config.collections.length
+                        });
+                        
+                        this.databaseHealthStatus.set(dbType, {
+                            healthy: false,
+                            error: 'Connection not available',
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                } catch (error) {
+                    logger.error(`Failed to initialize database ${dbType}`, {
+                        error: error.message,
+                        purpose: config.purpose
+                    });
+                    
+                    this.databaseHealthStatus.set(dbType, {
+                        healthy: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+
+            // Verify minimum database requirements
+            const healthyDatabases = Array.from(this.databaseHealthStatus.entries())
+                .filter(([db, status]) => status.healthy);
+            
+            if (healthyDatabases.length === 0) {
+                throw new Error('No healthy database connections available for admin operations');
+            }
+
+            // Ensure admin database is available for core operations
+            if (!this.databaseHealthStatus.get('admin')?.healthy) {
+                logger.warn('Admin database not healthy, operations may be limited');
+            }
+
+            logger.info('Multi-database architecture initialized successfully', {
+                totalDatabases: this.databaseConnections.size,
+                healthyDatabases: healthyDatabases.length,
+                databaseStatus: Object.fromEntries(
+                    Array.from(this.databaseHealthStatus.entries()).map(([db, status]) => 
+                        [db, { healthy: status.healthy, error: status.error }]
+                    )
+                ),
+                collectionsMapping: Object.fromEntries(this.databaseCollectionMapping)
+            });
+
+        } catch (error) {
+            logger.error('Failed to initialize multi-database architecture', {
+                error: error.message,
+                stack: error.stack
+            });
+            throw new AppError('Multi-database initialization failed', 500, 'MULTI_DATABASE_INIT_ERROR', {
+                originalError: error.message
+            });
+        }
+    }
+
+    /**
+     * Verify database health and collection availability
+     */
+    async verifyDatabaseHealth(dbType, connection, config) {
+        try {
+            const healthStatus = {
+                healthy: false,
+                collections: {},
+                totalCollections: 0,
+                availableCollections: 0,
+                errors: [],
+                timestamp: new Date().toISOString()
+            };
+
+            // Test basic database connectivity
+            const collections = await connection.db.listCollections().toArray();
+            const availableCollectionNames = collections.map(c => c.name);
+            
+            healthStatus.totalCollections = collections.length;
+
+            // Check each expected collection
+            for (const expectedCollection of config.collections) {
+                try {
+                    const exists = availableCollectionNames.includes(expectedCollection);
+                    
+                    if (exists) {
+                        // Test collection access
+                        const count = await connection.db.collection(expectedCollection).countDocuments({}, { limit: 1 });
+                        healthStatus.collections[expectedCollection] = {
+                            exists: true,
+                            accessible: true,
+                            hasDocuments: count > 0
+                        };
+                        healthStatus.availableCollections++;
+                    } else {
+                        healthStatus.collections[expectedCollection] = {
+                            exists: false,
+                            accessible: false,
+                            hasDocuments: false
+                        };
+                    }
+                } catch (collectionError) {
+                    healthStatus.collections[expectedCollection] = {
+                        exists: availableCollectionNames.includes(expectedCollection),
+                        accessible: false,
+                        error: collectionError.message
+                    };
+                    healthStatus.errors.push(`${expectedCollection}: ${collectionError.message}`);
+                }
+            }
+
+            // Consider database healthy if basic connectivity works
+            healthStatus.healthy = true;
+
+            // Test write operations
+            try {
+                const testCollection = connection.db.collection('_admin_health_test');
+                const testDoc = {
+                    test: true,
+                    timestamp: new Date(),
+                    dbType: dbType,
+                    serverInstance: process.pid
+                };
+                
+                await testCollection.insertOne(testDoc);
+                await testCollection.deleteOne({ test: true });
+                
+                healthStatus.writeOperations = true;
+            } catch (writeError) {
+                healthStatus.writeOperations = false;
+                healthStatus.errors.push(`Write test failed: ${writeError.message}`);
+            }
+
+            return healthStatus;
+
+        } catch (error) {
+            return {
+                healthy: false,
+                error: error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    /**
+     * Get database connection for specific operations
+     */
+    getDatabaseForOperation(operationType) {
+        const operationMapping = {
+            // User and organization management
+            'user': 'admin',
+            'organization': 'admin',
+            'role': 'admin',
+            'permission': 'admin',
+            'session': 'admin',
+            'authentication': 'admin',
+            
+            // Shared resources
+            'subscription': 'shared',
+            'plan': 'shared',
+            'feature': 'shared',
+            'webhook': 'shared',
+            'integration': 'shared',
+            'notification': 'shared',
+            
+            // Audit and compliance
+            'audit': 'audit',
+            'compliance': 'audit',
+            'security': 'audit',
+            'breach': 'audit',
+            'erasure': 'audit',
+            
+            // Analytics and metrics
+            'analytics': 'analytics',
+            'usage': 'analytics',
+            'metrics': 'analytics',
+            'performance': 'analytics'
+        };
+
+        const dbType = operationMapping[operationType] || 'admin';
+        return this.databaseConnections.get(dbType);
+    }
+
+    /**
+     * ENHANCED: Validate and recover models with multi-database support
      */
     async validateAndRecoverModels() {
         try {
-            logger.info('Starting enhanced model validation and recovery', {
+            logger.info('Starting enhanced model validation and recovery with multi-database support', {
                 attempt: this.modelRecoveryAttempts + 1,
-                maxAttempts: this.maxModelRecoveryAttempts
+                maxAttempts: this.maxModelRecoveryAttempts,
+                availableDatabases: Array.from(this.databaseConnections.keys())
             });
 
             // Get current model status
@@ -269,7 +564,7 @@ class AdminServer extends EventEmitter {
                 });
             }
 
-            // Validate essential models are available
+            // Validate essential models are available across databases
             const essentialModels = ['User', 'Organization', 'AuditLog'];
             const missingEssential = [];
 
@@ -293,10 +588,10 @@ class AdminServer extends EventEmitter {
                 await this.createFallbackModels(missingEssential);
             }
 
-            // Test database operations
-            await this.testDatabaseOperations();
+            // Test database operations across all available databases
+            await this.testMultiDatabaseOperations();
 
-            // Create test collections to ensure database is properly set up
+            // Create test collections to ensure databases are properly set up
             if (Database.createTestCollections) {
                 try {
                     const testResult = await Database.createTestCollections();
@@ -309,7 +604,9 @@ class AdminServer extends EventEmitter {
             logger.info('Model validation and recovery completed successfully', {
                 recoveryAttempts: this.modelRecoveryAttempts,
                 essentialModelsAvailable: essentialModels.length - missingEssential.length,
-                totalEssentialModels: essentialModels.length
+                totalEssentialModels: essentialModels.length,
+                databasesAvailable: this.databaseConnections.size,
+                healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length
             });
 
         } catch (error) {
@@ -329,6 +626,77 @@ class AdminServer extends EventEmitter {
                 originalError: error.message,
                 recoveryAttempts: this.modelRecoveryAttempts
             });
+        }
+    }
+
+    /**
+     * Test database operations across all available databases
+     */
+    async testMultiDatabaseOperations() {
+        try {
+            const testResults = new Map();
+
+            for (const [dbType, connection] of this.databaseConnections) {
+                try {
+                    // Test basic read operation
+                    const collections = await connection.db.listCollections().toArray();
+                    
+                    // Test basic write operation
+                    const testCollection = connection.db.collection('_admin_multi_db_test');
+                    const testDoc = {
+                        test: true,
+                        timestamp: new Date(),
+                        dbType: dbType,
+                        serverInstance: process.pid
+                    };
+                    
+                    await testCollection.insertOne(testDoc);
+                    await testCollection.deleteOne({ test: true });
+                    
+                    testResults.set(dbType, {
+                        success: true,
+                        collections: collections.length,
+                        readOperations: true,
+                        writeOperations: true
+                    });
+                    
+                    logger.debug(`Database operations test passed for ${dbType}`, {
+                        collections: collections.length,
+                        connectionStatus: 'healthy'
+                    });
+                    
+                } catch (dbError) {
+                    testResults.set(dbType, {
+                        success: false,
+                        error: dbError.message
+                    });
+                    
+                    logger.warn(`Database operations test failed for ${dbType}`, {
+                        error: dbError.message
+                    });
+                }
+            }
+
+            const successfulTests = Array.from(testResults.values()).filter(r => r.success).length;
+            const totalTests = testResults.size;
+
+            logger.info('Multi-database operations test completed', {
+                totalDatabases: totalTests,
+                successfulTests: successfulTests,
+                failedTests: totalTests - successfulTests,
+                results: Object.fromEntries(testResults)
+            });
+
+            if (successfulTests === 0) {
+                throw new Error('All database operation tests failed');
+            }
+
+        } catch (error) {
+            logger.error('Multi-database operations test failed', {
+                error: error.message,
+                stack: error.stack
+            });
+            throw error;
         }
     }
 
@@ -420,62 +788,39 @@ class AdminServer extends EventEmitter {
     }
 
     /**
-     * Test basic database operations
+     * Check multi-database health status
      */
-    async testDatabaseOperations() {
+    async checkMultiDatabaseHealth() {
         try {
-            const connection = Database.getConnection();
-            if (connection) {
-                // Test basic read operation
-                const collections = await connection.db.listCollections().toArray();
-                logger.info('Database operations test passed', { 
-                    collections: collections.length,
-                    connectionStatus: 'healthy'
-                });
-
-                // Test basic write operation
-                const testCollection = connection.db.collection('_admin_server_test');
-                const testDoc = { 
-                    test: true, 
-                    timestamp: new Date(),
-                    serverInstance: process.pid
-                };
-                
-                await testCollection.insertOne(testDoc);
-                await testCollection.deleteOne({ test: true });
-                
-                logger.debug('Database write/delete operations test passed');
-                
-            } else {
-                throw new Error('No database connection available');
-            }
-        } catch (error) {
-            logger.error('Database operations test failed', { 
-                error: error.message,
-                stack: error.stack
-            });
-            throw error;
-        }
-    }
-
-    /**
-     * Check current model status
-     */
-    async checkModelStatus() {
-        try {
-            const summary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
-            const errors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
-            
-            return {
-                healthy: summary.failed === 0,
-                summary,
-                errors: errors.slice(0, 5), // Limit error details
-                lastCheck: new Date().toISOString(),
-                recoveryAttempts: this.modelRecoveryAttempts,
-                maxRecoveryAttempts: this.maxModelRecoveryAttempts
+            const healthStatus = {
+                healthy: true,
+                totalDatabases: this.databaseConnections.size,
+                healthyDatabases: 0,
+                unhealthyDatabases: 0,
+                databases: {},
+                lastCheck: new Date().toISOString()
             };
+
+            for (const [dbType, status] of this.databaseHealthStatus) {
+                healthStatus.databases[dbType] = {
+                    healthy: status.healthy,
+                    collections: status.collections ? Object.keys(status.collections).length : 0,
+                    writeOperations: status.writeOperations,
+                    error: status.error,
+                    lastCheck: status.timestamp
+                };
+
+                if (status.healthy) {
+                    healthStatus.healthyDatabases++;
+                } else {
+                    healthStatus.unhealthyDatabases++;
+                    healthStatus.healthy = false;
+                }
+            }
+
+            return healthStatus;
         } catch (error) {
-            logger.error('Model status check failed', { error: error.message });
+            logger.error('Multi-database health check failed', { error: error.message });
             return {
                 healthy: false,
                 error: error.message,
@@ -485,122 +830,183 @@ class AdminServer extends EventEmitter {
     }
 
     /**
-     * Check model recovery status
+     * Check database collection mapping status
      */
-    async checkModelRecoveryStatus() {
+    async checkDatabaseCollectionMapping() {
         try {
-            return {
-                healthy: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts,
-                recoveryAttempts: this.modelRecoveryAttempts,
-                maxAttempts: this.maxModelRecoveryAttempts,
-                canRecover: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts,
-                lastRecoveryAttempt: this.modelRecoveryAttempts > 0 ? new Date().toISOString() : null
+            const mappingStatus = {
+                healthy: true,
+                totalMappings: this.databaseCollectionMapping.size,
+                mappings: {},
+                coverage: {},
+                lastCheck: new Date().toISOString()
             };
+
+            for (const [dbType, collections] of this.databaseCollectionMapping) {
+                const connection = this.databaseConnections.get(dbType);
+                if (connection) {
+                    try {
+                        const actualCollections = await connection.db.listCollections().toArray();
+                        const actualNames = actualCollections.map(c => c.name);
+                        
+                        const expectedCollections = collections;
+                        const existingCollections = expectedCollections.filter(name => actualNames.includes(name));
+                        const missingCollections = expectedCollections.filter(name => !actualNames.includes(name));
+                        
+                        mappingStatus.mappings[dbType] = {
+                            expected: expectedCollections.length,
+                            existing: existingCollections.length,
+                            missing: missingCollections.length,
+                            missingList: missingCollections,
+                            coverage: expectedCollections.length > 0 ? 
+                                (existingCollections.length / expectedCollections.length) * 100 : 100
+                        };
+                        
+                        mappingStatus.coverage[dbType] = mappingStatus.mappings[dbType].coverage;
+                    } catch (error) {
+                        mappingStatus.mappings[dbType] = {
+                            error: error.message,
+                            coverage: 0
+                        };
+                        mappingStatus.coverage[dbType] = 0;
+                        mappingStatus.healthy = false;
+                    }
+                } else {
+                    mappingStatus.mappings[dbType] = {
+                        error: 'Connection not available',
+                        coverage: 0
+                    };
+                    mappingStatus.coverage[dbType] = 0;
+                    mappingStatus.healthy = false;
+                }
+            }
+
+            return mappingStatus;
         } catch (error) {
+            logger.error('Database collection mapping check failed', { error: error.message });
             return {
                 healthy: false,
-                error: error.message
+                error: error.message,
+                lastCheck: new Date().toISOString()
             };
         }
     }
 
     /**
-     * Get models health status
+     * ENHANCED: Verify security prerequisites for admin server with multi-database support
      */
-    async getModelsHealthStatus() {
+    async verifySecurityPrerequisites() {
+        const checks = [];
+
+        // Check SSL certificates only if SSL is required
+        if (this.shouldUseSSL()) {
+            checks.push(this.verifySslCertificates());
+        }
+
+        // Check IP whitelist configuration
+        if (this.adminConfig.security.ipWhitelist?.enabled) {
+            checks.push(this.verifyIpWhitelist());
+        }
+
+        // Check audit log availability
+        checks.push(this.verifyAuditLogSystem());
+
+        // ENHANCED: Check multi-database permissions
+        checks.push(this.verifyMultiDatabasePermissions());
+
+        // Check environment configuration
+        checks.push(this.verifyEnvironmentConfiguration());
+
+        const results = await Promise.allSettled(checks);
+        const failures = results.filter(r => r.status === 'rejected');
+
+        if (failures.length > 0) {
+            throw new Error(`Security prerequisites failed: ${failures.map(f => f.reason).join(', ')}`);
+        }
+
+        logger.info('All security prerequisites verified successfully with multi-database support');
+    }
+
+    /**
+     * ENHANCED: Verify database permissions for admin operations across all databases
+     */
+    async verifyMultiDatabasePermissions() {
         try {
-            const summary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { successful: 0, failed: 0 };
-            return {
-                total: summary.total || summary.successful + summary.failed,
-                successful: summary.successful,
-                failed: summary.failed,
-                healthy: summary.failed === 0 || summary.successful > 0
-            };
+            const permissionResults = new Map();
+
+            // Check permissions for each database
+            for (const [dbType, connection] of this.databaseConnections) {
+                try {
+                    // Test basic read permissions
+                    const collections = await connection.db.listCollections().toArray();
+                    
+                    // Test write permissions
+                    const testCollection = connection.db.collection('_admin_permission_test');
+                    const testDoc = {
+                        test: true,
+                        timestamp: new Date(),
+                        dbType: dbType
+                    };
+                    
+                    await testCollection.insertOne(testDoc);
+                    await testCollection.deleteOne({ test: true });
+                    
+                    permissionResults.set(dbType, {
+                        success: true,
+                        readPermissions: true,
+                        writePermissions: true,
+                        collections: collections.length
+                    });
+                    
+                    logger.info(`Database permissions verified for ${dbType}`, {
+                        collections: collections.length,
+                        readWrite: 'success'
+                    });
+                    
+                } catch (error) {
+                    permissionResults.set(dbType, {
+                        success: false,
+                        error: error.message
+                    });
+                    
+                    logger.warn(`Database permission check failed for ${dbType}`, {
+                        error: error.message
+                    });
+                }
+            }
+
+            const successfulChecks = Array.from(permissionResults.values()).filter(r => r.success).length;
+            const totalChecks = permissionResults.size;
+
+            if (successfulChecks === 0) {
+                throw new AppError('No database permissions available for admin operations', 500, 'NO_DATABASE_PERMISSIONS');
+            }
+
+            if (successfulChecks < totalChecks) {
+                logger.warn('Some database permission checks failed', {
+                    successful: successfulChecks,
+                    total: totalChecks,
+                    results: Object.fromEntries(permissionResults)
+                });
+            }
+
+            logger.info('Multi-database permissions verified', {
+                totalDatabases: totalChecks,
+                successfulChecks: successfulChecks,
+                coverage: (successfulChecks / totalChecks) * 100
+            });
+
+            return true;
         } catch (error) {
-            return { healthy: false, error: error.message };
+            throw new AppError(`Multi-database permission check failed: ${error.message}`, 500, 'MULTI_DATABASE_PERMISSION_ERROR');
         }
     }
 
     /**
-     * Setup model recovery monitoring
-     */
-    setupModelRecoveryMonitoring() {
-        try {
-            // Monitor for model-related events
-            this.on('model:recovery:needed', async (data) => {
-                logger.warn('Model recovery needed', data);
-                
-                if (this.modelRecoveryAttempts < this.maxModelRecoveryAttempts) {
-                    try {
-                        await this.validateAndRecoverModels();
-                    } catch (error) {
-                        logger.error('Automatic model recovery failed', { error: error.message });
-                    }
-                }
-            });
-
-            // Monitor for model failures
-            this.on('model:failure', async (data) => {
-                logger.error('Model failure detected', data);
-                
-                if (this.auditService) {
-                    try {
-                        await this.auditService.logEvent({
-                            eventType: AuditEvents.SYSTEM.ERROR,
-                            userId: 'system',
-                            tenantId: 'admin',
-                            resource: 'model_system',
-                            action: 'model_failure',
-                            result: 'failure',
-                            metadata: data
-                        });
-                    } catch (auditError) {
-                        logger.warn('Failed to log model failure to audit', { error: auditError.message });
-                    }
-                }
-            });
-
-            logger.info('Model recovery monitoring setup completed');
-
-        } catch (error) {
-            logger.error('Failed to setup model recovery monitoring', { error: error.message });
-        }
-    }
-
-    /**
-     * FIXED: Determine if SSL should be used
+     * ENHANCED: Determine if SSL should be used
      * @private
      * @returns {boolean} Whether SSL should be used
      */
-    // shouldUseSSL() {
-    //     // Check admin-specific SSL configuration first
-    //     if (this.adminConfig?.security?.forceSSL === true) {
-    //         return true;
-    //     }
-
-    //     // Check if SSL is explicitly disabled
-    //     if (this.adminConfig?.security?.forceSSL === false) {
-    //         return false;
-    //     }
-
-    //     // Check environment variable
-    //     if (process.env.ADMIN_FORCE_SSL === 'true') {
-    //         return true;
-    //     }
-
-    //     // Check for SSL certificates existence
-    //     if (this.adminConfig?.security?.ssl?.keyPath && this.adminConfig?.security?.ssl?.certPath) {
-    //         const keyPath = path.resolve(process.cwd(), this.adminConfig.security.ssl.keyPath);
-    //         const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl.certPath);
-            
-    //         if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-    //             return true;
-    //         }
-    //     }
-
-    //     // Default to false for development
-    //     return false;
-    // }
     shouldUseSSL() {
         // Check if SSL is explicitly enabled in admin configuration
         if (this.adminConfig?.security?.ssl?.enabled === true) {
@@ -662,7 +1068,8 @@ class AdminServer extends EventEmitter {
                     realTimeMonitoring: process.env.ADMIN_REAL_TIME_MONITORING !== 'false',
                     advancedAnalytics: process.env.ADMIN_ADVANCED_ANALYTICS !== 'false',
                     bulkOperations: process.env.ADMIN_BULK_OPERATIONS !== 'false',
-                    modelRecovery: true
+                    modelRecovery: true,
+                    multiDatabase: true
                 },
                 monitoring: {
                     healthCheckInterval: parseInt(process.env.ADMIN_HEALTH_CHECK_INTERVAL, 10) || 30000,
@@ -687,7 +1094,8 @@ class AdminServer extends EventEmitter {
                 mfaRequired: this.adminConfig.security.requireMFA,
                 featuresEnabled: Object.keys(this.adminConfig.features).length,
                 monitoringEnabled: this.adminConfig.monitoring.metricsEnabled,
-                modelRecoveryEnabled: this.adminConfig.features.modelRecovery
+                modelRecoveryEnabled: this.adminConfig.features.modelRecovery,
+                multiDatabaseEnabled: this.adminConfig.features.multiDatabase
             });
 
         } catch (error) {
@@ -713,7 +1121,8 @@ class AdminServer extends EventEmitter {
                     realTimeMonitoring: true,
                     advancedAnalytics: false,
                     bulkOperations: false,
-                    modelRecovery: true
+                    modelRecovery: true,
+                    multiDatabase: true
                 },
                 monitoring: {
                     healthCheckInterval: 30000,
@@ -867,7 +1276,8 @@ class AdminServer extends EventEmitter {
             redisEnabled: process.env.REDIS_ENABLED === 'true',
             sessionStore: process.env.SESSION_STORE,
             cacheFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true',
-            auditEnabled: auditConfig?.enabled || false
+            auditEnabled: auditConfig?.enabled || false,
+            multiDatabaseEnabled: this.adminConfig?.features?.multiDatabase || false
         });
 
         return true;
@@ -908,41 +1318,6 @@ class AdminServer extends EventEmitter {
     createHttpServer(app) {
         logger.warn('Creating HTTP server for admin - development only');
         return http.createServer(app);
-    }
-
-    /**
-     * Verify security prerequisites for admin server
-     */
-    async verifySecurityPrerequisites() {
-        const checks = [];
-
-        // Check SSL certificates only if SSL is required
-        if (this.shouldUseSSL()) {
-            checks.push(this.verifySslCertificates());
-        }
-
-        // Check IP whitelist configuration
-        if (this.adminConfig.security.ipWhitelist?.enabled) {
-            checks.push(this.verifyIpWhitelist());
-        }
-
-        // Check audit log availability
-        checks.push(this.verifyAuditLogSystem());
-
-        // Check admin database permissions
-        checks.push(this.verifyDatabasePermissions());
-
-        // Check environment configuration
-        checks.push(this.verifyEnvironmentConfiguration());
-
-        const results = await Promise.allSettled(checks);
-        const failures = results.filter(r => r.status === 'rejected');
-
-        if (failures.length > 0) {
-            throw new Error(`Security prerequisites failed: ${failures.map(f => f.reason).join(', ')}`);
-        }
-
-        logger.info('All security prerequisites verified successfully');
     }
 
     /**
@@ -1049,20 +1424,6 @@ class AdminServer extends EventEmitter {
     }
 
     /**
-     * Verify database permissions for admin operations
-     */
-    async verifyDatabasePermissions() {
-        try {
-            const db = await Database.getConnection();
-            const collections = await db.db.listCollections().toArray();
-            logger.info('Database permissions verified', { collections: collections.length });
-            return true;
-        } catch (error) {
-            throw new AppError(`Database permission check failed: ${error.message}`, 500, 'DATABASE_PERMISSION_ERROR');
-        }
-    }
-
-    /**
      * Start server listening
      */
     listen() {
@@ -1089,6 +1450,12 @@ class AdminServer extends EventEmitter {
                         enabled: auditConfig?.enabled || false,
                         storageType: auditConfig?.storage?.type || 'memory',
                         environment: auditConfig?.environment || 'development'
+                    },
+                    multiDatabase: {
+                        enabled: this.adminConfig.features.multiDatabase,
+                        totalDatabases: this.databaseConnections.size,
+                        healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length,
+                        databases: Array.from(this.databaseConnections.keys())
                     }
                 });
 
@@ -1096,13 +1463,21 @@ class AdminServer extends EventEmitter {
                 console.log(`\n🚀 InsightSerenity Admin Server Started`);
                 console.log(`📍 URL: ${protocol.toLowerCase()}://${host}:${port}`);
                 console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
-                console.log(`🗄️  Database: Connected`);
+                console.log(`🗄️  Database: Multi-Database Architecture (${this.databaseConnections.size} databases)`);
                 console.log(`💾 Cache: ${process.env.REDIS_ENABLED === 'true' ? 'Redis' : 'Memory'}`);
                 console.log(`🛡️  Security: ${protocol} ${this.adminConfig.security.ipWhitelist?.enabled ? '+ IP Whitelist' : ''}`);
                 console.log(`📊 Admin Dashboard: ${protocol.toLowerCase()}://${host}:${port}/admin/dashboard`);
                 console.log(`🔍 Health Check: ${protocol.toLowerCase()}://${host}:${port}/health`);
                 console.log(`📋 Audit System: ${auditConfig?.enabled ? 'Enabled' : 'Disabled'} (${auditConfig?.storage?.type || 'memory'})`);
                 console.log(`🔧 Model Recovery: Enabled`);
+                console.log(`🏗️  Multi-Database: ${this.databaseConnections.size} databases connected`);
+                
+                // Display database information
+                for (const [dbType, connection] of this.databaseConnections) {
+                    const status = this.databaseHealthStatus.get(dbType);
+                    const collections = this.databaseCollectionMapping.get(dbType);
+                    console.log(`   - ${dbType}: ${status?.healthy ? '✅' : '❌'} (${collections?.length || 0} collections)`);
+                }
 
                 if (process.env.NODE_ENV === 'development') {
                     console.log(`🐛 Debugger: ws://${host}:9230`);
@@ -1245,8 +1620,118 @@ class AdminServer extends EventEmitter {
             fallbackToMemory: process.env.CACHE_FALLBACK_TO_MEMORY === 'true',
             sessionStore: process.env.SESSION_STORE || 'memory',
             environment: process.env.NODE_ENV,
-            auditEnabled: auditConfig?.enabled || false
+            auditEnabled: auditConfig?.enabled || false,
+            multiDatabaseEnabled: this.adminConfig?.features?.multiDatabase || false
         };
+    }
+
+    /**
+     * Check current model status
+     */
+    async checkModelStatus() {
+        try {
+            const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
+            const modelErrors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
+            
+            return {
+                healthy: modelSummary.failed === 0,
+                summary: modelSummary,
+                errors: modelErrors.slice(0, 5), // Limit error details
+                lastCheck: new Date().toISOString(),
+                recoveryAttempts: this.modelRecoveryAttempts,
+                maxRecoveryAttempts: this.maxModelRecoveryAttempts
+            };
+        } catch (error) {
+            logger.error('Model status check failed', { error: error.message });
+            return {
+                healthy: false,
+                error: error.message,
+                lastCheck: new Date().toISOString()
+            };
+        }
+    }
+
+    /**
+     * Check model recovery status
+     */
+    async checkModelRecoveryStatus() {
+        try {
+            return {
+                healthy: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts,
+                recoveryAttempts: this.modelRecoveryAttempts,
+                maxAttempts: this.maxModelRecoveryAttempts,
+                canRecover: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts,
+                lastRecoveryAttempt: this.modelRecoveryAttempts > 0 ? new Date().toISOString() : null
+            };
+        } catch (error) {
+            return {
+                healthy: false,
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Get models health status
+     */
+    async getModelsHealthStatus() {
+        try {
+            const summary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { successful: 0, failed: 0 };
+            return {
+                total: summary.total || summary.successful + summary.failed,
+                successful: summary.successful,
+                failed: summary.failed,
+                healthy: summary.failed === 0 || summary.successful > 0
+            };
+        } catch (error) {
+            return { healthy: false, error: error.message };
+        }
+    }
+
+    /**
+     * Setup model recovery monitoring
+     */
+    setupModelRecoveryMonitoring() {
+        try {
+            // Monitor for model-related events
+            this.on('model:recovery:needed', async (data) => {
+                logger.warn('Model recovery needed', data);
+                
+                if (this.modelRecoveryAttempts < this.maxModelRecoveryAttempts) {
+                    try {
+                        await this.validateAndRecoverModels();
+                    } catch (error) {
+                        logger.error('Automatic model recovery failed', { error: error.message });
+                    }
+                }
+            });
+
+            // Monitor for model failures
+            this.on('model:failure', async (data) => {
+                logger.error('Model failure detected', data);
+                
+                if (this.auditService) {
+                    try {
+                        await this.auditService.logEvent({
+                            eventType: AuditEvents.SYSTEM.ERROR,
+                            userId: 'system',
+                            tenantId: 'admin',
+                            resource: 'model_system',
+                            action: 'model_failure',
+                            result: 'failure',
+                            metadata: data
+                        });
+                    } catch (auditError) {
+                        logger.warn('Failed to log model failure to audit', { error: auditError.message });
+                    }
+                }
+            });
+
+            logger.info('Model recovery monitoring setup completed');
+
+        } catch (error) {
+            logger.error('Failed to setup model recovery monitoring', { error: error.message });
+        }
     }
 
     /**
@@ -1268,7 +1753,11 @@ class AdminServer extends EventEmitter {
                     signal,
                     uptime: process.uptime(),
                     activeConnections: this.adminConnections.size,
-                    shutdownInitiated: new Date().toISOString()
+                    shutdownInitiated: new Date().toISOString(),
+                    multiDatabase: {
+                        totalDatabases: this.databaseConnections.size,
+                        healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length
+                    }
                 });
 
                 // Stop health monitoring
@@ -1285,7 +1774,7 @@ class AdminServer extends EventEmitter {
                 await this.closeServer();
 
                 // Close database connections
-                await Database.close();
+                await Database.shutdown();
 
                 // Stop the Express app
                 if (app.stop) {
@@ -1321,7 +1810,11 @@ class AdminServer extends EventEmitter {
             logger.error('Admin Server: Uncaught Exception', {
                 error: error.message,
                 stack: error.stack,
-                severity: 'critical'
+                severity: 'critical',
+                multiDatabase: {
+                    totalDatabases: this.databaseConnections.size,
+                    healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length
+                }
             });
 
             // Log critical error to audit if available
@@ -1363,7 +1856,11 @@ class AdminServer extends EventEmitter {
             logger.error('Admin Server: Unhandled Promise Rejection', {
                 reason: reason instanceof Error ? reason.message : reason,
                 stack: reason instanceof Error ? reason.stack : undefined,
-                severity: 'high'
+                severity: 'high',
+                multiDatabase: {
+                    totalDatabases: this.databaseConnections.size,
+                    healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length
+                }
             });
 
             // Log unhandled rejection to audit if available
@@ -1428,10 +1925,10 @@ class AdminServer extends EventEmitter {
     }
 
     /**
-     * Get admin server status with enhanced model information
+     * ENHANCED: Get admin server status with multi-database architecture information
      */
     getStatus() {
-        const dbHealth = Database.getHealthStatus();
+        const dbHealth = Database.getHealthStatus ? Database.getHealthStatus() : { status: 'unknown' };
         const uptime = this.startTime ? (new Date() - this.startTime) / 1000 : 0;
         const auditStatus = this.auditService ? {
             enabled: this.auditService.isEnabled(),
@@ -1440,6 +1937,30 @@ class AdminServer extends EventEmitter {
         } : { enabled: false };
 
         const modelStatus = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
+
+        // Multi-database status
+        const multiDatabaseStatus = {
+            enabled: this.adminConfig?.features?.multiDatabase || false,
+            totalDatabases: this.databaseConnections.size,
+            databases: Object.fromEntries(
+                Array.from(this.databaseConnections.entries()).map(([dbType, connection]) => {
+                    const health = this.databaseHealthStatus.get(dbType);
+                    const collections = this.databaseCollectionMapping.get(dbType);
+                    return [dbType, {
+                        connectionName: connection.name,
+                        databaseName: connection.db?.databaseName,
+                        healthy: health?.healthy || false,
+                        collections: collections?.length || 0,
+                        collectionsExpected: collections || [],
+                        writeOperations: health?.writeOperations || false,
+                        lastHealthCheck: health?.timestamp,
+                        error: health?.error
+                    }];
+                })
+            ),
+            healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length,
+            collectionsMapping: Object.fromEntries(this.databaseCollectionMapping)
+        };
 
         return {
             server: {
@@ -1475,6 +1996,7 @@ class AdminServer extends EventEmitter {
                 maxRecoveryAttempts: this.maxModelRecoveryAttempts,
                 recoveryEnabled: this.adminConfig.features.modelRecovery
             },
+            multiDatabase: multiDatabaseStatus,
             audit: auditStatus,
             database: dbHealth,
             health: this.healthMonitor?.getStatus() || {},

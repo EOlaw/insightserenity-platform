@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview Base model class with common functionality for all models
+ * @fileoverview Enhanced base model class with multi-database routing and common functionality for all models
  * @module shared/lib/database/models/base-model
  * @requires mongoose
  * @requires module:shared/lib/utils/logger
@@ -17,6 +17,7 @@ let logger;
 let AppError;
 let QueryBuilder;
 let AuditService;
+let ConnectionManager;
 
 function getLogger() {
   if (!logger) {
@@ -35,24 +36,196 @@ function getAppError() {
 
 function getQueryBuilder() {
   if (!QueryBuilder) {
-    QueryBuilder = require('../query-builder');
+    try {
+      QueryBuilder = require('../query-builder');
+    } catch (error) {
+      // QueryBuilder might not be available in all environments
+      QueryBuilder = null;
+    }
   }
   return QueryBuilder;
 }
 
 function getAuditService() {
   if (!AuditService) {
-    AuditService = require('../../security/audit/audit-service');
+    try {
+      AuditService = require('../../security/audit/audit-service');
+    } catch (error) {
+      // AuditService might not be available in all environments
+      AuditService = null;
+    }
   }
   return AuditService;
 }
 
+function getConnectionManager() {
+  if (!ConnectionManager) {
+    try {
+      ConnectionManager = require('../connection-manager');
+    } catch (error) {
+      // ConnectionManager might not be available during initial loading
+      ConnectionManager = null;
+    }
+  }
+  return ConnectionManager;
+}
+
 /**
  * @class BaseModel
- * @description Abstract base model with common functionality
+ * @description Enhanced abstract base model with multi-database routing and common functionality
  */
 class BaseModel {
   
+  /**
+   * Static registries and properties for models and schemas with multi-database support
+   * @static
+   * @private
+   */
+  static modelRegistry = new Map();
+  static schemaCache = new Map();
+  static auditService = null;
+  static connectionManager = null;
+  static multiDatabaseEnabled = false;
+  static initialized = false;
+  
+  /**
+   * ENHANCED: Database collection mapping for multi-database architecture
+   * @static
+   * @private
+   */
+  static collectionDatabaseMapping = new Map([
+    // Admin database collections
+    ['users', 'admin'],
+    ['user_profiles', 'admin'],
+    ['user_activities', 'admin'],
+    ['login_history', 'admin'],
+    ['roles', 'admin'],
+    ['permissions', 'admin'],
+    ['organizations', 'admin'],
+    ['organization_members', 'admin'],
+    ['organization_invitations', 'admin'],
+    ['tenants', 'admin'],
+    ['system_configurations', 'admin'],
+    ['security_incidents', 'admin'],
+    ['sessions', 'admin'],
+    
+    // Shared database collections
+    ['subscription_plans', 'shared'],
+    ['features', 'shared'],
+    ['system_settings', 'shared'],
+    ['webhooks', 'shared'],
+    ['api_integrations', 'shared'],
+    ['notifications', 'shared'],
+    ['oauth_providers', 'shared'],
+    ['passkeys', 'shared'],
+    
+    // Audit database collections
+    ['audit_logs', 'audit'],
+    ['audit_alerts', 'audit'],
+    ['audit_exports', 'audit'],
+    ['audit_retention_policies', 'audit'],
+    ['compliance_mappings', 'audit'],
+    ['data_breaches', 'audit'],
+    ['erasure_logs', 'audit'],
+    ['processing_activities', 'audit'],
+    
+    // Analytics database collections
+    ['api_usage', 'analytics'],
+    ['usage_records', 'analytics'],
+    ['performance_metrics', 'analytics'],
+    ['user_analytics', 'analytics'],
+    ['system_metrics', 'analytics']
+  ]);
+
+  /**
+   * ENHANCED: Initialize BaseModel with multi-database support
+   * @static
+   * @async
+   * @param {Object} [options={}] - Initialization options
+   * @param {Object} options.connectionManager - Connection manager instance
+   * @param {boolean} options.multiDatabase - Enable multi-database support
+   * @param {Object} options.auditService - Audit service instance
+   * @returns {Promise<void>}
+   */
+  static async initialize(options = {}) {
+    try {
+      const logger = getLogger();
+      
+      if (BaseModel.initialized) {
+        logger.debug('BaseModel already initialized');
+        return;
+      }
+
+      BaseModel.connectionManager = options.connectionManager || getConnectionManager();
+      BaseModel.multiDatabaseEnabled = options.multiDatabase || false;
+
+      // Initialize registries if not already done
+      if (!BaseModel.modelRegistry) {
+        BaseModel.modelRegistry = new Map();
+      }
+      if (!BaseModel.schemaCache) {
+        BaseModel.schemaCache = new Map();
+      }
+
+      // Initialize audit service
+      if (options.auditService) {
+        BaseModel.auditService = options.auditService;
+      } else {
+        const AuditService = getAuditService();
+        if (AuditService) {
+          BaseModel.auditService = new AuditService();
+        }
+      }
+
+      BaseModel.initialized = true;
+      
+      logger.info('BaseModel initialized', {
+        multiDatabaseEnabled: BaseModel.multiDatabaseEnabled,
+        connectionManager: BaseModel.connectionManager ? 'Available' : 'Not Available',
+        auditService: BaseModel.auditService ? 'Available' : 'Not Available',
+        modelRegistry: BaseModel.modelRegistry.size,
+        schemaCache: BaseModel.schemaCache.size
+      });
+
+    } catch (error) {
+      const logger = getLogger();
+      logger.error('BaseModel initialization failed', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * ENHANCED: Get appropriate database connection for a collection with multi-database routing
+   * @static
+   * @param {string} collectionName - Name of the collection
+   * @returns {mongoose.Connection|null} Database connection
+   */
+  static getDatabaseConnectionForCollection(collectionName) {
+    try {
+      if (!BaseModel.multiDatabaseEnabled || !BaseModel.connectionManager) {
+        return null;
+      }
+
+      const dbType = BaseModel.collectionDatabaseMapping.get(collectionName);
+      if (dbType && BaseModel.connectionManager.getDatabaseConnection) {
+        return BaseModel.connectionManager.getDatabaseConnection(dbType);
+      }
+
+      // Fallback to connection manager's method
+      if (BaseModel.connectionManager.getConnectionForCollection) {
+        return BaseModel.connectionManager.getConnectionForCollection(collectionName);
+      }
+
+      return null;
+    } catch (error) {
+      const logger = getLogger();
+      logger.warn(`Failed to get database connection for collection ${collectionName}`, {
+        error: error.message
+      });
+      return null;
+    }
+  }
+
   /**
    * Creates model schema with base functionality
    * @static
@@ -94,9 +267,11 @@ class BaseModel {
         ...options
       };
 
-      // Add common fields
+      // ENHANCED: Add common fields with improved multi-database support
       const enhancedDefinition = {
         ...schemaDefinition,
+        
+        // Common audit fields
         _tenantId: {
           type: String,
           index: true,
@@ -118,6 +293,26 @@ class BaseModel {
         _metadata: {
           type: mongoose.Schema.Types.Mixed,
           default: {}
+        },
+        
+        // ENHANCED: Multi-database tracking fields
+        _createdBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          index: true
+        },
+        
+        _updatedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          index: true
+        },
+        
+        // Enhanced organization tracking
+        _organizationId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Organization',
+          index: true
         }
       };
 
@@ -142,8 +337,12 @@ class BaseModel {
       // Add plugins
       BaseModel.addPlugins(schema, options);
 
+      // Cache the schema
+      const collectionName = schemaOptions.collection || 'unknown';
+      BaseModel.schemaCache.set(collectionName, schema);
+
       logger.debug('Schema created', {
-        collection: schemaOptions.collection,
+        collection: collectionName,
         fieldCount: Object.keys(schemaDefinition).length
       });
 
@@ -165,7 +364,7 @@ class BaseModel {
   }
 
   /**
-   * Creates and registers a model
+   * ENHANCED: Creates and registers a model with multi-database routing
    * @static
    * @param {string} modelName - Model name
    * @param {mongoose.Schema} schema - Model schema
@@ -195,28 +394,54 @@ class BaseModel {
       }
 
       // Set collection name if not specified
+      const collectionName = options.collection || schema.options.collection || BaseModel.getCollectionName(modelName);
       if (!schema.options.collection) {
-        schema.options.collection = BaseModel.getCollectionName(modelName);
+        schema.options.collection = collectionName;
       }
 
-      // Create model
-      const Model = mongoose.model(modelName, schema);
+      let model;
+
+      // ENHANCED: Try to use appropriate database connection for multi-database setup
+      if (BaseModel.multiDatabaseEnabled) {
+        const connection = BaseModel.getDatabaseConnectionForCollection(collectionName);
+        
+        if (connection) {
+          try {
+            model = connection.model(modelName, schema, collectionName);
+            logger.debug(`Model created with specific database connection`, {
+              modelName,
+              collection: collectionName,
+              database: BaseModel.collectionDatabaseMapping.get(collectionName) || 'unknown'
+            });
+          } catch (connectionError) {
+            logger.warn(`Failed to create model with specific connection, falling back to default`, {
+              modelName,
+              error: connectionError.message
+            });
+            model = mongoose.model(modelName, schema, collectionName);
+          }
+        } else {
+          model = mongoose.model(modelName, schema, collectionName);
+        }
+      } else {
+        model = mongoose.model(modelName, schema, collectionName);
+      }
 
       // Enhance model with base functionality
-      BaseModel.enhanceModel(Model, options);
+      BaseModel.enhanceModel(model, options);
 
-      // Register model
-      BaseModel.modelRegistry.set(modelName, Model);
+      // Register the model
+      BaseModel.modelRegistry.set(modelName, model);
 
       // Cache schema
       BaseModel.schemaCache.set(modelName, schema);
 
       logger.info('Model created and registered', {
         modelName,
-        collection: schema.options.collection
+        collection: collectionName
       });
 
-      return Model;
+      return model;
 
     } catch (error) {
       const logger = getLogger();
@@ -238,26 +463,6 @@ class BaseModel {
   }
 
   /**
-   * Initializes base model with audit service
-   * @static
-   * @param {Object} [options={}] - Initialization options
-   */
-  static initialize(options = {}) {
-    const logger = getLogger();
-    const AuditService = getAuditService();
-    
-    const { auditService } = options;
-
-    if (auditService) {
-      BaseModel.auditService = auditService;
-    } else {
-      BaseModel.auditService = new AuditService();
-    }
-
-    logger.info('BaseModel initialized');
-  }
-
-  /**
    * Adds default indexes to schema
    * @static
    * @param {mongoose.Schema} schema - Schema instance
@@ -268,6 +473,13 @@ class BaseModel {
     
     // Index for soft delete queries
     schema.index({ _deleted: 1, _deletedAt: -1 });
+    
+    // Enhanced organization-based queries
+    schema.index({ _organizationId: 1, _deleted: 1 });
+    
+    // Audit trail indexes
+    schema.index({ _createdBy: 1, createdAt: -1 });
+    schema.index({ _updatedBy: 1, updatedAt: -1 });
     
     // Text search index if searchable fields defined
     const searchableFields = {};
@@ -304,6 +516,23 @@ class BaseModel {
     // Virtual for display ID
     schema.virtual('displayId').get(function() {
       return this._id ? this._id.toString() : null;
+    });
+
+    // ENHANCED: Virtual for database type routing
+    schema.virtual('databaseType').get(function() {
+      const collectionName = this.constructor.collection.name;
+      return BaseModel.collectionDatabaseMapping.get(collectionName) || 'unknown';
+    });
+
+    // Virtual for audit summary
+    schema.virtual('auditSummary').get(function() {
+      return {
+        createdBy: this._createdBy,
+        updatedBy: this._updatedBy,
+        version: this._version,
+        organizationId: this._organizationId,
+        tenantId: this._tenantId
+      };
     });
   }
 
@@ -384,7 +613,8 @@ class BaseModel {
             entityId: this._id,
             details: {
               ...details,
-              collection: this.constructor.collection.name
+              collection: this.constructor.collection.name,
+              databaseType: this.databaseType
             }
           });
         } catch (error) {
@@ -443,6 +673,34 @@ class BaseModel {
         valid: errors.length === 0,
         errors
       };
+    };
+
+    /**
+     * ENHANCED: Sets the user context for audit trail
+     * @param {mongoose.Schema.Types.ObjectId} userId - User ID
+     * @param {mongoose.Schema.Types.ObjectId} [organizationId] - Organization ID
+     * @returns {Object} Document instance for chaining
+     */
+    schema.methods.setUserContext = function(userId, organizationId = null) {
+      if (this.isNew) {
+        this._createdBy = userId;
+      }
+      this._updatedBy = userId;
+      
+      if (organizationId) {
+        this._organizationId = organizationId;
+      }
+      
+      return this;
+    };
+
+    /**
+     * ENHANCED: Gets the database type for this document
+     * @returns {string} Database type
+     */
+    schema.methods.getDatabaseType = function() {
+      const collectionName = this.constructor.collection.name;
+      return BaseModel.collectionDatabaseMapping.get(collectionName) || 'unknown';
     };
   }
 
@@ -664,6 +922,37 @@ class BaseModel {
         deletionRate: totalCount > 0 ? (deletedCount / totalCount) * 100 : 0
       };
     };
+
+    /**
+     * ENHANCED: Finds documents by organization
+     * @param {mongoose.Schema.Types.ObjectId} organizationId - Organization ID
+     * @param {Object} [conditions={}] - Additional conditions
+     * @param {Object} [options={}] - Query options
+     * @returns {Promise<Array>} Documents
+     */
+    schema.statics.findByOrganization = async function(organizationId, conditions = {}, options = {}) {
+      return await this.findActive({ ...conditions, _organizationId: organizationId }, options);
+    };
+
+    /**
+     * ENHANCED: Finds documents by tenant
+     * @param {string} tenantId - Tenant ID
+     * @param {Object} [conditions={}] - Additional conditions
+     * @param {Object} [options={}] - Query options
+     * @returns {Promise<Array>} Documents
+     */
+    schema.statics.findByTenant = async function(tenantId, conditions = {}, options = {}) {
+      return await this.findActive({ ...conditions, _tenantId: tenantId }, options);
+    };
+
+    /**
+     * ENHANCED: Gets the database type for this model
+     * @returns {string} Database type
+     */
+    schema.statics.getDatabaseType = function() {
+      const collectionName = this.collection.name;
+      return BaseModel.collectionDatabaseMapping.get(collectionName) || 'unknown';
+    };
   }
 
   /**
@@ -791,6 +1080,12 @@ class BaseModel {
       return new QueryBuilder(this, { tenantId });
     };
 
+    // ENHANCED: Add organization-specific query builder
+    Model.forOrganization = function(organizationId) {
+      const QueryBuilder = getQueryBuilder();
+      return new QueryBuilder(this, { organizationId });
+    };
+
     // Add model events
     Model.events = new (require('events').EventEmitter)();
 
@@ -868,11 +1163,124 @@ class BaseModel {
       BaseModel.schemaCache.clear();
     }
   }
+
+  /**
+   * ENHANCED: Get database type for a collection
+   * @static
+   * @param {string} collectionName - Collection name
+   * @returns {string|null} Database type
+   */
+  static getDatabaseTypeForCollection(collectionName) {
+    return BaseModel.collectionDatabaseMapping.get(collectionName) || null;
+  }
+
+  /**
+   * ENHANCED: Add custom collection mapping
+   * @static
+   * @param {string} collectionName - Collection name
+   * @param {string} databaseType - Database type (admin, shared, audit, analytics)
+   */
+  static addCollectionMapping(collectionName, databaseType) {
+    BaseModel.collectionDatabaseMapping.set(collectionName, databaseType);
+    
+    const logger = getLogger();
+    logger.debug(`Collection mapping added: ${collectionName} -> ${databaseType}`);
+  }
+
+  /**
+   * ENHANCED: Get all collection mappings
+   * @static
+   * @returns {Map<string, string>} Collection to database mappings
+   */
+  static getAllCollectionMappings() {
+    return new Map(BaseModel.collectionDatabaseMapping);
+  }
+
+  /**
+   * ENHANCED: Check if multi-database is enabled
+   * @static
+   * @returns {boolean} Multi-database status
+   */
+  static isMultiDatabaseEnabled() {
+    return BaseModel.multiDatabaseEnabled;
+  }
+
+  /**
+   * ENHANCED: Get connection manager instance
+   * @static
+   * @returns {Object|null} Connection manager
+   */
+  static getConnectionManager() {
+    return BaseModel.connectionManager;
+  }
+
+  /**
+   * ENHANCED: Simple pluralization helper
+   * @static
+   * @param {string} word - Word to pluralize
+   * @returns {string} Pluralized word
+   */
+  static pluralize(word) {
+    if (word.endsWith('y')) {
+      return word.slice(0, -1) + 'ies';
+    } else if (word.endsWith('s') || word.endsWith('x') || word.endsWith('z') || 
+               word.endsWith('ch') || word.endsWith('sh')) {
+      return word + 'es';
+    } else {
+      return word + 's';
+    }
+  }
+
+  /**
+   * ENHANCED: Register a model manually with database routing
+   * @static
+   * @param {string} modelName - Name of the model
+   * @param {mongoose.Model} model - Model instance
+   * @param {mongoose.Schema} [schema] - Schema instance
+   * @param {string} [databaseType] - Target database type
+   */
+  static registerModel(modelName, model, schema = null, databaseType = null) {
+    BaseModel.modelRegistry.set(modelName, model);
+    
+    if (schema) {
+      BaseModel.schemaCache.set(modelName, schema);
+    }
+    
+    // Add collection mapping if database type provided
+    if (databaseType && model.collection) {
+      BaseModel.addCollectionMapping(model.collection.name, databaseType);
+    }
+    
+    const logger = getLogger();
+    logger.debug(`Model registered: ${modelName}`, {
+      databaseType: databaseType || 'default',
+      collection: model.collection?.name || 'unknown'
+    });
+  }
+
+  /**
+   * ENHANCED: Get registration statistics
+   * @static
+   * @returns {Object} Registration stats
+   */
+  static getRegistrationStats() {
+    return {
+      models: BaseModel.modelRegistry.size,
+      schemas: BaseModel.schemaCache.size,
+      multiDatabaseEnabled: BaseModel.multiDatabaseEnabled,
+      initialized: BaseModel.initialized,
+      connectionManager: BaseModel.connectionManager ? 'Available' : 'Not Available',
+      collectionMappings: BaseModel.collectionDatabaseMapping.size
+    };
+  }
 }
 
 // Initialize static properties
 BaseModel.modelRegistry = new Map();
 BaseModel.schemaCache = new Map();
 BaseModel.auditService = null;
+BaseModel.connectionManager = null;
+BaseModel.multiDatabaseEnabled = false;
+BaseModel.initialized = false;
 
 module.exports = BaseModel;
