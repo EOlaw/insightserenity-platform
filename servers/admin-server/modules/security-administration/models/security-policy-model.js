@@ -1224,25 +1224,25 @@ securityPolicySchema.methods.evaluateRule = async function(ruleId, context) {
         break;
       
       case 'IF_THEN':
-        evaluationResult = await this.#evaluateIfThenCondition(rule.condition, context);
+        evaluationResult = await this.evaluateIfThenCondition(rule.condition, context);
         break;
       
       case 'WHEN':
-        evaluationResult = await this.#evaluateWhenCondition(rule.condition, context);
+        evaluationResult = await this.evaluateWhenCondition(rule.condition, context);
         break;
       
       case 'UNLESS':
-        evaluationResult = await this.#evaluateUnlessCondition(rule.condition, context);
+        evaluationResult = await this.evaluateUnlessCondition(rule.condition, context);
         break;
       
       case 'COMPLEX':
-        evaluationResult = await this.#evaluateComplexCondition(rule.condition, context);
+        evaluationResult = await this.evaluateComplexCondition(rule.condition, context);
         break;
     }
 
     // Apply the action if condition is met
     if (evaluationResult.result === 'APPLICABLE') {
-      const actionResult = await this.#applyAction(rule.action, context);
+      const actionResult = await this.applyAction(rule.action, context);
       evaluationResult.actionTaken = actionResult;
     }
 
@@ -1260,9 +1260,9 @@ securityPolicySchema.methods.evaluateRule = async function(ruleId, context) {
 };
 
 // Private helper methods for rule evaluation
-securityPolicySchema.methods.#evaluateIfThenCondition = async function(condition, context) {
+securityPolicySchema.methods.evaluateIfThenCondition = async function(condition, context) {
   const expression = condition.expression;
-  const result = await this.#evaluateExpression(expression.if, context);
+  const result = await this.evaluateExpression(expression.if, context);
   
   if (result) {
     return { result: 'APPLICABLE', details: { conditionMet: true } };
@@ -1270,9 +1270,9 @@ securityPolicySchema.methods.#evaluateIfThenCondition = async function(condition
   return { result: 'NOT_APPLICABLE', details: { conditionMet: false } };
 };
 
-securityPolicySchema.methods.#evaluateWhenCondition = async function(condition, context) {
+securityPolicySchema.methods.evaluateWhenCondition = async function(condition, context) {
   const expression = condition.expression;
-  const timing = await this.#evaluateTiming(expression.when, context);
+  const timing = await this.evaluateTiming(expression.when, context);
   
   if (timing) {
     return { result: 'APPLICABLE', details: { timingMet: true } };
@@ -1280,9 +1280,9 @@ securityPolicySchema.methods.#evaluateWhenCondition = async function(condition, 
   return { result: 'NOT_APPLICABLE', details: { timingMet: false } };
 };
 
-securityPolicySchema.methods.#evaluateUnlessCondition = async function(condition, context) {
+securityPolicySchema.methods.evaluateUnlessCondition = async function(condition, context) {
   const expression = condition.expression;
-  const exception = await this.#evaluateExpression(expression.unless, context);
+  const exception = await this.evaluateExpression(expression.unless, context);
   
   if (!exception) {
     return { result: 'APPLICABLE', details: { exceptionNotMet: true } };
@@ -1290,13 +1290,13 @@ securityPolicySchema.methods.#evaluateUnlessCondition = async function(condition
   return { result: 'NOT_APPLICABLE', details: { exceptionMet: true } };
 };
 
-securityPolicySchema.methods.#evaluateComplexCondition = async function(condition, context) {
+securityPolicySchema.methods.evaluateComplexCondition = async function(condition, context) {
   // Complex evaluation logic for multiple conditions
   const expression = condition.expression;
   const results = [];
 
   for (const subCondition of expression.conditions) {
-    const result = await this.#evaluateExpression(subCondition, context);
+    const result = await this.evaluateExpression(subCondition, context);
     results.push(result);
   }
 
@@ -1323,7 +1323,7 @@ securityPolicySchema.methods.#evaluateComplexCondition = async function(conditio
   };
 };
 
-securityPolicySchema.methods.#evaluateExpression = async function(expression, context) {
+securityPolicySchema.methods.evaluateExpression = async function(expression, context) {
   // Generic expression evaluation
   if (typeof expression === 'function') {
     return await expression(context);
@@ -1332,7 +1332,7 @@ securityPolicySchema.methods.#evaluateExpression = async function(expression, co
   if (typeof expression === 'object') {
     // Handle object-based expressions
     const { field, operator, value } = expression;
-    const contextValue = this.#getNestedValue(context, field);
+    const contextValue = this.getNestedValue(context, field);
     
     switch (operator) {
       case 'equals':
@@ -1357,7 +1357,7 @@ securityPolicySchema.methods.#evaluateExpression = async function(expression, co
   return Boolean(expression);
 };
 
-securityPolicySchema.methods.#evaluateTiming = async function(timing, context) {
+securityPolicySchema.methods.evaluateTiming = async function(timing, context) {
   const now = new Date();
   
   if (timing.schedule) {
@@ -1387,7 +1387,7 @@ securityPolicySchema.methods.#evaluateTiming = async function(timing, context) {
   return true;
 };
 
-securityPolicySchema.methods.#applyAction = async function(action, context) {
+securityPolicySchema.methods.applyAction = async function(action, context) {
   const actionResult = {
     type: action.type,
     executed: false,
@@ -1418,26 +1418,26 @@ securityPolicySchema.methods.#applyAction = async function(action, context) {
         break;
       
       case 'LOG':
-        await this.#logAction(action, context);
+        await this.logAction(action, context);
         actionResult.executed = true;
         actionResult.details = { logged: true };
         break;
       
       case 'ALERT':
-        await this.#sendAlert(action, context);
+        await this.sendAlert(action, context);
         actionResult.executed = true;
         actionResult.details = { alerted: true };
         break;
       
       case 'ESCALATE':
-        await this.#escalateAction(action, context);
+        await this.escalateAction(action, context);
         actionResult.executed = true;
         actionResult.details = { escalated: true };
         break;
       
       case 'CUSTOM':
         if (action.customHandler) {
-          const customResult = await this.#executeCustomHandler(action.customHandler, context);
+          const customResult = await this.executeCustomHandler(action.customHandler, context);
           actionResult.executed = true;
           actionResult.details = customResult;
         }
@@ -1451,7 +1451,7 @@ securityPolicySchema.methods.#applyAction = async function(action, context) {
   return actionResult;
 };
 
-securityPolicySchema.methods.#getNestedValue = function(obj, path) {
+securityPolicySchema.methods.getNestedValue = function(obj, path) {
   const keys = path.split('.');
   let value = obj;
   
@@ -1463,11 +1463,11 @@ securityPolicySchema.methods.#getNestedValue = function(obj, path) {
   return value;
 };
 
-securityPolicySchema.methods.#logAction = async function(action, context) {
+securityPolicySchema.methods.logAction = async function(action, context) {
   logger.info(`Policy action logged: ${JSON.stringify({ action, context })}`);
 };
 
-securityPolicySchema.methods.#sendAlert = async function(action, context) {
+securityPolicySchema.methods.sendAlert = async function(action, context) {
   // Alert sending logic
   const alert = {
     policyId: this.policyId,
@@ -1481,12 +1481,12 @@ securityPolicySchema.methods.#sendAlert = async function(action, context) {
   logger.warn(`Security alert triggered: ${JSON.stringify(alert)}`);
 };
 
-securityPolicySchema.methods.#escalateAction = async function(action, context) {
+securityPolicySchema.methods.escalateAction = async function(action, context) {
   // Escalation logic
   logger.error(`Security escalation required: ${JSON.stringify({ action, context })}`);
 };
 
-securityPolicySchema.methods.#executeCustomHandler = async function(handler, context) {
+securityPolicySchema.methods.executeCustomHandler = async function(handler, context) {
   // Execute custom handler logic
   logger.info(`Executing custom handler: ${handler}`);
   return { customHandler: handler, executed: true };

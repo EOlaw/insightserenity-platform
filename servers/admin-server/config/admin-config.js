@@ -143,8 +143,8 @@ module.exports = {
     logging: {
         level: process.env.ADMIN_LOG_LEVEL || (isDevelopment ? 'debug' : 'info'),
         format: process.env.ADMIN_LOG_FORMAT || 'json',
-        logDir: process.env.ADMIN_LOG_DIR || './logs/admin',
-        auditLogDir: process.env.ADMIN_AUDIT_LOG_DIR || './logs/audit',
+        logDir: process.env.ADMIN_LOG_DIR || '../logs/admin',
+        auditLogDir: process.env.ADMIN_AUDIT_LOG_DIR || '../logs/audit',
         accessLogEnabled: parseBooleanFromEnv(process.env.ADMIN_ACCESS_LOG_ENABLED, true),
         errorLogEnabled: parseBooleanFromEnv(process.env.ADMIN_ERROR_LOG_ENABLED, true),
         performanceLogEnabled: parseBooleanFromEnv(process.env.ADMIN_PERFORMANCE_LOG_ENABLED, true),
