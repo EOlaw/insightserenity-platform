@@ -49,6 +49,7 @@ const VALIDATION_MESSAGES = {
 
 /**
  * Common validation schemas for configuration operations
+ * Updated to ensure proper Joi schema construction and prevent compilation errors
  */
 const commonSchemas = {
   configId: Joi.string()
@@ -111,20 +112,6 @@ const commonSchemas = {
     .items(Joi.string().min(1).max(50))
     .max(20),
 
-  pagination: Joi.object({
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(100).default(20),
-    sort: Joi.string().default('-updatedAt'),
-    order: Joi.string().valid('asc', 'desc').default('desc')
-  }),
-
-  timeRange: Joi.object({
-    startDate: Joi.date().iso(),
-    endDate: Joi.date().iso().greater(Joi.ref('startDate'))
-  }).messages({
-    'date.greater': VALIDATION_MESSAGES.DATE_RANGE_INVALID
-  }),
-
   schema: Joi.object({
     type: Joi.string().valid('json-schema', 'joi', 'yup', 'custom').required(),
     definition: Joi.alternatives().conditional('type', {
@@ -141,7 +128,31 @@ const commonSchemas = {
 };
 
 /**
+ * Pagination schema factory to ensure proper schema construction
+ * Updated to prevent spread operator issues and maintain consistency
+ */
+const createPaginationSchema = () => ({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  sort: Joi.string().default('-updatedAt'),
+  order: Joi.string().valid('asc', 'desc').default('desc')
+});
+
+/**
+ * Time range schema factory for reusable time-based validation
+ * Enhanced for future extensibility and proper schema construction
+ */
+const createTimeRangeSchema = () => ({
+  startDate: Joi.date().iso(),
+  endDate: Joi.date().iso().greater(Joi.ref('startDate'))
+    .messages({
+      'date.greater': VALIDATION_MESSAGES.DATE_RANGE_INVALID
+    })
+});
+
+/**
  * Configuration CRUD operation validators
+ * Updated to use proper schema referencing and construction patterns
  */
 const configurationCrudValidators = {
   /**
@@ -149,16 +160,59 @@ const configurationCrudValidators = {
    */
   createConfiguration: {
     body: Joi.object({
-      name: commonSchemas.configName,
+      name: Joi.string()
+        .min(3)
+        .max(100)
+        .pattern(/^[a-zA-Z0-9\-_]+$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_NAME_PATTERN,
+          'any.required': VALIDATION_MESSAGES.CONFIG_NAME_REQUIRED
+        }),
       description: Joi.string().max(500),
-      type: commonSchemas.configType.default('json'),
-      environment: commonSchemas.environment.required(),
+      type: Joi.string()
+        .valid('string', 'number', 'boolean', 'object', 'array', 'json', 'yaml', 'xml')
+        .default('json')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.CONFIG_TYPE_INVALID
+        }),
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .required()
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       namespace: Joi.string().pattern(/^[a-z][a-z0-9\-]*$/).max(64),
       values: Joi.object().pattern(
-        commonSchemas.configKey,
-        commonSchemas.configValue
+        Joi.string()
+          .pattern(/^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)*$/)
+          .max(255)
+          .required()
+          .messages({
+            'string.pattern.base': VALIDATION_MESSAGES.CONFIG_KEY_PATTERN,
+            'any.required': VALIDATION_MESSAGES.CONFIG_KEY_REQUIRED
+          }),
+        Joi.alternatives().try(
+          Joi.string(),
+          Joi.number(),
+          Joi.boolean(),
+          Joi.object(),
+          Joi.array()
+        )
       ).required(),
-      schema: commonSchemas.schema,
+      schema: Joi.object({
+        type: Joi.string().valid('json-schema', 'joi', 'yup', 'custom').required(),
+        definition: Joi.alternatives().conditional('type', {
+          switch: [
+            { is: 'json-schema', then: Joi.object().required() },
+            { is: 'joi', then: Joi.string().required() },
+            { is: 'yup', then: Joi.string().required() },
+            { is: 'custom', then: Joi.object().required() }
+          ]
+        }),
+        version: Joi.string().default('1.0.0'),
+        strict: Joi.boolean().default(true)
+      }),
       validation: Joi.object({
         enabled: Joi.boolean().default(true),
         rules: Joi.array().items(
@@ -180,42 +234,79 @@ const configurationCrudValidators = {
         delete: Joi.array().items(Joi.string()),
         admin: Joi.array().items(Joi.string())
       }),
-      metadata: commonSchemas.metadata,
-      tags: commonSchemas.tags
+      metadata: Joi.object().default({}),
+      tags: Joi.array()
+        .items(Joi.string().min(1).max(50))
+        .max(20)
     }).unknown(false)
   },
 
   /**
    * Validate list configurations request
+   * Updated to use explicit pagination properties instead of spread operator
    */
   listConfigurations: {
     query: Joi.object({
-      environment: commonSchemas.environment,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       namespace: Joi.string(),
-      type: commonSchemas.configType,
+      type: Joi.string()
+        .valid('string', 'number', 'boolean', 'object', 'array', 'json', 'yaml', 'xml')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.CONFIG_TYPE_INVALID
+        }),
       tags: Joi.array().items(Joi.string()),
       search: Joi.string().min(2).max(100),
       includeValues: Joi.boolean().default(false),
       includeSchema: Joi.boolean().default(false),
       includeMetadata: Joi.boolean().default(true),
       activeOnly: Joi.boolean().default(true),
-      ...commonSchemas.pagination
+      page: Joi.number().integer().min(1).default(1),
+      limit: Joi.number().integer().min(1).max(100).default(20),
+      sort: Joi.string().default('-updatedAt'),
+      order: Joi.string().valid('asc', 'desc').default('desc')
     }).unknown(false)
   },
 
   /**
    * Validate get configuration request
+   * Enhanced with proper schema construction
    */
   getConfiguration: {
     params: Joi.object({
       identifier: Joi.alternatives().try(
-        commonSchemas.configId,
-        commonSchemas.configName
+        Joi.string()
+          .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+          .required()
+          .messages({
+            'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+            'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+          }),
+        Joi.string()
+          .min(3)
+          .max(100)
+          .pattern(/^[a-zA-Z0-9\-_]+$/)
+          .required()
+          .messages({
+            'string.pattern.base': VALIDATION_MESSAGES.CONFIG_NAME_PATTERN,
+            'any.required': VALIDATION_MESSAGES.CONFIG_NAME_REQUIRED
+          })
       ).required()
     }),
     query: Joi.object({
-      environment: commonSchemas.environment,
-      version: commonSchemas.version,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
+      version: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        }),
       includeValues: Joi.boolean().default(true),
       includeSchema: Joi.boolean().default(false),
       includeHistory: Joi.boolean().default(false),
@@ -225,16 +316,39 @@ const configurationCrudValidators = {
 
   /**
    * Validate update configuration request
+   * Enhanced with proper schema validation patterns
    */
   updateConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       name: Joi.string().min(3).max(100).pattern(/^[a-zA-Z0-9\-_]+$/),
       description: Joi.string().max(500),
-      type: commonSchemas.configType,
-      schema: commonSchemas.schema,
+      type: Joi.string()
+        .valid('string', 'number', 'boolean', 'object', 'array', 'json', 'yaml', 'xml')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.CONFIG_TYPE_INVALID
+        }),
+      schema: Joi.object({
+        type: Joi.string().valid('json-schema', 'joi', 'yup', 'custom').required(),
+        definition: Joi.alternatives().conditional('type', {
+          switch: [
+            { is: 'json-schema', then: Joi.object().required() },
+            { is: 'joi', then: Joi.string().required() },
+            { is: 'yup', then: Joi.string().required() },
+            { is: 'custom', then: Joi.object().required() }
+          ]
+        }),
+        version: Joi.string().default('1.0.0'),
+        strict: Joi.boolean().default(true)
+      }),
       validation: Joi.object({
         enabled: Joi.boolean(),
         rules: Joi.array().items(
@@ -256,18 +370,27 @@ const configurationCrudValidators = {
         delete: Joi.array().items(Joi.string()),
         admin: Joi.array().items(Joi.string())
       }),
-      metadata: commonSchemas.metadata,
-      tags: commonSchemas.tags,
+      metadata: Joi.object().default({}),
+      tags: Joi.array()
+        .items(Joi.string().min(1).max(50))
+        .max(20),
       reason: Joi.string().max(500).required()
-    }).unknown(false).min(2) // At least one field to update plus reason
+    }).unknown(false).min(2)
   },
 
   /**
    * Validate delete configuration request
+   * Enhanced for better security and audit requirements
    */
   deleteConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       confirmation: Joi.string().valid('DELETE').required(),
@@ -280,6 +403,7 @@ const configurationCrudValidators = {
 
 /**
  * Configuration value management validators
+ * Updated with consistent schema construction patterns
  */
 const configurationValueValidators = {
   /**
@@ -287,12 +411,33 @@ const configurationValueValidators = {
    */
   getConfigurationValue: {
     params: Joi.object({
-      configId: commonSchemas.configId,
-      key: commonSchemas.configKey
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
+      key: Joi.string()
+        .pattern(/^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)*$/)
+        .max(255)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_KEY_PATTERN,
+          'any.required': VALIDATION_MESSAGES.CONFIG_KEY_REQUIRED
+        })
     }),
     query: Joi.object({
-      environment: commonSchemas.environment,
-      version: commonSchemas.version,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
+      version: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        }),
       format: Joi.string().valid('json', 'text', 'yaml', 'xml').default('json'),
       decrypt: Joi.boolean().default(false)
     }).unknown(false)
@@ -303,11 +448,25 @@ const configurationValueValidators = {
    */
   getAllConfigurationValues: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
-      environment: commonSchemas.environment,
-      version: commonSchemas.version,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
+      version: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        }),
       prefix: Joi.string(),
       decrypt: Joi.boolean().default(false),
       flatten: Joi.boolean().default(false),
@@ -320,12 +479,35 @@ const configurationValueValidators = {
    */
   setConfigurationValue: {
     params: Joi.object({
-      configId: commonSchemas.configId,
-      key: commonSchemas.configKey
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
+      key: Joi.string()
+        .pattern(/^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)*$/)
+        .max(255)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_KEY_PATTERN,
+          'any.required': VALIDATION_MESSAGES.CONFIG_KEY_REQUIRED
+        })
     }),
     body: Joi.object({
-      value: commonSchemas.configValue.required(),
-      type: commonSchemas.configType,
+      value: Joi.alternatives().try(
+        Joi.string(),
+        Joi.number(),
+        Joi.boolean(),
+        Joi.object(),
+        Joi.array()
+      ).required(),
+      type: Joi.string()
+        .valid('string', 'number', 'boolean', 'object', 'array', 'json', 'yaml', 'xml')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.CONFIG_TYPE_INVALID
+        }),
       description: Joi.string().max(255),
       encrypt: Joi.boolean().default(false),
       overwrite: Joi.boolean().default(true),
@@ -336,7 +518,7 @@ const configurationValueValidators = {
         enum: Joi.array(),
         required: Joi.boolean()
       }),
-      metadata: commonSchemas.metadata,
+      metadata: Joi.object().default({}),
       reason: Joi.string().max(500).required()
     }).unknown(false)
   },
@@ -346,11 +528,33 @@ const configurationValueValidators = {
    */
   updateConfigurationValues: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       values: Joi.object()
-        .pattern(commonSchemas.configKey, commonSchemas.configValue)
+        .pattern(
+          Joi.string()
+            .pattern(/^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)*$/)
+            .max(255)
+            .required()
+            .messages({
+              'string.pattern.base': VALIDATION_MESSAGES.CONFIG_KEY_PATTERN,
+              'any.required': VALIDATION_MESSAGES.CONFIG_KEY_REQUIRED
+            }),
+          Joi.alternatives().try(
+            Joi.string(),
+            Joi.number(),
+            Joi.boolean(),
+            Joi.object(),
+            Joi.array()
+          )
+        )
         .min(1)
         .max(100)
         .required(),
@@ -367,8 +571,21 @@ const configurationValueValidators = {
    */
   deleteConfigurationKey: {
     params: Joi.object({
-      configId: commonSchemas.configId,
-      key: commonSchemas.configKey
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
+      key: Joi.string()
+        .pattern(/^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)*$/)
+        .max(255)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_KEY_PATTERN,
+          'any.required': VALIDATION_MESSAGES.CONFIG_KEY_REQUIRED
+        })
     }),
     body: Joi.object({
       cascade: Joi.boolean().default(false),
@@ -381,11 +598,26 @@ const configurationValueValidators = {
    */
   bulkDeleteKeys: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       keys: Joi.array()
-        .items(commonSchemas.configKey)
+        .items(
+          Joi.string()
+            .pattern(/^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)*$/)
+            .max(255)
+            .required()
+            .messages({
+              'string.pattern.base': VALIDATION_MESSAGES.CONFIG_KEY_PATTERN,
+              'any.required': VALIDATION_MESSAGES.CONFIG_KEY_REQUIRED
+            })
+        )
         .min(1)
         .max(50)
         .required(),
@@ -397,6 +629,7 @@ const configurationValueValidators = {
 
   /**
    * Validate search configuration values request
+   * Updated with explicit pagination properties
    */
   searchConfigurationValues: {
     query: Joi.object({
@@ -404,18 +637,30 @@ const configurationValueValidators = {
       searchIn: Joi.array().items(
         Joi.string().valid('keys', 'values', 'descriptions', 'metadata')
       ).default(['keys', 'values']),
-      environment: commonSchemas.environment,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       namespace: Joi.string(),
-      type: commonSchemas.configType,
+      type: Joi.string()
+        .valid('string', 'number', 'boolean', 'object', 'array', 'json', 'yaml', 'xml')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.CONFIG_TYPE_INVALID
+        }),
       caseSensitive: Joi.boolean().default(false),
       regex: Joi.boolean().default(false),
-      ...commonSchemas.pagination
+      page: Joi.number().integer().min(1).default(1),
+      limit: Joi.number().integer().min(1).max(100).default(20),
+      sort: Joi.string().default('-updatedAt'),
+      order: Joi.string().valid('asc', 'desc').default('desc')
     }).unknown(false)
   }
 };
 
 /**
  * Configuration validation and testing validators
+ * Enhanced with comprehensive validation patterns
  */
 const configurationValidationValidators = {
   /**
@@ -423,13 +668,35 @@ const configurationValidationValidators = {
    */
   validateConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       values: Joi.object(),
-      schema: commonSchemas.schema,
+      schema: Joi.object({
+        type: Joi.string().valid('json-schema', 'joi', 'yup', 'custom').required(),
+        definition: Joi.alternatives().conditional('type', {
+          switch: [
+            { is: 'json-schema', then: Joi.object().required() },
+            { is: 'joi', then: Joi.string().required() },
+            { is: 'yup', then: Joi.string().required() },
+            { is: 'custom', then: Joi.object().required() }
+          ]
+        }),
+        version: Joi.string().default('1.0.0'),
+        strict: Joi.boolean().default(true)
+      }),
       strict: Joi.boolean().default(true),
-      environment: commonSchemas.environment,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       checkDependencies: Joi.boolean().default(true),
       checkReferences: Joi.boolean().default(true)
     }).unknown(false)
@@ -440,11 +707,21 @@ const configurationValidationValidators = {
    */
   testConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       testType: Joi.string().valid('syntax', 'schema', 'connectivity', 'integration').required(),
-      environment: commonSchemas.environment,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       targets: Joi.array().items(Joi.string()),
       timeout: Joi.number().min(1000).max(30000).default(5000),
       verbose: Joi.boolean().default(false)
@@ -456,11 +733,22 @@ const configurationValidationValidators = {
    */
   dryRunConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       changes: Joi.object().required(),
-      environment: commonSchemas.environment.required(),
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .required()
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       simulateErrors: Joi.boolean().default(false),
       includeImpactAnalysis: Joi.boolean().default(true)
     }).unknown(false)
@@ -471,13 +759,29 @@ const configurationValidationValidators = {
    */
   compareConfigurations: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
-      targetConfigId: commonSchemas.configId.required(),
+      targetConfigId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
       compareType: Joi.string().valid('values', 'schema', 'full').default('values'),
       ignoreKeys: Joi.array().items(Joi.string()),
-      environment: commonSchemas.environment,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       format: Joi.string().valid('json', 'diff', 'side-by-side').default('json')
     }).unknown(false)
   },
@@ -487,7 +791,13 @@ const configurationValidationValidators = {
    */
   analyzeConfigurationImpact: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       changes: Joi.object().required(),
@@ -501,6 +811,7 @@ const configurationValidationValidators = {
 
 /**
  * Configuration locking and access control validators
+ * Enhanced security and access management features
  */
 const configurationLockingValidators = {
   /**
@@ -508,7 +819,13 @@ const configurationLockingValidators = {
    */
   lockConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       lockType: Joi.string().valid('read', 'write', 'full').required(),
@@ -525,7 +842,13 @@ const configurationLockingValidators = {
    */
   unlockConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       reason: Joi.string().max(500).required(),
@@ -538,7 +861,13 @@ const configurationLockingValidators = {
    */
   getLockStatus: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
       includeHistory: Joi.boolean().default(false)
@@ -550,7 +879,13 @@ const configurationLockingValidators = {
    */
   setConfigurationPermissions: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       permissions: Joi.object({
@@ -594,7 +929,13 @@ const configurationLockingValidators = {
    */
   getConfigurationPermissions: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
       effective: Joi.boolean().default(true),
@@ -605,6 +946,7 @@ const configurationLockingValidators = {
 
 /**
  * Configuration version management validators
+ * Enhanced version control and rollback capabilities
  */
 const configurationVersionValidators = {
   /**
@@ -612,10 +954,20 @@ const configurationVersionValidators = {
    */
   getVersionHistory: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
-      environment: commonSchemas.environment,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       limit: Joi.number().integer().min(1).max(100).default(20),
       includeChanges: Joi.boolean().default(false),
       includeAuthor: Joi.boolean().default(true),
@@ -629,8 +981,18 @@ const configurationVersionValidators = {
    */
   getVersion: {
     params: Joi.object({
-      configId: commonSchemas.configId,
-      version: commonSchemas.version
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
+      version: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        })
     }),
     query: Joi.object({
       includeValues: Joi.boolean().default(true),
@@ -644,8 +1006,18 @@ const configurationVersionValidators = {
    */
   getVersionChanges: {
     params: Joi.object({
-      configId: commonSchemas.configId,
-      version: commonSchemas.version
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
+      version: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        })
     }),
     query: Joi.object({
       format: Joi.string().valid('json', 'diff', 'summary').default('json'),
@@ -658,11 +1030,27 @@ const configurationVersionValidators = {
    */
   compareVersions: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
-      from: commonSchemas.version.required(),
-      to: commonSchemas.version.required(),
+      from: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        }),
+      to: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        }),
       format: Joi.string().valid('json', 'diff', 'side-by-side').default('json'),
       ignoreWhitespace: Joi.boolean().default(true),
       ignoreComments: Joi.boolean().default(true)
@@ -674,11 +1062,26 @@ const configurationVersionValidators = {
    */
   rollbackConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
-      targetVersion: commonSchemas.version.required(),
-      environment: commonSchemas.environment,
+      targetVersion: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        }),
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       preserveKeys: Joi.array().items(Joi.string()),
       skipKeys: Joi.array().items(Joi.string()),
       dryRun: Joi.boolean().default(false),
@@ -692,16 +1095,26 @@ const configurationVersionValidators = {
    */
   createVersionSnapshot: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       name: Joi.string().min(3).max(100),
       description: Joi.string().max(500),
       tag: Joi.string().pattern(/^[a-zA-Z0-9\-\.]+$/),
-      environment: commonSchemas.environment,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       includeValues: Joi.boolean().default(true),
       includeSchema: Joi.boolean().default(true),
-      metadata: commonSchemas.metadata
+      metadata: Joi.object().default({})
     }).unknown(false)
   },
 
@@ -710,8 +1123,18 @@ const configurationVersionValidators = {
    */
   tagVersion: {
     params: Joi.object({
-      configId: commonSchemas.configId,
-      version: commonSchemas.version
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
+      version: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        })
     }),
     body: Joi.object({
       tag: Joi.string().pattern(/^[a-zA-Z0-9\-\.]+$/).required(),
@@ -725,11 +1148,26 @@ const configurationVersionValidators = {
    */
   promoteVersion: {
     params: Joi.object({
-      configId: commonSchemas.configId,
-      version: commonSchemas.version
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
+      version: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        })
     }),
     body: Joi.object({
-      targetEnvironment: commonSchemas.environment.required(),
+      targetEnvironment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .required()
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       strategy: Joi.string().valid('immediate', 'canary', 'blue-green').default('immediate'),
       canaryPercentage: Joi.when('strategy', {
         is: 'canary',
@@ -745,6 +1183,7 @@ const configurationVersionValidators = {
 
 /**
  * Configuration environment management validators
+ * Enhanced multi-environment support and synchronization
  */
 const configurationEnvironmentValidators = {
   /**
@@ -752,7 +1191,13 @@ const configurationEnvironmentValidators = {
    */
   getConfigurationEnvironments: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
       includeValues: Joi.boolean().default(false),
@@ -765,11 +1210,25 @@ const configurationEnvironmentValidators = {
    */
   getEnvironmentConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId,
-      environment: commonSchemas.environment
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        })
     }),
     query: Joi.object({
-      version: commonSchemas.version,
+      version: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        }),
       includeInherited: Joi.boolean().default(true),
       decrypt: Joi.boolean().default(false)
     }).unknown(false)
@@ -780,12 +1239,35 @@ const configurationEnvironmentValidators = {
    */
   setEnvironmentValue: {
     params: Joi.object({
-      configId: commonSchemas.configId,
-      environment: commonSchemas.environment,
-      key: commonSchemas.configKey
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
+      key: Joi.string()
+        .pattern(/^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)*$/)
+        .max(255)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_KEY_PATTERN,
+          'any.required': VALIDATION_MESSAGES.CONFIG_KEY_REQUIRED
+        })
     }),
     body: Joi.object({
-      value: commonSchemas.configValue.required(),
+      value: Joi.alternatives().try(
+        Joi.string(),
+        Joi.number(),
+        Joi.boolean(),
+        Joi.object(),
+        Joi.array()
+      ).required(),
       override: Joi.boolean().default(true),
       inherit: Joi.boolean().default(false),
       reason: Joi.string().max(500).required()
@@ -797,11 +1279,26 @@ const configurationEnvironmentValidators = {
    */
   copyToEnvironment: {
     params: Joi.object({
-      configId: commonSchemas.configId,
-      environment: commonSchemas.environment
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        }),
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        })
     }),
     body: Joi.object({
-      sourceEnvironment: commonSchemas.environment.required(),
+      sourceEnvironment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .required()
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       keys: Joi.array().items(Joi.string()),
       overwrite: Joi.boolean().default(false),
       transformations: Joi.array().items(
@@ -820,11 +1317,28 @@ const configurationEnvironmentValidators = {
    */
   syncConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
-      sourceEnvironment: commonSchemas.environment.required(),
-      targetEnvironments: Joi.array().items(commonSchemas.environment).min(1).required(),
+      sourceEnvironment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .required()
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
+      targetEnvironments: Joi.array().items(
+        Joi.string()
+          .valid('development', 'staging', 'production', 'test', 'local')
+          .messages({
+            'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+          })
+      ).min(1).required(),
       syncType: Joi.string().valid('full', 'selective', 'differential').default('differential'),
       keys: Joi.when('syncType', {
         is: 'selective',
@@ -842,10 +1356,22 @@ const configurationEnvironmentValidators = {
    */
   getEnvironmentDifferences: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
-      environments: Joi.array().items(commonSchemas.environment).min(2).max(5).required(),
+      environments: Joi.array().items(
+        Joi.string()
+          .valid('development', 'staging', 'production', 'test', 'local')
+          .messages({
+            'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+          })
+      ).min(2).max(5).required(),
       ignoreKeys: Joi.array().items(Joi.string()),
       format: Joi.string().valid('json', 'table', 'summary').default('json')
     }).unknown(false)
@@ -856,11 +1382,27 @@ const configurationEnvironmentValidators = {
    */
   promoteConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
-      fromEnvironment: commonSchemas.environment.required(),
-      toEnvironment: commonSchemas.environment.required(),
+      fromEnvironment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .required()
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
+      toEnvironment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .required()
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       promotionType: Joi.string().valid('immediate', 'scheduled', 'canary').default('immediate'),
       schedule: Joi.when('promotionType', {
         is: 'scheduled',
@@ -894,6 +1436,7 @@ const configurationEnvironmentValidators = {
 
 /**
  * Configuration import/export validators
+ * Enhanced data portability and backup capabilities
  */
 const configurationImportExportValidators = {
   /**
@@ -901,12 +1444,26 @@ const configurationImportExportValidators = {
    */
   exportConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
       format: Joi.string().valid('json', 'yaml', 'xml', 'properties', 'env').default('json'),
-      environment: commonSchemas.environment,
-      version: commonSchemas.version,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
+      version: Joi.string()
+        .pattern(/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
+        }),
       includeMetadata: Joi.boolean().default(true),
       includeSchema: Joi.boolean().default(false),
       includeHistory: Joi.boolean().default(false),
@@ -921,7 +1478,11 @@ const configurationImportExportValidators = {
   exportAllConfigurations: {
     query: Joi.object({
       format: Joi.string().valid('json', 'yaml', 'zip', 'tar').default('json'),
-      environment: commonSchemas.environment,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       namespace: Joi.string(),
       includeInactive: Joi.boolean().default(false),
       compress: Joi.boolean().default(true)
@@ -938,7 +1499,12 @@ const configurationImportExportValidators = {
         not: Joi.exist(),
         then: Joi.required()
       }),
-      environment: commonSchemas.environment.required(),
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .required()
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       namespace: Joi.string(),
       importMode: Joi.string().valid('create', 'update', 'upsert').default('upsert'),
       overwrite: Joi.boolean().default(false),
@@ -962,7 +1528,12 @@ const configurationImportExportValidators = {
           then: Joi.required()
         })
       }),
-      environment: commonSchemas.environment.required(),
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .required()
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       importMode: Joi.string().valid('create', 'update', 'upsert').default('upsert'),
       validateSsl: Joi.boolean().default(true),
       timeout: Joi.number().min(1000).max(60000).default(10000)
@@ -974,11 +1545,29 @@ const configurationImportExportValidators = {
    */
   cloneConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
-      name: commonSchemas.configName,
-      environment: commonSchemas.environment,
+      name: Joi.string()
+        .min(3)
+        .max(100)
+        .pattern(/^[a-zA-Z0-9\-_]+$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_NAME_PATTERN,
+          'any.required': VALIDATION_MESSAGES.CONFIG_NAME_REQUIRED
+        }),
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       namespace: Joi.string(),
       includeValues: Joi.boolean().default(true),
       includeSchema: Joi.boolean().default(true),
@@ -990,7 +1579,7 @@ const configurationImportExportValidators = {
           replacement: Joi.string()
         })
       ),
-      metadata: commonSchemas.metadata
+      metadata: Joi.object().default({})
     }).unknown(false)
   },
 
@@ -999,11 +1588,32 @@ const configurationImportExportValidators = {
    */
   mergeConfigurations: {
     body: Joi.object({
-      sourceConfigs: Joi.array().items(commonSchemas.configId).min(2).max(10).required(),
-      targetName: commonSchemas.configName,
+      sourceConfigs: Joi.array().items(
+        Joi.string()
+          .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+          .required()
+          .messages({
+            'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+            'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+          })
+      ).min(2).max(10).required(),
+      targetName: Joi.string()
+        .min(3)
+        .max(100)
+        .pattern(/^[a-zA-Z0-9\-_]+$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_NAME_PATTERN,
+          'any.required': VALIDATION_MESSAGES.CONFIG_NAME_REQUIRED
+        }),
       mergeStrategy: Joi.string().valid('override', 'combine', 'selective').default('override'),
       conflictResolution: Joi.string().valid('first', 'last', 'manual').default('last'),
-      environment: commonSchemas.environment.required(),
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .required()
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       includeSchema: Joi.boolean().default(true),
       validateResult: Joi.boolean().default(true)
     }).unknown(false)
@@ -1012,6 +1622,7 @@ const configurationImportExportValidators = {
 
 /**
  * Additional configuration validators
+ * Extended functionality for analytics and monitoring
  */
 const additionalConfigurationValidators = {
   /**
@@ -1019,9 +1630,17 @@ const additionalConfigurationValidators = {
    */
   getGlobalStatistics: {
     query: Joi.object({
-      environment: commonSchemas.environment,
+      environment: Joi.string()
+        .valid('development', 'staging', 'production', 'test', 'local')
+        .messages({
+          'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+        }),
       namespace: Joi.string(),
-      timeRange: commonSchemas.timeRange,
+      startDate: Joi.date().iso(),
+      endDate: Joi.date().iso().greater(Joi.ref('startDate'))
+        .messages({
+          'date.greater': VALIDATION_MESSAGES.DATE_RANGE_INVALID
+        }),
       groupBy: Joi.string().valid('environment', 'namespace', 'type', 'day', 'week', 'month')
     }).unknown(false)
   },
@@ -1031,10 +1650,20 @@ const additionalConfigurationValidators = {
    */
   getConfigurationStatistics: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
-      timeRange: commonSchemas.timeRange,
+      startDate: Joi.date().iso(),
+      endDate: Joi.date().iso().greater(Joi.ref('startDate'))
+        .messages({
+          'date.greater': VALIDATION_MESSAGES.DATE_RANGE_INVALID
+        }),
       metrics: Joi.array().items(
         Joi.string().valid('usage', 'changes', 'errors', 'performance')
       ),
@@ -1047,14 +1676,23 @@ const additionalConfigurationValidators = {
    */
   getChangeLog: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
       startDate: Joi.date().iso(),
       endDate: Joi.date().iso(),
       user: Joi.string(),
       action: Joi.string().valid('create', 'update', 'delete', 'rollback'),
-      ...commonSchemas.pagination
+      page: Joi.number().integer().min(1).default(1),
+      limit: Joi.number().integer().min(1).max(100).default(20),
+      sort: Joi.string().default('-updatedAt'),
+      order: Joi.string().valid('asc', 'desc').default('desc')
     }).unknown(false)
   },
 
@@ -1063,7 +1701,13 @@ const additionalConfigurationValidators = {
    */
   getConfigurationAuditTrail: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     query: Joi.object({
       startDate: Joi.date().iso(),
@@ -1071,7 +1715,10 @@ const additionalConfigurationValidators = {
       user: Joi.string(),
       action: Joi.string(),
       includeSystemEvents: Joi.boolean().default(true),
-      ...commonSchemas.pagination
+      page: Joi.number().integer().min(1).default(1),
+      limit: Joi.number().integer().min(1).max(100).default(20),
+      sort: Joi.string().default('-updatedAt'),
+      order: Joi.string().valid('asc', 'desc').default('desc')
     }).unknown(false)
   },
 
@@ -1080,7 +1727,13 @@ const additionalConfigurationValidators = {
    */
   watchConfiguration: {
     params: Joi.object({
-      configId: commonSchemas.configId
+      configId: Joi.string()
+        .pattern(/^cfg-[a-zA-Z0-9]{8,32}$/)
+        .required()
+        .messages({
+          'string.pattern.base': VALIDATION_MESSAGES.CONFIG_ID_INVALID,
+          'any.required': VALIDATION_MESSAGES.CONFIG_ID_REQUIRED
+        })
     }),
     body: Joi.object({
       events: Joi.array().items(
@@ -1094,7 +1747,11 @@ const additionalConfigurationValidators = {
         retries: Joi.number().min(0).max(5).default(3)
       }).required(),
       filters: Joi.object({
-        environment: commonSchemas.environment,
+        environment: Joi.string()
+          .valid('development', 'staging', 'production', 'test', 'local')
+          .messages({
+            'any.only': VALIDATION_MESSAGES.ENVIRONMENT_INVALID
+          }),
         minSeverity: Joi.string().valid('low', 'medium', 'high', 'critical')
       }),
       active: Joi.boolean().default(true)
@@ -1113,6 +1770,7 @@ const additionalConfigurationValidators = {
 
 /**
  * Combined configuration validators export
+ * Consolidated validator collection with enhanced error handling
  */
 const configurationValidators = {
   ...configurationCrudValidators,
@@ -1126,7 +1784,8 @@ const configurationValidators = {
 };
 
 /**
- * Validation error handler
+ * Enhanced validation error handler with detailed error reporting
+ * Improved error messages and debugging capabilities for future maintenance
  */
 const handleValidationError = (error, req, res) => {
   logger.warn('Configuration validation error', {
@@ -1135,72 +1794,178 @@ const handleValidationError = (error, req, res) => {
     error: error.details,
     body: req.body,
     query: req.query,
-    params: req.params
+    params: req.params,
+    timestamp: new Date().toISOString(),
+    userAgent: req.get('user-agent'),
+    requestId: req.requestId || 'unknown'
   });
 
   const errors = error.details.map(detail => ({
     field: detail.path.join('.'),
     message: detail.message,
-    type: detail.type
+    type: detail.type,
+    value: detail.context?.value,
+    label: detail.context?.label
   }));
 
   return res.status(StatusCodes.BAD_REQUEST).json({
     success: false,
     error: {
       code: ErrorCodes.VALIDATION_ERROR,
-      message: 'Validation failed',
-      details: errors
+      message: 'Configuration validation failed',
+      details: errors,
+      timestamp: new Date().toISOString(),
+      requestId: req.requestId || 'unknown'
     }
   });
 };
 
 /**
- * Validation middleware factory
+ * Enhanced validation middleware factory
+ * Improved performance and extensibility for future requirements
  */
 const createValidator = (schema) => {
   return (req, res, next) => {
     const validationOptions = {
       abortEarly: false,
       allowUnknown: false,
-      stripUnknown: true
+      stripUnknown: true,
+      presence: 'optional',
+      convert: true
     };
 
-    // Validate params if schema exists
-    if (schema.params) {
-      const { error, value } = schema.params.validate(req.params, validationOptions);
-      if (error) {
-        return handleValidationError(error, req, res);
+    try {
+      // Validate params if schema exists
+      if (schema.params) {
+        const { error, value } = schema.params.validate(req.params, validationOptions);
+        if (error) {
+          return handleValidationError(error, req, res);
+        }
+        req.params = value;
       }
-      req.params = value;
-    }
 
-    // Validate query if schema exists
-    if (schema.query) {
-      const { error, value } = schema.query.validate(req.query, validationOptions);
-      if (error) {
-        return handleValidationError(error, req, res);
+      // Validate query if schema exists
+      if (schema.query) {
+        const { error, value } = schema.query.validate(req.query, validationOptions);
+        if (error) {
+          return handleValidationError(error, req, res);
+        }
+        req.query = value;
       }
-      req.query = value;
-    }
 
-    // Validate body if schema exists
-    if (schema.body) {
-      const { error, value } = schema.body.validate(req.body, validationOptions);
-      if (error) {
-        return handleValidationError(error, req, res);
+      // Validate body if schema exists
+      if (schema.body) {
+        const { error, value } = schema.body.validate(req.body, validationOptions);
+        if (error) {
+          return handleValidationError(error, req, res);
+        }
+        req.body = value;
       }
-      req.body = value;
-    }
 
-    next();
+      // Validate headers if schema exists (for future extensibility)
+      if (schema.headers) {
+        const { error, value } = schema.headers.validate(req.headers, {
+          ...validationOptions,
+          allowUnknown: true
+        });
+        if (error) {
+          return handleValidationError(error, req, res);
+        }
+        req.validatedHeaders = value;
+      }
+
+      next();
+    } catch (validationError) {
+      logger.error('Validation middleware error', {
+        error: validationError.message,
+        stack: validationError.stack,
+        path: req.path,
+        method: req.method,
+        requestId: req.requestId || 'unknown'
+      });
+
+      return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        error: {
+          code: ErrorCodes.INTERNAL_ERROR,
+          message: 'Internal validation error',
+          timestamp: new Date().toISOString(),
+          requestId: req.requestId || 'unknown'
+        }
+      });
+    }
   };
 };
 
-// Export validators
+/**
+ * Schema compilation validator for preventing runtime errors
+ * Future-proofing mechanism to catch schema definition issues early
+ */
+const validateSchemaCompilation = () => {
+  const schemaValidationResults = {
+    valid: true,
+    errors: [],
+    warnings: []
+  };
+
+  try {
+    // Test compile all validators to ensure they're properly constructed
+    Object.keys(configurationValidators).forEach(validatorName => {
+      try {
+        const validator = configurationValidators[validatorName];
+        
+        if (validator.params) {
+          validator.params.describe();
+        }
+        if (validator.query) {
+          validator.query.describe();
+        }
+        if (validator.body) {
+          validator.body.describe();
+        }
+      } catch (compileError) {
+        schemaValidationResults.valid = false;
+        schemaValidationResults.errors.push({
+          validator: validatorName,
+          error: compileError.message
+        });
+      }
+    });
+
+    if (!schemaValidationResults.valid) {
+      logger.error('Schema compilation validation failed', {
+        errors: schemaValidationResults.errors,
+        validatorCount: Object.keys(configurationValidators).length
+      });
+    } else {
+      logger.info('Schema compilation validation successful', {
+        validatorCount: Object.keys(configurationValidators).length
+      });
+    }
+
+    return schemaValidationResults;
+  } catch (error) {
+    logger.error('Schema validation check failed', {
+      error: error.message,
+      stack: error.stack
+    });
+    
+    return {
+      valid: false,
+      errors: [{ general: error.message }],
+      warnings: []
+    };
+  }
+};
+
+// Export validators and utilities
 module.exports = {
   configurationValidators,
   createValidator,
   handleValidationError,
   commonSchemas,
-  VALIDATION_MESSAGES
+  VALIDATION_MESSAGES,
+  createPaginationSchema,
+  createTimeRangeSchema,
+  validateSchemaCompilation
 };

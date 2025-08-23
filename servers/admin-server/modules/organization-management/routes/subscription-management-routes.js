@@ -17,8 +17,7 @@
 const express = require('express');
 const router = express.Router();
 const SubscriptionManagementController = require('../controllers/subscription-management-controller');
-const authenticate = require('../../../../../shared/lib/auth/middleware/authenticate');
-const authorize = require('../../../../../shared/lib/auth/middleware/authorize');
+const { authenticate, authorize } = require('../../../../../shared/lib/auth/middleware/authenticate');
 const requestValidator = require('../../../../../shared/lib/middleware/validation/request-validator');
 const auditLogger = require('../../../../../shared/lib/middleware/logging/audit-logger');
 const rateLimit = require('../../../../../shared/lib/middleware/security/rate-limit');

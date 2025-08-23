@@ -21,10 +21,10 @@ const systemRoutes = require('./system-routes');
 const configurationRoutes = require('./configuration-routes');
 const maintenanceRoutes = require('./maintenance-routes');
 const logger = require('../../../../../shared/lib/utils/logger');
-const ResponseFormatter = require('../../../../../shared/lib/utils/response-formatter');
-const errorHandler = require('../../../../../shared/lib/middleware/error-handlers/error-handler');
-const requestLogger = require('../../../../../shared/lib/middleware/logging/request-logger');
-const securityHeaders = require('../../../../../shared/lib/middleware/security/security-headers');
+const { ResponseFormatter } = require('../../../../../shared/lib/utils/response-formatter');
+const { handleError: errorHandler } = require('../../../../../shared/lib/middleware/error-handlers/error-handler');
+const { log: requestLogger } = require('../../../../../shared/lib/middleware/logging/request-logger');
+const { securityHeaders } = require('../../../../../shared/lib/middleware/security/security-headers');
 
 /**
  * PlatformManagementRoutesManager class handles the configuration, initialization,
@@ -484,13 +484,14 @@ class PlatformManagementRoutesManager {
      */
     #setupBaseMiddleware() {
         // Request logging middleware with platform context
-        this.#router.use(requestLogger({
+        const requestLoggerInstance = require('../../../../../shared/lib/middleware/logging/request-logger').getRequestLogger({
             module: 'PlatformManagementRoutes',
             logLevel: this.#config.monitoring.logLevel,
             includeHeaders: process.env.NODE_ENV === 'development',
             includeBody: process.env.NODE_ENV === 'development',
             sensitiveFields: this.#securityConfig.encryption.sensitiveFields
-        }));
+        });
+        this.#router.use(requestLoggerInstance.log);
 
         // Security headers middleware
         this.#router.use(securityHeaders(this.#securityConfig.headers));
@@ -1241,7 +1242,7 @@ class PlatformManagementRoutesManager {
         });
 
         // Add global error handler
-        this.#router.use(errorHandler());
+        this.#router.use(errorHandler);
 
         this.#initialized = true;
         logger.info('Platform management routes finalized and ready');

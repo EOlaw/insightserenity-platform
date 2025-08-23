@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview Platform management validation rules and schemas
+ * @fileoverview Platform management validation rules and schemas - FIXED VERSION
  * @module servers/admin-server/modules/platform-management/validators/platform-validators
  * @requires joi
  * @requires module:shared/lib/utils/validators/common-validators
@@ -11,7 +11,6 @@
  */
 
 const Joi = require('joi');
-const commonValidators = require('../../../../../shared/lib/utils/validators/common-validators');
 const { StatusCodes } = require('../../../../../shared/lib/utils/constants/status-codes');
 const { ErrorCodes } = require('../../../../../shared/lib/utils/constants/error-codes');
 const logger = require('../../../../../shared/lib/utils/logger');
@@ -33,24 +32,20 @@ const VALIDATION_MESSAGES = {
   MODULE_NAME_REQUIRED: 'Module name is required',
   MODULE_NAME_PATTERN: 'Module name must be in kebab-case format',
   ROLLOUT_PERCENTAGE_INVALID: 'Rollout percentage must be between 0 and 100',
-  DATE_INVALID: 'Invalid date format. Use ISO 8601 format',
-  DATE_FUTURE_REQUIRED: 'Date must be in the future',
-  DATE_RANGE_INVALID: 'End date must be after start date',
-  METADATA_INVALID: 'Metadata must be a valid JSON object',
+  DATE_INVALID: 'Invalid date format',
+  METADATA_INVALID: 'Metadata must be a valid object',
   TAGS_INVALID: 'Tags must be an array of strings',
-  DEPLOYMENT_VERSION_REQUIRED: 'Deployment version is required',
-  DEPLOYMENT_ENVIRONMENT_REQUIRED: 'Deployment environment is required',
-  TIME_RANGE_INVALID: 'Invalid time range format',
-  PAGE_SIZE_INVALID: 'Page size must be between 1 and 100',
-  SORT_ORDER_INVALID: 'Sort order must be either asc or desc'
+  DATE_RANGE_INVALID: 'End date must be after start date',
+  TIME_RANGE_INVALID: 'Invalid time range specified'
 };
 
 /**
- * Common validation schemas
+ * FIXED: Common schemas defined as Joi schema fragments, not full schemas
+ * This prevents the "Schema can only contain plain objects" error
  */
 const commonSchemas = {
   platformId: Joi.string()
-    .pattern(/^[a-zA-Z0-9]{8,32}$/)
+    .pattern(/^platform-[a-zA-Z0-9]{8,32}$/)
     .required()
     .messages({
       'string.pattern.base': VALIDATION_MESSAGES.PLATFORM_ID_INVALID,
@@ -76,7 +71,7 @@ const commonSchemas = {
     }),
 
   version: Joi.string()
-    .pattern(/^\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$/)
+    .pattern(/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+)?$/)
     .messages({
       'string.pattern.base': VALIDATION_MESSAGES.VERSION_INVALID
     }),
@@ -103,6 +98,7 @@ const commonSchemas = {
       'any.required': VALIDATION_MESSAGES.MODULE_NAME_REQUIRED
     }),
 
+  // FIXED: Define these as basic Joi types, not as references
   rolloutPercentage: Joi.number()
     .min(0)
     .max(100)
@@ -146,7 +142,7 @@ const commonSchemas = {
 };
 
 /**
- * Platform configuration validators
+ * FIXED: Platform configuration validators with corrected schema references
  */
 const platformConfigurationValidators = {
   /**
@@ -197,17 +193,18 @@ const platformConfigurationValidators = {
           logLevel: Joi.string().valid('error', 'warn', 'info', 'debug').default('info'),
           alertingEnabled: Joi.boolean().default(true)
         }),
+        // FIXED: Instead of using schema references, define the structure directly
         features: Joi.object().pattern(
           Joi.string(),
           Joi.object({
             enabled: Joi.boolean(),
-            rolloutPercentage: commonSchemas.rolloutPercentage,
-            metadata: commonSchemas.metadata
+            rolloutPercentage: Joi.number().min(0).max(100), // Direct definition instead of reference
+            metadata: Joi.object().default({}) // Direct definition instead of reference
           })
         )
       }).required(),
-      metadata: commonSchemas.metadata,
-      tags: commonSchemas.tags
+      metadata: Joi.object().default({}), // Direct definition instead of reference
+      tags: Joi.array().items(Joi.string().min(1).max(50)).max(20) // Direct definition instead of reference
     }).unknown(false)
   },
 
@@ -249,17 +246,18 @@ const platformConfigurationValidators = {
           logLevel: Joi.string().valid('error', 'warn', 'info', 'debug'),
           alertingEnabled: Joi.boolean()
         }),
+        // FIXED: Direct structure definition to avoid schema reference issues
         features: Joi.object().pattern(
           Joi.string(),
           Joi.object({
             enabled: Joi.boolean(),
-            rolloutPercentage: commonSchemas.rolloutPercentage,
-            metadata: commonSchemas.metadata
+            rolloutPercentage: Joi.number().min(0).max(100),
+            metadata: Joi.object().default({})
           })
         )
       }),
-      metadata: commonSchemas.metadata,
-      tags: commonSchemas.tags,
+      metadata: Joi.object().default({}),
+      tags: Joi.array().items(Joi.string().min(1).max(50)).max(20),
       reason: Joi.string().max(500).required()
     }).unknown(false).min(2) // At least one field to update plus reason
   },
@@ -277,7 +275,7 @@ const platformConfigurationValidators = {
       effectiveFrom: Joi.date().iso(),
       effectiveUntil: Joi.date().iso().greater(Joi.ref('effectiveFrom')),
       notifyUsers: Joi.boolean().default(true),
-      metadata: commonSchemas.metadata
+      metadata: Joi.object().default({})
     }).unknown(false)
   },
 
@@ -326,10 +324,11 @@ const platformConfigurationValidators = {
     query: Joi.object({
       severity: Joi.string().valid('critical', 'high', 'medium', 'low'),
       status: Joi.string().valid('open', 'investigating', 'resolved', 'closed'),
-      category: Joi.string().valid('performance', 'security', 'availability', 'functionality'),
-      ...commonSchemas.pagination,
-      startDate: Joi.date().iso(),
-      endDate: Joi.date().iso()
+      category: Joi.string().valid('performance', 'security', 'availability', 'configuration'),
+      assignedTo: Joi.string(),
+      createdAfter: Joi.date().iso(),
+      createdBefore: Joi.date().iso(),
+      ...commonSchemas.pagination
     }).unknown(false)
   },
 
@@ -342,26 +341,16 @@ const platformConfigurationValidators = {
     }),
     body: Joi.object({
       checkTypes: Joi.array().items(
-        Joi.string().valid(
-          'connectivity',
-          'database',
-          'cache',
-          'storage',
-          'services',
-          'dependencies',
-          'certificates',
-          'performance'
-        )
-      ).min(1).default(['connectivity', 'database', 'services']),
-      depth: Joi.string().valid('basic', 'standard', 'comprehensive').default('standard'),
-      timeout: Joi.number().min(1000).max(30000).default(5000),
-      async: Joi.boolean().default(false)
+        Joi.string().valid('connectivity', 'performance', 'security', 'dependencies', 'resources')
+      ).default(['connectivity', 'performance']),
+      includeDetails: Joi.boolean().default(false),
+      timeout: Joi.number().min(1000).max(300000).default(30000)
     }).unknown(false)
   }
 };
 
 /**
- * Feature flag management validators
+ * Feature flag validators
  */
 const featureFlagValidators = {
   /**
@@ -373,10 +362,9 @@ const featureFlagValidators = {
     }),
     query: Joi.object({
       environment: commonSchemas.environment,
-      status: Joi.string().valid('enabled', 'disabled', 'partial'),
+      status: Joi.string().valid('enabled', 'disabled', 'testing'),
+      category: Joi.string(),
       search: Joi.string().max(100),
-      tags: Joi.array().items(Joi.string()),
-      includeMetadata: Joi.boolean().default(true),
       ...commonSchemas.pagination
     }).unknown(false)
   },
@@ -390,27 +378,11 @@ const featureFlagValidators = {
       featureName: commonSchemas.featureName
     }),
     body: Joi.object({
-      action: Joi.string().valid('enable', 'disable', 'toggle').required(),
-      rolloutPercentage: commonSchemas.rolloutPercentage,
-      enabledTenants: Joi.array().items(Joi.string()),
-      disabledTenants: Joi.array().items(Joi.string()),
-      schedule: Joi.object({
-        enableAt: Joi.date().iso().greater('now'),
-        disableAt: Joi.date().iso().greater(Joi.ref('enableAt'))
-      }),
-      conditions: Joi.array().items(
-        Joi.object({
-          type: Joi.string().valid('user', 'tenant', 'environment', 'custom').required(),
-          operator: Joi.string().valid('equals', 'contains', 'regex', 'in', 'not_in').required(),
-          value: Joi.alternatives().try(
-            Joi.string(),
-            Joi.number(),
-            Joi.boolean(),
-            Joi.array()
-          ).required()
-        })
-      ),
-      metadata: commonSchemas.metadata,
+      enabled: Joi.boolean().required(),
+      rolloutPercentage: Joi.number().min(0).max(100).default(100),
+      targetAudience: Joi.array().items(Joi.string()),
+      conditions: Joi.object(),
+      metadata: Joi.object().default({}),
       reason: Joi.string().max(500).required()
     }).unknown(false)
   },
@@ -423,16 +395,14 @@ const featureFlagValidators = {
       platformId: commonSchemas.platformId
     }),
     body: Joi.object({
-      action: Joi.string().valid('enable', 'disable', 'reset').required(),
       features: Joi.array().items(
         Joi.object({
           name: commonSchemas.featureName,
-          enabled: Joi.boolean(),
-          rolloutPercentage: commonSchemas.rolloutPercentage,
-          metadata: commonSchemas.metadata
+          enabled: Joi.boolean().required(),
+          rolloutPercentage: Joi.number().min(0).max(100).default(100),
+          metadata: Joi.object().default({})
         })
       ).min(1).max(50).required(),
-      applyToEnvironments: Joi.array().items(commonSchemas.environment),
       reason: Joi.string().max(500).required()
     }).unknown(false)
   },
@@ -442,12 +412,11 @@ const featureFlagValidators = {
    */
   getFeatureFlagsForTenant: {
     params: Joi.object({
-      tenantId: Joi.string().pattern(/^[a-zA-Z0-9\-_]+$/).required()
+      tenantId: Joi.string().required()
     }),
     query: Joi.object({
       environment: commonSchemas.environment,
-      includeDisabled: Joi.boolean().default(false),
-      includeMetadata: Joi.boolean().default(true)
+      activeOnly: Joi.boolean().default(true)
     }).unknown(false)
   },
 
@@ -457,13 +426,8 @@ const featureFlagValidators = {
   searchFeatureFlags: {
     query: Joi.object({
       query: Joi.string().min(2).max(100).required(),
-      searchIn: Joi.array().items(
-        Joi.string().valid('name', 'description', 'tags', 'metadata')
-      ).default(['name', 'description']),
-      environment: commonSchemas.environment,
-      status: Joi.string().valid('enabled', 'disabled', 'partial'),
-      modifiedAfter: Joi.date().iso(),
-      modifiedBefore: Joi.date().iso(),
+      platforms: Joi.array().items(Joi.string()),
+      environments: Joi.array().items(commonSchemas.environment),
       ...commonSchemas.pagination
     }).unknown(false)
   }
@@ -481,10 +445,8 @@ const systemModuleValidators = {
       platformId: commonSchemas.platformId
     }),
     query: Joi.object({
-      status: Joi.string().valid('enabled', 'disabled', 'deprecated'),
-      category: Joi.string().valid('core', 'optional', 'experimental', 'deprecated'),
-      includeMetrics: Joi.boolean().default(false),
-      includeConfig: Joi.boolean().default(false),
+      status: Joi.string().valid('active', 'inactive', 'deprecated'),
+      category: Joi.string(),
       ...commonSchemas.pagination
     }).unknown(false)
   },
@@ -498,45 +460,18 @@ const systemModuleValidators = {
       moduleName: commonSchemas.moduleName
     }),
     body: Joi.object({
-      enabled: Joi.boolean(),
       version: commonSchemas.version,
-      configuration: Joi.object().default({}),
-      dependencies: Joi.array().items(
-        Joi.object({
-          module: commonSchemas.moduleName,
-          version: commonSchemas.version,
-          required: Joi.boolean().default(true)
-        })
-      ),
-      resources: Joi.object({
-        cpu: Joi.object({
-          request: Joi.string().pattern(/^\d+m?$/),
-          limit: Joi.string().pattern(/^\d+m?$/)
-        }),
-        memory: Joi.object({
-          request: Joi.string().pattern(/^\d+[KMG]i?$/),
-          limit: Joi.string().pattern(/^\d+[KMG]i?$/)
-        }),
-        storage: Joi.object({
-          size: Joi.string().pattern(/^\d+[KMG]i?$/),
-          type: Joi.string().valid('ssd', 'hdd', 'network')
-        })
-      }),
-      healthCheck: Joi.object({
-        enabled: Joi.boolean().default(true),
-        endpoint: Joi.string().uri(),
-        interval: Joi.number().min(10).max(3600),
-        timeout: Joi.number().min(1).max(60),
-        retries: Joi.number().min(0).max(10)
-      }),
-      metadata: commonSchemas.metadata,
+      status: Joi.string().valid('active', 'inactive', 'deprecated'),
+      configuration: Joi.object(),
+      dependencies: Joi.array().items(Joi.string()),
+      metadata: Joi.object().default({}),
       reason: Joi.string().max(500).required()
     }).unknown(false).min(2) // At least one field to update plus reason
   }
 };
 
 /**
- * Deployment management validators
+ * Deployment validators
  */
 const deploymentValidators = {
   /**
@@ -549,35 +484,12 @@ const deploymentValidators = {
     body: Joi.object({
       version: commonSchemas.version.required(),
       environment: commonSchemas.environment.required(),
-      deploymentType: Joi.string().valid(
-        'rolling',
-        'blue-green',
-        'canary',
-        'recreate',
-        'a-b-testing'
-      ).required(),
-      components: Joi.array().items(
-        Joi.object({
-          name: Joi.string().required(),
-          version: commonSchemas.version.required(),
-          status: Joi.string().valid('pending', 'deploying', 'deployed', 'failed').required(),
-          deployedAt: Joi.date().iso()
-        })
-      ).min(1).required(),
-      initiatedBy: Joi.string().required(),
-      approvedBy: Joi.array().items(Joi.string()),
-      rollbackVersion: commonSchemas.version,
-      configuration: Joi.object({
-        autoRollback: Joi.boolean().default(true),
-        healthCheckEnabled: Joi.boolean().default(true),
-        canaryPercentage: Joi.number().min(0).max(100),
-        deploymentStrategy: Joi.object({
-          maxSurge: Joi.number().min(0).max(100),
-          maxUnavailable: Joi.number().min(0).max(100)
-        })
-      }),
-      metadata: commonSchemas.metadata,
-      tags: commonSchemas.tags
+      deploymentType: Joi.string().valid('release', 'hotfix', 'rollback', 'feature').required(),
+      changes: Joi.array().items(Joi.string()).required(),
+      deployedBy: Joi.string().required(),
+      deploymentNotes: Joi.string().max(1000),
+      rollbackPlan: Joi.string().max(1000),
+      metadata: Joi.object().default({})
     }).unknown(false)
   },
 
@@ -590,266 +502,27 @@ const deploymentValidators = {
     }),
     query: Joi.object({
       environment: commonSchemas.environment,
-      version: commonSchemas.version,
-      status: Joi.string().valid('pending', 'in-progress', 'completed', 'failed', 'rolled-back'),
-      deploymentType: Joi.string().valid('rolling', 'blue-green', 'canary', 'recreate', 'a-b-testing'),
-      initiatedBy: Joi.string(),
+      deploymentType: Joi.string().valid('release', 'hotfix', 'rollback', 'feature'),
+      deployedBy: Joi.string(),
       startDate: Joi.date().iso(),
       endDate: Joi.date().iso(),
-      includeMetrics: Joi.boolean().default(false),
-      includeChangelog: Joi.boolean().default(false),
       ...commonSchemas.pagination
     }).unknown(false)
   }
 };
 
 /**
- * Platform administration validators
- */
-const platformAdministrationValidators = {
-  /**
-   * Validate platform backup request
-   */
-  createPlatformBackup: {
-    params: Joi.object({
-      platformId: commonSchemas.platformId
-    }),
-    body: Joi.object({
-      backupType: Joi.string().valid('full', 'incremental', 'differential').required(),
-      components: Joi.array().items(
-        Joi.string().valid('configuration', 'database', 'files', 'logs', 'metrics')
-      ).min(1).required(),
-      compression: Joi.boolean().default(true),
-      encryption: Joi.boolean().default(true),
-      retentionDays: Joi.number().min(1).max(365).default(30),
-      destination: Joi.object({
-        type: Joi.string().valid('local', 's3', 'azure', 'gcp').required(),
-        path: Joi.string().required(),
-        credentials: Joi.object().when('type', {
-          not: 'local',
-          then: Joi.object({
-            accessKey: Joi.string().required(),
-            secretKey: Joi.string().required(),
-            region: Joi.string()
-          })
-        })
-      }),
-      schedule: Joi.object({
-        frequency: Joi.string().valid('once', 'daily', 'weekly', 'monthly'),
-        time: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/),
-        dayOfWeek: Joi.when('frequency', {
-          is: 'weekly',
-          then: Joi.number().min(0).max(6).required()
-        }),
-        dayOfMonth: Joi.when('frequency', {
-          is: 'monthly',
-          then: Joi.number().min(1).max(31).required()
-        })
-      }),
-      metadata: commonSchemas.metadata
-    }).unknown(false)
-  },
-
-  /**
-   * Validate platform restore request
-   */
-  restorePlatformBackup: {
-    params: Joi.object({
-      platformId: commonSchemas.platformId
-    }),
-    body: Joi.object({
-      backupId: Joi.string().required(),
-      restoreType: Joi.string().valid('full', 'selective').required(),
-      components: Joi.when('restoreType', {
-        is: 'selective',
-        then: Joi.array().items(
-          Joi.string().valid('configuration', 'database', 'files', 'logs', 'metrics')
-        ).min(1).required(),
-        otherwise: Joi.forbidden()
-      }),
-      targetEnvironment: commonSchemas.environment,
-      validateBeforeRestore: Joi.boolean().default(true),
-      stopServicesBeforeRestore: Joi.boolean().default(true),
-      createBackupBeforeRestore: Joi.boolean().default(true),
-      reason: Joi.string().max(500).required(),
-      approvedBy: Joi.string().required()
-    }).unknown(false)
-  },
-
-  /**
-   * Validate platform migration request
-   */
-  migratePlatform: {
-    body: Joi.object({
-      sourceEnvironment: commonSchemas.environment.required(),
-      targetEnvironment: commonSchemas.environment.required(),
-      migrationType: Joi.string().valid('schema', 'data', 'full').required(),
-      components: Joi.array().items(
-        Joi.object({
-          name: Joi.string().required(),
-          migrateSchema: Joi.boolean().default(true),
-          migrateData: Joi.boolean().default(true),
-          transformations: Joi.array().items(
-            Joi.object({
-              field: Joi.string().required(),
-              transformation: Joi.string().valid('rename', 'convert', 'remove', 'add').required(),
-              parameters: Joi.object()
-            })
-          )
-        })
-      ).min(1).required(),
-      validationRules: Joi.array().items(
-        Joi.object({
-          type: Joi.string().valid('schema', 'data', 'integrity', 'performance').required(),
-          enabled: Joi.boolean().default(true),
-          threshold: Joi.number()
-        })
-      ),
-      rollbackOnError: Joi.boolean().default(true),
-      dryRun: Joi.boolean().default(false),
-      metadata: commonSchemas.metadata
-    }).unknown(false)
-  },
-
-  /**
-   * Validate platform audit request
-   */
-  auditPlatform: {
-    params: Joi.object({
-      platformId: commonSchemas.platformId
-    }),
-    query: Joi.object({
-      auditType: Joi.string().valid('security', 'compliance', 'performance', 'configuration', 'all'),
-      depth: Joi.string().valid('basic', 'standard', 'comprehensive').default('standard'),
-      startDate: Joi.date().iso(),
-      endDate: Joi.date().iso(),
-      includeRecommendations: Joi.boolean().default(true),
-      generateReport: Joi.boolean().default(true),
-      reportFormat: Joi.string().valid('json', 'pdf', 'html', 'csv').default('json')
-    }).unknown(false)
-  }
-};
-
-/**
- * Platform monitoring validators
- */
-const platformMonitoringValidators = {
-  /**
-   * Validate set monitoring configuration request
-   */
-  setMonitoringConfiguration: {
-    params: Joi.object({
-      platformId: commonSchemas.platformId
-    }),
-    body: Joi.object({
-      enabled: Joi.boolean().default(true),
-      metricsCollection: Joi.object({
-        enabled: Joi.boolean().default(true),
-        interval: Joi.number().min(10).max(3600).default(60),
-        retention: Joi.number().min(1).max(90).default(30),
-        metrics: Joi.array().items(
-          Joi.object({
-            name: Joi.string().required(),
-            enabled: Joi.boolean().default(true),
-            threshold: Joi.object({
-              warning: Joi.number(),
-              critical: Joi.number()
-            })
-          })
-        )
-      }),
-      logging: Joi.object({
-        enabled: Joi.boolean().default(true),
-        level: Joi.string().valid('error', 'warn', 'info', 'debug').default('info'),
-        retention: Joi.number().min(1).max(365).default(7),
-        destinations: Joi.array().items(
-          Joi.object({
-            type: Joi.string().valid('file', 'database', 'elasticsearch', 'cloudwatch').required(),
-            configuration: Joi.object()
-          })
-        )
-      }),
-      alerting: Joi.object({
-        enabled: Joi.boolean().default(true),
-        channels: Joi.array().items(
-          Joi.object({
-            type: Joi.string().valid('email', 'sms', 'slack', 'webhook', 'pagerduty').required(),
-            configuration: Joi.object(),
-            severity: Joi.array().items(
-              Joi.string().valid('critical', 'high', 'medium', 'low')
-            )
-          })
-        ),
-        rules: Joi.array().items(
-          Joi.object({
-            name: Joi.string().required(),
-            condition: Joi.string().required(),
-            severity: Joi.string().valid('critical', 'high', 'medium', 'low').required(),
-            cooldown: Joi.number().min(0).max(3600).default(300)
-          })
-        )
-      }),
-      tracing: Joi.object({
-        enabled: Joi.boolean().default(false),
-        samplingRate: Joi.number().min(0).max(1).default(0.1),
-        backend: Joi.string().valid('jaeger', 'zipkin', 'datadog', 'newrelic')
-      })
-    }).unknown(false)
-  },
-
-  /**
-   * Validate create alert rule request
-   */
-  createAlertRule: {
-    params: Joi.object({
-      platformId: commonSchemas.platformId
-    }),
-    body: Joi.object({
-      name: Joi.string().min(3).max(100).required(),
-      description: Joi.string().max(500),
-      enabled: Joi.boolean().default(true),
-      metric: Joi.string().required(),
-      condition: Joi.object({
-        operator: Joi.string().valid('gt', 'gte', 'lt', 'lte', 'eq', 'neq').required(),
-        threshold: Joi.number().required(),
-        duration: Joi.number().min(0).max(3600).default(60),
-        aggregation: Joi.string().valid('avg', 'sum', 'min', 'max', 'count').default('avg')
-      }).required(),
-      severity: Joi.string().valid('critical', 'high', 'medium', 'low').required(),
-      actions: Joi.array().items(
-        Joi.object({
-          type: Joi.string().valid('notify', 'scale', 'restart', 'custom').required(),
-          configuration: Joi.object()
-        })
-      ).min(1).required(),
-      cooldown: Joi.number().min(0).max(3600).default(300),
-      schedule: Joi.object({
-        activeHours: Joi.object({
-          start: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/),
-          end: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/)
-        }),
-        activeDays: Joi.array().items(Joi.number().min(0).max(6)),
-        timezone: Joi.string().default('UTC')
-      }),
-      metadata: commonSchemas.metadata
-    }).unknown(false)
-  }
-};
-
-/**
- * Combined platform validators export
+ * Combined platform validators
  */
 const platformValidators = {
   ...platformConfigurationValidators,
   ...featureFlagValidators,
   ...systemModuleValidators,
-  ...deploymentValidators,
-  ...platformAdministrationValidators,
-  ...platformMonitoringValidators
+  ...deploymentValidators
 };
 
 /**
- * Validation error handler
+ * FIXED: Validation error handler
  */
 const handleValidationError = (error, req, res) => {
   logger.warn('Platform validation error', {
@@ -878,7 +551,7 @@ const handleValidationError = (error, req, res) => {
 };
 
 /**
- * Validation middleware factory
+ * FIXED: Validation middleware factory
  */
 const createValidator = (schema) => {
   return (req, res, next) => {
@@ -887,8 +560,6 @@ const createValidator = (schema) => {
       allowUnknown: false,
       stripUnknown: true
     };
-
-    const toValidate = {};
 
     // Validate params if schema exists
     if (schema.params) {

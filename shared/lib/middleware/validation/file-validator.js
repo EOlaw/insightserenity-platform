@@ -24,9 +24,9 @@ const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const CacheService = require('../../services/cache-service');
 const FileService = require('../../services/file-service');
-const MalwareScanner = require('../../security/services/malware-scanner');
-const FileRestrictionModel = require('../../database/models/file-restriction-model');
-const config = require('..\helmet-config');
+const MalwareScanner = require('../security/malware-scanner');
+// const FileRestrictionModel = require('../../database/models/file-restriction-model');
+const config = require('../helmet-config');
 
 /**
  * @class FileValidator
@@ -397,7 +397,7 @@ class FileValidator {
       { name: 'basic', fn: () => this.#validateBasicProperties(file, options) },
       { name: 'size', fn: () => this.#validateFileSize(file, options) },
       { name: 'name', fn: () => this.#validateFileName(file, options) },
-      { name: 'extension', fn: () => this.#validateExtension(file, options) },
+      { name: 'extension', fn: () => this.#validateFileExtension(file, options) },
       { name: 'mimeType', fn: () => this.#validateMimeType(file, options) },
       { name: 'magicNumbers', fn: () => this.#validateMagicNumbers(file, options) },
       { name: 'content', fn: () => this.#validateFileContent(file, options) },

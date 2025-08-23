@@ -18,8 +18,7 @@
 const express = require('express');
 const adminUserController = require('../controllers/admin-user-controller');
 const { authenticate, authorize } = require('../../../../../shared/lib/auth/middleware/authenticate');
-// const authenticate = require('../../../../../shared/lib/auth/middleware/authenticate');
-// const authorize = require('../../../../../shared/lib/auth/middleware/authorize');
+const { authenticate, authorize } = require('../../../../../shared/lib/auth/middleware/authenticate');
 const rateLimit = require('../../../../../shared/lib/auth/middleware/rate-limit');
 const { CorsMiddleware } = require('../../../../../shared/lib/middleware/cors-middleware');
 const {securityHeaders} = require('../../../../../shared/lib/middleware/security/security-headers');

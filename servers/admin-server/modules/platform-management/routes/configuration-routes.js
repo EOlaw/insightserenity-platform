@@ -5,11 +5,9 @@
  * @module servers/admin-server/modules/platform-management/routes/configuration-routes
  * @requires express
  * @requires module:servers/admin-server/modules/platform-management/controllers/configuration-controller
- * @requires module:servers/admin-server/modules/platform-management/validators/configuration-validators
  * @requires module:shared/lib/auth/middleware/authenticate
  * @requires module:shared/lib/auth/middleware/authorize
  * @requires module:shared/lib/auth/middleware/rate-limit
- * @requires module:shared/lib/middleware/validation/request-validator
  * @requires module:shared/lib/middleware/security/request-sanitizer
  * @requires module:shared/lib/middleware/logging/audit-logger
  * @requires module:shared/lib/middleware/validation/file-validator
@@ -22,16 +20,22 @@ const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const configurationController = require('../controllers/configuration-controller');
-const { configurationValidators } = require('../validators');
-const authenticate = require('../../../../../shared/lib/auth/middleware/authenticate');
-const authorize = require('../../../../../shared/lib/auth/middleware/authorize');
-const rateLimit = require('../../../../../shared/lib/auth/middleware/rate-limit');
-const requestValidator = require('../../../../../shared/lib/middleware/validation/request-validator');
-const requestSanitizer = require('../../../../../shared/lib/middleware/security/request-sanitizer');
-const auditLogger = require('../../../../../shared/lib/middleware/logging/audit-logger');
-const fileValidator = require('../../../../../shared/lib/middleware/validation/file-validator');
+const { authenticate, authorize } = require('../../../../../shared/lib/auth/middleware/authenticate');
+const {
+  createLimiter,
+  limitByIP,
+  limitByUser,
+  limitByEndpoint,
+  combinedLimit,
+  customLimit,
+  costBasedLimit,
+  adaptiveLimit
+} = require('../../../../../shared/lib/auth/middleware/rate-limit');
+const { requestSanitizer } = require('../../../../../shared/lib/middleware/security/request-sanitizer');
+const { middleware: auditMiddleware, logEvent: auditLogEvent } = require('../../../../../shared/lib/middleware/logging/audit-logger');
+const { validate: fileValidator } = require('../../../../../shared/lib/middleware/validation/file-validator');
 const logger = require('../../../../../shared/lib/utils/logger');
-const asyncHandler = require('../../../../../shared/lib/utils/async-handler');
+const { asyncHandler } = require('../../../../../shared/lib/utils/async-handler');
 
 /**
  * Multer configuration for file uploads
@@ -53,46 +57,136 @@ const upload = multer({
 });
 
 /**
- * Rate limiting configurations for different endpoint types
+ * Advanced rate limiting configurations for different configuration operations
  */
 const RATE_LIMITS = {
+  // Default rate limiting for general configuration operations
   default: {
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100,
-    message: 'Too many configuration requests from this IP, please try again later.'
+    message: 'Too many configuration requests from this IP, please try again later.',
+    headers: true
   },
+  
+  // High-frequency read operations with adaptive limiting
   read: {
     windowMs: 1 * 60 * 1000, // 1 minute
-    max: 60,
-    message: 'Configuration read rate limit exceeded.'
+    baseMax: 60,
+    minMax: 20,
+    maxMax: 120,
+    message: 'Configuration read rate limit exceeded.',
+    headers: true
   },
+  
+  // Write operations with burst protection
   write: {
     windowMs: 5 * 60 * 1000, // 5 minutes
     max: 20,
-    message: 'Configuration write rate limit exceeded.'
+    message: 'Configuration write rate limit exceeded.',
+    headers: true,
+    burstProtection: true
   },
+  
+  // Import operations with cost-based limiting
   import: {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5,
-    message: 'Configuration import rate limit exceeded.'
+    maxCost: 5000,
+    message: 'Configuration import rate limit exceeded.',
+    headers: true
   },
+  
+  // Export operations with cost-based limiting
   export: {
     windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 10,
-    message: 'Configuration export rate limit exceeded.'
+    maxCost: 3000,
+    message: 'Configuration export rate limit exceeded.',
+    headers: true
   },
-  sensitive: {
+  
+  // Critical configuration operations requiring combined limiting
+  critical: {
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 10,
-    message: 'Sensitive configuration operation rate limit exceeded.'
+    message: 'Critical configuration operation rate limit exceeded.',
+    headers: true,
+    strategies: ['ip', 'user']
+  },
+  
+  // Sensitive security operations
+  security: {
+    windowMs: 30 * 60 * 1000, // 30 minutes
+    max: 5,
+    message: 'Security operation rate limit exceeded.',
+    headers: true
+  },
+  
+  // Bulk operations with higher cost limits
+  bulk: {
+    windowMs: 30 * 60 * 1000, // 30 minutes
+    maxCost: 10000,
+    message: 'Bulk operation cost limit exceeded.',
+    headers: true
+  },
+  
+  // Migration operations with strict limits
+  migration: {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 3,
+    message: 'Migration operation rate limit exceeded.',
+    headers: true
   }
+};
+
+/**
+ * Cost calculator for configuration operations
+ */
+const calculateConfigurationCost = (req) => {
+  let cost = 10; // Base cost
+  
+  // Increase cost based on operation complexity
+  if (req.path.includes('bulk')) cost += 100;
+  if (req.path.includes('import')) cost += 50;
+  if (req.path.includes('export')) cost += 30;
+  if (req.path.includes('migrate')) cost += 200;
+  if (req.path.includes('encrypt') || req.path.includes('decrypt')) cost += 75;
+  if (req.path.includes('validate') || req.path.includes('compliance')) cost += 25;
+  
+  // Increase cost based on request body size
+  if (req.body && JSON.stringify(req.body).length > 10000) {
+    cost += Math.floor(JSON.stringify(req.body).length / 1000);
+  }
+  
+  // Increase cost for batch operations
+  if (req.body && req.body.items && Array.isArray(req.body.items)) {
+    cost += req.body.items.length * 5;
+  }
+  
+  return cost;
+};
+
+/**
+ * Cost calculator for export operations
+ */
+const calculateExportCost = (req) => {
+  let cost = 50; // Base export cost
+  
+  // Increase cost based on export scope
+  if (req.path.includes('/export/all')) cost += 300;
+  if (req.path.includes('bulk/export')) cost += 200;
+  
+  // Increase cost based on requested format complexity
+  if (req.query.format === 'xml') cost += 20;
+  if (req.query.includeHistory === 'true') cost += 50;
+  if (req.query.includeMetadata === 'true') cost += 30;
+  
+  return cost;
 };
 
 /**
  * Configuration operation logger middleware
  */
 const configOperationLogger = (operation) => {
-  return (req, res, next) => {
+  return asyncHandler(async (req, res, next) => {
     logger.info(`Configuration operation initiated: ${operation}`, {
       operation,
       configId: req.params.configId,
@@ -103,12 +197,45 @@ const configOperationLogger = (operation) => {
       path: req.path,
       timestamp: new Date().toISOString()
     });
+
+    // Enhanced audit logging for critical configuration operations
+    const criticalOperations = [
+      'configuration-create', 'configuration-update', 'configuration-delete',
+      'configuration-import', 'configuration-export', 'configuration-backup',
+      'configuration-restore', 'configuration-encrypt', 'configuration-decrypt',
+      'migration-execute', 'bulk-update', 'bulk-delete', 'schema-update'
+    ];
+
+    if (criticalOperations.includes(operation)) {
+      await auditLogEvent({
+        event: `config.${operation.replace('-', '_')}`,
+        timestamp: new Date().toISOString(),
+        actor: req.user || { type: 'system', id: 'unknown' },
+        resource: {
+          type: 'configuration',
+          id: req.params.configId || 'multiple',
+          name: req.params.configId ? `Configuration ${req.params.configId}` : 'Multiple Configurations'
+        },
+        action: operation,
+        result: 'initiated',
+        metadata: {
+          operation,
+          configId: req.params.configId,
+          key: req.params.key,
+          environment: req.params.environment,
+          requestPath: req.path,
+          requestMethod: req.method,
+          userAgent: req.get('user-agent')
+        }
+      }, req);
+    }
+
     next();
-  };
+  });
 };
 
 /**
- * Middleware to track configuration changes
+ * Middleware to track configuration changes with enhanced audit logging
  */
 const trackConfigurationChange = (changeType) => {
   return asyncHandler(async (req, res, next) => {
@@ -123,12 +250,32 @@ const trackConfigurationChange = (changeType) => {
         sessionId: req.sessionID
       }
     };
+
+    // Audit configuration change tracking
+    await auditLogEvent({
+      event: 'config.change_tracking_started',
+      timestamp: new Date().toISOString(),
+      actor: req.user,
+      resource: {
+        type: 'configuration',
+        id: req.params.configId || 'unknown',
+        name: `Configuration ${req.params.configId || 'Unknown'}`
+      },
+      action: 'change_tracking',
+      result: 'initiated',
+      metadata: {
+        changeType,
+        configId: req.params.configId,
+        trackingId: `track_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      }
+    }, req);
+
     next();
   });
 };
 
 /**
- * Middleware to validate configuration access permissions
+ * Middleware to validate configuration access permissions with audit logging
  */
 const validateConfigAccess = asyncHandler(async (req, res, next) => {
   const { configId } = req.params;
@@ -142,25 +289,144 @@ const validateConfigAccess = asyncHandler(async (req, res, next) => {
       userId,
       userRole
     });
+
+    // Audit unauthorized access attempt
+    await auditLogEvent({
+      event: 'authz.access_denied',
+      timestamp: new Date().toISOString(),
+      actor: req.user,
+      resource: {
+        type: 'secure_configuration',
+        id: configId,
+        name: `Secure Configuration ${configId}`
+      },
+      action: 'access_attempt',
+      result: 'failure',
+      metadata: {
+        reason: 'insufficient_permissions',
+        requiredRoles: ['admin', 'security-admin'],
+        userRole,
+        configId
+      }
+    }, req);
+    
     return res.status(403).json({
       success: false,
       message: 'Access denied to secure configuration'
     });
+  }
+
+  // Audit successful access validation
+  if (configId && userId) {
+    await auditLogEvent({
+      event: 'authz.config_access_validated',
+      timestamp: new Date().toISOString(),
+      actor: req.user,
+      resource: {
+        type: 'configuration',
+        id: configId,
+        name: `Configuration ${configId}`
+      },
+      action: 'access_validation',
+      result: 'success',
+      metadata: {
+        configId,
+        userId,
+        userRole,
+        requestPath: req.path
+      }
+    }, req);
   }
   
   next();
 });
 
 /**
+ * Middleware to audit operation completion
+ */
+const auditOperationComplete = (operation) => {
+  return asyncHandler(async (req, res, next) => {
+    const originalSend = res.send;
+    
+    res.send = function(body) {
+      // Determine operation result based on response
+      const result = res.statusCode >= 200 && res.statusCode < 300 ? 'success' : 'failure';
+      
+      // Log operation completion
+      auditLogEvent({
+        event: `config.${operation.replace('-', '_')}_complete`,
+        timestamp: new Date().toISOString(),
+        actor: req.user || { type: 'system', id: 'unknown' },
+        resource: {
+          type: 'configuration',
+          id: req.params.configId || 'multiple',
+          name: req.params.configId ? `Configuration ${req.params.configId}` : 'Multiple Configurations'
+        },
+        action: `${operation}_complete`,
+        result: result,
+        metadata: {
+          operation,
+          statusCode: res.statusCode,
+          configId: req.params.configId,
+          key: req.params.key,
+          environment: req.params.environment,
+          responseSize: body ? body.length : 0,
+          changeTracking: req.configChangeTracking
+        }
+      }, req).catch(error => {
+        logger.error('Failed to log configuration operation completion audit', {
+          error: error.message,
+          operation
+        });
+      });
+      
+      return originalSend.call(this, body);
+    };
+    
+    next();
+  });
+};
+
+/**
+ * Custom rate limiter for sensitive configuration operations
+ */
+const sensitiveConfigLimit = customLimit('sensitive_config', (req) => {
+  // Apply stricter limits for sensitive configuration operations
+  const sensitiveEndpoints = [
+    '/encrypt', '/decrypt', '/rotate-keys', '/permissions',
+    '/backup', '/restore', '/migrate', '/security',
+    '/lock', '/unlock', '/rollback'
+  ];
+  
+  const isSensitive = sensitiveEndpoints.some(endpoint => req.path.includes(endpoint));
+  
+  if (isSensitive) {
+    return {
+      windowMs: 20 * 60 * 1000, // 20 minutes
+      max: 3,
+      message: 'Sensitive configuration operation rate limit exceeded',
+      headers: true
+    };
+  }
+  
+  return null; // Skip if not sensitive
+}, {});
+
+/**
  * Apply global middleware to all routes
  */
 router.use(authenticate);
 router.use(requestSanitizer());
-router.use(auditLogger({
+router.use(auditMiddleware({
   service: 'configuration-management',
   includeBody: true,
   includeQuery: true,
-  sensitiveFields: ['password', 'apiKey', 'secret', 'token', 'privateKey', 'certificate']
+  sensitiveFields: ['password', 'apiKey', 'secret', 'token', 'privateKey', 'certificate', 'value'],
+  skip: (req) => {
+    // Skip audit logging for high-frequency read-only endpoints
+    return req.method === 'GET' && req.path.match(/\/(statistics|usage|status)$/) && 
+           !req.path.includes('audit') && !req.path.includes('compliance');
+  }
 }));
 
 /**
@@ -171,10 +437,10 @@ router.use(auditLogger({
 router.post(
   '/',
   authorize(['admin', 'config-manager']),
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.createConfiguration),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.write),
   trackConfigurationChange('create'),
   configOperationLogger('configuration-create'),
+  auditOperationComplete('configuration-create'),
   asyncHandler(configurationController.createConfiguration)
 );
 
@@ -182,8 +448,7 @@ router.post(
 router.get(
   '/',
   authorize(['admin', 'config-manager', 'viewer']),
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.listConfigurations),
+  adaptiveLimit(RATE_LIMITS.read),
   asyncHandler(configurationController.listConfigurations)
 );
 
@@ -191,8 +456,7 @@ router.get(
 router.get(
   '/search',
   authorize(['admin', 'config-manager']),
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.searchConfigurationValues),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   asyncHandler(configurationController.searchConfigurationValues)
 );
 
@@ -200,8 +464,7 @@ router.get(
 router.get(
   '/statistics',
   authorize(['admin', 'config-manager', 'viewer']),
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.getGlobalStatistics),
+  limitByUser(RATE_LIMITS.default),
   asyncHandler(configurationController.getGlobalStatistics)
 );
 
@@ -210,8 +473,7 @@ router.get(
   '/:identifier',
   authorize(['admin', 'config-manager', 'viewer', 'application']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getConfiguration),
+  adaptiveLimit(RATE_LIMITS.read),
   asyncHandler(configurationController.getConfiguration)
 );
 
@@ -220,10 +482,10 @@ router.put(
   '/:configId',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.updateConfiguration),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.write),
   trackConfigurationChange('update'),
   configOperationLogger('configuration-update'),
+  auditOperationComplete('configuration-update'),
   asyncHandler(configurationController.updateConfiguration)
 );
 
@@ -232,10 +494,11 @@ router.delete(
   '/:configId',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.deleteConfiguration),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.critical),
+  sensitiveConfigLimit,
   trackConfigurationChange('delete'),
   configOperationLogger('configuration-delete'),
+  auditOperationComplete('configuration-delete'),
   asyncHandler(configurationController.deleteConfiguration)
 );
 
@@ -248,8 +511,7 @@ router.get(
   '/:configId/values/:key',
   authorize(['admin', 'config-manager', 'viewer', 'application']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getConfigurationValue),
+  limitByEndpoint(RATE_LIMITS.read),
   asyncHandler(configurationController.getConfigurationValue)
 );
 
@@ -258,8 +520,7 @@ router.get(
   '/:configId/values',
   authorize(['admin', 'config-manager', 'viewer', 'application']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getAllConfigurationValues),
+  adaptiveLimit(RATE_LIMITS.read),
   asyncHandler(configurationController.getAllConfigurationValues)
 );
 
@@ -268,10 +529,10 @@ router.put(
   '/:configId/values/:key',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.setConfigurationValue),
+  limitByUser(RATE_LIMITS.write),
   trackConfigurationChange('value-update'),
   configOperationLogger('value-set'),
+  auditOperationComplete('value-set'),
   asyncHandler(configurationController.setConfigurationValue)
 );
 
@@ -280,10 +541,10 @@ router.patch(
   '/:configId/values',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.updateConfigurationValues),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.bulk),
   trackConfigurationChange('batch-update'),
   configOperationLogger('values-batch-update'),
+  auditOperationComplete('values-batch-update'),
   asyncHandler(configurationController.updateConfigurationValues)
 );
 
@@ -292,10 +553,10 @@ router.delete(
   '/:configId/values/:key',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.deleteConfigurationKey),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.write),
   trackConfigurationChange('key-delete'),
   configOperationLogger('key-delete'),
+  auditOperationComplete('key-delete'),
   asyncHandler(configurationController.deleteConfigurationKey)
 );
 
@@ -304,10 +565,10 @@ router.post(
   '/:configId/values/bulk-delete',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.bulkDeleteKeys),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.critical),
   trackConfigurationChange('bulk-delete'),
   configOperationLogger('keys-bulk-delete'),
+  auditOperationComplete('keys-bulk-delete'),
   asyncHandler(configurationController.bulkDeleteKeys)
 );
 
@@ -320,8 +581,7 @@ router.post(
   '/:configId/validate',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.validateConfiguration),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   configOperationLogger('configuration-validate'),
   asyncHandler(configurationController.validateConfiguration)
 );
@@ -331,8 +591,7 @@ router.post(
   '/:configId/test',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.testConfiguration),
+  limitByUser(RATE_LIMITS.default),
   configOperationLogger('configuration-test'),
   asyncHandler(configurationController.testConfiguration)
 );
@@ -342,8 +601,7 @@ router.post(
   '/:configId/dry-run',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.dryRunConfiguration),
+  limitByUser(RATE_LIMITS.default),
   configOperationLogger('configuration-dry-run'),
   asyncHandler(configurationController.dryRunConfiguration)
 );
@@ -353,8 +611,7 @@ router.post(
   '/:configId/compare',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.compareConfigurations),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   asyncHandler(configurationController.compareConfigurations)
 );
 
@@ -363,8 +620,7 @@ router.post(
   '/:configId/impact-analysis',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.analyzeConfigurationImpact),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   configOperationLogger('impact-analysis'),
   asyncHandler(configurationController.analyzeConfigurationImpact)
 );
@@ -378,10 +634,11 @@ router.post(
   '/:configId/lock',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.lockConfiguration),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.critical),
+  sensitiveConfigLimit,
   trackConfigurationChange('lock'),
   configOperationLogger('configuration-lock'),
+  auditOperationComplete('configuration-lock'),
   asyncHandler(configurationController.lockConfiguration)
 );
 
@@ -390,10 +647,11 @@ router.post(
   '/:configId/unlock',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.unlockConfiguration),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.critical),
+  sensitiveConfigLimit,
   trackConfigurationChange('unlock'),
   configOperationLogger('configuration-unlock'),
+  auditOperationComplete('configuration-unlock'),
   asyncHandler(configurationController.unlockConfiguration)
 );
 
@@ -402,8 +660,7 @@ router.get(
   '/:configId/lock-status',
   authorize(['admin', 'config-manager', 'viewer']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getLockStatus),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getLockStatus)
 );
 
@@ -412,10 +669,11 @@ router.put(
   '/:configId/permissions',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.setConfigurationPermissions),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.security),
+  sensitiveConfigLimit,
   trackConfigurationChange('permissions-update'),
   configOperationLogger('permissions-set'),
+  auditOperationComplete('permissions-set'),
   asyncHandler(configurationController.setConfigurationPermissions)
 );
 
@@ -424,8 +682,7 @@ router.get(
   '/:configId/permissions',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getConfigurationPermissions),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getConfigurationPermissions)
 );
 
@@ -438,8 +695,7 @@ router.get(
   '/:configId/versions',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getVersionHistory),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getVersionHistory)
 );
 
@@ -448,8 +704,7 @@ router.get(
   '/:configId/versions/:version',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getVersion),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getVersion)
 );
 
@@ -458,8 +713,7 @@ router.get(
   '/:configId/versions/:version/changes',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getVersionChanges),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   asyncHandler(configurationController.getVersionChanges)
 );
 
@@ -468,8 +722,7 @@ router.get(
   '/:configId/versions/compare',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.compareVersions),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   asyncHandler(configurationController.compareVersions)
 );
 
@@ -478,10 +731,11 @@ router.post(
   '/:configId/rollback',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.rollbackConfiguration),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.critical),
+  sensitiveConfigLimit,
   trackConfigurationChange('rollback'),
   configOperationLogger('configuration-rollback'),
+  auditOperationComplete('configuration-rollback'),
   asyncHandler(configurationController.rollbackConfiguration)
 );
 
@@ -490,10 +744,10 @@ router.post(
   '/:configId/versions/snapshot',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.createVersionSnapshot),
+  limitByUser(RATE_LIMITS.write),
   trackConfigurationChange('snapshot-create'),
   configOperationLogger('version-snapshot'),
+  auditOperationComplete('version-snapshot'),
   asyncHandler(configurationController.createVersionSnapshot)
 );
 
@@ -502,8 +756,7 @@ router.post(
   '/:configId/versions/:version/tag',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.tagVersion),
+  limitByUser(RATE_LIMITS.write),
   configOperationLogger('version-tag'),
   asyncHandler(configurationController.tagVersion)
 );
@@ -513,10 +766,10 @@ router.post(
   '/:configId/versions/:version/promote',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.promoteVersion),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.critical),
   trackConfigurationChange('version-promote'),
   configOperationLogger('version-promote'),
+  auditOperationComplete('version-promote'),
   asyncHandler(configurationController.promoteVersion)
 );
 
@@ -529,8 +782,7 @@ router.get(
   '/:configId/environments',
   authorize(['admin', 'config-manager', 'viewer']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getConfigurationEnvironments),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getConfigurationEnvironments)
 );
 
@@ -539,8 +791,7 @@ router.get(
   '/:configId/environments/:environment',
   authorize(['admin', 'config-manager', 'viewer', 'application']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getEnvironmentConfiguration),
+  adaptiveLimit(RATE_LIMITS.read),
   asyncHandler(configurationController.getEnvironmentConfiguration)
 );
 
@@ -549,10 +800,10 @@ router.put(
   '/:configId/environments/:environment/values/:key',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.setEnvironmentValue),
+  limitByUser(RATE_LIMITS.write),
   trackConfigurationChange('environment-value-update'),
   configOperationLogger('environment-value-set'),
+  auditOperationComplete('environment-value-set'),
   asyncHandler(configurationController.setEnvironmentValue)
 );
 
@@ -561,10 +812,10 @@ router.post(
   '/:configId/environments/:environment/copy',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.copyToEnvironment),
+  limitByUser(RATE_LIMITS.write),
   trackConfigurationChange('environment-copy'),
   configOperationLogger('configuration-copy-to-environment'),
+  auditOperationComplete('configuration-copy-to-environment'),
   asyncHandler(configurationController.copyToEnvironment)
 );
 
@@ -573,10 +824,10 @@ router.post(
   '/:configId/sync',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.syncConfiguration),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.critical),
   trackConfigurationChange('sync'),
   configOperationLogger('configuration-sync'),
+  auditOperationComplete('configuration-sync'),
   asyncHandler(configurationController.syncConfiguration)
 );
 
@@ -585,8 +836,7 @@ router.get(
   '/:configId/environments/diff',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getEnvironmentDifferences),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   asyncHandler(configurationController.getEnvironmentDifferences)
 );
 
@@ -595,10 +845,10 @@ router.post(
   '/:configId/environments/promote',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.promoteConfiguration),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.critical),
   trackConfigurationChange('environment-promote'),
   configOperationLogger('configuration-promote'),
+  auditOperationComplete('configuration-promote'),
   asyncHandler(configurationController.promoteConfiguration)
 );
 
@@ -611,35 +861,76 @@ router.get(
   '/:configId/export',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.export),
-  requestValidator(configurationValidators.exportConfiguration),
+  costBasedLimit(calculateExportCost, RATE_LIMITS.export),
   configOperationLogger('configuration-export'),
-  asyncHandler(configurationController.exportConfiguration)
+  asyncHandler(async (req, res, next) => {
+    // Audit configuration export
+    await auditLogEvent({
+      event: 'data.export',
+      timestamp: new Date().toISOString(),
+      actor: req.user,
+      resource: {
+        type: 'configuration',
+        id: req.params.configId,
+        name: `Configuration ${req.params.configId}`
+      },
+      action: 'export',
+      result: 'initiated',
+      metadata: {
+        configId: req.params.configId,
+        exportType: 'configuration',
+        format: req.query.format || 'json',
+        query: req.query
+      }
+    }, req);
+    
+    return configurationController.exportConfiguration(req, res, next);
+  })
 );
 
 // Export all configurations
 router.get(
   '/export/all',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.export),
-  requestValidator(configurationValidators.exportAllConfigurations),
+  costBasedLimit(calculateExportCost, RATE_LIMITS.export),
   configOperationLogger('configurations-export-all'),
-  asyncHandler(configurationController.exportAllConfigurations)
+  asyncHandler(async (req, res, next) => {
+    // Audit all configurations export
+    await auditLogEvent({
+      event: 'data.export',
+      timestamp: new Date().toISOString(),
+      actor: req.user,
+      resource: {
+        type: 'configuration',
+        id: 'all',
+        name: 'All Configurations'
+      },
+      action: 'export_all',
+      result: 'initiated',
+      metadata: {
+        exportType: 'all_configurations',
+        format: req.query.format || 'json',
+        query: req.query
+      }
+    }, req);
+    
+    return configurationController.exportAllConfigurations(req, res, next);
+  })
 );
 
 // Import configuration
 router.post(
   '/import',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.import),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.import),
   upload.single('file'),
   fileValidator({
     maxSize: 10 * 1024 * 1024,
     allowedTypes: ['application/json', 'text/yaml', 'text/xml', 'text/plain']
   }),
-  requestValidator(configurationValidators.importConfiguration),
   trackConfigurationChange('import'),
   configOperationLogger('configuration-import'),
+  auditOperationComplete('configuration-import'),
   asyncHandler(configurationController.importConfiguration)
 );
 
@@ -647,10 +938,10 @@ router.post(
 router.post(
   '/import/url',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.import),
-  requestValidator(configurationValidators.importConfigurationFromUrl),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.import),
   trackConfigurationChange('import-url'),
   configOperationLogger('configuration-import-url'),
+  auditOperationComplete('configuration-import-url'),
   asyncHandler(configurationController.importConfigurationFromUrl)
 );
 
@@ -659,10 +950,10 @@ router.post(
   '/:configId/clone',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.cloneConfiguration),
+  limitByUser(RATE_LIMITS.write),
   trackConfigurationChange('clone'),
   configOperationLogger('configuration-clone'),
+  auditOperationComplete('configuration-clone'),
   asyncHandler(configurationController.cloneConfiguration)
 );
 
@@ -670,10 +961,10 @@ router.post(
 router.post(
   '/merge',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.mergeConfigurations),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.bulk),
   trackConfigurationChange('merge'),
   configOperationLogger('configurations-merge'),
+  auditOperationComplete('configurations-merge'),
   asyncHandler(configurationController.mergeConfigurations)
 );
 
@@ -686,10 +977,11 @@ router.post(
   '/:configId/backup',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.backupConfiguration),
+  limitByUser(RATE_LIMITS.write),
+  sensitiveConfigLimit,
   trackConfigurationChange('backup'),
   configOperationLogger('configuration-backup'),
+  auditOperationComplete('configuration-backup'),
   asyncHandler(configurationController.backupConfiguration)
 );
 
@@ -698,8 +990,7 @@ router.get(
   '/:configId/backups',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.listBackups),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.listBackups)
 );
 
@@ -708,10 +999,11 @@ router.post(
   '/:configId/restore',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.restoreFromBackup),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.critical),
+  sensitiveConfigLimit,
   trackConfigurationChange('restore'),
   configOperationLogger('configuration-restore'),
+  auditOperationComplete('configuration-restore'),
   asyncHandler(configurationController.restoreFromBackup)
 );
 
@@ -720,9 +1012,9 @@ router.delete(
   '/:configId/backups/:backupId',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.deleteBackup),
+  limitByUser(RATE_LIMITS.write),
   configOperationLogger('backup-delete'),
+  auditOperationComplete('backup-delete'),
   asyncHandler(configurationController.deleteBackup)
 );
 
@@ -731,9 +1023,9 @@ router.post(
   '/:configId/backup/schedule',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.scheduleBackup),
+  limitByUser(RATE_LIMITS.write),
   configOperationLogger('backup-schedule'),
+  auditOperationComplete('backup-schedule'),
   asyncHandler(configurationController.scheduleBackup)
 );
 
@@ -746,8 +1038,7 @@ router.post(
   '/:configId/watch',
   authorize(['admin', 'config-manager', 'application']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.watchConfiguration),
+  limitByUser(RATE_LIMITS.default),
   configOperationLogger('configuration-watch'),
   asyncHandler(configurationController.watchConfiguration)
 );
@@ -756,8 +1047,7 @@ router.post(
 router.delete(
   '/watch/:watcherId',
   authorize(['admin', 'config-manager', 'application']),
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.unwatchConfiguration),
+  limitByUser(RATE_LIMITS.default),
   configOperationLogger('configuration-unwatch'),
   asyncHandler(configurationController.unwatchConfiguration)
 );
@@ -767,8 +1057,7 @@ router.get(
   '/:configId/watchers',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getWatchers),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getWatchers)
 );
 
@@ -777,8 +1066,7 @@ router.post(
   '/:configId/subscribe',
   authorize(['admin', 'config-manager', 'application']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.subscribeToEvents),
+  limitByUser(RATE_LIMITS.default),
   configOperationLogger('configuration-subscribe'),
   asyncHandler(configurationController.subscribeToEvents)
 );
@@ -788,8 +1076,7 @@ router.delete(
   '/:configId/subscribe/:subscriptionId',
   authorize(['admin', 'config-manager', 'application']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.unsubscribeFromEvents),
+  limitByUser(RATE_LIMITS.default),
   configOperationLogger('configuration-unsubscribe'),
   asyncHandler(configurationController.unsubscribeFromEvents)
 );
@@ -802,8 +1089,7 @@ router.delete(
 router.get(
   '/templates',
   authorize(['admin', 'config-manager', 'viewer']),
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getTemplates),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getTemplates)
 );
 
@@ -811,8 +1097,7 @@ router.get(
 router.get(
   '/templates/:templateId',
   authorize(['admin', 'config-manager', 'viewer']),
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getTemplateDetails),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getTemplateDetails)
 );
 
@@ -820,10 +1105,10 @@ router.get(
 router.post(
   '/templates/:templateId/apply',
   authorize(['admin', 'config-manager']),
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.applyTemplate),
+  limitByUser(RATE_LIMITS.write),
   trackConfigurationChange('template-apply'),
   configOperationLogger('template-apply'),
+  auditOperationComplete('template-apply'),
   asyncHandler(configurationController.applyTemplate)
 );
 
@@ -831,9 +1116,9 @@ router.post(
 router.post(
   '/templates',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.createTemplate),
+  limitByUser(RATE_LIMITS.write),
   configOperationLogger('template-create'),
+  auditOperationComplete('template-create'),
   asyncHandler(configurationController.createTemplate)
 );
 
@@ -841,9 +1126,9 @@ router.post(
 router.put(
   '/templates/:templateId',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.updateTemplate),
+  limitByUser(RATE_LIMITS.write),
   configOperationLogger('template-update'),
+  auditOperationComplete('template-update'),
   asyncHandler(configurationController.updateTemplate)
 );
 
@@ -851,9 +1136,9 @@ router.put(
 router.delete(
   '/templates/:templateId',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.deleteTemplate),
+  limitByUser(RATE_LIMITS.write),
   configOperationLogger('template-delete'),
+  auditOperationComplete('template-delete'),
   asyncHandler(configurationController.deleteTemplate)
 );
 
@@ -866,8 +1151,7 @@ router.get(
   '/:configId/audit',
   authorize(['admin', 'auditor', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getConfigurationAuditTrail),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getConfigurationAuditTrail)
 );
 
@@ -876,8 +1160,7 @@ router.get(
   '/:configId/changelog',
   authorize(['admin', 'config-manager', 'viewer']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getChangeLog),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getChangeLog)
 );
 
@@ -886,8 +1169,7 @@ router.get(
   '/:configId/compliance',
   authorize(['admin', 'auditor', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getComplianceStatus),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   asyncHandler(configurationController.getComplianceStatus)
 );
 
@@ -896,8 +1178,7 @@ router.post(
   '/:configId/compliance/check',
   authorize(['admin', 'auditor']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.runComplianceCheck),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   configOperationLogger('compliance-check'),
   asyncHandler(configurationController.runComplianceCheck)
 );
@@ -907,10 +1188,30 @@ router.post(
   '/:configId/compliance/report',
   authorize(['admin', 'auditor']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.generateComplianceReport),
+  costBasedLimit(calculateExportCost, RATE_LIMITS.export),
   configOperationLogger('compliance-report'),
-  asyncHandler(configurationController.generateComplianceReport)
+  asyncHandler(async (req, res, next) => {
+    // Audit compliance report generation
+    await auditLogEvent({
+      event: 'compliance.report_generated',
+      timestamp: new Date().toISOString(),
+      actor: req.user,
+      resource: {
+        type: 'configuration',
+        id: req.params.configId,
+        name: `Configuration ${req.params.configId}`
+      },
+      action: 'compliance_report',
+      result: 'initiated',
+      metadata: {
+        configId: req.params.configId,
+        reportType: 'compliance',
+        standards: req.body?.standards || []
+      }
+    }, req);
+    
+    return configurationController.generateComplianceReport(req, res, next);
+  })
 );
 
 /**
@@ -922,8 +1223,7 @@ router.get(
   '/:configId/statistics',
   authorize(['admin', 'config-manager', 'viewer']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getConfigurationStatistics),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getConfigurationStatistics)
 );
 
@@ -932,8 +1232,7 @@ router.get(
   '/:configId/usage',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getUsagePatterns),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   asyncHandler(configurationController.getUsagePatterns)
 );
 
@@ -942,8 +1241,7 @@ router.get(
   '/:configId/dependencies',
   authorize(['admin', 'config-manager', 'viewer']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getDependencies),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getDependencies)
 );
 
@@ -952,8 +1250,7 @@ router.get(
   '/:configId/dependents',
   authorize(['admin', 'config-manager', 'viewer']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getDependents),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getDependents)
 );
 
@@ -962,8 +1259,7 @@ router.get(
   '/:configId/relationships',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.analyzeRelationships),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   asyncHandler(configurationController.analyzeRelationships)
 );
 
@@ -972,8 +1268,7 @@ router.get(
   '/:configId/recommendations',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.getRecommendations),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   asyncHandler(configurationController.getRecommendations)
 );
 
@@ -986,8 +1281,7 @@ router.get(
   '/:configId/schema',
   authorize(['admin', 'config-manager', 'viewer']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getConfigurationSchema),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getConfigurationSchema)
 );
 
@@ -996,10 +1290,10 @@ router.put(
   '/:configId/schema',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.updateConfigurationSchema),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.write),
   trackConfigurationChange('schema-update'),
   configOperationLogger('schema-update'),
+  auditOperationComplete('schema-update'),
   asyncHandler(configurationController.updateConfigurationSchema)
 );
 
@@ -1008,8 +1302,7 @@ router.post(
   '/:configId/schema/validate',
   authorize(['admin', 'config-manager']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.validateAgainstSchema),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   asyncHandler(configurationController.validateAgainstSchema)
 );
 
@@ -1018,9 +1311,9 @@ router.post(
   '/:configId/schema/generate',
   authorize(['admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.generateSchema),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.default),
   configOperationLogger('schema-generate'),
+  auditOperationComplete('schema-generate'),
   asyncHandler(configurationController.generateSchema)
 );
 
@@ -1032,8 +1325,7 @@ router.post(
 router.post(
   '/migrate/plan',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.createMigrationPlan),
+  createLimiter(RATE_LIMITS.migration),
   configOperationLogger('migration-plan'),
   asyncHandler(configurationController.createMigrationPlan)
 );
@@ -1042,10 +1334,10 @@ router.post(
 router.post(
   '/migrate/execute',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.executeMigration),
+  createLimiter(RATE_LIMITS.migration),
   trackConfigurationChange('migration'),
   configOperationLogger('migration-execute'),
+  auditOperationComplete('migration-execute'),
   asyncHandler(configurationController.executeMigration)
 );
 
@@ -1053,8 +1345,7 @@ router.post(
 router.get(
   '/migrate/:migrationId/status',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getMigrationStatus),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getMigrationStatus)
 );
 
@@ -1062,10 +1353,11 @@ router.get(
 router.post(
   '/migrate/:migrationId/rollback',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.rollbackMigration),
+  createLimiter(RATE_LIMITS.migration),
+  sensitiveConfigLimit,
   trackConfigurationChange('migration-rollback'),
   configOperationLogger('migration-rollback'),
+  auditOperationComplete('migration-rollback'),
   asyncHandler(configurationController.rollbackMigration)
 );
 
@@ -1078,10 +1370,11 @@ router.post(
   '/:configId/encrypt',
   authorize(['admin', 'security-admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.encryptConfiguration),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.security),
+  sensitiveConfigLimit,
   trackConfigurationChange('encrypt'),
   configOperationLogger('configuration-encrypt'),
+  auditOperationComplete('configuration-encrypt'),
   asyncHandler(configurationController.encryptConfiguration)
 );
 
@@ -1090,9 +1383,10 @@ router.post(
   '/:configId/decrypt',
   authorize(['admin', 'security-admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.decryptConfiguration),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.security),
+  sensitiveConfigLimit,
   configOperationLogger('configuration-decrypt'),
+  auditOperationComplete('configuration-decrypt'),
   asyncHandler(configurationController.decryptConfiguration)
 );
 
@@ -1101,10 +1395,11 @@ router.post(
   '/:configId/rotate-keys',
   authorize(['admin', 'security-admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.sensitive),
-  requestValidator(configurationValidators.rotateEncryptionKeys),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.security),
+  sensitiveConfigLimit,
   trackConfigurationChange('key-rotation'),
   configOperationLogger('key-rotation'),
+  auditOperationComplete('key-rotation'),
   asyncHandler(configurationController.rotateEncryptionKeys)
 );
 
@@ -1113,8 +1408,7 @@ router.get(
   '/:configId/security',
   authorize(['admin', 'security-admin']),
   validateConfigAccess,
-  rateLimit(RATE_LIMITS.read),
-  requestValidator(configurationValidators.getSecurityStatus),
+  limitByUser(RATE_LIMITS.read),
   asyncHandler(configurationController.getSecurityStatus)
 );
 
@@ -1126,10 +1420,10 @@ router.get(
 router.post(
   '/bulk/update',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.bulkUpdate),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.bulk),
   trackConfigurationChange('bulk-update'),
   configOperationLogger('bulk-update'),
+  auditOperationComplete('bulk-update'),
   asyncHandler(configurationController.bulkUpdate)
 );
 
@@ -1137,10 +1431,10 @@ router.post(
 router.post(
   '/bulk/delete',
   authorize(['admin']),
-  rateLimit(RATE_LIMITS.write),
-  requestValidator(configurationValidators.bulkDelete),
+  combinedLimit(['ip', 'user'], RATE_LIMITS.critical),
   trackConfigurationChange('bulk-delete'),
   configOperationLogger('bulk-delete'),
+  auditOperationComplete('bulk-delete'),
   asyncHandler(configurationController.bulkDelete)
 );
 
@@ -1148,18 +1442,37 @@ router.post(
 router.post(
   '/bulk/export',
   authorize(['admin', 'config-manager']),
-  rateLimit(RATE_LIMITS.export),
-  requestValidator(configurationValidators.bulkExport),
+  costBasedLimit(calculateExportCost, RATE_LIMITS.export),
   configOperationLogger('bulk-export'),
-  asyncHandler(configurationController.bulkExport)
+  asyncHandler(async (req, res, next) => {
+    // Audit bulk export
+    await auditLogEvent({
+      event: 'data.export',
+      timestamp: new Date().toISOString(),
+      actor: req.user,
+      resource: {
+        type: 'configuration',
+        id: 'bulk',
+        name: 'Bulk Configuration Export'
+      },
+      action: 'bulk_export',
+      result: 'initiated',
+      metadata: {
+        exportType: 'bulk_configuration',
+        configIds: req.body?.configIds || [],
+        format: req.body?.format || 'json'
+      }
+    }, req);
+    
+    return configurationController.bulkExport(req, res, next);
+  })
 );
 
 // Bulk validate configurations
 router.post(
   '/bulk/validate',
   authorize(['admin', 'config-manager']),
-  rateLimit(RATE_LIMITS.default),
-  requestValidator(configurationValidators.bulkValidate),
+  costBasedLimit(calculateConfigurationCost, RATE_LIMITS.bulk),
   asyncHandler(configurationController.bulkValidate)
 );
 
@@ -1177,20 +1490,30 @@ router.use((err, req, res, next) => {
     timestamp: new Date().toISOString()
   });
 
-  // Log to audit trail for critical configuration errors
+  // Audit configuration management errors
   if (err.statusCode >= 500 || err.critical) {
-    auditLogger.logError({
-      service: 'configuration-management',
-      error: err,
-      request: {
-        path: req.path,
-        method: req.method,
-        params: req.params,
-        query: req.query,
-        body: req.body
+    auditLogEvent({
+      event: 'config.error',
+      timestamp: new Date().toISOString(),
+      actor: req.user || { type: 'system', id: 'unknown' },
+      resource: {
+        type: 'configuration_route',
+        id: req.path,
+        name: `${req.method} ${req.path}`
       },
-      user: req.user,
-      configTracking: req.configChangeTracking
+      action: 'error',
+      result: 'failure',
+      metadata: {
+        error: err.message,
+        statusCode: err.statusCode,
+        configId: req.params?.configId,
+        configTracking: req.configChangeTracking,
+        critical: err.critical || false
+      }
+    }, req).catch(auditError => {
+      logger.error('Failed to audit configuration error', {
+        auditError: auditError.message
+      });
     });
   }
 

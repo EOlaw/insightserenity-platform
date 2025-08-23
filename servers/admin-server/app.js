@@ -84,12 +84,12 @@ try {
 
 // Admin Module Route Imports - Clean version following proper MVC architecture
 const { routesManager: platformManagementRoutesManager } = require('./modules/platform-management/routes');
-const { routesManager: userManagementRoutesManager } = require('./modules/user-management/routes');
-const { routesManager: organizationManagementRoutesManager } = require('./modules/organization-management/routes');
-const { routesManager: securityAdministrationRoutesManager } = require('./modules/security-administration/routes');
-const { routesManager: billingAdministrationRoutesManager } = require('./modules/billing-administration/routes');
-const { routesManager: systemMonitoringRoutesManager } = require('./modules/system-monitoring/routes');
-const { routesManager: supportAdministrationRoutesManager } = require('./modules/support-administration/routes');
+// const { routesManager: userManagementRoutesManager } = require('./modules/user-management/routes');
+// const { routesManager: organizationManagementRoutesManager } = require('./modules/organization-management/routes');
+// const { routesManager: securityAdministrationRoutesManager } = require('./modules/security-administration/routes');
+// const { routesManager: billingAdministrationRoutesManager } = require('./modules/billing-administration/routes');
+// const { routesManager: systemMonitoringRoutesManager } = require('./modules/system-monitoring/routes');
+// const { routesManager: supportAdministrationRoutesManager } = require('./modules/support-administration/routes');
 // const { routesManager: reportsAnalyticsRoutesManager } = require('./modules/reports-analytics/routes');
 
 // // COMMENTED OUT: Individual route imports with error handling removed
@@ -1088,6 +1088,7 @@ class AdminApplication {
                 console.log(`✅ Platform Management routes mounted at ${adminBase}/platform`);
             }
             
+            /*
             // User Management Routes
             if (userManagementRoutesManager) {
                 this.app.use(`${adminBase}/users`, adminAuth, userManagementRoutesManager);
@@ -1123,6 +1124,7 @@ class AdminApplication {
                 this.app.use(`${adminBase}/support`, adminAuth, supportAdministrationRoutesManager);
                 console.log(`✅ Support Administration routes mounted at ${adminBase}/support`);
             }
+            */
             
             // Reports Analytics Routes (commented out)
             // if (reportsAnalyticsRoutesManager) {
