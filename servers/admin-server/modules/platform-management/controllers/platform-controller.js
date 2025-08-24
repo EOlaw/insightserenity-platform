@@ -7,7 +7,6 @@
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
  * @requires module:shared/lib/utils/response-formatter
- * @requires module:shared/lib/utils/async-handler
  * @requires module:shared/lib/utils/constants/status-codes
  */
 
@@ -15,7 +14,6 @@ const platformService = require('../services/platform-service');
 const logger = require('../../../../../shared/lib/utils/logger');
 const { AppError } = require('../../../../../shared/lib/utils/app-error');
 const responseFormatter = require('../../../../../shared/lib/utils/response-formatter');
-const { asyncHandler } = require('../../../../../shared/lib/utils/async-handler');
 const { StatusCodes } = require('../../../../../shared/lib/utils/constants/status-codes');
 
 /**
@@ -25,13 +23,14 @@ const { StatusCodes } = require('../../../../../shared/lib/utils/constants/statu
 class PlatformController {
   /**
    * Gets platform configuration
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getPlatformConfiguration = asyncHandler(async (req, res, next) => {
+  static async getPlatformConfiguration(req, res, next) {
     try {
       const { environment, includeInactive, noCache } = req.query;
 
@@ -62,17 +61,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Creates platform configuration
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  createPlatformConfiguration = asyncHandler(async (req, res, next) => {
+  static async createPlatformConfiguration(req, res, next) {
     try {
       const platformData = req.body;
       const userId = req.user.id;
@@ -100,17 +100,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Updates platform configuration
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  updatePlatformConfiguration = asyncHandler(async (req, res, next) => {
+  static async updatePlatformConfiguration(req, res, next) {
     try {
       const { platformId } = req.params;
       const updates = req.body;
@@ -142,17 +143,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Manages feature flag
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  manageFeatureFlag = asyncHandler(async (req, res, next) => {
+  static async manageFeatureFlag(req, res, next) {
     try {
       const { platformId, featureName } = req.params;
       const { action, options } = req.body;
@@ -187,17 +189,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Gets feature flags for tenant
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getFeatureFlagsForTenant = asyncHandler(async (req, res, next) => {
+  static async getFeatureFlagsForTenant(req, res, next) {
     try {
       const { tenantId } = req.params;
       const { environment = 'production', noCache } = req.query;
@@ -229,17 +232,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Searches feature flags
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  searchFeatureFlags = asyncHandler(async (req, res, next) => {
+  static async searchFeatureFlags(req, res, next) {
     try {
       const searchCriteria = {
         query: req.query.q,
@@ -270,17 +274,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Records deployment
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  recordDeployment = asyncHandler(async (req, res, next) => {
+  static async recordDeployment(req, res, next) {
     try {
       const { platformId } = req.params;
       const deploymentInfo = req.body;
@@ -313,17 +318,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Updates system module
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  updateSystemModule = asyncHandler(async (req, res, next) => {
+  static async updateSystemModule(req, res, next) {
     try {
       const { platformId, moduleName } = req.params;
       const updates = req.body;
@@ -358,17 +364,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Performs health check
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  performHealthCheck = asyncHandler(async (req, res, next) => {
+  static async performHealthCheck(req, res, next) {
     try {
       const { platformId } = req.params;
 
@@ -393,17 +400,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Gets platform statistics
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getPlatformStatistics = asyncHandler(async (req, res, next) => {
+  static async getPlatformStatistics(req, res, next) {
     try {
       const { platformId } = req.params;
       const { timeRange = '24h' } = req.query;
@@ -433,17 +441,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Gets all feature flags
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getAllFeatureFlags = asyncHandler(async (req, res, next) => {
+  static async getAllFeatureFlags(req, res, next) {
     try {
       const { platformId } = req.params;
 
@@ -486,17 +495,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Gets system modules
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getSystemModules = asyncHandler(async (req, res, next) => {
+  static async getSystemModules(req, res, next) {
     try {
       const { platformId } = req.params;
       const { status } = req.query;
@@ -513,7 +523,6 @@ class PlatformController {
 
       let modules = platform.systemModules;
 
-      // Filter by status if provided
       if (status) {
         modules = modules.filter(m => m.health.status === status);
       }
@@ -544,17 +553,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Gets deployment history
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getDeploymentHistory = asyncHandler(async (req, res, next) => {
+  static async getDeploymentHistory(req, res, next) {
     try {
       const { platformId } = req.params;
       const { limit = 10 } = req.query;
@@ -604,17 +614,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Gets platform issues
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  getPlatformIssues = asyncHandler(async (req, res, next) => {
+  static async getPlatformIssues(req, res, next) {
     try {
       const { platformId } = req.params;
       const { severity, resolved } = req.query;
@@ -632,7 +643,6 @@ class PlatformController {
 
       let issues = platform.status.issues || [];
 
-      // Apply filters
       if (severity) {
         issues = issues.filter(i => i.severity === severity);
       }
@@ -669,17 +679,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Updates platform status
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  updatePlatformStatus = asyncHandler(async (req, res, next) => {
+  static async updatePlatformStatus(req, res, next) {
     try {
       const { platformId } = req.params;
       const { operational, message } = req.body;
@@ -721,17 +732,18 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 
   /**
    * Bulk updates feature flags
+   * @static
    * @async
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    * @param {Function} next - Express next middleware
    * @returns {Promise<void>}
    */
-  bulkUpdateFeatureFlags = asyncHandler(async (req, res, next) => {
+  static async bulkUpdateFeatureFlags(req, res, next) {
     try {
       const { platformId } = req.params;
       const { features } = req.body;
@@ -798,8 +810,7 @@ class PlatformController {
       });
       next(error);
     }
-  });
+  }
 }
 
-// Export singleton instance
-module.exports = new PlatformController();
+module.exports = PlatformController;

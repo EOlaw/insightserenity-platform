@@ -1466,8 +1466,8 @@ class AdminServer extends EventEmitter {
                 console.log(`🗄️  Database: Multi-Database Architecture (${this.databaseConnections.size} databases)`);
                 console.log(`💾 Cache: ${process.env.REDIS_ENABLED === 'true' ? 'Redis' : 'Memory'}`);
                 console.log(`🛡️  Security: ${protocol} ${this.adminConfig.security.ipWhitelist?.enabled ? '+ IP Whitelist' : ''}`);
-                console.log(`📊 Admin Dashboard: ${protocol.toLowerCase()}://${host}:${port}/admin/dashboard`);
-                console.log(`🔍 Health Check: ${protocol.toLowerCase()}://${host}:${port}/health`);
+                console.log(`📊 Admin Dashboard: ${protocol.toLowerCase()}://${host}:${port}/api/admin/dashboard`);
+                console.log(`🔍 Health Check: ${protocol.toLowerCase()}://${host}:${port}/api/health`);
                 console.log(`📋 Audit System: ${auditConfig?.enabled ? 'Enabled' : 'Disabled'} (${auditConfig?.storage?.type || 'memory'})`);
                 console.log(`🔧 Model Recovery: Enabled`);
                 console.log(`🏗️  Multi-Database: ${this.databaseConnections.size} databases connected`);

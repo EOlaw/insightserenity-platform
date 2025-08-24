@@ -83,7 +83,8 @@ try {
 }
 
 // Admin Module Route Imports - Clean version following proper MVC architecture
-const { routesManager: platformManagementRoutesManager } = require('./modules/platform-management/routes');
+// const { routesManager: platformManagementRoutesManager } = require('./modules/platform-management/routes');
+const platformManagementRoutesManager = require('./modules/platform-management/routes');
 // const { routesManager: userManagementRoutesManager } = require('./modules/user-management/routes');
 // const { routesManager: organizationManagementRoutesManager } = require('./modules/organization-management/routes');
 // const { routesManager: securityAdministrationRoutesManager } = require('./modules/security-administration/routes');

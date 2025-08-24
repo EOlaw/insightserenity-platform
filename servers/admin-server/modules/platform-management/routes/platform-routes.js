@@ -7,10 +7,7 @@
 
 const express = require('express');
 const router = express.Router();
-const platformController = require('../controllers/platform-controller');
-const systemController = require('../controllers/system-controller');
-const configurationController = require('../controllers/configuration-controller');
-const maintenanceController = require('../controllers/maintenance-controller');
+const PlatformController = require('../controllers/platform-controller');
 const { authenticate, authorize } = require('../../../../../shared/lib/auth/middleware/authenticate');
 
 // Import the advanced rate limiting middleware
@@ -34,7 +31,7 @@ router.use(authenticate);
 // ==================== RATE LIMITING STRATEGY ====================
 
 // Global rate limiting - combines multiple strategies for comprehensive protection
-router.use(combinedLimit(
+const globalLimiter = combinedLimit(
   ['ip', 'user'], // Apply both IP and user-based limiting
   {
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -42,7 +39,10 @@ router.use(combinedLimit(
     message: 'Rate limit exceeded. Please try again later.',
     headers: true
   }
-));
+);
+
+// Apply global rate limiting to all routes
+router.use(globalLimiter);
 
 // ==================== PLATFORM CONFIGURATION ROUTES ====================
 
@@ -67,7 +67,7 @@ router.get(
   '/platform',
   authorize(['admin', 'platform-manager']),
   limitByUser({ windowMs: 60000, max: 30 }), // 30 requests per minute per user
-  platformController.getPlatformConfiguration
+  PlatformController.getPlatformConfiguration
 );
 
 // Create platform configuration - highly restricted
@@ -75,7 +75,7 @@ router.post(
   '/platform',
   authorize(['admin']),
   criticalPlatformLimiter,
-  platformController.createPlatformConfiguration
+  PlatformController.createPlatformConfiguration
 );
 
 // Update platform configuration - cost-based limiting
@@ -96,7 +96,7 @@ router.put(
       message: 'Update operation cost budget exceeded'
     }
   ),
-  platformController.updatePlatformConfiguration
+  PlatformController.updatePlatformConfiguration
 );
 
 // Update platform status - tenant-based limiting
@@ -104,7 +104,7 @@ router.patch(
   '/platform/:platformId/status',
   authorize(['admin']),
   limitByTenant({ windowMs: 300000, max: 20 }), // 20 status updates per 5 minutes per tenant
-  platformController.updatePlatformStatus
+  PlatformController.updatePlatformStatus
 );
 
 // Statistics and monitoring - adaptive limiting based on system load
@@ -117,7 +117,7 @@ router.get(
     minMax: 20,  // Minimum when system is overloaded
     maxMax: 120  // Maximum when system is underloaded
   }),
-  platformController.getPlatformStatistics
+  PlatformController.getPlatformStatistics
 );
 
 // Health check - endpoint-specific limiting
@@ -129,13 +129,21 @@ router.post(
     max: 10, // Only 10 health checks per minute for this specific endpoint
     keyGenerator: (req) => `healthcheck:${req.params.platformId}`
   }),
-  platformController.performHealthCheck
+  PlatformController.performHealthCheck
+);
+
+// Platform issues
+router.get(
+  '/platform/:platformId/issues',
+  authorize(['admin', 'platform-manager', 'viewer']),
+  limitByUser({ windowMs: 60000, max: 50 }),
+  PlatformController.getPlatformIssues
 );
 
 // ==================== FEATURE FLAG ROUTES ====================
 
 // Feature flag management - user and IP combined with burst protection
-router.use('/platform/:platformId/features', combinedLimit(
+const featureFlagLimiter = combinedLimit(
   ['user', 'ip'],
   {
     windowMs: 60000,
@@ -143,11 +151,30 @@ router.use('/platform/:platformId/features', combinedLimit(
     burstProtection: true,
     message: 'Feature flag operation rate limit exceeded'
   }
-));
+);
 
-router.get('/platform/:platformId/features', 
+// Get all feature flags
+router.get(
+  '/platform/:platformId/features', 
   authorize(['admin', 'platform-manager', 'viewer']),
-  platformController.getAllFeatureFlags
+  featureFlagLimiter,
+  PlatformController.getAllFeatureFlags
+);
+
+// Search feature flags
+router.get(
+  '/platform/:platformId/features/search',
+  authorize(['admin', 'platform-manager', 'viewer']),
+  limitByUser({ windowMs: 60000, max: 40 }),
+  PlatformController.searchFeatureFlags
+);
+
+// Get feature flags for tenant
+router.get(
+  '/platform/:platformId/features/tenant/:tenantId',
+  authorize(['admin', 'platform-manager', 'viewer']),
+  limitByUser({ windowMs: 60000, max: 50 }),
+  PlatformController.getFeatureFlagsForTenant
 );
 
 // Critical feature flag operations
@@ -162,194 +189,99 @@ router.post(
       keyGenerator: (req) => `ff:${req.auth.user._id}:${req.params.platformId}`
     }
   ),
-  platformController.manageFeatureFlag
+  PlatformController.manageFeatureFlag
 );
 
-// ==================== SYSTEM MONITORING ROUTES ====================
-
-// System metrics - API key based limiting for monitoring agents
-router.post(
-  '/system/:systemId/metrics',
-  authorize(['admin', 'platform-manager', 'agent']),
-  limitByAPIKey({
-    windowMs: 60000,
-    max: 1000, // High limit for legitimate monitoring agents
-    skipIfNotAuthenticated: true
-  }),
-  systemController.updateSystemMetrics
-);
-
-// Alert management - tenant-based with custom rules
-router.post(
-  '/system/:systemId/alerts',
-  authorize(['admin', 'platform-manager', 'agent']),
-  customLimit(
-    'alert_creation',
-    (req) => {
-      // Different limits based on alert severity
-      const severity = req.body?.severity || 'low';
-      const limits = {
-        'critical': { max: 50, windowMs: 300000 }, // 5 minutes
-        'high': { max: 100, windowMs: 300000 },
-        'medium': { max: 200, windowMs: 600000 }, // 10 minutes
-        'low': { max: 500, windowMs: 900000 }     // 15 minutes
-      };
-      
-      return {
-        ...limits[severity],
-        keyGenerator: (req) => `alerts:${severity}:${req.auth.user.organizationId || req.auth.user._id}`
-      };
-    }
-  ),
-  systemController.createSystemAlert
-);
-
-// ==================== CONFIGURATION MANAGEMENT ROUTES ====================
-
-// Configuration operations - combined user and tenant limiting
-router.use('/configurations', combinedLimit(
-  ['user', 'tenant'],
-  {
-    windowMs: 300000, // 5 minutes
-    max: 150,
-    message: 'Configuration operation rate limit exceeded'
-  }
-));
-
-// Create configuration - restricted operation
-router.post(
-  '/configurations',
-  authorize(['admin', 'config-manager']),
-  limitByUser({
-    windowMs: 3600000, // 1 hour
-    max: 25, // Only 25 new configurations per hour per user
-    message: 'Configuration creation limit exceeded'
-  }),
-  configurationController.createConfiguration
-);
-
-// Configuration value updates - cost-based on payload size
-router.put(
-  '/configurations/:configId/values/:key',
-  authorize(['admin', 'config-manager']),
-  costBasedLimit(
-    (req) => {
-      const value = req.body?.value;
-      if (!value) return 1;
-      
-      // Calculate cost based on value size and type
-      const size = typeof value === 'string' ? value.length : JSON.stringify(value).length;
-      return Math.max(1, Math.ceil(size / 100)); // 1 cost per 100 characters
-    },
-    {
-      windowMs: 300000, // 5 minutes
-      maxCost: 200
-    }
-  ),
-  configurationController.setConfigurationValue
-);
-
-// Bulk operations - heavily restricted
+// Bulk update feature flags
 router.patch(
-  '/configurations/:configId/values',
-  authorize(['admin', 'config-manager']),
+  '/platform/:platformId/features/bulk',
+  authorize(['admin']),
   customLimit(
-    'bulk_config_update',
+    'bulk_feature_update',
     {
       windowMs: 900000, // 15 minutes
       max: 5, // Only 5 bulk updates per 15 minutes
-      keyGenerator: (req) => `bulk_config:${req.auth.user._id}:${req.params.configId}`
+      keyGenerator: (req) => `bulk_ff:${req.auth.user._id}:${req.params.platformId}`
     }
   ),
-  configurationController.updateConfigurationValues
+  PlatformController.bulkUpdateFeatureFlags
 );
 
-// ==================== MAINTENANCE WINDOW ROUTES ====================
+// ==================== SYSTEM MODULE ROUTES ====================
 
-// Maintenance scheduling - restricted by role and tenant
-router.post(
-  '/maintenance/schedule',
-  authorize(['admin', 'platform-manager']),
-  combinedLimit(
-    ['user', 'tenant'],
-    {
-      windowMs: 3600000, // 1 hour
-      max: 10, // 10 maintenance windows per hour
-      message: 'Maintenance scheduling rate limit exceeded'
-    }
-  ),
-  maintenanceController.scheduleMaintenanceWindow
-);
-
-// Maintenance status checks - adaptive limiting
+// Get system modules
 router.get(
-  '/maintenance/status',
-  adaptiveLimit({
-    windowMs: 60000,
-    baseMax: 200,
-    minMax: 50,
-    maxMax: 500
-  }),
-  maintenanceController.checkMaintenanceStatus
+  '/platform/:platformId/modules',
+  authorize(['admin', 'platform-manager', 'viewer']),
+  limitByUser({ windowMs: 60000, max: 50 }),
+  PlatformController.getSystemModules
 );
 
-// Critical maintenance operations
-const criticalMaintenanceLimiter = customLimit(
-  'critical_maintenance',
-  (req) => {
-    const operation = req.path.split('/').pop();
-    const criticalOps = ['start', 'complete', 'cancel'];
-    
-    if (criticalOps.includes(operation)) {
-      return {
-        windowMs: 300000, // 5 minutes
-        max: 5,
-        keyGenerator: (req) => `maint:${operation}:${req.auth.user._id}:${req.params.maintenanceId}`
-      };
+// Update system module
+router.put(
+  '/platform/:platformId/modules/:moduleName',
+  authorize(['admin', 'platform-manager']),
+  costBasedLimit(
+    (req) => {
+      const bodySize = JSON.stringify(req.body).length;
+      const baseCost = 5;
+      const sizeCost = Math.ceil(bodySize / 500); // 1 cost per 500 bytes
+      return baseCost + sizeCost;
+    },
+    {
+      windowMs: 300000, // 5 minutes
+      maxCost: 100,
+      message: 'Module update cost budget exceeded'
     }
-    return false;
-  }
+  ),
+  PlatformController.updateSystemModule
 );
 
-router.post('/maintenance/:maintenanceId/start',
+// ==================== DEPLOYMENT ROUTES ====================
+
+// Record deployment
+router.post(
+  '/platform/:platformId/deployments',
   authorize(['admin', 'platform-manager']),
-  criticalMaintenanceLimiter,
-  maintenanceController.startMaintenanceWindow
+  customLimit(
+    'deployment_record',
+    {
+      windowMs: 600000, // 10 minutes
+      max: 15, // 15 deployments per 10 minutes
+      keyGenerator: (req) => `deploy:${req.auth.user._id}:${req.params.platformId}`
+    }
+  ),
+  PlatformController.recordDeployment
 );
 
-router.post('/maintenance/:maintenanceId/complete',
-  authorize(['admin', 'platform-manager']),
-  criticalMaintenanceLimiter,
-  maintenanceController.completeMaintenanceWindow
-);
-
-router.post('/maintenance/:maintenanceId/cancel',
-  authorize(['admin', 'platform-manager']),
-  criticalMaintenanceLimiter,
-  maintenanceController.cancelMaintenanceWindow
+// Get deployment history
+router.get(
+  '/platform/:platformId/deployments/history',
+  authorize(['admin', 'platform-manager', 'viewer']),
+  limitByUser({ windowMs: 60000, max: 30 }),
+  PlatformController.getDeploymentHistory
 );
 
 // ==================== VIEWER ROUTES - RELAXED LIMITS ====================
 
 // Routes for viewers get more lenient rate limiting
+const viewerLimiter = limitByUser({
+  windowMs: 60000,
+  max: 100, // Higher limit for read operations
+  skipFailedRequests: true
+});
+
+// Apply relaxed limiting for specific viewer routes
 const viewerRoutes = [
-  '/platform/:platformId/statistics',
-  '/system/:systemId/health',
-  '/system/:systemId/performance',
-  '/configurations',
-  '/maintenance/history',
-  '/alerts/active'
+  { path: '/platform/:platformId/statistics', method: 'get' },
+  { path: '/platform/:platformId/issues', method: 'get' },
+  { path: '/platform/:platformId/features', method: 'get' },
+  { path: '/platform/:platformId/modules', method: 'get' },
+  { path: '/platform/:platformId/deployments/history', method: 'get' }
 ];
 
 viewerRoutes.forEach(route => {
-  // Apply relaxed limiting for GET requests by viewers
-  router.get(route, 
-    limitByUser({
-      windowMs: 60000,
-      max: 100, // Higher limit for read operations
-      skipFailedRequests: true
-    })
-  );
+  router[route.method](route.path, viewerLimiter);
 });
 
 // ==================== ERROR HANDLING ====================
@@ -370,7 +302,8 @@ router.use((err, req, res, next) => {
       error: err.message,
       path: req.path,
       method: req.method,
-      userId: req.auth?.user?.id
+      userId: req.auth?.user?.id,
+      stack: err.stack
     });
   }
   next(err);
