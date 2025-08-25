@@ -23,6 +23,12 @@ if (envResult.error) {
     dotenv.config();
 }
 
+// Add this at the very top of your server.js file, after require('dotenv').config()
+console.log('DEBUG - Environment Variables Check:');
+console.log('ACCESS_TOKEN_SECRET exists:', !!process.env.ACCESS_TOKEN_SECRET);
+console.log('TEMPORARY_TOKEN_SECRET exists:', !!process.env.TEMPORARY_TOKEN_SECRET);
+console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
+
 // Validate critical environment variables before proceeding
 const requiredEnvVars = ['NODE_ENV', 'ADMIN_PORT', 'DB_URI'];
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
@@ -1061,7 +1067,7 @@ class AdminServer extends EventEmitter {
                         certPath: process.env.ADMIN_SSL_CERT_PATH || process.env.SSL_CERT_PATH || '/insightserenity-platform/servers/admin-server/cert.pem',
                         ca: process.env.ADMIN_SSL_CA_PATH || process.env.SSL_CA_PATH
                     },
-                    level: process.env.ADMIN_SECURITY_LEVEL || 'high',
+                    level: process.env.ADMIN_SECURITY_LEVEL || 'maximum',
                     advanced: process.env.ADMIN_ADVANCED_SECURITY === 'true' || false
                 },
                 features: {

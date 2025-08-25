@@ -39,11 +39,11 @@ const validateConfig = (config) => {
         if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'development_jwt_secret_change_in_production') {
             warnings.push('Production requires a secure JWT secret');
         }
-        
+
         if (!process.env.DB_URI || process.env.DB_URI.includes('localhost')) {
             warnings.push('Production should use a proper database URI');
         }
-        
+
         if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length < 32) {
             warnings.push('Production requires a secure encryption key');
         }
@@ -62,7 +62,7 @@ const mergeConfigs = () => {
         // Base configuration
         base: { ...baseConfig.app, ...environmentConfig.base },
         app: { ...baseConfig.app, ...environmentConfig.app },
-        
+
         // Database configuration
         database: {
             uri: process.env.DB_URI || process.env.MONGODB_URI || 'mongodb+srv://EOlaw146:Olawalee_.146@cluster0.4wv68hn.mongodb.net?retryWrites=true&w=majority',
@@ -73,7 +73,7 @@ const mergeConfigs = () => {
             ...databaseConfig,
             ...environmentConfig.database
         },
-        
+
         // Security configuration
         security: {
             jwtSecret: process.env.JWT_SECRET || 'development_jwt_secret_change_in_production',
@@ -95,7 +95,7 @@ const mergeConfigs = () => {
             ...securityConfig,
             ...environmentConfig.security
         },
-        
+
         // Redis configuration
         redis: {
             enabled: process.env.REDIS_ENABLED === 'false',
@@ -109,7 +109,7 @@ const mergeConfigs = () => {
             ...redisConfig,
             ...environmentConfig.redis
         },
-        
+
         // Email configuration
         email: {
             provider: process.env.EMAIL_PROVIDER || 'console',
@@ -120,13 +120,18 @@ const mergeConfigs = () => {
                 secure: process.env.SMTP_SECURE === 'true',
                 auth: {
                     user: process.env.SMTP_USER,
-                    pass: process.env.SMTP_PASS
+                    pass: process.env.SMTP_PASS,
+                    accessTokenSecret: process.env.ACCESS_TOKEN_SECRET || 'a229c7185da3c0877a03d6bf9f4cc66b15bce0d4397c36356f61d1a3db46e72ef25d3f6adf3b6a0cb90833ff217cef69b2e73a9c0330e1184f2b1c430253fe18',
+                    temporaryTokenSecret: process.env.TEMPORARY_TOKEN_SECRET || '89e36720b25ec5960bca70c6ed8385e7cd511149112228bc4d54ca6440f9c51990d3ae4975f074cf8307cb0b6b4992a27fe982c9b362ac7fb4b15f6e6424ba36',
+                    jwt: {
+                        secret: process.env.JWT_SECRET || '99c0be54dc96f015f4eeb36515bb137484b733112acca1467c9bc84ac17d1ffb21d972da9fda10f0da8bf5b83723369069cbeb1daa4e1c5294c95b7bd46ae6d1'
+                    }
                 }
             },
             ...emailConfig,
             ...environmentConfig.email
         },
-        
+
         // Payment configuration
         payment: {
             provider: process.env.PAYMENT_PROVIDER || 'stripe',
@@ -138,7 +143,7 @@ const mergeConfigs = () => {
             ...paymentConfig,
             ...environmentConfig.payment
         },
-        
+
         // Swagger configuration
         swagger: {
             enabled: process.env.SWAGGER_ENABLED !== 'false',
@@ -149,7 +154,7 @@ const mergeConfigs = () => {
             ...swaggerConfig,
             ...environmentConfig.swagger
         },
-        
+
         // Constants
         constants: {
             VERSION: constants.VERSION || baseConfig.app.version,
@@ -159,13 +164,13 @@ const mergeConfigs = () => {
             API_VERSION: process.env.API_VERSION || 'v1',
             ...constants
         },
-        
+
         // Logging configuration
         logging: {
             ...baseConfig.logging,
             ...environmentConfig.logging
         },
-        
+
         // Environment information
         environment: {
             name: environment,
@@ -194,7 +199,7 @@ validateConfig(config);
 // Deep freeze helper function
 const deepFreeze = (obj) => {
     if (typeof obj !== 'object' || obj === null) return obj;
-    
+
     Object.freeze(obj);
     Object.getOwnPropertyNames(obj).forEach((prop) => {
         if (obj[prop] !== null && typeof obj[prop] === 'object' && !Object.isFrozen(obj[prop])) {
@@ -208,7 +213,7 @@ const deepFreeze = (obj) => {
 const exportObject = {
     // Main configuration
     ...config,
-    
+
     // Individual configs for specific imports
     base: config.base,
     app: config.app,

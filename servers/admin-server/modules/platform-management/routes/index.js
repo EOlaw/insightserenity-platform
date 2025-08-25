@@ -21,6 +21,7 @@ const systemRoutes = require('./system-routes');
 const configurationRoutes = require('./configuration-routes');
 const maintenanceRoutes = require('./maintenance-routes');
 const logger = require('../../../../../shared/lib/utils/logger');
+const { getAuditLogger } = require('../../../../../shared/lib/middleware/logging/audit-logger');
 const { ResponseFormatter } = require('../../../../../shared/lib/utils/response-formatter');
 const { handleError: errorHandler } = require('../../../../../shared/lib/middleware/error-handlers/error-handler');
 const { log: requestLogger } = require('../../../../../shared/lib/middleware/logging/request-logger');
@@ -71,6 +72,7 @@ class PlatformManagementRoutesManager {
         this.#routeDocumentation = [];
         this.#middlewareStack = [];
         this.#initialized = false;
+        this.auditLogger = getAuditLogger({ module: 'PlatformManagementRoutes' });
 
         this.#initializeConfiguration();
         this.#initializeSecurityConfig();
@@ -117,14 +119,14 @@ class PlatformManagementRoutesManager {
             maxRequestSize: process.env.MAX_REQUEST_SIZE || '50mb',
             corsEnabled: process.env.ENABLE_CORS !== 'false',
             compressionEnabled: process.env.ENABLE_COMPRESSION !== 'false',
-            
+
             routePrefixes: {
                 platform: '/platform',
                 system: '/system',
                 configuration: '/configuration',
                 maintenance: '/maintenance'
             },
-            
+
             featureFlags: {
                 enablePlatformManagement: process.env.FEATURE_PLATFORM_MGMT !== 'false',
                 enableSystemMonitoring: process.env.FEATURE_SYSTEM_MONITORING !== 'false',
@@ -137,7 +139,7 @@ class PlatformManagementRoutesManager {
                 enableAlertManagement: process.env.FEATURE_ALERT_MGMT !== 'false',
                 enableWorkflowAutomation: process.env.FEATURE_WORKFLOW_AUTO !== 'false'
             },
-            
+
             monitoring: {
                 logLevel: process.env.ROUTE_LOG_LEVEL || 'info',
                 metricsInterval: parseInt(process.env.METRICS_INTERVAL) || 60000,
@@ -152,7 +154,7 @@ class PlatformManagementRoutesManager {
                     errorRate: 0.1
                 }
             },
-            
+
             deployment: {
                 environment: process.env.NODE_ENV || 'development',
                 version: process.env.APP_VERSION || '1.0.0',
@@ -161,7 +163,7 @@ class PlatformManagementRoutesManager {
                 rollbackEnabled: process.env.ROLLBACK_ENABLED === 'true',
                 maintenanceModeEnabled: process.env.MAINTENANCE_MODE === 'true'
             },
-            
+
             systemLimits: {
                 maxConcurrentRequests: parseInt(process.env.MAX_CONCURRENT_REQUESTS) || 1000,
                 maxCacheSize: parseInt(process.env.MAX_CACHE_SIZE) || 10000,
@@ -195,7 +197,7 @@ class PlatformManagementRoutesManager {
                     maxAge: process.env.JWT_MAX_AGE || '24h'
                 }
             },
-            
+
             authorization: {
                 defaultRequiredRoles: ['PLATFORM_ADMIN'],
                 roleHierarchy: {
@@ -215,7 +217,7 @@ class PlatformManagementRoutesManager {
                     maxSize: 2000
                 }
             },
-            
+
             headers: {
                 hsts: {
                     maxAge: 31536000,
@@ -240,7 +242,7 @@ class PlatformManagementRoutesManager {
                 xFrameOptions: 'DENY',
                 xXssProtection: '1; mode=block'
             },
-            
+
             rateLimiting: {
                 windowMs: 60000,
                 max: 200,
@@ -249,7 +251,7 @@ class PlatformManagementRoutesManager {
                 skipSuccessfulRequests: false,
                 keyGenerator: (req) => `${req.user?.id || req.ip}_platform`
             },
-            
+
             encryption: {
                 algorithm: 'aes-256-gcm',
                 keyRotationInterval: 86400000,
@@ -505,7 +507,7 @@ class PlatformManagementRoutesManager {
                 timestamp: new Date().toISOString(),
                 environment: this.#config.deployment.environment
             };
-            
+
             res.setHeader('X-Request-ID', req.requestId);
             res.setHeader('X-Correlation-ID', req.correlationId);
             res.setHeader('X-Platform-Module', 'platform-management');
@@ -652,7 +654,7 @@ class PlatformManagementRoutesManager {
     #createModuleMiddleware(moduleName) {
         return (req, res, next) => {
             const startTime = Date.now();
-            
+
             req.moduleContext = {
                 module: moduleName,
                 startTime,
@@ -670,13 +672,13 @@ class PlatformManagementRoutesManager {
             // Monitor response
             res.on('finish', () => {
                 const responseTime = Date.now() - startTime;
-                
+
                 // Update metrics
                 if (moduleData) {
                     const currentAvg = moduleData.averageResponseTime;
                     const count = moduleData.requestCount;
                     moduleData.averageResponseTime = (currentAvg * (count - 1) + responseTime) / count;
-                    
+
                     if (res.statusCode >= 400) {
                         moduleData.errorCount++;
                     }
@@ -690,7 +692,7 @@ class PlatformManagementRoutesManager {
                         responseTime,
                         requestId: req.requestId
                     });
-                    
+
                     this.#triggerAlert('slow_route', {
                         module: moduleName,
                         path: req.path,
@@ -725,7 +727,7 @@ class PlatformManagementRoutesManager {
                 // Update system metrics
                 this.#performanceMetrics.system.requestCount++;
                 this.#performanceMetrics.system.totalResponseTime += duration;
-                this.#performanceMetrics.system.averageResponseTime = 
+                this.#performanceMetrics.system.averageResponseTime =
                     this.#performanceMetrics.system.totalResponseTime / this.#performanceMetrics.system.requestCount;
 
                 if (res.statusCode >= 400) {
@@ -767,6 +769,9 @@ class PlatformManagementRoutesManager {
      */
     #createAuditMiddleware() {
         return (req, res, next) => {
+            const startTime = Date.now();
+
+            // Basic audit entry
             const auditEntry = {
                 timestamp: new Date().toISOString(),
                 requestId: req.requestId,
@@ -785,12 +790,13 @@ class PlatformManagementRoutesManager {
             if (this.#auditLog.sensitiveOperations.has(operation)) {
                 auditEntry.sensitive = true;
                 auditEntry.operation = operation;
-                
+
                 // Store sensitive operations separately
                 this.#auditLog.securityEvents.set(req.requestId, auditEntry);
             }
 
-            res.on('finish', () => {
+            /*
+            res.on('finish', async () => {
                 auditEntry.statusCode = res.statusCode;
                 auditEntry.responseTime = Date.now() - Date.parse(auditEntry.timestamp);
 
@@ -804,7 +810,75 @@ class PlatformManagementRoutesManager {
 
                 // Log critical events
                 if (res.statusCode >= 400 || auditEntry.sensitive) {
-                    logger.audit('Platform Management Audit', auditEntry);
+                    await this.auditLogger.logEvent({
+                        event: 'platform.configuration.access',
+                        timestamp: new Date().toISOString(),
+                        actor: req.user || { type: 'system', id: 'admin' },
+                        resource: {
+                            type: 'platform_configuration',
+                            id: 'configuration_access'
+                        },
+                        action: 'READ',
+                        result: 'success',
+                        metadata: {
+                            path: req.path,
+                            method: req.method,
+                            responseTime: Date.now() - req.startTime
+                        }
+                    }, req);
+                } else {
+                    // Fallback to standard logging
+                    logger.info('Platform management event', {
+                        event: 'configuration_access',
+                        method: req.method,
+                        path: req.path,
+                        status: res.statusCode,
+                        user: req.user?.id || 'anonymous',
+                        responseTime,
+                        requestId: req.requestId
+                    })
+                }
+            });
+            */
+
+            res.on('finish', async () => {
+                const responseTime = Date.now() - startTime;
+
+                // Use proper audit logging
+                try {
+                    if (this.auditLogger) {
+                        await this.auditLogger.logEvent({
+                            event: 'platform.configuration.accessed',
+                            timestamp: new Date().toISOString(),
+                            actor: req.user || { type: 'anonymous', id: req.ip },
+                            resource: {
+                                type: 'platform_configuration',
+                                id: req.path
+                            },
+                            action: req.method,
+                            result: res.statusCode < 400 ? 'success' : 'failure',
+                            metadata: {
+                                statusCode: res.statusCode,
+                                responseTime,
+                                path: req.path
+                            }
+                        }, req);
+                    } else {
+                        // Fallback to standard logging
+                        logger.info('Platform management event', {
+                            event: 'configuration_access',
+                            method: req.method,
+                            path: req.path,
+                            status: res.statusCode,
+                            responseTime,
+                            userId: req.user?.id
+                        });
+                    }
+                } catch (auditError) {
+                    logger.error('Audit logging failed', {
+                        error: auditError.message,
+                        path: req.path
+                    });
                 }
             });
 
@@ -822,7 +896,7 @@ class PlatformManagementRoutesManager {
         this.#router.get('/health', async (req, res) => {
             const health = await this.#performHealthCheck();
             const statusCode = health.status === 'healthy' ? 200 : 503;
-            
+
             res.status(statusCode).json(this.#responseFormatter.formatSuccess(
                 health,
                 `Platform management service is ${health.status}`
@@ -833,7 +907,7 @@ class PlatformManagementRoutesManager {
         this.#router.get('/health/detailed', async (req, res) => {
             const detailedHealth = await this.#performDetailedHealthCheck();
             const statusCode = detailedHealth.overallStatus === 'healthy' ? 200 : 503;
-            
+
             res.status(statusCode).json(this.#responseFormatter.formatSuccess(
                 detailedHealth,
                 'Detailed health check completed'
@@ -853,7 +927,7 @@ class PlatformManagementRoutesManager {
         this.#router.get('/health/dependencies', async (req, res) => {
             const dependencyHealth = await this.#checkDependencies();
             const statusCode = dependencyHealth.allHealthy ? 200 : 503;
-            
+
             res.status(statusCode).json(this.#responseFormatter.formatSuccess(
                 dependencyHealth,
                 'Dependency health check completed'
@@ -873,7 +947,7 @@ class PlatformManagementRoutesManager {
         this.#router.get('/health/ready', async (req, res) => {
             const isReady = await this.#checkReadiness();
             const statusCode = isReady ? 200 : 503;
-            
+
             res.status(statusCode).json({
                 ready: isReady,
                 timestamp: new Date().toISOString(),
@@ -954,7 +1028,7 @@ class PlatformManagementRoutesManager {
     }
 
     // Additional helper methods for comprehensive functionality
-    
+
     /**
      * Generate unique request ID
      * @private
@@ -1072,7 +1146,7 @@ class PlatformManagementRoutesManager {
      */
     #rotateAuditLog() {
         const entriesToArchive = this.#auditLog.entries.splice(0, 10000);
-        
+
         // In a real implementation, this would archive to persistent storage
         logger.info('Audit log rotated', {
             archivedEntries: entriesToArchive.length,
@@ -1156,11 +1230,11 @@ class PlatformManagementRoutesManager {
      */
     #checkPerformanceHealth() {
         const avgResponseTime = this.#performanceMetrics.system.averageResponseTime;
-        const errorRate = this.#performanceMetrics.system.errorCount / 
-                         this.#performanceMetrics.system.requestCount;
+        const errorRate = this.#performanceMetrics.system.errorCount /
+            this.#performanceMetrics.system.requestCount;
 
         return avgResponseTime < this.#performanceMetrics.thresholds.slowRoute &&
-               errorRate < this.#performanceMetrics.thresholds.errorRate;
+            errorRate < this.#performanceMetrics.thresholds.errorRate;
     }
 
     /**
@@ -1267,7 +1341,7 @@ class PlatformManagementRoutesManager {
             data.errorCount = 0;
             data.averageResponseTime = 0;
         });
-        
+
         this.#metricsCollector.clear();
         this.#performanceMetrics.system = {
             ...this.#performanceMetrics.system,
@@ -1276,7 +1350,7 @@ class PlatformManagementRoutesManager {
             totalResponseTime: 0,
             averageResponseTime: 0
         };
-        
+
         logger.info('Platform management metrics reset successfully');
     }
 

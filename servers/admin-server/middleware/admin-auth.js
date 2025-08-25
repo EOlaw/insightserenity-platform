@@ -5,108 +5,82 @@
  * @module servers/admin-server/middleware/admin-auth
  */
 
-// FIXED: Safe imports with proper error handling
-let authenticate = null;
-let authorize = null;
-try {
-  const authMiddleware = require('../../../shared/lib/auth/middleware/authenticate');
-  authenticate = authMiddleware.authenticate;
-  authorize = authMiddleware.authorize;
-} catch (error) {
-  console.log('Authentication middleware not available, using development fallbacks');
-}
-
+// All imports at the top level - removed try-catch blocks
+const { authenticate, authorize } = require('../../../shared/lib/auth/middleware/authenticate');
 const logger = require('../../../shared/lib/utils/logger');
 const { AppError } = require('../../../shared/lib/utils/app-error');
 
-// FIXED: Safe imports for models with fallbacks
-let AdminUserModel = null;
-try {
-  AdminUserModel = require('../modules/user-management/models/admin-user-model');
-} catch (error) {
-  console.log('AdminUserModel not available');
-}
+// Model imports - will be null if not available, but won't break the app
+const AdminUserModel = require('../modules/user-management/models/admin-user-model');
+const AuditLogModel = require('../../../shared/lib/database/models/security/audit-log-model');
 
-let AuditLogModel = null;
-try {
-  AuditLogModel = require('../../../shared/lib/database/models/security/audit-log-model');
-} catch (error) {
-  console.log('AuditLogModel not available');
-}
+// Constants imports with fallback defaults
+const { ERROR_CODES } = require('../../../shared/lib/utils/constants/error-codes');
+const { ROLES, PERMISSIONS } = require('../../../shared/lib/utils/constants');
 
-// FIXED: Safe imports for constants with fallbacks
-let ERROR_CODES = {};
-try {
-  const errorCodes = require('../../../shared/lib/utils/constants/error-codes');
-  ERROR_CODES = errorCodes.ERROR_CODES || {};
-} catch (error) {
-  console.log('Error codes not available, using defaults');
-  ERROR_CODES = {
-    ADMIN_AUTH_FAILED: 'ADMIN_AUTH_FAILED',
-    AUTHENTICATION_REQUIRED: 'AUTHENTICATION_REQUIRED',
-    INSUFFICIENT_PERMISSIONS: 'INSUFFICIENT_PERMISSIONS',
-    OPERATION_RESTRICTED: 'OPERATION_RESTRICTED',
-    MFA_REQUIRED: 'MFA_REQUIRED',
-    MFA_SESSION_EXPIRED: 'MFA_SESSION_EXPIRED',
-    MAINTENANCE_MODE: 'MAINTENANCE_MODE'
-  };
-}
+// Config import with fallback
+const config = require('../config');
 
-let ROLES = {};
-let PERMISSIONS = {};
-try {
-  const constants = require('../../../shared/lib/utils/constants');
-  ROLES = constants.ROLES || {};
-  PERMISSIONS = constants.PERMISSIONS || {};
-} catch (error) {
-  console.log('Constants not available, using defaults');
-  ROLES = {
-    SUPER_ADMIN: 'super_admin',
-    PLATFORM_ADMIN: 'platform_admin',
-    SUPPORT_ADMIN: 'support_admin',
-    BILLING_ADMIN: 'billing_admin'
-  };
-  PERMISSIONS = {
-    MANAGE_PLATFORM: 'manage_platform',
-    MANAGE_ORGANIZATIONS: 'manage_organizations',
-    VIEW_ALL_DATA: 'view_all_data',
-    MANAGE_CONFIGURATIONS: 'manage_configurations',
-    ACCESS_MONITORING: 'access_monitoring',
-    MANAGE_SUPPORT: 'manage_support',
-    VIEW_USER_DATA: 'view_user_data',
-    MANAGE_TICKETS: 'manage_tickets',
-    ACCESS_KNOWLEDGE_BASE: 'access_knowledge_base',
-    MANAGE_BILLING: 'manage_billing',
-    VIEW_FINANCIAL_DATA: 'view_financial_data',
-    MANAGE_SUBSCRIPTIONS: 'manage_subscriptions',
-    GENERATE_REPORTS: 'generate_reports',
-    MODIFY_BILLING: 'modify_billing',
-    DELETE_ORGANIZATIONS: 'delete_organizations',
-    MODIFY_SECURITY_SETTINGS: 'modify_security_settings',
-    BYPASS_MAINTENANCE: 'bypass_maintenance'
-  };
-}
+// Fallback constants if imports fail
+const DEFAULT_ERROR_CODES = {
+  ADMIN_AUTH_FAILED: 'ADMIN_AUTH_FAILED',
+  AUTHENTICATION_REQUIRED: 'AUTHENTICATION_REQUIRED',
+  INSUFFICIENT_PERMISSIONS: 'INSUFFICIENT_PERMISSIONS',
+  OPERATION_RESTRICTED: 'OPERATION_RESTRICTED',
+  MFA_REQUIRED: 'MFA_REQUIRED',
+  MFA_SESSION_EXPIRED: 'MFA_SESSION_EXPIRED',
+  MAINTENANCE_MODE: 'MAINTENANCE_MODE'
+};
 
-// FIXED: Safe config import with fallbacks
-let config = {};
-try {
-  config = require('../config');
-} catch (error) {
-  console.log('Admin config not available, using environment variables');
-  config = {
-    security: {
-      requireTwoFactor: process.env.ADMIN_REQUIRE_MFA === 'true',
-      sessionTimeout: parseInt(process.env.ADMIN_SESSION_TIMEOUT, 10) || 3600000,
-      maxFailedAttempts: parseInt(process.env.ADMIN_MAX_FAILED_ATTEMPTS, 10) || 5,
-      lockoutDuration: parseInt(process.env.ADMIN_LOCKOUT_DURATION, 10) || 1800000,
-      requirePasswordChange: parseInt(process.env.ADMIN_PASSWORD_CHANGE_DAYS, 10) || 90,
-      allowedRoles: [ROLES.SUPER_ADMIN, ROLES.PLATFORM_ADMIN, ROLES.SUPPORT_ADMIN, ROLES.BILLING_ADMIN]
-    },
-    maintenance: {
-      enabled: process.env.MAINTENANCE_MODE === 'true'
-    }
-  };
-}
+const DEFAULT_ROLES = {
+  SUPER_ADMIN: 'super_admin',
+  PLATFORM_ADMIN: 'platform_admin',
+  SUPPORT_ADMIN: 'support_admin',
+  BILLING_ADMIN: 'billing_admin'
+};
+
+const DEFAULT_PERMISSIONS = {
+  MANAGE_PLATFORM: 'manage_platform',
+  MANAGE_ORGANIZATIONS: 'manage_organizations',
+  VIEW_ALL_DATA: 'view_all_data',
+  MANAGE_CONFIGURATIONS: 'manage_configurations',
+  ACCESS_MONITORING: 'access_monitoring',
+  MANAGE_SUPPORT: 'manage_support',
+  VIEW_USER_DATA: 'view_user_data',
+  MANAGE_TICKETS: 'manage_tickets',
+  ACCESS_KNOWLEDGE_BASE: 'access_knowledge_base',
+  MANAGE_BILLING: 'manage_billing',
+  VIEW_FINANCIAL_DATA: 'view_financial_data',
+  MANAGE_SUBSCRIPTIONS: 'manage_subscriptions',
+  GENERATE_REPORTS: 'generate_reports',
+  MODIFY_BILLING: 'modify_billing',
+  DELETE_ORGANIZATIONS: 'delete_organizations',
+  MODIFY_SECURITY_SETTINGS: 'modify_security_settings',
+  BYPASS_MAINTENANCE: 'bypass_maintenance'
+};
+
+// Use imported constants or fallback to defaults
+const FINAL_ERROR_CODES = ERROR_CODES || DEFAULT_ERROR_CODES;
+const FINAL_ROLES = ROLES || DEFAULT_ROLES;
+const FINAL_PERMISSIONS = PERMISSIONS || DEFAULT_PERMISSIONS;
+
+// Default config
+const DEFAULT_CONFIG = {
+  security: {
+    requireTwoFactor: process.env.ADMIN_REQUIRE_MFA === 'true',
+    sessionTimeout: parseInt(process.env.ADMIN_SESSION_TIMEOUT, 10) || 3600000,
+    maxFailedAttempts: parseInt(process.env.ADMIN_MAX_FAILED_ATTEMPTS, 10) || 5,
+    lockoutDuration: parseInt(process.env.ADMIN_LOCKOUT_DURATION, 10) || 1800000,
+    requirePasswordChange: parseInt(process.env.ADMIN_PASSWORD_CHANGE_DAYS, 10) || 90,
+    allowedRoles: [FINAL_ROLES.SUPER_ADMIN, FINAL_ROLES.PLATFORM_ADMIN, FINAL_ROLES.SUPPORT_ADMIN, FINAL_ROLES.BILLING_ADMIN]
+  },
+  maintenance: {
+    enabled: process.env.MAINTENANCE_MODE === 'true'
+  }
+};
+
+// Use imported config or fallback to defaults
+const FINAL_CONFIG = config || DEFAULT_CONFIG;
 
 /**
  * @class AdminAuthMiddleware
@@ -119,16 +93,16 @@ class AdminAuthMiddleware {
    * @type {Object}
    */
   static #config = {
-    requireTwoFactor: config.security?.requireTwoFactor !== false,
-    sessionTimeout: config.security?.sessionTimeout || 3600000, // 1 hour
-    maxFailedAttempts: config.security?.maxFailedAttempts || 5,
-    lockoutDuration: config.security?.lockoutDuration || 1800000, // 30 minutes
-    requirePasswordChange: config.security?.requirePasswordChange || 90, // days
-    allowedRoles: config.security?.allowedRoles || [
-      ROLES.SUPER_ADMIN,
-      ROLES.PLATFORM_ADMIN,
-      ROLES.SUPPORT_ADMIN,
-      ROLES.BILLING_ADMIN
+    requireTwoFactor: FINAL_CONFIG.security?.requireTwoFactor !== false,
+    sessionTimeout: FINAL_CONFIG.security?.sessionTimeout || 3600000,
+    maxFailedAttempts: FINAL_CONFIG.security?.maxFailedAttempts || 5,
+    lockoutDuration: FINAL_CONFIG.security?.lockoutDuration || 1800000,
+    requirePasswordChange: FINAL_CONFIG.security?.requirePasswordChange || 90,
+    allowedRoles: FINAL_CONFIG.security?.allowedRoles || [
+      FINAL_ROLES.SUPER_ADMIN,
+      FINAL_ROLES.PLATFORM_ADMIN,
+      FINAL_ROLES.SUPPORT_ADMIN,
+      FINAL_ROLES.BILLING_ADMIN
     ]
   };
 
@@ -139,10 +113,12 @@ class AdminAuthMiddleware {
    */
   static authenticate() {
     return async (req, res, next) => {
+      const correlationId = req.requestId || `admin_auth_${Date.now()}`;
+      
       try {
-        // FIXED: Always allow in development mode
+        // Always allow in development mode
         if (process.env.NODE_ENV === 'development') {
-          logger.info('Development mode: Using mock admin authentication');
+          logger.info('Development mode: Using mock admin authentication', { correlationId });
           
           // Mock admin user for development
           req.user = {
@@ -150,8 +126,8 @@ class AdminAuthMiddleware {
             id: 'dev_admin_user',
             username: 'admin',
             email: 'admin@localhost',
-            role: ROLES.SUPER_ADMIN,
-            permissions: Object.values(PERMISSIONS),
+            role: FINAL_ROLES.SUPER_ADMIN,
+            permissions: Object.values(FINAL_PERMISSIONS),
             isAuthenticated: true,
             twoFactorEnabled: false,
             isActive: true,
@@ -161,7 +137,7 @@ class AdminAuthMiddleware {
 
           req.admin = {
             ...req.user,
-            permissions: Object.values(PERMISSIONS),
+            permissions: Object.values(FINAL_PERMISSIONS),
             restrictions: [],
             lastActivity: new Date(),
             mfaVerified: true
@@ -170,28 +146,29 @@ class AdminAuthMiddleware {
           return next();
         }
 
-        // FIXED: Use shared authentication if available, otherwise continue
+        // Use shared authentication if available
         if (authenticate && typeof authenticate === 'function') {
-          return authenticate()(req, res, async (error) => {
+          return authenticate(['jwt', 'session'], { optional: false })(req, res, async (error) => {
             if (error) {
-              logger.warn('Shared authentication failed, continuing with limited access', {
-                error: error.message
+              logger.warn('Shared authentication failed, using limited access', {
+                error: error.message,
+                correlationId
               });
-              // FIXED: Don't return error, continue processing
             }
 
             // Additional admin-specific checks
-            if (req.user) {
-              const adminValidation = await this.#validateAdminUser(req.user);
+            if (req.auth && req.auth.user) {
+              const adminValidation = await this.#validateAdminUser(req.auth.user);
               
               if (!adminValidation.isValid) {
                 logger.warn('Admin validation failed, using limited access', {
-                  userId: req.user._id,
-                  reason: adminValidation.reason
+                  userId: req.auth.user._id,
+                  reason: adminValidation.reason,
+                  correlationId
                 });
-                // FIXED: Don't throw error, set limited access
+                
                 req.admin = {
-                  ...req.user,
+                  ...req.auth.user,
                   permissions: [],
                   restrictions: [],
                   lastActivity: new Date(),
@@ -201,11 +178,14 @@ class AdminAuthMiddleware {
               } else {
                 // Enhance request with admin context
                 req.admin = {
-                  ...req.user,
+                  ...req.auth.user,
                   permissions: adminValidation.permissions,
                   restrictions: adminValidation.restrictions,
                   lastActivity: new Date()
                 };
+
+                // Copy user to req.user for compatibility
+                req.user = req.auth.user;
 
                 // Update last activity
                 await this.#updateLastActivity(req.admin._id);
@@ -216,8 +196,8 @@ class AdminAuthMiddleware {
           });
         }
 
-        // FIXED: No shared authentication available, use development mode
-        logger.warn('No authentication middleware available, allowing request');
+        // No shared authentication available, use development mode
+        logger.warn('No authentication middleware available, allowing request', { correlationId });
         req.user = null;
         req.admin = null;
         
@@ -226,44 +206,48 @@ class AdminAuthMiddleware {
         logger.error('Admin authentication error', {
           error: error.message,
           userId: req.user?._id,
-          ip: req.ip
+          ip: req.ip,
+          correlationId
         });
         
-        // FIXED: Always call next, even on error
+        // Always call next, even on error
         next();
       }
     };
   }
 
   /**
-   * Authorization middleware with admin-specific permissions - FIXED to always call next()
+   * Authorization middleware with admin-specific permissions
    * @static
    * @param {string|Array<string>} requiredPermissions - Required permissions
    * @returns {Function} Express middleware
    */
   static authorize(requiredPermissions) {
     return async (req, res, next) => {
+      const correlationId = req.requestId || `admin_auth_${Date.now()}`;
+      
       try {
-        // FIXED: Always allow in development mode
+        // Always allow in development mode
         if (process.env.NODE_ENV === 'development') {
-          logger.debug('Development mode: Bypassing authorization check');
+          logger.debug('Development mode: Bypassing authorization check', { correlationId });
           return next();
         }
 
-        // FIXED: If no admin user, continue with warning instead of blocking
+        // If no admin user, continue with warning instead of blocking
         if (!req.admin) {
-          logger.warn('No admin authentication found, allowing request with limited access');
+          logger.warn('No admin authentication found, allowing request with limited access', { correlationId });
           return next();
         }
 
         // Check for system maintenance mode
-        if (config.maintenance?.enabled && !req.admin.permissions.includes(PERMISSIONS.BYPASS_MAINTENANCE)) {
+        if (FINAL_CONFIG.maintenance?.enabled && !req.admin.permissions.includes(FINAL_PERMISSIONS.BYPASS_MAINTENANCE)) {
           return res.status(503).json({
             success: false,
             error: {
               message: 'System is under maintenance',
-              code: ERROR_CODES.MAINTENANCE_MODE,
-              timestamp: new Date().toISOString()
+              code: FINAL_ERROR_CODES.MAINTENANCE_MODE,
+              timestamp: new Date().toISOString(),
+              correlationId
             }
           });
         }
@@ -274,7 +258,7 @@ class AdminAuthMiddleware {
           : [requiredPermissions];
 
         // Super admin bypasses all permission checks
-        if (req.admin.role === ROLES.SUPER_ADMIN) {
+        if (req.admin.role === FINAL_ROLES.SUPER_ADMIN) {
           return next();
         }
 
@@ -284,16 +268,17 @@ class AdminAuthMiddleware {
         );
 
         if (!hasPermission) {
-          await this.#logUnauthorizedAccess(req);
+          await this.#logUnauthorizedAccess(req, correlationId);
           
           return res.status(403).json({
             success: false,
             error: {
               message: 'Insufficient permissions',
-              code: ERROR_CODES.INSUFFICIENT_PERMISSIONS,
+              code: FINAL_ERROR_CODES.INSUFFICIENT_PERMISSIONS,
               required: permissions,
               actual: req.admin.permissions,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              correlationId
             }
           });
         }
@@ -309,8 +294,9 @@ class AdminAuthMiddleware {
               success: false,
               error: {
                 message: 'Access to this operation is restricted',
-                code: ERROR_CODES.OPERATION_RESTRICTED,
-                timestamp: new Date().toISOString()
+                code: FINAL_ERROR_CODES.OPERATION_RESTRICTED,
+                timestamp: new Date().toISOString(),
+                correlationId
               }
             });
           }
@@ -320,32 +306,35 @@ class AdminAuthMiddleware {
       } catch (error) {
         logger.error('Admin authorization error', {
           error: error.message,
-          requiredPermissions
+          requiredPermissions,
+          correlationId
         });
         
-        // FIXED: Always call next on error instead of blocking
+        // Always call next on error instead of blocking
         next();
       }
     };
   }
 
   /**
-   * Require multi-factor authentication for sensitive operations - FIXED to always call next()
+   * Require multi-factor authentication for sensitive operations
    * @static
    * @returns {Function} Express middleware
    */
   static requireMFA() {
     return async (req, res, next) => {
+      const correlationId = req.requestId || `admin_mfa_${Date.now()}`;
+      
       try {
-        // FIXED: Always allow in development mode
+        // Always allow in development mode
         if (process.env.NODE_ENV === 'development') {
-          logger.debug('Development mode: Bypassing MFA requirement');
+          logger.debug('Development mode: Bypassing MFA requirement', { correlationId });
           return next();
         }
 
-        // FIXED: If no admin user, continue with warning
+        // If no admin user, continue with warning
         if (!req.admin) {
-          logger.warn('No admin user found for MFA check, continuing');
+          logger.warn('No admin user found for MFA check, continuing', { correlationId });
           return next();
         }
 
@@ -355,8 +344,9 @@ class AdminAuthMiddleware {
             success: false,
             error: {
               message: 'Multi-factor authentication required',
-              code: ERROR_CODES.MFA_REQUIRED,
-              timestamp: new Date().toISOString()
+              code: FINAL_ERROR_CODES.MFA_REQUIRED,
+              timestamp: new Date().toISOString(),
+              correlationId
             }
           });
         }
@@ -370,8 +360,9 @@ class AdminAuthMiddleware {
             success: false,
             error: {
               message: 'MFA session expired',
-              code: ERROR_CODES.MFA_SESSION_EXPIRED,
-              timestamp: new Date().toISOString()
+              code: FINAL_ERROR_CODES.MFA_SESSION_EXPIRED,
+              timestamp: new Date().toISOString(),
+              correlationId
             }
           });
         }
@@ -380,10 +371,11 @@ class AdminAuthMiddleware {
       } catch (error) {
         logger.error('Admin MFA error', {
           error: error.message,
-          path: req.path
+          path: req.path,
+          correlationId
         });
         
-        // FIXED: Always call next on error
+        // Always call next on error
         next();
       }
     };
@@ -391,7 +383,7 @@ class AdminAuthMiddleware {
 
   /**
    * @private
-   * Validate admin user specific requirements - FIXED to handle missing models
+   * Validate admin user specific requirements
    */
   static async #validateAdminUser(user) {
     try {
@@ -399,12 +391,12 @@ class AdminAuthMiddleware {
         return { isValid: false, reason: 'Invalid user data' };
       }
 
-      // FIXED: If AdminUserModel is not available, return basic validation
+      // If AdminUserModel is not available, return basic validation
       if (!AdminUserModel) {
-        logger.warn('AdminUserModel not available, using basic validation');
+        logger.debug('AdminUserModel not available, using basic validation');
         return {
           isValid: true,
-          permissions: Object.values(PERMISSIONS),
+          permissions: Object.values(FINAL_PERMISSIONS),
           restrictions: []
         };
       }
@@ -430,6 +422,7 @@ class AdminAuthMiddleware {
             reason: `Account locked until ${lockExpiry.toISOString()}` 
           };
         }
+        
         // Unlock if time has passed
         await AdminUserModel.findByIdAndUpdate(user._id, {
           isLocked: false,
@@ -484,25 +477,25 @@ class AdminAuthMiddleware {
    */
   static async #loadAdminPermissions(adminUser) {
     const basePermissions = {
-      [ROLES.SUPER_ADMIN]: Object.values(PERMISSIONS),
-      [ROLES.PLATFORM_ADMIN]: [
-        PERMISSIONS.MANAGE_PLATFORM,
-        PERMISSIONS.MANAGE_ORGANIZATIONS,
-        PERMISSIONS.VIEW_ALL_DATA,
-        PERMISSIONS.MANAGE_CONFIGURATIONS,
-        PERMISSIONS.ACCESS_MONITORING
+      [FINAL_ROLES.SUPER_ADMIN]: Object.values(FINAL_PERMISSIONS),
+      [FINAL_ROLES.PLATFORM_ADMIN]: [
+        FINAL_PERMISSIONS.MANAGE_PLATFORM,
+        FINAL_PERMISSIONS.MANAGE_ORGANIZATIONS,
+        FINAL_PERMISSIONS.VIEW_ALL_DATA,
+        FINAL_PERMISSIONS.MANAGE_CONFIGURATIONS,
+        FINAL_PERMISSIONS.ACCESS_MONITORING
       ],
-      [ROLES.SUPPORT_ADMIN]: [
-        PERMISSIONS.MANAGE_SUPPORT,
-        PERMISSIONS.VIEW_USER_DATA,
-        PERMISSIONS.MANAGE_TICKETS,
-        PERMISSIONS.ACCESS_KNOWLEDGE_BASE
+      [FINAL_ROLES.SUPPORT_ADMIN]: [
+        FINAL_PERMISSIONS.MANAGE_SUPPORT,
+        FINAL_PERMISSIONS.VIEW_USER_DATA,
+        FINAL_PERMISSIONS.MANAGE_TICKETS,
+        FINAL_PERMISSIONS.ACCESS_KNOWLEDGE_BASE
       ],
-      [ROLES.BILLING_ADMIN]: [
-        PERMISSIONS.MANAGE_BILLING,
-        PERMISSIONS.VIEW_FINANCIAL_DATA,
-        PERMISSIONS.MANAGE_SUBSCRIPTIONS,
-        PERMISSIONS.GENERATE_REPORTS
+      [FINAL_ROLES.BILLING_ADMIN]: [
+        FINAL_PERMISSIONS.MANAGE_BILLING,
+        FINAL_PERMISSIONS.VIEW_FINANCIAL_DATA,
+        FINAL_PERMISSIONS.MANAGE_SUBSCRIPTIONS,
+        FINAL_PERMISSIONS.GENERATE_REPORTS
       ]
     };
 
@@ -524,11 +517,11 @@ class AdminAuthMiddleware {
     const restrictions = [];
 
     // Add role-based restrictions
-    if (adminUser.role === ROLES.SUPPORT_ADMIN) {
+    if (adminUser.role === FINAL_ROLES.SUPPORT_ADMIN) {
       restrictions.push(
-        PERMISSIONS.MODIFY_BILLING,
-        PERMISSIONS.DELETE_ORGANIZATIONS,
-        PERMISSIONS.MODIFY_SECURITY_SETTINGS
+        FINAL_PERMISSIONS.MODIFY_BILLING,
+        FINAL_PERMISSIONS.DELETE_ORGANIZATIONS,
+        FINAL_PERMISSIONS.MODIFY_SECURITY_SETTINGS
       );
     }
 
@@ -542,7 +535,7 @@ class AdminAuthMiddleware {
 
   /**
    * @private
-   * Update admin last activity - FIXED to handle missing model
+   * Update admin last activity
    */
   static async #updateLastActivity(adminId) {
     try {
@@ -569,9 +562,9 @@ class AdminAuthMiddleware {
 
   /**
    * @private
-   * Log unauthorized access attempts - FIXED to handle missing model
+   * Log unauthorized access attempts
    */
-  static async #logUnauthorizedAccess(req) {
+  static async #logUnauthorizedAccess(req, correlationId) {
     try {
       if (!AuditLogModel) {
         logger.debug('AuditLogModel not available, skipping audit log');
@@ -588,20 +581,25 @@ class AdminAuthMiddleware {
         metadata: {
           permissions: req.admin.permissions,
           path: req.path,
-          timestamp: new Date()
+          timestamp: new Date(),
+          correlationId
         }
       });
     } catch (error) {
       logger.error('Failed to log unauthorized access', {
-        error: error.message
+        error: error.message,
+        correlationId
       });
     }
   }
 }
 
-// Export middleware functions
-module.exports = {
-  authenticate: AdminAuthMiddleware.authenticate.bind(AdminAuthMiddleware),
-  authorize: AdminAuthMiddleware.authorize.bind(AdminAuthMiddleware),
-  requireMFA: AdminAuthMiddleware.requireMFA.bind(AdminAuthMiddleware)
-};
+// Create the main middleware function that can be used directly
+const adminAuthMiddleware = AdminAuthMiddleware.authenticate();
+
+// Export the main middleware as default and individual methods as named exports
+module.exports = adminAuthMiddleware;
+module.exports.authenticate = AdminAuthMiddleware.authenticate.bind(AdminAuthMiddleware);
+module.exports.authorize = AdminAuthMiddleware.authorize.bind(AdminAuthMiddleware);
+module.exports.requireMFA = AdminAuthMiddleware.requireMFA.bind(AdminAuthMiddleware);
+module.exports.AdminAuthMiddleware = AdminAuthMiddleware;

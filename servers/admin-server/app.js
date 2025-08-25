@@ -30,13 +30,14 @@ const Database = require('../../shared/lib/database');
 const { AppError } = require('../../shared/lib/utils/app-error');
 
 // Admin-specific middleware with conditional imports and error handling
-let adminAuth, ipWhitelist, adminRateLimit, sessionValidation, securityHeaders;
-try {
-    adminAuth = require('./middleware/admin-auth');
-} catch (error) {
-    logger.warn('Admin auth middleware not available', { error: error.message });
-    adminAuth = (req, res, next) => next(); // Fallback
-}
+let ipWhitelist, adminRateLimit, sessionValidation, securityHeaders;
+const adminAuth = require('./middleware/admin-auth'); // Direct import without try-catch for critical middleware
+// try {
+//     adminAuth = require('./middleware/admin-auth');
+// } catch (error) {
+//     logger.warn('Admin auth middleware not available', { error: error.message });
+//     adminAuth = (req, res, next) => next(); // Fallback
+// }
 
 try {
     ipWhitelist = require('./middleware/ip-whitelist');
@@ -1085,7 +1086,11 @@ class AdminApplication {
 
             // Platform Management Routes
             if (platformManagementRoutesManager) {
-                this.app.use(`${adminBase}/platform`, adminAuth, platformManagementRoutesManager);
+                this.app.use(
+                    `${adminBase}/platform`,
+                    adminAuth,
+                    platformManagementRoutesManager
+                );
                 console.log(`✅ Platform Management routes mounted at ${adminBase}/platform`);
             }
             
