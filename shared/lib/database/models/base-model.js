@@ -106,6 +106,7 @@ class BaseModel {
     ['organization_invitations', 'admin'],
     ['tenants', 'admin'],
     ['system_configurations', 'admin'],
+    ['configuration_management', 'admin'], // FIXED: Added explicit mapping for configuration_management
     ['security_incidents', 'admin'],
     ['sessions', 'admin'],
     
@@ -393,8 +394,21 @@ class BaseModel {
         BaseModel.schemaCache = new Map();
       }
 
-      // Set collection name if not specified
-      const collectionName = options.collection || schema.options.collection || BaseModel.getCollectionName(modelName);
+      // FIXED: Properly extract collection name from schema options first, then fallback to generated name
+      let collectionName;
+      if (schema.options && schema.options.collection) {
+        // Use explicitly defined collection name from schema options
+        collectionName = schema.options.collection;
+        logger.debug(`Using explicit collection name from schema: ${collectionName}`);
+      } else if (options.collection) {
+        // Use collection name from options
+        collectionName = options.collection;
+      } else {
+        // Generate collection name from model name as fallback
+        collectionName = BaseModel.getCollectionName(modelName);
+      }
+
+      // Ensure schema has the collection name set
       if (!schema.options.collection) {
         schema.options.collection = collectionName;
       }
@@ -408,10 +422,11 @@ class BaseModel {
         if (connection) {
           try {
             model = connection.model(modelName, schema, collectionName);
+            const dbType = BaseModel.collectionDatabaseMapping.get(collectionName);
             logger.debug(`Model created with specific database connection`, {
               modelName,
               collection: collectionName,
-              database: BaseModel.collectionDatabaseMapping.get(collectionName) || 'unknown'
+              database: dbType || 'unknown'
             });
           } catch (connectionError) {
             logger.warn(`Failed to create model with specific connection, falling back to default`, {
@@ -422,6 +437,12 @@ class BaseModel {
           }
         } else {
           model = mongoose.model(modelName, schema, collectionName);
+          const dbType = BaseModel.collectionDatabaseMapping.get(collectionName);
+          logger.debug(`Model created with default connection`, {
+            modelName,
+            collection: collectionName,
+            database: dbType || 'unmapped - will use admin as fallback'
+          });
         }
       } else {
         model = mongoose.model(modelName, schema, collectionName);

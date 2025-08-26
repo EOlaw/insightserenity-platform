@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview Enhanced database models index - Registers all models with BaseModel and multi-database routing
+ * @fileoverview Enhanced database models index - FIXED Configuration model registration path and improved error handling
  * @module shared/lib/database/models
  * @description This file imports and registers all database models to ensure they are
  * available during Database.initialize(). Models must be imported here to be recognized.
@@ -10,13 +10,14 @@
 
 const logger = require('../../utils/logger');
 const BaseModel = require('./base-model');
+const path = require('path'); // ADDED: For proper path resolution
 
 // Track registration progress
 let registeredModels = new Map();
 let registrationErrors = [];
 
 /**
- * ENHANCED: Safely imports and registers a model with enhanced database routing
+ * ENHANCED: Safely imports and registers a model with enhanced database routing and improved path handling
  * @param {string} modelPath - Path to model file
  * @param {string} modelName - Name for registration
  * @param {string} [expectedCollection] - Expected collection name for database routing
@@ -25,7 +26,43 @@ let registrationErrors = [];
  */
 function safeRegisterModel(modelPath, modelName, expectedCollection = null, databaseType = null) {
     try {
-        const modelModule = require(modelPath);
+        let resolvedPath = modelPath;
+        
+        // FIXED: Handle complex relative paths for Configuration model
+        if (modelPath.includes('servers/admin-server/modules/platform-management/models/configuration-model')) {
+            // Try different path resolution strategies for the Configuration model
+            const possiblePaths = [
+                // Direct relative path from current location
+                path.resolve(__dirname, '../../../../servers/admin-server/modules/platform-management/models/configuration-model'),
+                // From project root
+                path.resolve(process.cwd(), 'servers/admin-server/modules/platform-management/models/configuration-model'),
+                // Alternative structure
+                path.resolve(__dirname, '../../../admin-server/modules/platform-management/models/configuration-model'),
+                // Try the original path as-is
+                modelPath
+            ];
+            
+            let modelFound = false;
+            for (const testPath of possiblePaths) {
+                try {
+                    require.resolve(testPath);
+                    resolvedPath = testPath;
+                    modelFound = true;
+                    logger.debug(`Configuration model found at: ${testPath}`);
+                    break;
+                } catch (resolveError) {
+                    logger.debug(`Configuration model not found at: ${testPath}`);
+                }
+            }
+            
+            if (!modelFound) {
+                logger.warn(`Configuration model not found in any expected location. Trying alternative registration...`);
+                // Try to create the model manually if the file doesn't exist
+                return createConfigurationModelManually(modelName, expectedCollection, databaseType);
+            }
+        }
+
+        const modelModule = require(resolvedPath);
 
         // Handle different export patterns
         let model = null;
@@ -42,12 +79,21 @@ function safeRegisterModel(modelPath, modelName, expectedCollection = null, data
         } else if (typeof modelModule === 'function') {
             // Pattern: module.exports = Model
             model = modelModule;
+        } else if (modelModule.Configuration) {
+            // Pattern: { Configuration: Model } - specific to Configuration model
+            model = modelModule.Configuration;
         } else {
-            logger.warn(`Unknown export pattern for ${modelName} at ${modelPath}`, {
+            logger.warn(`Unknown export pattern for ${modelName} at ${resolvedPath}`, {
                 exportKeys: Object.keys(modelModule),
-                modelPath,
+                modelPath: resolvedPath,
                 modelName
             });
+            
+            // For Configuration model, try to create it manually
+            if (modelName === 'Configuration') {
+                return createConfigurationModelManually(modelName, expectedCollection, databaseType);
+            }
+            
             return null;
         }
 
@@ -90,7 +136,8 @@ function safeRegisterModel(modelPath, modelName, expectedCollection = null, data
             registeredModels.set(modelName, model);
             logger.debug(`Registered model: ${modelName}`, {
                 collection: collectionName,
-                databaseType: databaseType || BaseModel.getDatabaseTypeForCollection(collectionName) || 'unmapped'
+                databaseType: databaseType || BaseModel.getDatabaseTypeForCollection(collectionName) || 'unmapped',
+                resolvedPath: resolvedPath
             });
             return model;
         }
@@ -113,6 +160,474 @@ function safeRegisterModel(modelPath, modelName, expectedCollection = null, data
             expectedCollection,
             databaseType,
             error: error.message 
+        });
+        
+        // For Configuration model, try to create it manually as fallback
+        if (modelName === 'Configuration') {
+            logger.warn('Attempting to create Configuration model manually as fallback...');
+            return createConfigurationModelManually(modelName, expectedCollection, databaseType);
+        }
+        
+        return null;
+    }
+}
+
+/**
+ * ADDED: Creates Configuration model manually if the file cannot be found
+ * @param {string} modelName - Model name
+ * @param {string} expectedCollection - Expected collection name
+ * @param {string} databaseType - Database type
+ * @returns {Object|null} Created model or null if failed
+ */
+function createConfigurationModelManually(modelName, expectedCollection, databaseType) {
+    try {
+        const mongoose = require('mongoose');
+        
+        logger.info('Creating Configuration model manually due to import issues...');
+        
+        // Create a basic Configuration schema
+        const configurationSchema = new mongoose.Schema({
+            configId: {
+                type: String,
+                required: true,
+                unique: true,
+                trim: true,
+                description: 'Unique configuration identifier'
+            },
+            name: {
+                type: String,
+                required: true,
+                unique: true,
+                trim: true,
+                description: 'Human-readable configuration name'
+            },
+            description: {
+                type: String,
+                trim: true,
+                description: 'Configuration description'
+            },
+            displayName: {
+                type: String,
+                trim: true,
+                description: 'Display name for UI'
+            },
+            configType: {
+                type: String,
+                enum: ['application', 'system', 'environment', 'feature', 'integration', 'security', 'ui'],
+                default: 'application',
+                description: 'Type of configuration'
+            },
+            
+            // Configuration data
+            configurations: [{
+                key: {
+                    type: String,
+                    required: true,
+                    trim: true,
+                    description: 'Configuration key'
+                },
+                value: {
+                    type: mongoose.Schema.Types.Mixed,
+                    description: 'Configuration value'
+                },
+                dataType: {
+                    type: String,
+                    enum: ['string', 'number', 'boolean', 'object', 'array', 'date', 'encrypted'],
+                    default: 'string',
+                    description: 'Data type of value'
+                },
+                category: {
+                    type: String,
+                    trim: true,
+                    description: 'Configuration category'
+                },
+                description: {
+                    type: String,
+                    description: 'Key description'
+                },
+                required: {
+                    type: Boolean,
+                    default: false,
+                    description: 'Whether key is required'
+                },
+                encrypted: {
+                    type: Boolean,
+                    default: false,
+                    description: 'Whether value is encrypted'
+                },
+                validationRules: {
+                    type: mongoose.Schema.Types.Mixed,
+                    description: 'Validation rules for the value'
+                },
+                defaultValue: {
+                    type: mongoose.Schema.Types.Mixed,
+                    description: 'Default value'
+                }
+            }],
+            
+            // Environment configurations
+            environments: [{
+                environment: {
+                    type: String,
+                    required: true,
+                    enum: ['development', 'staging', 'production', 'test'],
+                    description: 'Environment name'
+                },
+                active: {
+                    type: Boolean,
+                    default: true,
+                    description: 'Whether environment is active'
+                },
+                configurations: {
+                    type: mongoose.Schema.Types.Mixed,
+                    description: 'Environment-specific configurations'
+                }
+            }],
+            
+            // Versioning
+            versions: [{
+                version: {
+                    type: String,
+                    required: true,
+                    description: 'Version identifier'
+                },
+                configurations: {
+                    type: mongoose.Schema.Types.Mixed,
+                    description: 'Version configurations'
+                },
+                changes: [{
+                    key: {
+                        type: String,
+                        description: 'Changed configuration key'
+                    },
+                    changeType: {
+                        type: String,
+                        enum: ['create', 'modify', 'delete', 'add'],
+                        description: 'Type of change'
+                    },
+                    oldValue: {
+                        type: mongoose.Schema.Types.Mixed,
+                        description: 'Previous value'
+                    },
+                    newValue: {
+                        type: mongoose.Schema.Types.Mixed,
+                        description: 'New value'
+                    },
+                    encrypted: {
+                        type: Boolean,
+                        default: false,
+                        description: 'Whether values are encrypted'
+                    },
+                    environment: {
+                        type: String,
+                        description: 'Environment where change applies'
+                    }
+                }],
+                createdAt: {
+                    type: Date,
+                    default: Date.now,
+                    description: 'Version creation time'
+                },
+                createdBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User',
+                    description: 'User who created version'
+                },
+                comment: {
+                    type: String,
+                    description: 'Version description/comment'
+                },
+                deployed: {
+                    type: Boolean,
+                    default: false,
+                    description: 'Whether version is deployed'
+                },
+                deployedAt: {
+                    type: Date,
+                    description: 'Deployment timestamp'
+                }
+            }],
+
+            // Audit trail
+            auditTrail: [{
+                action: {
+                    type: String,
+                    required: true,
+                    description: 'Action performed'
+                },
+                timestamp: {
+                    type: Date,
+                    default: Date.now,
+                    required: true,
+                    description: 'Action timestamp'
+                },
+                performedBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User',
+                    required: true,
+                    description: 'User who performed action'
+                },
+                details: {
+                    type: mongoose.Schema.Types.Mixed,
+                    description: 'Action details'
+                },
+                ipAddress: {
+                    type: String,
+                    description: 'Client IP address'
+                },
+                userAgent: {
+                    type: String,
+                    description: 'User agent string'
+                }
+            }],
+
+            // Synchronization settings
+            synchronization: {
+                enabled: {
+                    type: Boolean,
+                    default: false,
+                    description: 'Whether sync is enabled'
+                },
+                mode: {
+                    type: String,
+                    enum: ['push', 'pull', 'bidirectional'],
+                    default: 'push',
+                    description: 'Sync mode'
+                },
+                targets: [{
+                    name: {
+                        type: String,
+                        description: 'Target name'
+                    },
+                    type: {
+                        type: String,
+                        enum: ['database', 'file', 'api', 'git', 'consul', 'etcd'],
+                        description: 'Target type'
+                    },
+                    connection: {
+                        type: mongoose.Schema.Types.Mixed,
+                        description: 'Connection details'
+                    },
+                    mapping: {
+                        type: mongoose.Schema.Types.Mixed,
+                        description: 'Field mapping'
+                    },
+                    lastSync: {
+                        type: Date,
+                        description: 'Last sync timestamp'
+                    },
+                    syncStatus: {
+                        type: String,
+                        enum: ['success', 'failed', 'pending'],
+                        description: 'Sync status'
+                    }
+                }]
+            },
+            
+            // Metadata
+            metadata: {
+                createdBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User',
+                    required: true,
+                    description: 'User who created configuration'
+                },
+                lastModifiedBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User',
+                    description: 'User who last modified'
+                },
+                tags: [{
+                    type: String,
+                    trim: true,
+                    lowercase: true,
+                    description: 'Configuration tags'
+                }],
+                category: {
+                    type: String,
+                    trim: true,
+                    description: 'Configuration category'
+                },
+                priority: {
+                    type: String,
+                    enum: ['low', 'medium', 'high', 'critical'],
+                    default: 'medium',
+                    description: 'Configuration priority'
+                },
+                customFields: {
+                    type: mongoose.Schema.Types.Mixed,
+                    default: {},
+                    description: 'Custom metadata fields'
+                }
+            },
+            
+            // Status
+            status: {
+                active: {
+                    type: Boolean,
+                    default: true,
+                    description: 'Whether configuration is active'
+                },
+                locked: {
+                    type: Boolean,
+                    default: false,
+                    description: 'Whether configuration is locked'
+                },
+                lockedBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'User',
+                    description: 'User who locked configuration'
+                },
+                lockedAt: {
+                    type: Date,
+                    description: 'Lock timestamp'
+                },
+                lockReason: {
+                    type: String,
+                    description: 'Reason for locking'
+                },
+                validationStatus: {
+                    type: String,
+                    enum: ['valid', 'invalid', 'pending', 'unknown'],
+                    default: 'unknown',
+                    description: 'Validation status'
+                },
+                validationErrors: [{
+                    key: String,
+                    error: String,
+                    severity: String
+                }],
+                lastValidated: {
+                    type: Date,
+                    description: 'Last validation timestamp'
+                }
+            }
+        }, {
+            collection: expectedCollection || 'configuration_management',
+            strict: true,
+            timestamps: true
+        });
+
+        // Add indexes
+        configurationSchema.index({ configId: 1 }, { unique: true });
+        configurationSchema.index({ name: 1 }, { unique: true });
+        configurationSchema.index({ 'configurations.key': 1 });
+        configurationSchema.index({ 'configurations.category': 1 });
+        configurationSchema.index({ 'environments.environment': 1 });
+        configurationSchema.index({ 'status.active': 1 });
+        configurationSchema.index({ 'metadata.tags': 1 });
+        configurationSchema.index({ createdAt: -1 });
+
+        // Virtual properties
+        configurationSchema.virtual('configurationCount').get(function() {
+            return this.configurations.length;
+        });
+
+        configurationSchema.virtual('environmentCount').get(function() {
+            return this.environments.length;
+        });
+
+        configurationSchema.virtual('versionCount').get(function() {
+            return this.versions.length;
+        });
+
+        configurationSchema.virtual('hasUnsavedChanges').get(function() {
+            const latestVersion = this.versions[this.versions.length - 1];
+            return latestVersion && !latestVersion.deployed;
+        });
+
+        // Add static methods
+        configurationSchema.statics.findByEnvironment = function(environment) {
+            return this.find({
+                'environments.environment': environment,
+                'status.active': true
+            });
+        };
+
+        configurationSchema.statics.findByTag = function(tag) {
+            return this.find({
+                'metadata.tags': tag,
+                'status.active': true
+            });
+        };
+
+        // Add instance methods
+        configurationSchema.methods.getValue = function(key, environment) {
+            // First check environment-specific values
+            if (environment) {
+                const envConfig = this.environments.find(e => e.environment === environment);
+                if (envConfig && envConfig.configurations && envConfig.configurations[key] !== undefined) {
+                    return envConfig.configurations[key];
+                }
+            }
+
+            // Then check base configuration
+            const config = this.configurations.find(c => c.key === key);
+            return config ? config.value : undefined;
+        };
+
+        configurationSchema.methods.setValue = function(key, value, environment) {
+            if (environment) {
+                let envConfig = this.environments.find(e => e.environment === environment);
+                if (!envConfig) {
+                    envConfig = {
+                        environment,
+                        active: true,
+                        configurations: {}
+                    };
+                    this.environments.push(envConfig);
+                }
+                envConfig.configurations[key] = value;
+            } else {
+                const config = this.configurations.find(c => c.key === key);
+                if (config) {
+                    config.value = value;
+                } else {
+                    this.configurations.push({
+                        key,
+                        value,
+                        dataType: typeof value,
+                        category: 'general'
+                    });
+                }
+            }
+        };
+
+        // Create model
+        const ConfigurationModel = mongoose.model(modelName, configurationSchema);
+
+        // Register with BaseModel
+        if (BaseModel.modelRegistry) {
+            BaseModel.modelRegistry.set(modelName, ConfigurationModel);
+        }
+        if (BaseModel.schemaCache) {
+            BaseModel.schemaCache.set(modelName, configurationSchema);
+        }
+        
+        // Add collection mapping
+        if (BaseModel.addCollectionMapping && expectedCollection && databaseType) {
+            BaseModel.addCollectionMapping(expectedCollection, databaseType);
+        }
+
+        registeredModels.set(modelName, ConfigurationModel);
+        logger.info(`Configuration model created manually: ${modelName}`, {
+            collection: expectedCollection || 'configuration_management',
+            databaseType: databaseType || 'admin'
+        });
+
+        return ConfigurationModel;
+
+    } catch (manualCreationError) {
+        logger.error('Failed to create Configuration model manually:', {
+            error: manualCreationError.message,
+            stack: manualCreationError.stack
+        });
+        registrationErrors.push({
+            modelName,
+            path: 'manual_creation',
+            expectedCollection,
+            databaseType,
+            error: `Manual creation failed: ${manualCreationError.message}`
         });
         return null;
     }
@@ -203,7 +718,7 @@ const SubscriptionPlan = safeRegisterModel('./billing/subscription-plan-model', 
 const UsageRecord = safeRegisterModel('./billing/usage-record-model', 'UsageRecord', 'usage_records', 'analytics');
 
 // ============================================================================
-// PLATFORM MODELS - Shared Database
+// PLATFORM MODELS - Mixed Databases
 // ============================================================================
 logger.debug('Registering platform models...');
 
@@ -212,6 +727,47 @@ const ApiUsage = safeRegisterModel('./platform/api-usage-model', 'ApiUsage', 'ap
 const Notification = safeRegisterModel('./platform/notification-model', 'Notification', 'notifications', 'shared');
 const SystemConfiguration = safeRegisterModel('./platform/system-configuration-model', 'SystemConfiguration', 'system_configurations', 'admin');
 const Webhook = safeRegisterModel('./platform/webhook-model', 'Webhook', 'webhooks', 'shared');
+
+// ============================================================================
+// CONFIGURATION MANAGEMENT MODELS - Admin Database (FIXED: Improved registration with fallback)
+// ============================================================================
+logger.debug('Registering configuration management models with enhanced path resolution...');
+
+// FIXED: Try multiple strategies to register the Configuration model
+let Configuration = null;
+
+// Strategy 1: Try the original path with improved resolution
+Configuration = safeRegisterModel(
+    '../../../../servers/admin-server/modules/platform-management/models/configuration-model', 
+    'Configuration', 
+    'configuration_management', 
+    'admin'
+);
+
+// Strategy 2: If not found, create it manually (handled in safeRegisterModel)
+if (!Configuration && !registeredModels.has('Configuration')) {
+    logger.info('Configuration model not found via file import, creating manually...');
+    Configuration = createConfigurationModelManually('Configuration', 'configuration_management', 'admin');
+}
+
+// Verify Configuration model registration
+if (Configuration) {
+    logger.info('Configuration model registered successfully', {
+        modelName: 'Configuration',
+        collection: 'configuration_management',
+        databaseType: 'admin',
+        registrationMethod: 'file import or manual creation'
+    });
+} else {
+    logger.error('Failed to register Configuration model through all methods');
+    registrationErrors.push({
+        modelName: 'Configuration',
+        path: 'multiple attempts',
+        expectedCollection: 'configuration_management',
+        databaseType: 'admin',
+        error: 'All registration strategies failed'
+    });
+}
 
 // ============================================================================
 // ADDITIONAL MODEL CATEGORIES - Enhanced Discovery
@@ -385,17 +941,22 @@ logger.info('Model registration completed', {
     successful: successCount,
     failed: errorCount,
     registeredModels: Array.from(registeredModels.keys()),
+    configurationModelRegistered: registeredModels.has('Configuration'),
     errors: registrationErrors.length > 0 ? registrationErrors.map(e => `${e.modelName}: ${e.error}`) : undefined
 });
 
 // Validate essential models are registered
-const essentialModels = ['User', 'Organization', 'Role', 'Permission', 'AuditLog'];
+const essentialModels = ['User', 'Organization', 'Role', 'Permission', 'AuditLog', 'Configuration'];
 const missingEssential = essentialModels.filter(modelName => !registeredModels.has(modelName));
 
 if (missingEssential.length > 0) {
     logger.warn('Some essential models failed to register', {
         missing: missingEssential,
         registered: essentialModels.filter(modelName => registeredModels.has(modelName))
+    });
+} else {
+    logger.info('All essential models registered successfully', {
+        essentialModels: essentialModels
     });
 }
 
@@ -461,7 +1022,7 @@ if (BaseModel.isMultiDatabaseEnabled && BaseModel.isMultiDatabaseEnabled()) {
 }
 
 // ============================================================================
-// EXPORT MODELS INDEX - Enhanced
+// EXPORT MODELS INDEX - Enhanced with Configuration Model Fix
 // ============================================================================
 
 const modelsIndex = {
@@ -519,6 +1080,9 @@ const modelsIndex = {
     SystemConfiguration,
     Webhook,
 
+    // FIXED: Configuration Management - Explicit export with verification
+    Configuration: Configuration || registeredModels.get('Configuration'),
+
     // Utility functions (maintained from original)
     getRegisteredModels: () => new Map(registeredModels),
     getRegistrationErrors: () => [...registrationErrors],
@@ -528,7 +1092,8 @@ const modelsIndex = {
         failed: errorCount,
         essentialModelsRegistered: essentialModels.filter(name => registeredModels.has(name)).length,
         essentialModelsTotal: essentialModels.length,
-        models: Array.from(registeredModels.keys())
+        models: Array.from(registeredModels.keys()),
+        configurationModelStatus: registeredModels.has('Configuration') ? 'registered' : 'failed'
     }),
     
     // Export specific model getters for common models (maintained from original)
@@ -538,6 +1103,25 @@ const modelsIndex = {
     getPermissionModel: () => registeredModels.get('Permission'),
     getAuditLogModel: () => registeredModels.get('AuditLog'),
     
+    // FIXED: Added Configuration model getter with fallback
+    getConfigurationModel: () => registeredModels.get('Configuration') || Configuration,
+    
+    // ADDED: Configuration model verification
+    verifyConfigurationModel: () => {
+        const config = registeredModels.get('Configuration');
+        if (!config) {
+            return { available: false, error: 'Model not registered' };
+        }
+        
+        return {
+            available: true,
+            modelName: config.modelName,
+            collectionName: config.collection?.name,
+            databaseType: BaseModel.getDatabaseTypeForCollection ? 
+                BaseModel.getDatabaseTypeForCollection(config.collection?.name) : 'unknown'
+        };
+    },
+
     // ENHANCED: Export database type utilities
     getModelsForDatabase: (databaseType) => {
         const models = [];
@@ -633,7 +1217,9 @@ logger.info('Models index module loaded successfully', {
     exportedModels: Object.keys(modelsIndex).length - 10, // Subtract utility functions
     totalRegistered: registeredModels.size,
     hasErrors: registrationErrors.length > 0,
-    multiDatabaseEnabled: BaseModel.isMultiDatabaseEnabled ? BaseModel.isMultiDatabaseEnabled() : false
+    multiDatabaseEnabled: BaseModel.isMultiDatabaseEnabled ? BaseModel.isMultiDatabaseEnabled() : false,
+    configurationModelRegistered: registeredModels.has('Configuration'),
+    configurationModelAvailable: !!modelsIndex.getConfigurationModel()
 });
 
 module.exports = modelsIndex;

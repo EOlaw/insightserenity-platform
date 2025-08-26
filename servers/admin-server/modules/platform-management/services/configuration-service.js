@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * @fileoverview Configuration management service
+ * @fileoverview Configuration management service with proper database connection handling
  * @module servers/admin-server/modules/platform-management/services/configuration-service
- * @requires module:servers/admin-server/modules/platform-management/models/configuration-model
+ * @requires module:shared/lib/database - FIXED: Use Database module instead of direct model import
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
  * @requires module:shared/lib/services/cache-service
@@ -18,7 +18,10 @@
 
 const yaml = require('js-yaml');
 const xml2js = require('xml2js');
-const ConfigurationModel = require('../models/configuration-model');
+
+// FIXED: Import Database module instead of directly importing the model
+const Database = require('../../../../../shared/lib/database');
+
 const logger = require('../../../../../shared/lib/utils/logger');
 const { AppError } = require('../../../../../shared/lib/utils/app-error');
 const CacheService = require('../../../../../shared/lib/services/cache-service');
@@ -30,112 +33,270 @@ const stringHelper = require('../../../../../shared/lib/utils/helpers/string-hel
 
 /**
  * @class ConfigurationService
- * @description Service for configuration management operations
+ * @description Enhanced configuration management service with proper database connection handling
  */
 class ConfigurationService {
-  /**
-   * Creates an instance of ConfigurationService
-   * @constructor
-   */
-  constructor() {
-    this.#cacheService = new CacheService({
-      prefix: 'config:',
-      ttl: 600 // 10 minutes default TTL
-    });
-    this.#notificationService = new NotificationService();
-    this.#auditService = new AuditService();
-    this.#transactionManager = new TransactionManager();
-    this.#encryptionService = new EncryptionService();
-    this.#configWatchers = new Map();
-    this.#validationCache = new Map();
-  }
-
-  // Private fields
-  #cacheService;
-  #notificationService;
-  #auditService;
-  #transactionManager;
-  #encryptionService;
-  #configWatchers;
-  #validationCache;
-
-  // Cache keys
-  static CACHE_KEYS = {
-    CONFIG_BY_ID: 'id',
-    CONFIG_BY_NAME: 'name',
-    CONFIG_VALUES: 'values',
-    CONFIG_LIST: 'list',
-    CONFIG_VALIDATION: 'validation'
-  };
-
-  // Event types
+  // Static constants
   static EVENTS = {
     CONFIG_CREATED: 'configuration.created',
     CONFIG_UPDATED: 'configuration.updated',
     CONFIG_DELETED: 'configuration.deleted',
-    CONFIG_EXPORTED: 'configuration.exported',
-    CONFIG_IMPORTED: 'configuration.imported',
-    CONFIG_LOCKED: 'configuration.locked',
-    CONFIG_UNLOCKED: 'configuration.unlocked',
-    CONFIG_VALIDATED: 'configuration.validated',
+    CONFIG_VALUE_CHANGED: 'configuration.value.changed',
     CONFIG_DEPLOYED: 'configuration.deployed',
-    CONFIG_ROLLED_BACK: 'configuration.rolled_back'
+    CONFIG_VALIDATED: 'configuration.validated',
+    CONFIG_LOCKED: 'configuration.locked',
+    CONFIG_UNLOCKED: 'configuration.unlocked'
   };
 
-  // Export formats
-  static EXPORT_FORMATS = {
-    JSON: 'json',
-    YAML: 'yaml',
-    XML: 'xml',
-    ENV: 'env'
+  static CACHE_KEYS = {
+    CONFIG_LIST: 'config:list',
+    CONFIG_BY_ID: 'config:id',
+    CONFIG_BY_NAME: 'config:name',
+    CONFIG_VALUES: 'config:values',
+    CONFIG_STATS: 'config:stats',
+    CONFIG_SEARCH: 'config:search',
+    CONFIG_VALIDATION: 'config:validation'
   };
+
+  static CONFIG_TYPES = {
+    APPLICATION: 'application',
+    SYSTEM: 'system',
+    ENVIRONMENT: 'environment',
+    FEATURE: 'feature',
+    INTEGRATION: 'integration',
+    SECURITY: 'security',
+    UI: 'ui'
+  };
+
+  static VALIDATION_LEVELS = {
+    STRICT: 'strict',
+    MODERATE: 'moderate',
+    LENIENT: 'lenient'
+  };
+
+  constructor() {
+    // FIXED: Use regular properties instead of private fields
+    this.cacheService = CacheService;
+    this.auditService = AuditService;
+    this.encryptionService = EncryptionService;
+    this.notificationService = NotificationService;
+    this._configurationModel = null; // Cache for the model
+    
+    // Debug flag for troubleshooting
+    this.debug = process.env.NODE_ENV === 'development';
+  }
 
   /**
-   * Creates a new configuration set
+   * FIXED: Get Configuration model from Database registry with proper error handling and debugging
+   * @private
+   * @returns {mongoose.Model} Configuration model
+   * @throws {AppError} If model is not available
+   */
+  async _getConfigurationModel() {
+    try {
+      // Return cached model if available
+      if (this._configurationModel) {
+        return this._configurationModel;
+      }
+
+      // DEBUGGING: Log database status
+      if (this.debug) {
+        logger.debug('ConfigurationService: Getting Configuration model from Database registry');
+        
+        const dbHealth = await Database.getHealthStatus();
+        logger.debug('Database health status:', {
+          status: dbHealth.status,
+          initialized: dbHealth.initialized,
+          connections: Object.keys(dbHealth.connections || {}),
+          models: dbHealth.models,
+          modelsRegistered: dbHealth.modelsRegistered
+        });
+      }
+
+      // Check if Database is initialized
+      if (!Database.getHealthStatus || !(await Database.getHealthStatus()).initialized) {
+        throw new AppError(
+          'Database module not initialized',
+          500,
+          'DATABASE_NOT_INITIALIZED',
+          { service: 'ConfigurationService' }
+        );
+      }
+
+      // Get the Configuration model from Database registry
+      const ConfigurationModel = await Database.getModel('Configuration');
+      
+      if (!ConfigurationModel) {
+        // DEBUGGING: Log available models
+        if (this.debug) {
+          try {
+            const registrationSummary = Database.getRegistrationSummary();
+            logger.error('Configuration model not found in registry', {
+              availableModels: registrationSummary.registeredModels || [],
+              totalModels: registrationSummary.successful || 0,
+              registrationErrors: Database.getRegistrationErrors ? Database.getRegistrationErrors() : []
+            });
+          } catch (debugError) {
+            logger.warn('Failed to get registration debug info:', debugError.message);
+          }
+        }
+
+        throw new AppError(
+          'Configuration model not found in Database registry',
+          500,
+          'MODEL_NOT_FOUND',
+          { 
+            modelName: 'Configuration',
+            service: 'ConfigurationService',
+            suggestion: 'Check that the Configuration model is properly registered in models/index.js'
+          }
+        );
+      }
+
+      // DEBUGGING: Log model details
+      if (this.debug) {
+        logger.debug('Configuration model retrieved successfully', {
+          modelName: ConfigurationModel.modelName,
+          collectionName: ConfigurationModel.collection?.name,
+          databaseType: ConfigurationModel.getDatabaseType ? ConfigurationModel.getDatabaseType() : 'unknown'
+        });
+      }
+
+      // FIXED: Verify the model has proper database connection
+      if (!ConfigurationModel.collection || !ConfigurationModel.collection.name) {
+        throw new AppError(
+          'Configuration model has no database collection',
+          500,
+          'MODEL_NO_COLLECTION',
+          { 
+            modelName: 'Configuration',
+            service: 'ConfigurationService'
+          }
+        );
+      }
+
+      // Test database connectivity by attempting a simple operation
+      try {
+        await ConfigurationModel.countDocuments().maxTimeMS(5000);
+        if (this.debug) {
+          logger.debug('Configuration model database connectivity verified');
+        }
+      } catch (connectivityError) {
+        logger.error('Configuration model database connectivity test failed:', {
+          error: connectivityError.message,
+          modelName: 'Configuration',
+          collection: ConfigurationModel.collection.name
+        });
+        throw new AppError(
+          'Database connectivity issue for Configuration model',
+          500,
+          'DATABASE_CONNECTIVITY_ERROR',
+          { 
+            originalError: connectivityError.message,
+            collection: 'configuration_management',
+            service: 'ConfigurationService'
+          }
+        );
+      }
+
+      // Cache the model for future use
+      this._configurationModel = ConfigurationModel;
+      return ConfigurationModel;
+
+    } catch (error) {
+      logger.error('Failed to get Configuration model:', {
+        error: error.message,
+        stack: error.stack,
+        service: 'ConfigurationService'
+      });
+
+      // Re-throw AppError as-is, wrap other errors
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw new AppError(
+        'Failed to access Configuration model',
+        500,
+        'MODEL_ACCESS_ERROR',
+        { 
+          originalError: error.message,
+          service: 'ConfigurationService'
+        }
+      );
+    }
+  }
+
+  /**
+   * Creates a new configuration
    * @async
    * @param {Object} configData - Configuration data
-   * @param {string} userId - User creating the configuration
+   * @param {string} userId - User ID creating the configuration
    * @returns {Promise<Object>} Created configuration
    * @throws {AppError} If creation fails
    */
   async createConfiguration(configData, userId) {
-    const session = await this.#transactionManager.startSession();
-
+    const session = await TransactionManager.startSession();
+    
     try {
-      await session.startTransaction();
+      logger.info('Creating new configuration', {
+        name: configData.name,
+        type: configData.configType,
+        userId
+      });
 
-      // Check if configuration name already exists
-      const existing = await ConfigurationModel.findOne({ name: configData.name });
-      if (existing) {
-        throw new AppError(`Configuration with name '${configData.name}' already exists`, 409);
+      const ConfigurationModel = await this._getConfigurationModel();
+
+      // Check for duplicate name or configId
+      const existingConfig = await ConfigurationModel.findOne({
+        $or: [
+          { name: configData.name },
+          { configId: configData.configId }
+        ]
+      }).session(session);
+
+      if (existingConfig) {
+        throw new AppError(
+          'Configuration with this name or ID already exists',
+          400,
+          'DUPLICATE_CONFIGURATION',
+          { 
+            existing: existingConfig.configId,
+            name: configData.name 
+          }
+        );
       }
+
+      // Validate and prepare configuration data
+      const validatedData = await this.validateConfigurationData(configData);
 
       // Create configuration
       const configuration = new ConfigurationModel({
-        ...configData,
+        ...validatedData,
         metadata: {
-          ...configData.metadata,
-          createdBy: userId
+          ...validatedData.metadata,
+          createdBy: userId,
+          lastModifiedBy: userId
+        },
+        status: {
+          active: true,
+          locked: false,
+          validationStatus: 'pending'
         }
       });
 
-      // Add default configurations if none provided
-      if (!configuration.configurations || configuration.configurations.length === 0) {
-        configuration.configurations = this.#getDefaultConfigurations();
+      // Encrypt sensitive values
+      if (configuration.configurations) {
+        for (const config of configuration.configurations) {
+          if (config.encrypted && config.value) {
+            config.value = await this.encryptionService.encrypt(config.value);
+          }
+        }
       }
-
-      // Validate configuration
-      const validationResult = await configuration.validate();
-      if (!validationResult.valid) {
-        throw new AppError('Configuration validation failed', 400, { errors: validationResult.errors });
-      }
-
-      // Save configuration
-      await configuration.save({ session });
 
       // Create initial version
       configuration.versions.push({
-        version: 1,
+        version: '1.0.0',
         changes: configuration.configurations.map(config => ({
           key: config.key,
           changeType: 'create',
@@ -150,7 +311,7 @@ class ConfigurationService {
       await configuration.save({ session });
 
       // Create audit entry
-      await this.#auditService.log({
+      await this.auditService.log({
         userId,
         action: 'configuration.create',
         resource: 'configuration',
@@ -171,10 +332,10 @@ class ConfigurationService {
       });
 
       // Clear cache
-      await this.#clearConfigurationCache();
+      await this.clearConfigurationCache();
 
       // Emit event
-      await this.#notificationService.emit(ConfigurationService.EVENTS.CONFIG_CREATED, {
+      await this.notificationService.emit(ConfigurationService.EVENTS.CONFIG_CREATED, {
         configuration: configuration.toObject(),
         userId,
         timestamp: new Date()
@@ -194,15 +355,265 @@ class ConfigurationService {
   }
 
   /**
-   * Gets configuration by ID or name
+   * Lists all configurations with enhanced error handling and debugging
+   * @async
+   * @param {Object} [options={}] - Query options
+   * @param {number} [options.page=1] - Page number
+   * @param {number} [options.limit=20] - Items per page
+   * @param {string} [options.sortBy='createdAt'] - Sort field
+   * @param {string} [options.sortOrder='desc'] - Sort order
+   * @param {Object} [options.filters={}] - Additional filters
+   * @returns {Promise<Object>} Configuration list with pagination
+   * @throws {AppError} If listing fails
+   */
+  async listConfigurations(options = {}) {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        sortBy = 'createdAt',
+        sortOrder = 'desc',
+        filters = {},
+        includeInactive = false,
+        category,
+        environment,
+        tag,
+        active = true,
+        search,
+        sort = '-createdAt'
+      } = options;
+
+      // DEBUGGING: Log the request
+      if (this.debug) {
+        logger.debug('ConfigurationService.listConfigurations called', {
+          page,
+          limit,
+          sortBy,
+          sortOrder,
+          filters,
+          includeInactive
+        });
+      }
+
+      // FIXED: Get model with proper error handling
+      const ConfigurationModel = await this._getConfigurationModel();
+
+      // Build query conditions
+      const queryConditions = {
+        ...filters
+      };
+
+      // Filter active configurations unless explicitly requested
+      if (!includeInactive) {
+        queryConditions['status.active'] = true;
+      }
+
+      if (active !== undefined) {
+        queryConditions['status.active'] = active;
+      }
+
+      if (category) {
+        queryConditions['metadata.category'] = category;
+      }
+
+      if (environment) {
+        queryConditions['environments.environment'] = environment;
+      }
+
+      if (tag) {
+        queryConditions['metadata.tags'] = tag;
+      }
+
+      if (search) {
+        queryConditions.$or = [
+          { name: new RegExp(search, 'i') },
+          { displayName: new RegExp(search, 'i') },
+          { description: new RegExp(search, 'i') }
+        ];
+      }
+
+      // DEBUGGING: Log query conditions
+      if (this.debug) {
+        logger.debug('Query conditions:', queryConditions);
+      }
+
+      // Build sort object
+      const sortObject = {};
+      sortObject[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+      // Calculate pagination
+      const skip = (page - 1) * limit;
+
+      // FIXED: Execute query with proper timeout and error handling
+      const startTime = Date.now();
+      
+      try {
+        const [configurations, totalCount] = await Promise.all([
+          ConfigurationModel
+            .find(queryConditions)
+            .select('-configurations -versions -auditTrail')
+            .sort(sortObject)
+            .limit(Number(limit))
+            .skip(Number(skip))
+            .populate('metadata.createdBy', 'username email profile.firstName profile.lastName')
+            .populate('metadata.lastModifiedBy', 'username email profile.firstName profile.lastName')
+            .populate('status.lockedBy', 'username email profile.firstName profile.lastName')
+            .maxTimeMS(30000) // 30 second timeout
+            .lean(), // Use lean() for better performance
+
+          ConfigurationModel
+            .countDocuments(queryConditions)
+            .maxTimeMS(10000) // 10 second timeout for count
+        ]);
+
+        const queryTime = Date.now() - startTime;
+
+        // DEBUGGING: Log successful query
+        if (this.debug) {
+          logger.debug('Configurations retrieved successfully', {
+            count: configurations.length,
+            totalCount,
+            queryTime,
+            page,
+            limit
+          });
+        }
+
+        // Calculate pagination metadata
+        const totalPages = Math.ceil(totalCount / limit);
+        const hasNextPage = page < totalPages;
+        const hasPreviousPage = page > 1;
+
+        const result = {
+          success: true,
+          data: {
+            configurations,
+            pagination: {
+              currentPage: page,
+              totalPages,
+              totalCount,
+              limit,
+              hasNextPage,
+              hasPreviousPage,
+              total: totalCount,
+              pages: totalPages
+            },
+            queryMetadata: {
+              queryTime,
+              sortBy,
+              sortOrder,
+              filtersApplied: Object.keys(filters).length
+            }
+          }
+        };
+
+        // Cache results if caching is enabled
+        if (this.cacheService && Object.keys(filters).length === 0) {
+          try {
+            const cacheKey = `configurations:list:${page}:${limit}:${sortBy}:${sortOrder}`;
+            await this.cacheService.set(cacheKey, result, 300); // Cache for 5 minutes
+          } catch (cacheError) {
+            logger.warn('Failed to cache configuration list:', cacheError.message);
+          }
+        }
+
+        return result;
+
+      } catch (queryError) {
+        const queryTime = Date.now() - startTime;
+        
+        logger.error('Database query failed in listConfigurations:', {
+          error: queryError.message,
+          queryTime,
+          queryConditions,
+          sortObject,
+          page,
+          limit,
+          stack: queryError.stack
+        });
+
+        // Provide specific error based on the type of database error
+        if (queryError.message.includes('timed out')) {
+          throw new AppError(
+            `Database query timed out after ${queryTime}ms. The query may be too complex or the database connection is slow.`,
+            408,
+            'DATABASE_QUERY_TIMEOUT',
+            { 
+              queryTime,
+              queryConditions,
+              sortObject,
+              service: 'ConfigurationService'
+            }
+          );
+        }
+
+        if (queryError.message.includes('connection')) {
+          throw new AppError(
+            'Database connection error occurred during configuration listing',
+            503,
+            'DATABASE_CONNECTION_ERROR',
+            { 
+              originalError: queryError.message,
+              service: 'ConfigurationService'
+            }
+          );
+        }
+
+        throw new AppError(
+          'Database operation failed during configuration listing',
+          500,
+          'DATABASE_OPERATION_ERROR',
+          { 
+            originalError: queryError.message,
+            queryTime,
+            service: 'ConfigurationService'
+          }
+        );
+      }
+
+    } catch (error) {
+      // DEBUGGING: Log the complete error context
+      if (this.debug) {
+        logger.error('ConfigurationService.listConfigurations failed:', {
+          error: error.message,
+          stack: error.stack,
+          options,
+          service: 'ConfigurationService'
+        });
+      }
+
+      // Re-throw AppError as-is
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      // Wrap unexpected errors
+      throw new AppError(
+        `Failed to list configurations: ${error.message}`,
+        500,
+        'CONFIGURATION_LIST_ERROR',
+        { 
+          originalError: error.message,
+          service: 'ConfigurationService'
+        }
+      );
+    }
+  }
+
+  /**
+   * Gets configuration by ID or name with proper model handling
    * @async
    * @param {string} identifier - Configuration ID or name
    * @param {Object} [options={}] - Query options
-   * @returns {Promise<Object>} Configuration
-   * @throws {AppError} If configuration not found
+   * @returns {Promise<Object>} Configuration data
+   * @throws {AppError} If configuration not found or retrieval fails
    */
   async getConfiguration(identifier, options = {}) {
     try {
+      if (!identifier) {
+        throw new AppError('Configuration ID is required', 400, 'INVALID_CONFIG_ID');
+      }
+
       const { 
         environment, 
         includeVersions = false, 
@@ -213,104 +624,434 @@ class ConfigurationService {
       // Try cache first
       if (fromCache) {
         const cacheKey = `${ConfigurationService.CACHE_KEYS.CONFIG_BY_ID}:${identifier}`;
-        const cached = await this.#cacheService.get(cacheKey);
+        const cached = await this.cacheService.get(cacheKey);
         if (cached) {
-          return this.#processConfigurationResponse(cached, { includeSensitive });
+          return this.processConfigurationResponse(cached, { includeSensitive });
         }
       }
+
+      const ConfigurationModel = await this._getConfigurationModel();
 
       // Find configuration
       const query = identifier.startsWith('CONFIG_') ? 
         { configId: identifier } : 
         { name: identifier };
 
-      const configuration = await ConfigurationModel.findOne(query)
-        .populate('metadata.createdBy', 'name email')
-        .populate('metadata.lastModifiedBy', 'name email')
-        .populate('versions.createdBy', 'name email')
+      let configQuery = ConfigurationModel.findOne(query);
+
+      // Add population
+      configQuery = configQuery
+        .populate('metadata.createdBy', 'username email profile.firstName profile.lastName')
+        .populate('metadata.lastModifiedBy', 'username email profile.firstName profile.lastName')
+        .populate('status.lockedBy', 'username email profile.firstName profile.lastName');
+
+      // Exclude versions unless requested
+      if (!includeVersions) {
+        configQuery = configQuery.select('-versions');
+      }
+
+      const configuration = await configQuery
+        .maxTimeMS(15000)
         .lean();
 
       if (!configuration) {
-        throw new AppError(`Configuration '${identifier}' not found`, 404);
-      }
-
-      // Apply environment overrides if specified
-      if (environment) {
-        configuration.configurations = await this.#applyEnvironmentOverrides(
-          configuration,
-          environment
+        throw new AppError(
+          `Configuration not found: ${identifier}`,
+          404,
+          'CONFIGURATION_NOT_FOUND',
+          { identifier }
         );
       }
 
-      // Remove version history if not requested
-      if (!includeVersions) {
-        delete configuration.versions;
-      }
-
       // Process response
-      const result = this.#processConfigurationResponse(configuration, { includeSensitive });
+      const processedConfig = this.processConfigurationResponse(configuration, { includeSensitive, environment });
 
-      // Cache result
+      // Cache the result
       if (fromCache) {
-        const cacheKey = `${ConfigurationService.CACHE_KEYS.CONFIG_BY_ID}:${identifier}`;
-        await this.#cacheService.set(cacheKey, result, 600);
+        try {
+          const cacheKey = `${ConfigurationService.CACHE_KEYS.CONFIG_BY_ID}:${identifier}`;
+          await this.cacheService.set(cacheKey, configuration, 600); // Cache for 10 minutes
+        } catch (cacheError) {
+          logger.warn('Failed to cache configuration:', cacheError.message);
+        }
       }
 
-      return result;
+      return {
+        success: true,
+        data: processedConfig
+      };
+
     } catch (error) {
-      logger.error('Failed to get configuration', {
-        identifier,
-        error: error.message
-      });
-      throw error instanceof AppError ? error : new AppError(`Failed to get configuration: ${error.message}`, 500);
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw new AppError(
+        `Failed to get configuration: ${error.message}`,
+        500,
+        'CONFIGURATION_GET_ERROR',
+        { 
+          identifier,
+          originalError: error.message 
+        }
+      );
     }
   }
 
   /**
-   * Gets configuration value
+   * Updates an existing configuration
+   * @async
+   * @param {string} configId - Configuration ID
+   * @param {Object} updateData - Update data
+   * @param {string} userId - User ID performing update
+   * @returns {Promise<Object>} Updated configuration
+   * @throws {AppError} If update fails
+   */
+  async updateConfiguration(configId, updateData, userId) {
+    const session = await TransactionManager.startSession();
+    
+    try {
+      logger.info('Updating configuration', {
+        configId,
+        userId,
+        fieldsToUpdate: Object.keys(updateData)
+      });
+
+      const ConfigurationModel = await this._getConfigurationModel();
+
+      // Find configuration
+      const configuration = await ConfigurationModel.findOne({ configId }).session(session);
+      
+      if (!configuration) {
+        throw new AppError(
+          `Configuration not found: ${configId}`,
+          404,
+          'CONFIGURATION_NOT_FOUND',
+          { configId }
+        );
+      }
+
+      // Check if configuration is locked
+      if (configuration.status.locked && configuration.status.lockedBy.toString() !== userId) {
+        throw new AppError(
+          'Configuration is locked by another user',
+          423,
+          'CONFIGURATION_LOCKED',
+          { 
+            configId,
+            lockedBy: configuration.status.lockedBy 
+          }
+        );
+      }
+
+      // Store original data for comparison
+      const originalData = configuration.toObject();
+
+      // Apply updates
+      Object.assign(configuration, updateData);
+      configuration.metadata.lastModifiedBy = userId;
+
+      // Handle configuration value updates
+      if (updateData.configurations) {
+        const changes = [];
+        
+        for (const newConfig of updateData.configurations) {
+          const existingConfig = configuration.configurations.find(c => c.key === newConfig.key);
+          
+          if (existingConfig) {
+            if (existingConfig.value !== newConfig.value) {
+              changes.push({
+                key: newConfig.key,
+                changeType: 'modify',
+                oldValue: existingConfig.value,
+                newValue: newConfig.value
+              });
+              existingConfig.value = newConfig.value;
+            }
+          } else {
+            changes.push({
+              key: newConfig.key,
+              changeType: 'add',
+              newValue: newConfig.value
+            });
+            configuration.configurations.push(newConfig);
+          }
+
+          // Encrypt sensitive values
+          if (newConfig.encrypted && newConfig.value) {
+            newConfig.value = await this.encryptionService.encrypt(newConfig.value);
+          }
+        }
+
+        // Add version if there are changes
+        if (changes.length > 0) {
+          const newVersion = {
+            version: this.generateNextVersion(configuration.versions),
+            changes,
+            comment: updateData.versionComment || 'Configuration update',
+            createdBy: userId,
+            createdAt: new Date()
+          };
+          configuration.versions.push(newVersion);
+        }
+      }
+
+      // Save configuration
+      await configuration.save({ session });
+
+      // Create audit entry
+      await this.auditService.log({
+        userId,
+        action: 'configuration.update',
+        resource: 'configuration',
+        resourceId: configId,
+        details: {
+          changes: this.detectChanges(originalData, configuration.toObject())
+        },
+        session
+      });
+
+      await session.commitTransaction();
+
+      logger.info('Configuration updated', {
+        configId,
+        userId
+      });
+
+      // Clear cache
+      await this.clearConfigurationCache(configId);
+
+      // Emit event
+      await this.notificationService.emit(ConfigurationService.EVENTS.CONFIG_UPDATED, {
+        configuration: configuration.toObject(),
+        originalData,
+        userId,
+        timestamp: new Date()
+      });
+
+      return configuration.toObject();
+    } catch (error) {
+      await session.abortTransaction();
+      logger.error('Failed to update configuration', {
+        configId,
+        error: error.message
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to update configuration: ${error.message}`, 500);
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  /**
+   * Deletes a configuration
+   * @async
+   * @param {string} configId - Configuration ID
+   * @param {string} userId - User ID performing deletion
+   * @returns {Promise<Object>} Deletion result
+   * @throws {AppError} If deletion fails
+   */
+  async deleteConfiguration(configId, userId) {
+    const session = await TransactionManager.startSession();
+    
+    try {
+      logger.info('Deleting configuration', { configId, userId });
+
+      const ConfigurationModel = await this._getConfigurationModel();
+
+      // Find configuration
+      const configuration = await ConfigurationModel.findOne({ configId }).session(session);
+      
+      if (!configuration) {
+        throw new AppError(
+          `Configuration not found: ${configId}`,
+          404,
+          'CONFIGURATION_NOT_FOUND',
+          { configId }
+        );
+      }
+
+      // Check if configuration is locked
+      if (configuration.status.locked && configuration.status.lockedBy.toString() !== userId) {
+        throw new AppError(
+          'Configuration is locked by another user',
+          423,
+          'CONFIGURATION_LOCKED',
+          { 
+            configId,
+            lockedBy: configuration.status.lockedBy 
+          }
+        );
+      }
+
+      // Soft delete by default
+      configuration.status.active = false;
+      configuration.metadata.lastModifiedBy = userId;
+      
+      await configuration.save({ session });
+
+      // Create audit entry
+      await this.auditService.log({
+        userId,
+        action: 'configuration.delete',
+        resource: 'configuration',
+        resourceId: configId,
+        details: {
+          name: configuration.name,
+          softDelete: true
+        },
+        session
+      });
+
+      await session.commitTransaction();
+
+      logger.info('Configuration deleted', { configId, userId });
+
+      // Clear cache
+      await this.clearConfigurationCache(configId);
+
+      // Emit event
+      await this.notificationService.emit(ConfigurationService.EVENTS.CONFIG_DELETED, {
+        configId,
+        name: configuration.name,
+        userId,
+        timestamp: new Date()
+      });
+
+      return {
+        success: true,
+        message: 'Configuration deleted successfully',
+        configId
+      };
+    } catch (error) {
+      await session.abortTransaction();
+      logger.error('Failed to delete configuration', {
+        configId,
+        error: error.message
+      });
+      throw error instanceof AppError ? error : new AppError(`Failed to delete configuration: ${error.message}`, 500);
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  /**
+   * Gets configuration value by key
    * @async
    * @param {string} configId - Configuration ID
    * @param {string} key - Configuration key
    * @param {Object} [options={}] - Query options
    * @returns {Promise<*>} Configuration value
-   * @throws {AppError} If key not found
+   * @throws {AppError} If value not found
    */
   async getConfigurationValue(configId, key, options = {}) {
     try {
-      const { environment, fromCache = true } = options;
+      const { environment, decrypt = true, fromCache = true } = options;
 
       // Try cache first
       if (fromCache) {
         const cacheKey = `${ConfigurationService.CACHE_KEYS.CONFIG_VALUES}:${configId}:${key}:${environment || 'base'}`;
-        const cached = await this.#cacheService.get(cacheKey);
-        if (cached !== null && cached !== undefined) {
+        const cached = await this.cacheService.get(cacheKey);
+        if (cached !== undefined) {
           return cached;
         }
       }
 
-      // Get configuration
-      const configuration = await ConfigurationModel.findOne({ configId });
+      const ConfigurationModel = await this._getConfigurationModel();
+
+      // Find configuration
+      const configuration = await ConfigurationModel.findOne({ 
+        configId,
+        'status.active': true 
+      }).lean();
+
       if (!configuration) {
-        throw new AppError('Configuration not found', 404);
+        throw new AppError(
+          `Configuration not found: ${configId}`,
+          404,
+          'CONFIGURATION_NOT_FOUND',
+          { configId }
+        );
       }
 
-      // Get value
-      const value = configuration.getValue(key, environment);
+      // Find configuration key
+      const configItem = configuration.configurations.find(c => c.key === key);
+      
+      if (!configItem) {
+        // Check environment-specific configurations
+        if (environment) {
+          const envConfig = configuration.environments.find(e => e.environment === environment);
+          if (envConfig && envConfig.configurations && envConfig.configurations[key]) {
+            const value = envConfig.configurations[key];
+            
+            // Cache the result
+            if (fromCache) {
+              const cacheKey = `${ConfigurationService.CACHE_KEYS.CONFIG_VALUES}:${configId}:${key}:${environment}`;
+              await this.cacheService.set(cacheKey, value, 300);
+            }
+            
+            return value;
+          }
+        }
+        
+        throw new AppError(
+          `Configuration key not found: ${key}`,
+          404,
+          'CONFIGURATION_KEY_NOT_FOUND',
+          { configId, key }
+        );
+      }
 
-      // Cache value
+      let value = configItem.value;
+
+      // Decrypt if needed
+      if (configItem.encrypted && decrypt && value) {
+        try {
+          value = await this.encryptionService.decrypt(value);
+        } catch (decryptError) {
+          logger.error('Failed to decrypt configuration value', {
+            configId,
+            key,
+            error: decryptError.message
+          });
+          throw new AppError(
+            'Failed to decrypt configuration value',
+            500,
+            'DECRYPTION_ERROR',
+            { configId, key }
+          );
+        }
+      }
+
+      // Apply environment override if specified
+      if (environment) {
+        const envConfig = configuration.environments.find(e => e.environment === environment);
+        if (envConfig && envConfig.configurations && envConfig.configurations[key] !== undefined) {
+          value = envConfig.configurations[key];
+        }
+      }
+
+      // Cache the result
       if (fromCache) {
         const cacheKey = `${ConfigurationService.CACHE_KEYS.CONFIG_VALUES}:${configId}:${key}:${environment || 'base'}`;
-        await this.#cacheService.set(cacheKey, value, 300); // 5 minutes
+        await this.cacheService.set(cacheKey, value, 300);
       }
 
       return value;
     } catch (error) {
-      logger.error('Failed to get configuration value', {
-        configId,
-        key,
-        error: error.message
-      });
-      throw error instanceof AppError ? error : new AppError(`Failed to get configuration value: ${error.message}`, 500);
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw new AppError(
+        `Failed to get configuration value: ${error.message}`,
+        500,
+        'GET_CONFIG_VALUE_ERROR',
+        { 
+          configId,
+          key,
+          originalError: error.message 
+        }
+      );
     }
   }
 
@@ -319,71 +1060,179 @@ class ConfigurationService {
    * @async
    * @param {string} configId - Configuration ID
    * @param {string} key - Configuration key
-   * @param {*} value - New value
-   * @param {Object} options - Set options
+   * @param {*} value - Configuration value
+   * @param {Object} [options={}] - Set options
    * @returns {Promise<Object>} Updated configuration
    * @throws {AppError} If update fails
    */
-  async setConfigurationValue(configId, key, value, options) {
-    const session = await this.#transactionManager.startSession();
-
+  async setConfigurationValue(configId, key, value, options = {}) {
+    const session = await TransactionManager.startSession();
+    
     try {
-      await session.startTransaction();
+      const { environment, userId, comment, createIfNotExists = false, encrypt = false } = options;
 
-      // Get configuration
+      logger.info('Setting configuration value', {
+        configId,
+        key,
+        environment,
+        hasValue: value !== undefined,
+        createIfNotExists,
+        userId
+      });
+
+      const ConfigurationModel = await this._getConfigurationModel();
+
+      // Find configuration
       const configuration = await ConfigurationModel.findOne({ configId }).session(session);
+      
       if (!configuration) {
-        throw new AppError('Configuration not found', 404);
+        throw new AppError(
+          `Configuration not found: ${configId}`,
+          404,
+          'CONFIGURATION_NOT_FOUND',
+          { configId }
+        );
       }
 
-      // Check access control
-      if (!await this.#checkWriteAccess(configuration, options.userId)) {
-        throw new AppError('Insufficient permissions to modify configuration', 403);
+      // Check if configuration is locked
+      if (configuration.status.locked && configuration.status.lockedBy.toString() !== userId) {
+        throw new AppError(
+          'Configuration is locked by another user',
+          423,
+          'CONFIGURATION_LOCKED',
+          { 
+            configId,
+            lockedBy: configuration.status.lockedBy 
+          }
+        );
       }
 
-      // Set value
-      await configuration.setValue(key, value, options);
+      let updated = false;
+      let changeType = 'modify';
+      let oldValue = undefined;
 
-      // Save changes
-      await configuration.save({ session });
+      if (environment) {
+        // Handle environment-specific configuration
+        let envConfig = configuration.environments.find(e => e.environment === environment);
+        
+        if (!envConfig) {
+          if (createIfNotExists) {
+            envConfig = {
+              environment,
+              active: true,
+              configurations: {}
+            };
+            configuration.environments.push(envConfig);
+            changeType = 'add';
+          } else {
+            throw new AppError(
+              `Environment configuration not found: ${environment}`,
+              404,
+              'ENVIRONMENT_CONFIG_NOT_FOUND',
+              { configId, environment }
+            );
+          }
+        }
 
-      // Create audit entry
-      await this.#auditService.log({
-        userId: options.userId,
-        action: 'configuration.update_value',
-        resource: 'configuration',
-        resourceId: configId,
-        details: {
+        oldValue = envConfig.configurations[key];
+        envConfig.configurations[key] = value;
+        updated = true;
+      } else {
+        // Handle base configuration
+        const configItem = configuration.configurations.find(c => c.key === key);
+        
+        if (configItem) {
+          oldValue = configItem.value;
+          configItem.value = encrypt ? await this.encryptionService.encrypt(value) : value;
+          configItem.encrypted = encrypt;
+          updated = true;
+        } else if (createIfNotExists) {
+          configuration.configurations.push({
+            key,
+            value: encrypt ? await this.encryptionService.encrypt(value) : value,
+            dataType: typeof value,
+            encrypted: encrypt,
+            category: 'general',
+            description: `Auto-created configuration key: ${key}`,
+            required: false
+          });
+          changeType = 'add';
+          updated = true;
+        } else {
+          throw new AppError(
+            `Configuration key not found: ${key}`,
+            404,
+            'CONFIGURATION_KEY_NOT_FOUND',
+            { configId, key }
+          );
+        }
+      }
+
+      if (updated) {
+        // Update metadata
+        configuration.metadata.lastModifiedBy = userId;
+
+        // Add version entry
+        const versionChange = {
           key,
-          environment: options.environment,
-          valueChanged: true
-        },
-        session
-      });
+          changeType,
+          oldValue,
+          newValue: value,
+          environment,
+          encrypted: encrypt
+        };
 
-      await session.commitTransaction();
+        const newVersion = {
+          version: this.generateNextVersion(configuration.versions),
+          changes: [versionChange],
+          comment: comment || `Updated ${key} value`,
+          createdBy: userId,
+          createdAt: new Date()
+        };
 
-      logger.info('Configuration value updated', {
-        configId,
-        key,
-        environment: options.environment,
-        userId: options.userId
-      });
+        configuration.versions.push(newVersion);
 
-      // Clear cache
-      await this.#clearValueCache(configId, key);
+        // Save configuration
+        await configuration.save({ session });
 
-      // Emit event
-      await this.#notificationService.emit(ConfigurationService.EVENTS.CONFIG_UPDATED, {
-        configId,
-        key,
-        environment: options.environment,
-        userId: options.userId,
-        timestamp: new Date()
-      });
+        // Create audit entry
+        await this.auditService.log({
+          userId,
+          action: 'configuration.value.update',
+          resource: 'configuration',
+          resourceId: configId,
+          details: {
+            key,
+            changeType,
+            environment,
+            hasOldValue: oldValue !== undefined
+          },
+          session
+        });
 
-      // Notify watchers
-      await this.#notifyWatchers(configId, key, value, options.environment);
+        await session.commitTransaction();
+
+        logger.info('Configuration value updated', {
+          configId,
+          key,
+          environment,
+          userId
+        });
+
+        // Clear cache
+        await this.clearValueCache(configId, key);
+
+        // Emit event
+        await this.notificationService.emit(ConfigurationService.EVENTS.CONFIG_VALUE_CHANGED, {
+          configId,
+          key,
+          oldValue,
+          newValue: value,
+          environment,
+          userId,
+          timestamp: new Date()
+        });
+      }
 
       return configuration.toObject();
     } catch (error) {
@@ -404,74 +1253,187 @@ class ConfigurationService {
    * @async
    * @param {string} configId - Configuration ID
    * @param {Object} updates - Key-value pairs to update
-   * @param {Object} options - Update options
+   * @param {Object} [options={}] - Update options
    * @returns {Promise<Object>} Updated configuration
    * @throws {AppError} If update fails
    */
-  async updateConfigurationValues(configId, updates, options) {
-    const session = await this.#transactionManager.startSession();
-
+  async updateConfigurationValues(configId, updates, options = {}) {
+    const session = await TransactionManager.startSession();
+    
     try {
-      await session.startTransaction();
+      const { environment, userId, comment, createIfNotExists = false } = options;
 
-      // Get configuration
+      logger.info('Updating multiple configuration values', {
+        configId,
+        updateCount: Object.keys(updates).length,
+        environment,
+        userId
+      });
+
+      const ConfigurationModel = await this._getConfigurationModel();
+
+      // Find configuration
       const configuration = await ConfigurationModel.findOne({ configId }).session(session);
+      
       if (!configuration) {
-        throw new AppError('Configuration not found', 404);
+        throw new AppError(
+          `Configuration not found: ${configId}`,
+          404,
+          'CONFIGURATION_NOT_FOUND',
+          { configId }
+        );
       }
 
-      // Check access control
-      if (!await this.#checkWriteAccess(configuration, options.userId)) {
-        throw new AppError('Insufficient permissions to modify configuration', 403);
+      // Check if configuration is locked
+      if (configuration.status.locked && configuration.status.lockedBy.toString() !== userId) {
+        throw new AppError(
+          'Configuration is locked by another user',
+          423,
+          'CONFIGURATION_LOCKED',
+          { 
+            configId,
+            lockedBy: configuration.status.lockedBy 
+          }
+        );
       }
 
-      // Update values
-      const updatedKeys = [];
+      const changes = [];
+      
       for (const [key, value] of Object.entries(updates)) {
-        await configuration.setValue(key, value, {
-          ...options,
-          createIfNotExists: options.createIfNotExists || false
-        });
-        updatedKeys.push(key);
+        let changeType = 'modify';
+        let oldValue = undefined;
+        
+        if (environment) {
+          // Handle environment-specific configuration
+          let envConfig = configuration.environments.find(e => e.environment === environment);
+          
+          if (!envConfig && createIfNotExists) {
+            envConfig = {
+              environment,
+              active: true,
+              configurations: {}
+            };
+            configuration.environments.push(envConfig);
+          }
+          
+          if (envConfig) {
+            oldValue = envConfig.configurations[key];
+            envConfig.configurations[key] = value;
+            
+            changes.push({
+              key,
+              changeType: oldValue === undefined ? 'add' : 'modify',
+              oldValue,
+              newValue: value,
+              environment
+            });
+          }
+        } else {
+          // Handle base configuration
+          const configItem = configuration.configurations.find(c => c.key === key);
+          
+          if (configItem) {
+            oldValue = configItem.value;
+            
+            // Handle encryption
+            if (value && typeof value === 'object' && value.__encrypted) {
+              configItem.value = await this.encryptionService.encrypt(value.value);
+              configItem.encrypted = true;
+            } else {
+              configItem.value = value;
+            }
+            
+            changes.push({
+              key,
+              changeType: 'modify',
+              oldValue,
+              newValue: value
+            });
+          } else if (createIfNotExists) {
+            const newConfigItem = {
+              key,
+              value,
+              dataType: typeof value,
+              encrypted: false,
+              category: 'general',
+              description: `Auto-created configuration key: ${key}`,
+              required: false
+            };
+            
+            // Handle encryption for new items
+            if (value && typeof value === 'object' && value.__encrypted) {
+              newConfigItem.value = await this.encryptionService.encrypt(value.value);
+              newConfigItem.encrypted = true;
+            }
+            
+            configuration.configurations.push(newConfigItem);
+            
+            changes.push({
+              key,
+              changeType: 'add',
+              newValue: value
+            });
+          }
+        }
       }
 
-      // Save changes
-      await configuration.save({ session });
+      if (changes.length > 0) {
+        // Update metadata
+        configuration.metadata.lastModifiedBy = userId;
 
-      // Create audit entry
-      await this.#auditService.log({
-        userId: options.userId,
-        action: 'configuration.batch_update',
-        resource: 'configuration',
-        resourceId: configId,
-        details: {
-          keysUpdated: updatedKeys,
-          environment: options.environment,
-          updateCount: updatedKeys.length
-        },
-        session
-      });
+        // Add version entry
+        const newVersion = {
+          version: this.generateNextVersion(configuration.versions),
+          changes,
+          comment: comment || `Bulk update of ${changes.length} values`,
+          createdBy: userId,
+          createdAt: new Date()
+        };
 
-      await session.commitTransaction();
+        configuration.versions.push(newVersion);
 
-      logger.info('Configuration values updated', {
-        configId,
-        keysUpdated: updatedKeys,
-        environment: options.environment,
-        userId: options.userId
-      });
+        // Save configuration
+        await configuration.save({ session });
 
-      // Clear cache
-      await this.#clearConfigurationCache(configId);
+        // Create audit entry
+        await this.auditService.log({
+          userId,
+          action: 'configuration.bulk.update',
+          resource: 'configuration',
+          resourceId: configId,
+          details: {
+            changeCount: changes.length,
+            environment,
+            keys: changes.map(c => c.key)
+          },
+          session
+        });
 
-      // Emit event
-      await this.#notificationService.emit(ConfigurationService.EVENTS.CONFIG_UPDATED, {
-        configId,
-        keysUpdated: updatedKeys,
-        environment: options.environment,
-        userId: options.userId,
-        timestamp: new Date()
-      });
+        await session.commitTransaction();
+
+        logger.info('Configuration values updated', {
+          configId,
+          changeCount: changes.length,
+          userId
+        });
+
+        // Clear cache
+        await this.clearConfigurationCache(configId);
+        
+        // Clear individual value caches
+        for (const change of changes) {
+          await this.clearValueCache(configId, change.key);
+        }
+
+        // Emit event
+        await this.notificationService.emit(ConfigurationService.EVENTS.CONFIG_UPDATED, {
+          configId,
+          changes,
+          environment,
+          userId,
+          timestamp: new Date()
+        });
+      }
 
       return configuration.toObject();
     } catch (error) {
@@ -487,46 +1449,120 @@ class ConfigurationService {
   }
 
   /**
-   * Deletes a configuration key
+   * Deletes configuration key
    * @async
    * @param {string} configId - Configuration ID
-   * @param {string} key - Configuration key
-   * @param {Object} options - Delete options
+   * @param {string} key - Configuration key to delete
+   * @param {Object} [options={}] - Delete options
    * @returns {Promise<Object>} Updated configuration
    * @throws {AppError} If deletion fails
    */
-  async deleteConfigurationKey(configId, key, options) {
-    const session = await this.#transactionManager.startSession();
-
+  async deleteConfigurationKey(configId, key, options = {}) {
+    const session = await TransactionManager.startSession();
+    
     try {
-      await session.startTransaction();
+      const { environment, userId, comment } = options;
 
-      // Get configuration
+      logger.info('Deleting configuration key', {
+        configId,
+        key,
+        environment,
+        userId
+      });
+
+      const ConfigurationModel = await this._getConfigurationModel();
+
+      // Find configuration
       const configuration = await ConfigurationModel.findOne({ configId }).session(session);
+      
       if (!configuration) {
-        throw new AppError('Configuration not found', 404);
+        throw new AppError(
+          `Configuration not found: ${configId}`,
+          404,
+          'CONFIGURATION_NOT_FOUND',
+          { configId }
+        );
       }
 
-      // Check access control
-      if (!await this.#checkWriteAccess(configuration, options.userId)) {
-        throw new AppError('Insufficient permissions to modify configuration', 403);
+      // Check if configuration is locked
+      if (configuration.status.locked && configuration.status.lockedBy.toString() !== userId) {
+        throw new AppError(
+          'Configuration is locked by another user',
+          423,
+          'CONFIGURATION_LOCKED',
+          { 
+            configId,
+            lockedBy: configuration.status.lockedBy 
+          }
+        );
       }
 
-      // Delete key
-      await configuration.deleteKey(key, options);
+      let deleted = false;
+      let oldValue = undefined;
 
-      // Save changes
+      if (environment) {
+        // Handle environment-specific configuration
+        const envConfig = configuration.environments.find(e => e.environment === environment);
+        
+        if (envConfig && envConfig.configurations && envConfig.configurations[key] !== undefined) {
+          oldValue = envConfig.configurations[key];
+          delete envConfig.configurations[key];
+          deleted = true;
+        }
+      } else {
+        // Handle base configuration
+        const configIndex = configuration.configurations.findIndex(c => c.key === key);
+        
+        if (configIndex !== -1) {
+          oldValue = configuration.configurations[configIndex].value;
+          configuration.configurations.splice(configIndex, 1);
+          deleted = true;
+        }
+      }
+
+      if (!deleted) {
+        throw new AppError(
+          `Configuration key not found: ${key}`,
+          404,
+          'CONFIGURATION_KEY_NOT_FOUND',
+          { configId, key }
+        );
+      }
+
+      // Update metadata
+      configuration.metadata.lastModifiedBy = userId;
+
+      // Add version entry
+      const versionChange = {
+        key,
+        changeType: 'delete',
+        oldValue,
+        environment
+      };
+
+      const newVersion = {
+        version: this.generateNextVersion(configuration.versions),
+        changes: [versionChange],
+        comment: comment || `Deleted ${key} key`,
+        createdBy: userId,
+        createdAt: new Date()
+      };
+
+      configuration.versions.push(newVersion);
+
+      // Save configuration
       await configuration.save({ session });
 
       // Create audit entry
-      await this.#auditService.log({
-        userId: options.userId,
-        action: 'configuration.delete_key',
+      await this.auditService.log({
+        userId,
+        action: 'configuration.key.delete',
         resource: 'configuration',
         resourceId: configId,
         details: {
           key,
-          environment: options.environment
+          environment,
+          hadValue: oldValue !== undefined
         },
         session
       });
@@ -536,20 +1572,22 @@ class ConfigurationService {
       logger.info('Configuration key deleted', {
         configId,
         key,
-        environment: options.environment,
-        userId: options.userId
+        environment,
+        userId
       });
 
       // Clear cache
-      await this.#clearValueCache(configId, key);
+      await this.clearValueCache(configId, key);
 
       // Emit event
-      await this.#notificationService.emit(ConfigurationService.EVENTS.CONFIG_UPDATED, {
+      await this.notificationService.emit(ConfigurationService.EVENTS.CONFIG_VALUE_CHANGED, {
         configId,
         key,
-        action: 'delete',
-        environment: options.environment,
-        userId: options.userId,
+        oldValue,
+        newValue: undefined,
+        environment,
+        changeType: 'delete',
+        userId,
         timestamp: new Date()
       });
 
@@ -568,121 +1606,117 @@ class ConfigurationService {
   }
 
   /**
-   * Lists configurations
-   * @async
-   * @param {Object} [filters={}] - Query filters
-   * @returns {Promise<Object>} Configuration list with pagination
-   */
-  async listConfigurations(filters = {}) {
-    try {
-      const {
-        category,
-        environment,
-        tag,
-        active = true,
-        search,
-        page = 1,
-        limit = 20,
-        sort = '-createdAt'
-      } = filters;
-
-      // Build query
-      const query = {};
-      
-      if (active !== undefined) {
-        query['status.active'] = active;
-      }
-
-      if (category) {
-        query['metadata.category'] = category;
-      }
-
-      if (environment) {
-        query['environments.environment'] = environment;
-      }
-
-      if (tag) {
-        query['metadata.tags'] = tag;
-      }
-
-      if (search) {
-        query.$or = [
-          { name: new RegExp(search, 'i') },
-          { displayName: new RegExp(search, 'i') },
-          { description: new RegExp(search, 'i') }
-        ];
-      }
-
-      // Execute query with pagination
-      const [configurations, total] = await Promise.all([
-        ConfigurationModel.find(query)
-          .select('-configurations -versions -auditTrail')
-          .populate('metadata.createdBy', 'name email')
-          .sort(sort)
-          .skip((page - 1) * limit)
-          .limit(limit)
-          .lean(),
-        ConfigurationModel.countDocuments(query)
-      ]);
-
-      return {
-        configurations,
-        pagination: {
-          total,
-          page,
-          limit,
-          pages: Math.ceil(total / limit)
-        }
-      };
-    } catch (error) {
-      logger.error('Failed to list configurations', {
-        filters,
-        error: error.message
-      });
-      throw new AppError(`Failed to list configurations: ${error.message}`, 500);
-    }
-  }
-
-  /**
    * Searches configuration values
    * @async
    * @param {string} query - Search query
    * @param {Object} [options={}] - Search options
-   * @returns {Promise<Array>} Search results
+   * @returns {Promise<Object>} Search results
+   * @throws {AppError} If search fails
    */
   async searchConfigurationValues(query, options = {}) {
     try {
-      const { category, limit = 50 } = options;
+      const {
+        limit = 50,
+        page = 1,
+        includeValues = false,
+        environment,
+        configType,
+        category
+      } = options;
 
-      // Search configurations
-      const configurations = await ConfigurationModel.searchConfigurations(query, { category });
+      logger.info('Searching configuration values', {
+        query,
+        limit,
+        page,
+        includeValues,
+        environment
+      });
 
-      // Extract matching configuration items
-      const results = [];
-      
-      for (const config of configurations) {
-        for (const item of config.configurations) {
-          if (
-            item.key.toLowerCase().includes(query.toLowerCase()) ||
-            (item.description && item.description.toLowerCase().includes(query.toLowerCase()))
-          ) {
-            results.push({
-              configId: config.configId,
-              configName: config.name,
-              key: item.key,
-              type: item.type,
-              category: item.category,
-              description: item.description,
-              value: item.sensitive ? '[SENSITIVE]' : item.value
-            });
+      const ConfigurationModel = await this._getConfigurationModel();
 
-            if (results.length >= limit) break;
-          }
-        }
-        if (results.length >= limit) break;
+      // Build search conditions
+      const searchConditions = {
+        'status.active': true
+      };
+
+      if (configType) {
+        searchConditions.configType = configType;
       }
 
-      return results;
+      if (category) {
+        searchConditions['metadata.category'] = category;
+      }
+
+      // Text search
+      if (query) {
+        searchConditions.$or = [
+          { name: new RegExp(query, 'i') },
+          { displayName: new RegExp(query, 'i') },
+          { description: new RegExp(query, 'i') },
+          { 'configurations.key': new RegExp(query, 'i') },
+          { 'configurations.description': new RegExp(query, 'i') },
+          { 'metadata.tags': new RegExp(query, 'i') }
+        ];
+      }
+
+      // Execute search
+      const [configurations, total] = await Promise.all([
+        ConfigurationModel
+          .find(searchConditions)
+          .select(includeValues ? '' : '-configurations.value -versions')
+          .populate('metadata.createdBy', 'username email')
+          .sort({ score: { $meta: 'textScore' }, updatedAt: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .lean(),
+        ConfigurationModel.countDocuments(searchConditions)
+      ]);
+
+      // Process results
+      const results = configurations.map(config => {
+        const result = {
+          configId: config.configId,
+          name: config.name,
+          displayName: config.displayName,
+          description: config.description,
+          configType: config.configType,
+          category: config.metadata.category,
+          tags: config.metadata.tags,
+          createdBy: config.metadata.createdBy,
+          updatedAt: config.updatedAt
+        };
+
+        // Add matching keys
+        if (config.configurations) {
+          result.matchingKeys = config.configurations
+            .filter(c => !query || c.key.toLowerCase().includes(query.toLowerCase()) || 
+                        (c.description && c.description.toLowerCase().includes(query.toLowerCase())))
+            .map(c => ({
+              key: c.key,
+              description: c.description,
+              category: c.category,
+              dataType: c.dataType,
+              value: includeValues ? (c.encrypted ? '[ENCRYPTED]' : c.value) : undefined
+            }));
+        }
+
+        return result;
+      });
+
+      return {
+        success: true,
+        data: {
+          results,
+          pagination: {
+            total,
+            page,
+            limit,
+            pages: Math.ceil(total / limit)
+          },
+          query,
+          resultCount: results.length
+        }
+      };
     } catch (error) {
       logger.error('Failed to search configuration values', {
         query,
@@ -693,891 +1727,219 @@ class ConfigurationService {
   }
 
   /**
-   * Exports configuration
+   * Gets global configuration statistics
    * @async
-   * @param {string} configId - Configuration ID
-   * @param {Object} options - Export options
-   * @returns {Promise<string>} Exported configuration
-   * @throws {AppError} If export fails
+   * @returns {Promise<Object>} Configuration statistics
+   * @throws {AppError} If retrieval fails
    */
-  async exportConfiguration(configId, options) {
+  async getGlobalStatistics() {
     try {
-      // Get configuration
-      const configuration = await ConfigurationModel.findOne({ configId });
-      if (!configuration) {
-        throw new AppError('Configuration not found', 404);
+      // Try cache first
+      const cacheKey = ConfigurationService.CACHE_KEYS.CONFIG_STATS;
+      const cached = await this.cacheService.get(cacheKey);
+      if (cached) {
+        return cached;
       }
 
-      // Check access control
-      if (!await this.#checkReadAccess(configuration, options.userId)) {
-        throw new AppError('Insufficient permissions to export configuration', 403);
-      }
+      const ConfigurationModel = await this._getConfigurationModel();
 
-      // Export configuration
-      const exported = await configuration.export(options.format || 'json', options);
+      // Aggregate statistics
+      const [
+        totalConfigs,
+        activeConfigs,
+        configsByType,
+        recentlyUpdated,
+        lockedConfigs
+      ] = await Promise.all([
+        ConfigurationModel.countDocuments(),
+        ConfigurationModel.countDocuments({ 'status.active': true }),
+        ConfigurationModel.aggregate([
+          { $group: { _id: '$configType', count: { $sum: 1 } } }
+        ]),
+        ConfigurationModel.countDocuments({
+          updatedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+        }),
+        ConfigurationModel.countDocuments({ 'status.locked': true })
+      ]);
 
-      // Create audit entry
-      await this.#auditService.log({
-        userId: options.userId,
-        action: 'configuration.export',
-        resource: 'configuration',
-        resourceId: configId,
-        details: {
-          format: options.format,
-          environment: options.environment,
-          includeSensitive: options.includeSensitive
+      const statistics = {
+        success: true,
+        data: {
+          total: totalConfigs,
+          active: activeConfigs,
+          inactive: totalConfigs - activeConfigs,
+          locked: lockedConfigs,
+          recentlyUpdated,
+          byType: configsByType.reduce((acc, item) => {
+            acc[item._id] = item.count;
+            return acc;
+          }, {}),
+          timestamp: new Date()
         }
-      });
-
-      // Emit event
-      await this.#notificationService.emit(ConfigurationService.EVENTS.CONFIG_EXPORTED, {
-        configId,
-        format: options.format,
-        userId: options.userId,
-        timestamp: new Date()
-      });
-
-      logger.info('Configuration exported', {
-        configId,
-        format: options.format,
-        userId: options.userId
-      });
-
-      return exported;
-    } catch (error) {
-      logger.error('Failed to export configuration', {
-        configId,
-        options,
-        error: error.message
-      });
-      throw error instanceof AppError ? error : new AppError(`Failed to export configuration: ${error.message}`, 500);
-    }
-  }
-
-  /**
-   * Imports configuration
-   * @async
-   * @param {string} data - Configuration data to import
-   * @param {Object} options - Import options
-   * @returns {Promise<Object>} Imported configuration
-   * @throws {AppError} If import fails
-   */
-  async importConfiguration(data, options) {
-    const session = await this.#transactionManager.startSession();
-
-    try {
-      await session.startTransaction();
-
-      // Parse imported data
-      const parsed = await this.#parseImportData(data, options.format);
-
-      // Check if configuration already exists
-      let configuration;
-      if (parsed.name) {
-        configuration = await ConfigurationModel.findOne({ name: parsed.name }).session(session);
-      }
-
-      if (configuration) {
-        // Update existing configuration
-        if (!await this.#checkWriteAccess(configuration, options.userId)) {
-          throw new AppError('Insufficient permissions to update configuration', 403);
-        }
-
-        // Update values
-        for (const [key, item] of Object.entries(parsed.configurations)) {
-          const value = typeof item === 'object' ? item.value : item;
-          await configuration.setValue(key, value, {
-            userId: options.userId,
-            createIfNotExists: true,
-            comment: 'Imported from ' + options.format
-          });
-        }
-      } else {
-        // Create new configuration
-        configuration = new ConfigurationModel({
-          name: parsed.name || `imported_${Date.now()}`,
-          displayName: parsed.displayName || 'Imported Configuration',
-          description: parsed.description || 'Configuration imported from ' + options.format,
-          configurations: [],
-          metadata: {
-            createdBy: options.userId
-          }
-        });
-
-        // Add configurations
-        for (const [key, item] of Object.entries(parsed.configurations)) {
-          if (typeof item === 'object' && item.value !== undefined) {
-            configuration.configurations.push({
-              key,
-              value: item.value,
-              type: item.type || this.#detectValueType(item.value),
-              category: item.category || 'imported',
-              description: item.description
-            });
-          } else {
-            configuration.configurations.push({
-              key,
-              value: item,
-              type: this.#detectValueType(item),
-              category: 'imported'
-            });
-          }
-        }
-
-        await configuration.save({ session });
-      }
-
-      // Update import tracking
-      configuration.importExport.lastImport = {
-        timestamp: new Date(),
-        source: options.source || 'manual',
-        importedBy: options.userId
       };
 
-      await configuration.save({ session });
+      // Cache results
+      await this.cacheService.set(cacheKey, statistics, 300); // Cache for 5 minutes
 
-      // Create audit entry
-      await this.#auditService.log({
-        userId: options.userId,
-        action: 'configuration.import',
-        resource: 'configuration',
-        resourceId: configuration.configId,
-        details: {
-          format: options.format,
-          source: options.source,
-          itemCount: Object.keys(parsed.configurations).length
-        },
-        session
-      });
-
-      await session.commitTransaction();
-
-      logger.info('Configuration imported', {
-        configId: configuration.configId,
-        format: options.format,
-        itemCount: Object.keys(parsed.configurations).length,
-        userId: options.userId
-      });
-
-      // Clear cache
-      await this.#clearConfigurationCache(configuration.configId);
-
-      // Emit event
-      await this.#notificationService.emit(ConfigurationService.EVENTS.CONFIG_IMPORTED, {
-        configuration: configuration.toObject(),
-        format: options.format,
-        userId: options.userId,
-        timestamp: new Date()
-      });
-
-      return configuration.toObject();
-    } catch (error) {
-      await session.abortTransaction();
-      logger.error('Failed to import configuration', {
-        format: options.format,
-        error: error.message
-      });
-      throw error instanceof AppError ? error : new AppError(`Failed to import configuration: ${error.message}`, 500);
-    } finally {
-      await session.endSession();
-    }
-  }
-
-  /**
-   * Validates configuration
-   * @async
-   * @param {string} configId - Configuration ID
-   * @returns {Promise<Object>} Validation results
-   * @throws {AppError} If validation fails
-   */
-  async validateConfiguration(configId) {
-    try {
-      // Get configuration
-      const configuration = await ConfigurationModel.findOne({ configId });
-      if (!configuration) {
-        throw new AppError('Configuration not found', 404);
-      }
-
-      // Perform validation
-      const validationResult = await configuration.validate();
-
-      // Cache validation result
-      const cacheKey = `${ConfigurationService.CACHE_KEYS.CONFIG_VALIDATION}:${configId}`;
-      await this.#cacheService.set(cacheKey, validationResult, 300); // 5 minutes
-
-      // Emit event
-      await this.#notificationService.emit(ConfigurationService.EVENTS.CONFIG_VALIDATED, {
-        configId,
-        validationResult,
-        timestamp: new Date()
-      });
-
-      logger.info('Configuration validated', {
-        configId,
-        valid: validationResult.valid,
-        errorCount: validationResult.errors.length,
-        warningCount: validationResult.warnings.length
-      });
-
-      return validationResult;
-    } catch (error) {
-      logger.error('Failed to validate configuration', {
-        configId,
-        error: error.message
-      });
-      throw error instanceof AppError ? error : new AppError(`Failed to validate configuration: ${error.message}`, 500);
-    }
-  }
-
-  /**
-   * Locks configuration
-   * @async
-   * @param {string} configId - Configuration ID
-   * @param {string} userId - User locking the configuration
-   * @param {string} reason - Lock reason
-   * @returns {Promise<Object>} Locked configuration
-   * @throws {AppError} If locking fails
-   */
-  async lockConfiguration(configId, userId, reason) {
-    try {
-      // Get configuration
-      const configuration = await ConfigurationModel.findOne({ configId });
-      if (!configuration) {
-        throw new AppError('Configuration not found', 404);
-      }
-
-      // Check permissions
-      if (!await this.#checkWriteAccess(configuration, userId)) {
-        throw new AppError('Insufficient permissions to lock configuration', 403);
-      }
-
-      // Lock configuration
-      await configuration.lock(userId, reason);
-
-      // Clear cache
-      await this.#clearConfigurationCache(configId);
-
-      // Emit event
-      await this.#notificationService.emit(ConfigurationService.EVENTS.CONFIG_LOCKED, {
-        configId,
-        userId,
-        reason,
-        timestamp: new Date()
-      });
-
-      // Send notification
-      await this.#notificationService.sendToAdmins({
-        type: 'configuration.locked',
-        title: 'Configuration Locked',
-        message: `Configuration '${configuration.displayName}' has been locked by ${userId}`,
-        severity: 'medium',
-        data: { configId, reason }
-      });
-
-      return configuration.toObject();
-    } catch (error) {
-      logger.error('Failed to lock configuration', {
-        configId,
-        error: error.message
-      });
-      throw error instanceof AppError ? error : new AppError(`Failed to lock configuration: ${error.message}`, 500);
-    }
-  }
-
-  /**
-   * Unlocks configuration
-   * @async
-   * @param {string} configId - Configuration ID
-   * @param {string} userId - User unlocking the configuration
-   * @returns {Promise<Object>} Unlocked configuration
-   * @throws {AppError} If unlocking fails
-   */
-  async unlockConfiguration(configId, userId) {
-    try {
-      // Get configuration
-      const configuration = await ConfigurationModel.findOne({ configId });
-      if (!configuration) {
-        throw new AppError('Configuration not found', 404);
-      }
-
-      // Check permissions
-      if (!await this.#checkWriteAccess(configuration, userId)) {
-        throw new AppError('Insufficient permissions to unlock configuration', 403);
-      }
-
-      // Unlock configuration
-      await configuration.unlock(userId);
-
-      // Clear cache
-      await this.#clearConfigurationCache(configId);
-
-      // Emit event
-      await this.#notificationService.emit(ConfigurationService.EVENTS.CONFIG_UNLOCKED, {
-        configId,
-        userId,
-        timestamp: new Date()
-      });
-
-      return configuration.toObject();
-    } catch (error) {
-      logger.error('Failed to unlock configuration', {
-        configId,
-        error: error.message
-      });
-      throw error instanceof AppError ? error : new AppError(`Failed to unlock configuration: ${error.message}`, 500);
-    }
-  }
-
-  /**
-   * Rolls back configuration to a specific version
-   * @async
-   * @param {string} configId - Configuration ID
-   * @param {number} targetVersion - Target version number
-   * @param {string} userId - User performing rollback
-   * @returns {Promise<Object>} Rolled back configuration
-   * @throws {AppError} If rollback fails
-   */
-  async rollbackConfiguration(configId, targetVersion, userId) {
-    const session = await this.#transactionManager.startSession();
-
-    try {
-      await session.startTransaction();
-
-      // Get configuration
-      const configuration = await ConfigurationModel.findOne({ configId }).session(session);
-      if (!configuration) {
-        throw new AppError('Configuration not found', 404);
-      }
-
-      // Check permissions
-      if (!await this.#checkWriteAccess(configuration, userId)) {
-        throw new AppError('Insufficient permissions to rollback configuration', 403);
-      }
-
-      // Perform rollback
-      await configuration.rollbackToVersion(targetVersion, userId);
-
-      // Save changes
-      await configuration.save({ session });
-
-      // Create audit entry
-      await this.#auditService.log({
-        userId,
-        action: 'configuration.rollback',
-        resource: 'configuration',
-        resourceId: configId,
-        details: {
-          fromVersion: configuration.currentVersion - 1,
-          toVersion: targetVersion
-        },
-        session
-      });
-
-      await session.commitTransaction();
-
-      logger.info('Configuration rolled back', {
-        configId,
-        targetVersion,
-        userId
-      });
-
-      // Clear cache
-      await this.#clearConfigurationCache(configId);
-
-      // Emit event
-      await this.#notificationService.emit(ConfigurationService.EVENTS.CONFIG_ROLLED_BACK, {
-        configId,
-        targetVersion,
-        userId,
-        timestamp: new Date()
-      });
-
-      // Send notification
-      await this.#notificationService.sendToAdmins({
-        type: 'configuration.rolled_back',
-        title: 'Configuration Rolled Back',
-        message: `Configuration '${configuration.displayName}' rolled back to version ${targetVersion}`,
-        severity: 'high',
-        data: { configId, targetVersion }
-      });
-
-      return configuration.toObject();
-    } catch (error) {
-      await session.abortTransaction();
-      logger.error('Failed to rollback configuration', {
-        configId,
-        targetVersion,
-        error: error.message
-      });
-      throw error instanceof AppError ? error : new AppError(`Failed to rollback configuration: ${error.message}`, 500);
-    } finally {
-      await session.endSession();
-    }
-  }
-
-  /**
-   * Watches configuration for changes
-   * @async
-   * @param {string} configId - Configuration ID
-   * @param {string} key - Configuration key to watch
-   * @param {Function} callback - Callback function
-   * @returns {string} Watcher ID
-   */
-  watchConfiguration(configId, key, callback) {
-    const watcherId = `${configId}:${key}:${Date.now()}`;
-    
-    if (!this.#configWatchers.has(configId)) {
-      this.#configWatchers.set(configId, new Map());
-    }
-    
-    const configWatchers = this.#configWatchers.get(configId);
-    
-    if (!configWatchers.has(key)) {
-      configWatchers.set(key, new Map());
-    }
-    
-    configWatchers.get(key).set(watcherId, callback);
-    
-    logger.debug('Configuration watcher added', {
-      configId,
-      key,
-      watcherId
-    });
-    
-    return watcherId;
-  }
-
-  /**
-   * Stops watching configuration
-   * @param {string} watcherId - Watcher ID
-   */
-  unwatchConfiguration(watcherId) {
-    const [configId, key] = watcherId.split(':');
-    
-    if (this.#configWatchers.has(configId)) {
-      const configWatchers = this.#configWatchers.get(configId);
-      
-      if (configWatchers.has(key)) {
-        configWatchers.get(key).delete(watcherId);
-        
-        if (configWatchers.get(key).size === 0) {
-          configWatchers.delete(key);
-        }
-      }
-      
-      if (configWatchers.size === 0) {
-        this.#configWatchers.delete(configId);
-      }
-    }
-    
-    logger.debug('Configuration watcher removed', { watcherId });
-  }
-
-  /**
-   * Gets configuration statistics
-   * @async
-   * @param {string} [configId] - Optional configuration ID
-   * @returns {Promise<Object>} Configuration statistics
-   */
-  async getConfigurationStatistics(configId) {
-    try {
-      if (configId) {
-        // Get statistics for specific configuration
-        const configuration = await ConfigurationModel.findOne({ configId });
-        if (!configuration) {
-          throw new AppError('Configuration not found', 404);
-        }
-
-        return {
-          configId,
-          name: configuration.name,
-          itemCount: configuration.configurations.length,
-          environmentCount: configuration.environments.length,
-          versionCount: configuration.versions.length,
-          lastModified: configuration.updatedAt,
-          validationStatus: configuration.status.validationStatus,
-          locked: configuration.status.locked,
-          categories: [...new Set(configuration.configurations.map(c => c.category))],
-          sensitiveCount: configuration.configurations.filter(c => c.sensitive).length,
-          encryptedCount: configuration.configurations.filter(c => c.encrypted).length
-        };
-      } else {
-        // Get overall statistics
-        const [total, active, locked, invalid] = await Promise.all([
-          ConfigurationModel.countDocuments(),
-          ConfigurationModel.countDocuments({ 'status.active': true }),
-          ConfigurationModel.countDocuments({ 'status.locked': true }),
-          ConfigurationModel.countDocuments({ 'status.validationStatus': 'invalid' })
-        ]);
-
-        return {
-          total,
-          active,
-          inactive: total - active,
-          locked,
-          invalid,
-          categories: await ConfigurationModel.distinct('configurations.category'),
-          environments: await ConfigurationModel.distinct('environments.environment')
-        };
-      }
+      return statistics;
     } catch (error) {
       logger.error('Failed to get configuration statistics', {
-        configId,
         error: error.message
       });
-      throw error instanceof AppError ? error : new AppError(`Failed to get configuration statistics: ${error.message}`, 500);
+      throw new AppError(`Failed to get configuration statistics: ${error.message}`, 500);
+    }
+  }
+
+  /**
+   * ADDED: Database connectivity test method
+   * @async
+   * @returns {Promise<Object>} Connectivity test result
+   */
+  async testDatabaseConnectivity() {
+    try {
+      const ConfigurationModel = await this._getConfigurationModel();
+      
+      const startTime = Date.now();
+      const count = await ConfigurationModel.countDocuments().maxTimeMS(5000);
+      const responseTime = Date.now() - startTime;
+
+      return {
+        success: true,
+        data: {
+          connected: true,
+          responseTime,
+          collection: 'configuration_management',
+          documentCount: count,
+          modelName: 'Configuration'
+        }
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          connected: false,
+          message: error.message,
+          collection: 'configuration_management',
+          modelName: 'Configuration'
+        }
+      };
+    }
+  }
+
+  /**
+   * ADDED: Clear cached model (for testing/debugging)
+   */
+  clearModelCache() {
+    this._configurationModel = null;
+    if (this.debug) {
+      logger.debug('Configuration model cache cleared');
     }
   }
 
   // Private helper methods
 
   /**
-   * Applies environment overrides to configuration
+   * Validates configuration data
    * @private
-   * @param {Object} configuration - Configuration object
-   * @param {string} environment - Environment name
-   * @returns {Array} Configurations with overrides applied
+   * @param {Object} configData - Configuration data to validate
+   * @returns {Promise<Object>} Validated data
+   * @throws {AppError} If validation fails
    */
-  #applyEnvironmentOverrides(configuration, environment) {
-    const env = configuration.environments.find(e => e.environment === environment);
-    if (!env) {
-      return configuration.configurations;
+  async validateConfigurationData(configData) {
+    // Basic validation
+    if (!configData.name) {
+      throw new AppError('Configuration name is required', 400, 'MISSING_NAME');
     }
 
-    const result = [...configuration.configurations];
+    if (!configData.configId) {
+      configData.configId = `CONFIG_${stringHelper.generateId()}`;
+    }
+
+    // Set defaults
+    configData.configType = configData.configType || ConfigurationService.CONFIG_TYPES.APPLICATION;
+    configData.configurations = configData.configurations || [];
+    configData.environments = configData.environments || [];
+    configData.versions = configData.versions || [];
+    configData.metadata = configData.metadata || {};
     
-    for (const override of env.overrides) {
-      const configIndex = result.findIndex(c => c.key === override.key);
-      if (configIndex !== -1) {
-        result[configIndex] = {
-          ...result[configIndex],
-          value: override.value,
-          encrypted: override.encrypted
-        };
-      }
-    }
-
-    return result;
+    return configData;
   }
 
   /**
    * Processes configuration response
    * @private
-   * @param {Object} configuration - Raw configuration
+   * @param {Object} configuration - Raw configuration data
    * @param {Object} options - Processing options
    * @returns {Object} Processed configuration
    */
-  #processConfigurationResponse(configuration, options = {}) {
-    const processed = { ...configuration };
+  processConfigurationResponse(configuration, options = {}) {
+    const { includeSensitive = false, environment } = options;
 
-    // Handle sensitive values
-    if (!options.includeSensitive) {
-      if (processed.configurations) {
-        processed.configurations = processed.configurations.map(config => {
-          if (config.sensitive) {
-            return {
-              ...config,
-              value: '[REDACTED]'
-            };
-          }
-          return config;
+    // Filter sensitive data
+    if (!includeSensitive && configuration.configurations) {
+      configuration.configurations = configuration.configurations.map(config => ({
+        ...config,
+        value: config.encrypted ? '[ENCRYPTED]' : config.value
+      }));
+    }
+
+    // Apply environment filter if specified
+    if (environment && configuration.environments) {
+      const envConfig = configuration.environments.find(e => e.environment === environment);
+      if (envConfig) {
+        // Merge environment-specific configurations
+        const envConfigs = envConfig.configurations || {};
+        
+        configuration.configurations = configuration.configurations.map(config => ({
+          ...config,
+          value: envConfigs[config.key] !== undefined ? envConfigs[config.key] : config.value
+        }));
+      }
+    }
+
+    return configuration;
+  }
+
+  /**
+   * Generates next version number
+   * @private
+   * @param {Array} versions - Existing versions
+   * @returns {string} Next version number
+   */
+  generateNextVersion(versions) {
+    if (!versions || versions.length === 0) {
+      return '1.0.0';
+    }
+
+    const latestVersion = versions[versions.length - 1].version;
+    const [major, minor, patch] = latestVersion.split('.').map(Number);
+    
+    return `${major}.${minor}.${patch + 1}`;
+  }
+
+  /**
+   * Detects changes between objects
+   * @private
+   * @param {Object} original - Original object
+   * @param {Object} updated - Updated object
+   * @returns {Array} Array of changes
+   */
+  detectChanges(original, updated) {
+    const changes = [];
+    
+    // Simple implementation - in production, you might use a more sophisticated diff library
+    for (const key in updated) {
+      if (original[key] !== updated[key]) {
+        changes.push({
+          field: key,
+          oldValue: original[key],
+          newValue: updated[key]
         });
       }
     }
-
-    // Add computed properties
-    processed.statistics = {
-      itemCount: processed.configurations?.length || 0,
-      environmentCount: processed.environments?.length || 0,
-      versionCount: processed.versions?.length || 0
-    };
-
-    return processed;
-  }
-
-  /**
-   * Checks read access for configuration
-   * @private
-   * @param {Object} configuration - Configuration instance
-   * @param {string} userId - User ID
-   * @returns {Promise<boolean>} Whether user has read access
-   */
-  async #checkReadAccess(configuration, userId) {
-    // In production, implement proper access control
-    // For now, check basic visibility
-    if (configuration.accessControl.visibility === 'public') {
-      return true;
-    }
-
-    // Check if user is creator
-    if (configuration.metadata.createdBy.toString() === userId) {
-      return true;
-    }
-
-    // Check read roles
-    // In production, get user roles and check against configuration.accessControl.readRoles
     
-    return true; // Placeholder
-  }
-
-  /**
-   * Checks write access for configuration
-   * @private
-   * @param {Object} configuration - Configuration instance
-   * @param {string} userId - User ID
-   * @returns {Promise<boolean>} Whether user has write access
-   */
-  async #checkWriteAccess(configuration, userId) {
-    // Check if configuration is locked
-    if (configuration.status.locked) {
-      // Only the user who locked it can modify
-      return configuration.status.lockedBy?.toString() === userId;
-    }
-
-    // Check if user is creator
-    if (configuration.metadata.createdBy.toString() === userId) {
-      return true;
-    }
-
-    // Check write roles
-    // In production, get user roles and check against configuration.accessControl.writeRoles
-    
-    return true; // Placeholder
-  }
-
-  /**
-   * Parses import data based on format
-   * @private
-   * @param {string} data - Raw import data
-   * @param {string} format - Data format
-   * @returns {Promise<Object>} Parsed configuration
-   */
-  async #parseImportData(data, format) {
-    try {
-      switch (format) {
-        case ConfigurationService.EXPORT_FORMATS.JSON:
-          return JSON.parse(data);
-
-        case ConfigurationService.EXPORT_FORMATS.YAML:
-          return yaml.load(data);
-
-        case ConfigurationService.EXPORT_FORMATS.XML:
-          const parser = new xml2js.Parser({ explicitArray: false });
-          const result = await parser.parseStringPromise(data);
-          return this.#normalizeXMLImport(result.configuration || result);
-
-        case ConfigurationService.EXPORT_FORMATS.ENV:
-          return this.#parseEnvFormat(data);
-
-        default:
-          throw new AppError(`Unsupported import format: ${format}`, 400);
-      }
-    } catch (error) {
-      logger.error('Failed to parse import data', {
-        format,
-        error: error.message
-      });
-      // throw new AppError(`Failed to parse ${format} data: ${error.message}`, 400);
-    }
-  }
-
-  /**
-   * Normalizes XML import data
-   * @private
-   * @param {Object} xmlData - Parsed XML data
-   * @returns {Object} Normalized configuration
-   */
-  #normalizeXMLImport(xmlData) {
-    const normalized = {
-      name: xmlData.name || xmlData.$.name,
-      displayName: xmlData.displayName,
-      description: xmlData.description,
-      configurations: {}
-    };
-
-    // Extract configurations
-    const configs = xmlData.configurations || xmlData.configuration || xmlData;
-    
-    for (const [key, value] of Object.entries(configs)) {
-      if (key !== '$' && key !== 'name' && key !== 'displayName' && key !== 'description') {
-        normalized.configurations[key] = value;
-      }
-    }
-
-    return normalized;
-  }
-
-  /**
-   * Parses environment variable format
-   * @private
-   * @param {string} data - ENV format data
-   * @returns {Object} Parsed configuration
-   */
-  #parseEnvFormat(data) {
-    const lines = data.split('\n').filter(line => line.trim() && !line.startsWith('#'));
-    const configurations = {};
-
-    for (const line of lines) {
-      const [key, ...valueParts] = line.split('=');
-      if (key) {
-        const value = valueParts.join('=').trim();
-        configurations[key.trim()] = this.#parseEnvValue(value);
-      }
-    }
-
-    return {
-      name: 'env_import',
-      displayName: 'Environment Import',
-      configurations
-    };
-  }
-
-  /**
-   * Parses environment variable value
-   * @private
-   * @param {string} value - Raw value
-   * @returns {*} Parsed value
-   */
-  #parseEnvValue(value) {
-    // Remove quotes if present
-    if ((value.startsWith('"') && value.endsWith('"')) || 
-        (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-
-    // Try to parse as JSON
-    try {
-      return JSON.parse(value);
-    } catch {
-      // Check for boolean
-      if (value.toLowerCase() === 'true') return true;
-      if (value.toLowerCase() === 'false') return false;
-
-      // Check for number
-      if (/^-?\d+(\.\d+)?$/.test(value)) {
-        return parseFloat(value);
-      }
-
-      // Return as string
-      return value;
-    }
-  }
-
-  /**
-   * Detects value type
-   * @private
-   * @param {*} value - Value to check
-   * @returns {string} Detected type
-   */
-  #detectValueType(value) {
-    if (value === null || value === undefined) return 'string';
-    if (typeof value === 'boolean') return 'boolean';
-    if (typeof value === 'number') return 'number';
-    if (Array.isArray(value)) return 'array';
-    if (typeof value === 'object') return 'object';
-    if (typeof value === 'string') {
-      if (/^https?:\/\//.test(value)) return 'url';
-      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'email';
-    }
-    return 'string';
-  }
-
-  /**
-   * Gets default configurations
-   * @private
-   * @returns {Array} Default configuration items
-   */
-  #getDefaultConfigurations() {
-    return [
-      {
-        key: 'app.name',
-        value: 'InsightSerenity Platform',
-        type: 'string',
-        category: 'application',
-        description: 'Application name'
-      },
-      {
-        key: 'app.environment',
-        value: 'development',
-        type: 'string',
-        category: 'application',
-        description: 'Application environment',
-        allowedValues: ['development', 'staging', 'production']
-      },
-      {
-        key: 'app.debug',
-        value: false,
-        type: 'boolean',
-        category: 'application',
-        description: 'Debug mode'
-      },
-      {
-        key: 'api.timeout',
-        value: 30000,
-        type: 'number',
-        category: 'api',
-        description: 'API request timeout in milliseconds'
-      }
-    ];
-  }
-
-  /**
-   * Notifies configuration watchers
-   * @private
-   * @param {string} configId - Configuration ID
-   * @param {string} key - Changed key
-   * @param {*} value - New value
-   * @param {string} environment - Environment
-   * @returns {Promise<void>}
-   */
-  async #notifyWatchers(configId, key, value, environment) {
-    if (!this.#configWatchers.has(configId)) {
-      return;
-    }
-
-    const configWatchers = this.#configWatchers.get(configId);
-    
-    // Notify exact key watchers
-    if (configWatchers.has(key)) {
-      const watchers = configWatchers.get(key);
-      for (const [watcherId, callback] of watchers) {
-        try {
-          await callback({
-            configId,
-            key,
-            value,
-            environment,
-            timestamp: new Date()
-          });
-        } catch (error) {
-          logger.error('Error in configuration watcher callback', {
-            watcherId,
-            error: error.message
-          });
-        }
-      }
-    }
-
-    // Notify wildcard watchers
-    if (configWatchers.has('*')) {
-      const wildcardWatchers = configWatchers.get('*');
-      for (const [watcherId, callback] of wildcardWatchers) {
-        try {
-          await callback({
-            configId,
-            key,
-            value,
-            environment,
-            timestamp: new Date()
-          });
-        } catch (error) {
-          logger.error('Error in configuration wildcard watcher callback', {
-            watcherId,
-            error: error.message
-          });
-        }
-      }
-    }
+    return changes;
   }
 
   /**
@@ -1586,12 +1948,12 @@ class ConfigurationService {
    * @param {string} [configId] - Optional configuration ID
    * @returns {Promise<void>}
    */
-  async #clearConfigurationCache(configId) {
+  async clearConfigurationCache(configId) {
     try {
       if (configId) {
-        await this.#cacheService.delete(`config:*${configId}*`);
+        await this.cacheService.delete(`config:*${configId}*`);
       } else {
-        await this.#cacheService.delete('config:*');
+        await this.cacheService.delete('config:*');
       }
     } catch (error) {
       logger.error('Failed to clear configuration cache', {
@@ -1608,10 +1970,10 @@ class ConfigurationService {
    * @param {string} key - Configuration key
    * @returns {Promise<void>}
    */
-  async #clearValueCache(configId, key) {
+  async clearValueCache(configId, key) {
     try {
-      await this.#cacheService.delete(`${ConfigurationService.CACHE_KEYS.CONFIG_VALUES}:${configId}:${key}:*`);
-      await this.#cacheService.delete(`${ConfigurationService.CACHE_KEYS.CONFIG_BY_ID}:${configId}`);
+      await this.cacheService.delete(`${ConfigurationService.CACHE_KEYS.CONFIG_VALUES}:${configId}:${key}:*`);
+      await this.cacheService.delete(`${ConfigurationService.CACHE_KEYS.CONFIG_BY_ID}:${configId}`);
     } catch (error) {
       logger.error('Failed to clear value cache', {
         configId,

@@ -75,7 +75,7 @@ class ConnectionManager {
             'users', 'user_profiles', 'user_activities', 'login_history',
             'roles', 'permissions', 'organizations', 'organization_members',
             'organization_invitations', 'tenants', 'system_configurations',
-            'security_incidents', 'sessions'
+            'security_incidents', 'sessions', 'configuration_management'
           ]
         },
         shared: {
