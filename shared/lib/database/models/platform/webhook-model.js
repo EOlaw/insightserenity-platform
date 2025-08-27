@@ -1522,7 +1522,4 @@ webhookSchema.statics.getWebhookStatistics = async function(filters = {}) {
 // Create and export model
 const WebhookModel = BaseModel.createModel('Webhook', webhookSchema);
 
-module.exports = {
-  schema: webhookSchema,
-  model: WebhookModel
-};
+module.exports = WebhookModel;

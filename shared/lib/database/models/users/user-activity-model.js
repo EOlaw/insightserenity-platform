@@ -786,7 +786,4 @@ userActivitySchema.statics.cleanupOldActivities = async function(retentionDays =
 // Create and export model
 const UserActivityModel = BaseModel.createModel('UserActivity', userActivitySchema);
 
-module.exports = {
-  schema: userActivitySchema,
-  model: UserActivityModel
-};
+module.exports = UserActivityModel;

@@ -1016,7 +1016,4 @@ subscriptionPlanSchema.statics.comparePlans = async function(planIds) {
 // Create and export model
 const SubscriptionPlanModel = BaseModel.createModel('SubscriptionPlan', subscriptionPlanSchema);
 
-module.exports = {
-  schema: subscriptionPlanSchema,
-  model: SubscriptionPlanModel
-};
+module.exports = SubscriptionPlanModel;

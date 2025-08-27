@@ -1103,7 +1103,4 @@ auditExportSchema.statics.cleanupExpiredExports = async function() {
 // Create and export model
 const AuditExportModel = BaseModel.createModel('AuditExport', auditExportSchema);
 
-module.exports = {
-  schema: auditExportSchema,
-  model: AuditExportModel
-};
+module.exports = AuditExportModel;

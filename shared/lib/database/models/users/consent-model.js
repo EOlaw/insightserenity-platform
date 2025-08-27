@@ -217,6 +217,6 @@ consentSchema.statics.hasValidConsent = async function(userId, type) {
 };
 
 // Create and export model
-const Consent = BaseModel.createModel('Consent', consentSchema);
+const ConsentModel = BaseModel.createModel('Consent', consentSchema);
 
-module.exports = Consent;
+module.exports = ConsentModel;

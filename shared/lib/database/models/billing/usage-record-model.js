@@ -1403,7 +1403,4 @@ usageRecordSchema.statics.generateBillingReport = async function(organizationId,
 // Create and export model
 const UsageRecordModel = BaseModel.createModel('UsageRecord', usageRecordSchema);
 
-module.exports = {
-  schema: usageRecordSchema,
-  model: UsageRecordModel
-};
+module.exports = UsageRecordModel;

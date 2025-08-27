@@ -1058,7 +1058,4 @@ paymentSchema.statics.getPaymentMetrics = async function(filters = {}) {
 // Create and export model
 const PaymentModel = BaseModel.createModel('Payment', paymentSchema);
 
-module.exports = {
-  schema: paymentSchema,
-  model: PaymentModel
-};
+module.exports = PaymentModel;

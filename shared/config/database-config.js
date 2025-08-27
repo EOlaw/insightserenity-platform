@@ -61,7 +61,7 @@ const databaseConfig = {
     tlsAllowInvalidHostnames: parseBoolean(process.env.DB_TLS_ALLOW_INVALID_HOSTNAMES, false),
     
     // Buffer settings - Enhanced for large operations
-    bufferMaxEntries: parseNumber(process.env.DB_BUFFER_MAX_ENTRIES, 0), // Disable buffering
+    // bufferMaxEntries: parseNumber(process.env.DB_BUFFER_MAX_ENTRIES, 0), // Disable buffering
     bufferCommands: parseBoolean(process.env.DB_BUFFER_COMMANDS, false),
     
     // Family preference - IPv4 preferred for stability
@@ -71,8 +71,8 @@ const databaseConfig = {
     monitorCommands: parseBoolean(process.env.DB_MONITOR_COMMANDS, false),
     
     // Cloud-specific optimizations
-    useNewUrlParser: true, // Legacy but helpful for cloud compatibility
-    useUnifiedTopology: true, // Legacy but helpful for cloud compatibility
+    // useNewUrlParser: true, // Legacy but helpful for cloud compatibility
+    // useUnifiedTopology: true, // Legacy but helpful for cloud compatibility
     
     // Connection event settings
     autoCreate: parseBoolean(process.env.DB_AUTO_CREATE, true),

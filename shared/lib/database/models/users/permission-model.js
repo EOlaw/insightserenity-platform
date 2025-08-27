@@ -666,7 +666,4 @@ permissionSchema.statics.seedDefaultPermissions = async function() {
 // Create and export model
 const PermissionModel = BaseModel.createModel('Permission', permissionSchema);
 
-module.exports = {
-  schema: permissionSchema,
-  model: PermissionModel
-};
+module.exports = PermissionModel;

@@ -278,6 +278,6 @@ processingActivitySchema.statics.generateReport = async function(organizationId,
 };
 
 // Create and export model
-const ProcessingActivity = BaseModel.createModel('ProcessingActivity', processingActivitySchema);
+const ProcessingActivityModel = BaseModel.createModel('ProcessingActivity', processingActivitySchema);
 
-module.exports = ProcessingActivity;
+module.exports = ProcessingActivityModel;

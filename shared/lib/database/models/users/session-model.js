@@ -919,7 +919,4 @@ sessionSchema.statics.cleanupExpiredSessions = async function() {
 // Create and export model
 const SessionModel = BaseModel.createModel('Session', sessionSchema);
 
-module.exports = {
-  schema: sessionSchema,
-  model: SessionModel
-};
+module.exports = SessionModel;

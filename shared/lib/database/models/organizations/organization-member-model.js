@@ -1451,7 +1451,4 @@ organizationMemberSchema.statics.getInactiveMembers = async function(organizatio
 // Create and export model
 const OrganizationMemberModel = BaseModel.createModel('OrganizationMember', organizationMemberSchema);
 
-module.exports = {
-  schema: organizationMemberSchema,
-  model: OrganizationMemberModel
-};
+module.exports = OrganizationMemberModel;

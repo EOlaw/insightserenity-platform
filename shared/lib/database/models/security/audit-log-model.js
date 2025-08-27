@@ -900,7 +900,4 @@ auditLogSchema.statics.cleanupExpiredLogs = async function(batchSize = 1000) {
 // Create and export model
 const AuditLogModel = BaseModel.createModel('AuditLog', auditLogSchema);
 
-module.exports = {
-  schema: auditLogSchema,
-  model: AuditLogModel
-};
+module.exports = AuditLogModel;

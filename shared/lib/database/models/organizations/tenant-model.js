@@ -1462,7 +1462,4 @@ tenantSchema.statics.performHealthChecks = async function() {
 // Create and export model
 const TenantModel = BaseModel.createModel('Tenant', tenantSchema);
 
-module.exports = {
-  schema: tenantSchema,
-  model: TenantModel
-};
+module.exports = TenantModel;

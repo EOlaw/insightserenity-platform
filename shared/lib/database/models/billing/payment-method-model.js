@@ -1151,7 +1151,4 @@ paymentMethodSchema.statics.getUsageStatistics = async function(paymentMethodId)
 // Create and export model
 const PaymentMethodModel = BaseModel.createModel('PaymentMethod', paymentMethodSchema);
 
-module.exports = {
-  schema: paymentMethodSchema,
-  model: PaymentMethodModel
-};
+module.exports = PaymentMethodModel;

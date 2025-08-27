@@ -1201,7 +1201,4 @@ creditTransactionSchema.statics.getCreditMetrics = async function(filters = {}) 
 // Create and export model
 const CreditTransactionModel = BaseModel.createModel('CreditTransaction', creditTransactionSchema);
 
-module.exports = {
-  schema: creditTransactionSchema,
-  model: CreditTransactionModel
-};
+module.exports = CreditTransactionModel;

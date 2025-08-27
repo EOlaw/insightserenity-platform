@@ -1073,7 +1073,4 @@ passkeySchema.statics.getSecurityReport = async function(organizationId) {
 // Create and export model
 const PasskeyModel = BaseModel.createModel('Passkey', passkeySchema);
 
-module.exports = {
-  schema: passkeySchema,
-  model: PasskeyModel
-};
+module.exports = PasskeyModel;

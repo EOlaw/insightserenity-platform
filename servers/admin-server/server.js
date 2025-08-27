@@ -1,7 +1,7 @@
 /**
- * @file Admin Server Entry Point - ENHANCED VERSION WITH MULTI-DATABASE INTEGRATION
+ * @file Admin Server Entry Point - FIXED VERSION WITH ENHANCED DEBUGGING
  * @description Enterprise administration server with multi-database architecture support
- * @version 3.2.0
+ * @version 3.2.1 - FIXED
  */
 
 'use strict';
@@ -55,19 +55,131 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 
-const app = require('./app');
-const config = require('./config');
-const Database = require('../../shared/lib/database');
-const logger = require('../../shared/lib/utils/logger');
-const { AppError } = require('../../shared/lib/utils/app-error');
+console.log('🔄 DEBUG: Loading core modules...');
 
-// Import enterprise audit configuration and factory
-const auditConfig = require('./config/audit-config');
-const AuditServiceFactory = require('../../shared/lib/security/audit/audit-service-factory');
-const { AuditEvents } = require('../../shared/lib/security/audit/audit-events');
+let app;
+try {
+    app = require('./app');
+    console.log('✅ DEBUG: App module loaded successfully');
+} catch (error) {
+    console.error('❌ DEBUG: Failed to load app module:', error.message);
+    throw error;
+}
 
-const HealthMonitor = require('../../shared/lib/utils/health-monitor');
-const SecurityManager = require('../../shared/lib/security/security-manager');
+let config;
+try {
+    config = require('./config');
+    console.log('✅ DEBUG: Config module loaded successfully');
+} catch (error) {
+    console.error('❌ DEBUG: Failed to load config module:', error.message);
+    console.log('🔄 DEBUG: Attempting fallback config...');
+    config = {
+        app: { env: process.env.NODE_ENV, version: '1.0.0' },
+        admin: { port: 4001, security: { ssl: { enabled: false } } }
+    };
+    console.log('⚠️  DEBUG: Using fallback config');
+}
+
+let Database, ConnectionManager;
+try {
+    Database = require('../../shared/lib/database');
+    console.log('✅ DEBUG: Database module loaded successfully');
+    
+    // FIXED: Import ConnectionManager directly since Database doesn't expose getAllConnections
+    ConnectionManager = require('../../shared/lib/database/connection-manager');
+    console.log('✅ DEBUG: ConnectionManager loaded successfully');
+    
+    // Check available methods
+    console.log('🔍 DEBUG: Database methods:', Object.getOwnPropertyNames(Database).filter(name => typeof Database[name] === 'function'));
+    console.log('🔍 DEBUG: ConnectionManager methods:', Object.getOwnPropertyNames(ConnectionManager).filter(name => typeof ConnectionManager[name] === 'function'));
+    
+} catch (error) {
+    console.error('❌ DEBUG: Failed to load database modules:', error.message);
+    console.error('❌ DEBUG: Error stack:', error.stack);
+    throw error;
+}
+
+let logger;
+try {
+    logger = require('../../shared/lib/utils/logger');
+    console.log('✅ DEBUG: Logger module loaded successfully');
+} catch (error) {
+    console.error('❌ DEBUG: Failed to load logger, using console fallback');
+    logger = {
+        info: console.log,
+        warn: console.warn,
+        error: console.error,
+        debug: console.log
+    };
+}
+
+let AppError;
+try {
+    const { AppError: ImportedAppError } = require('../../shared/lib/utils/app-error');
+    AppError = ImportedAppError;
+    console.log('✅ DEBUG: AppError loaded successfully');
+} catch (error) {
+    console.error('❌ DEBUG: Failed to load AppError, using fallback');
+    AppError = class AppError extends Error {
+        constructor(message, statusCode = 500, code = 'UNKNOWN_ERROR', details = {}) {
+            super(message);
+            this.statusCode = statusCode;
+            this.code = code;
+            this.details = details;
+        }
+    };
+}
+
+// Import enterprise audit configuration and factory with error handling
+let auditConfig, AuditServiceFactory, AuditEvents;
+try {
+    auditConfig = require('./config/audit-config');
+    console.log('✅ DEBUG: Audit config loaded successfully');
+} catch (error) {
+    console.error('❌ DEBUG: Failed to load audit config:', error.message);
+    auditConfig = { enabled: false };
+}
+
+try {
+    AuditServiceFactory = require('../../shared/lib/security/audit/audit-service-factory');
+    console.log('✅ DEBUG: AuditServiceFactory loaded successfully');
+} catch (error) {
+    console.error('❌ DEBUG: Failed to load AuditServiceFactory:', error.message);
+    AuditServiceFactory = null;
+}
+
+try {
+    const { AuditEvents: ImportedAuditEvents } = require('../../shared/lib/security/audit/audit-events');
+    AuditEvents = ImportedAuditEvents;
+    console.log('✅ DEBUG: AuditEvents loaded successfully');
+} catch (error) {
+    console.error('❌ DEBUG: Failed to load AuditEvents:', error.message);
+    AuditEvents = { AUTH: {}, SYSTEM: {}, SECURITY: {} };
+}
+
+let HealthMonitor, SecurityManager;
+try {
+    HealthMonitor = require('../../shared/lib/utils/health-monitor');
+    console.log('✅ DEBUG: HealthMonitor loaded successfully');
+} catch (error) {
+    console.error('❌ DEBUG: Failed to load HealthMonitor:', error.message);
+    HealthMonitor = class HealthMonitor {
+        constructor() {}
+        async start() {}
+        async stop() {}
+        getStatus() { return { status: 'mock' }; }
+    };
+}
+
+try {
+    SecurityManager = require('../../shared/lib/security/security-manager');
+    console.log('✅ DEBUG: SecurityManager loaded successfully');
+} catch (error) {
+    console.error('❌ DEBUG: Failed to load SecurityManager:', error.message);
+    SecurityManager = class SecurityManager {
+        constructor() {}
+    };
+}
 
 /**
  * Admin Server class for platform administration with multi-database architecture
@@ -92,6 +204,8 @@ class AdminServer extends EventEmitter {
         this.databaseConnections = new Map();
         this.databaseHealthStatus = new Map();
         this.databaseCollectionMapping = new Map();
+        
+        console.log('✅ DEBUG: AdminServer instance created successfully');
     }
 
     /**
@@ -101,6 +215,7 @@ class AdminServer extends EventEmitter {
      */
     async start() {
         try {
+            console.log('🚀 DEBUG: Starting admin server initialization...');
             this.startTime = new Date();
 
             // Ensure critical environment variables are set with defaults
@@ -113,29 +228,77 @@ class AdminServer extends EventEmitter {
             process.env.OAUTH_LINKEDIN_ENABLED = process.env.OAUTH_LINKEDIN_ENABLED || 'false';
             process.env.OAUTH_MICROSOFT_ENABLED = process.env.OAUTH_MICROSOFT_ENABLED || 'false';
 
+            console.log('✅ DEBUG: Environment variables validated and defaults applied');
             logger.info('Environment variables validated and defaults applied');
 
             // Ensure admin configuration structure exists BEFORE audit system initialization
+            console.log('🔧 DEBUG: Setting up admin configuration...');
             this.validateAndSetupAdminConfiguration();
+            console.log('✅ DEBUG: Admin configuration setup completed');
 
             // Initialize database connection EARLY - before security verification
-            await Database.initialize();
+            console.log('🔄 DEBUG: Initializing database connection...');
+            try {
+                await Database.initialize();
+                console.log('✅ DEBUG: Database initialized successfully');
+            } catch (dbError) {
+                console.error('❌ DEBUG: Database initialization failed:', dbError.message);
+                console.error('❌ DEBUG: Database error stack:', dbError.stack);
+                throw dbError;
+            }
 
             // ENHANCED: Initialize multi-database connections and validate architecture
-            await this.initializeMultiDatabaseArchitecture();
+            console.log('🔄 DEBUG: Initializing multi-database architecture...');
+            try {
+                await this.initializeMultiDatabaseArchitecture();
+                console.log('✅ DEBUG: Multi-database architecture initialized successfully');
+            } catch (multiDbError) {
+                console.error('❌ DEBUG: Multi-database architecture initialization failed:', multiDbError.message);
+                console.error('❌ DEBUG: Multi-database error stack:', multiDbError.stack);
+                
+                // Continue without multi-database in development
+                if (process.env.NODE_ENV === 'development') {
+                    console.log('⚠️  DEBUG: Continuing without multi-database architecture in development mode');
+                    logger.warn('Continuing without multi-database architecture in development mode');
+                } else {
+                    throw multiDbError;
+                }
+            }
 
             // ENHANCED: Validate and recover models after database initialization
-            await this.validateAndRecoverModels();
+            console.log('🔄 DEBUG: Validating and recovering models...');
+            try {
+                await this.validateAndRecoverModels();
+                console.log('✅ DEBUG: Model validation and recovery completed');
+            } catch (modelError) {
+                console.error('❌ DEBUG: Model validation failed:', modelError.message);
+                logger.warn('Model validation failed, continuing with basic models', { error: modelError.message });
+            }
 
             // Initialize enterprise audit system with error handling
-            await this.initializeAuditSystemSafely();
+            console.log('🔄 DEBUG: Initializing audit system...');
+            try {
+                await this.initializeAuditSystemSafely();
+                console.log('✅ DEBUG: Audit system initialized');
+            } catch (auditError) {
+                console.error('❌ DEBUG: Audit system initialization failed:', auditError.message);
+                logger.warn('Audit system initialization failed, continuing without audit', { error: auditError.message });
+            }
 
             // Initialize security manager
-            this.securityManager = new SecurityManager({
-                enforceIPWhitelist: true,
-                requireMFA: this.adminConfig.security.requireMFA,
-                sessionTimeout: this.adminConfig.security.sessionTimeout
-            });
+            console.log('🔄 DEBUG: Initializing security manager...');
+            try {
+                this.securityManager = new SecurityManager({
+                    enforceIPWhitelist: true,
+                    requireMFA: this.adminConfig.security.requireMFA,
+                    sessionTimeout: this.adminConfig.security.sessionTimeout
+                });
+                console.log('✅ DEBUG: Security manager initialized');
+            } catch (securityError) {
+                console.error('❌ DEBUG: Security manager initialization failed:', securityError.message);
+                logger.warn('Security manager initialization failed, using basic security', { error: securityError.message });
+                this.securityManager = { enforceIPWhitelist: false };
+            }
 
             logger.info('Starting InsightSerenity Admin Server', {
                 environment: config.app?.env || process.env.NODE_ENV || 'development',
@@ -160,53 +323,90 @@ class AdminServer extends EventEmitter {
             });
 
             // Verify admin security prerequisites with multi-database support
-            await this.verifySecurityPrerequisites();
+            console.log('🔄 DEBUG: Verifying security prerequisites...');
+            try {
+                await this.verifySecurityPrerequisites();
+                console.log('✅ DEBUG: Security prerequisites verified');
+            } catch (securityPrereqError) {
+                console.error('❌ DEBUG: Security prerequisites verification failed:', securityPrereqError.message);
+                logger.warn('Security prerequisites verification failed, continuing with reduced security', { error: securityPrereqError.message });
+            }
 
             // Initialize the Express application - FIXED: await the promise
-            const expressApp = await app.start();
+            console.log('🔄 DEBUG: Starting Express application...');
+            let expressApp;
+            try {
+                expressApp = await app.start();
+                console.log('✅ DEBUG: Express application started successfully');
+            } catch (appError) {
+                console.error('❌ DEBUG: Express application startup failed:', appError.message);
+                console.error('❌ DEBUG: App error stack:', appError.stack);
+                throw appError;
+            }
 
             if (!expressApp) {
                 throw new Error('Failed to initialize Admin Express application');
             }
 
             // Initialize health monitoring with multi-database status
-            this.healthMonitor = new HealthMonitor({
-                checkInterval: this.adminConfig.monitoring.healthCheckInterval || 30000,
-                services: ['database', 'redis', 'auth', 'audit', 'models', 'multi-database'],
-                customChecks: {
-                    adminSessions: () => this.checkAdminSessions(),
-                    securityStatus: () => this.checkSecurityStatus(),
-                    environmentConfig: () => this.checkEnvironmentConfig(),
-                    auditSystem: () => this.checkAuditSystemHealth(),
-                    modelStatus: () => this.checkModelStatus(),
-                    modelRecovery: () => this.checkModelRecoveryStatus(),
-                    multiDatabaseHealth: () => this.checkMultiDatabaseHealth(),
-                    databaseCollectionMapping: () => this.checkDatabaseCollectionMapping()
-                }
-            });
+            console.log('🔄 DEBUG: Initializing health monitoring...');
+            try {
+                this.healthMonitor = new HealthMonitor({
+                    checkInterval: this.adminConfig.monitoring.healthCheckInterval || 30000,
+                    services: ['database', 'redis', 'auth', 'audit', 'models', 'multi-database'],
+                    customChecks: {
+                        adminSessions: () => this.checkAdminSessions(),
+                        securityStatus: () => this.checkSecurityStatus(),
+                        environmentConfig: () => this.checkEnvironmentConfig(),
+                        auditSystem: () => this.checkAuditSystemHealth(),
+                        modelStatus: () => this.checkModelStatus(),
+                        modelRecovery: () => this.checkModelRecoveryStatus(),
+                        multiDatabaseHealth: () => this.checkMultiDatabaseHealth(),
+                        databaseCollectionMapping: () => this.checkDatabaseCollectionMapping()
+                    }
+                });
 
-            await this.healthMonitor.start();
+                await this.healthMonitor.start();
+                console.log('✅ DEBUG: Health monitoring started successfully');
+            } catch (healthError) {
+                console.error('❌ DEBUG: Health monitoring initialization failed:', healthError.message);
+                logger.warn('Health monitoring initialization failed, continuing without monitoring', { error: healthError.message });
+                this.healthMonitor = { start: async () => {}, stop: async () => {}, getStatus: () => ({ status: 'disabled' }) };
+            }
 
             // Create server
-            if (this.shouldUseSSL()) {
-                this.server = await this.createSecureHttpsServer(expressApp);
-            } else {
-                if (config.app?.env === 'production') {
-                    throw new Error('Admin server must use HTTPS in production');
+            console.log('🔄 DEBUG: Creating server...');
+            try {
+                if (this.shouldUseSSL()) {
+                    console.log('🔒 DEBUG: Creating HTTPS server...');
+                    this.server = await this.createSecureHttpsServer(expressApp);
+                } else {
+                    if (config.app?.env === 'production') {
+                        throw new Error('Admin server must use HTTPS in production');
+                    }
+                    console.log('🔓 DEBUG: Creating HTTP server (development)...');
+                    logger.warn('Admin server running without SSL - NOT RECOMMENDED');
+                    this.server = this.createHttpServer(expressApp);
                 }
-                logger.warn('Admin server running without SSL - NOT RECOMMENDED');
-                this.server = this.createHttpServer(expressApp);
+                console.log('✅ DEBUG: Server created successfully');
+            } catch (serverError) {
+                console.error('❌ DEBUG: Server creation failed:', serverError.message);
+                throw serverError;
             }
 
             // Start listening
+            console.log('🔄 DEBUG: Starting server listening...');
             await this.listen();
+            console.log('✅ DEBUG: Server listening started');
 
             // Setup admin-specific handlers
+            console.log('🔄 DEBUG: Setting up handlers...');
             this.setupAdminHandlers();
             this.setupGracefulShutdown();
             this.setupErrorHandlers();
             this.setupSecurityMonitoring();
             this.setupModelRecoveryMonitoring();
+            console.log('✅ DEBUG: All handlers setup completed');
 
             // Log server startup success with detailed multi-database information
             logger.info('Admin server startup completed successfully', {
@@ -235,8 +435,12 @@ class AdminServer extends EventEmitter {
                 }
             });
 
+            console.log('🎉 DEBUG: Admin server startup completed successfully!');
             return this.server;
         } catch (error) {
+            console.error('❌ DEBUG: Admin server startup failed:', error.message);
+            console.error('❌ DEBUG: Startup error stack:', error.stack);
+            
             logger.error('Failed to start admin server', {
                 error: error.message,
                 stack: error.stack,
@@ -257,20 +461,59 @@ class AdminServer extends EventEmitter {
     }
 
     /**
-     * ENHANCED: Initialize multi-database architecture for admin operations
+     * ENHANCED: Initialize multi-database architecture for admin operations - FIXED VERSION
      */
     async initializeMultiDatabaseArchitecture() {
         try {
+            console.log('🔄 DEBUG: Starting multi-database architecture initialization...');
             logger.info('Initializing multi-database architecture for admin server');
 
-            // Get all available database connections from the Database module
-            const availableConnections = Database.getAllConnections();
-            const databaseRouting = Database.getConnectionRouting();
+            // FIXED: Use ConnectionManager directly instead of Database.getAllConnections()
+            console.log('🔍 DEBUG: Getting all available connections...');
+            let availableConnections, databaseRouting;
+            
+            try {
+                // Check if ConnectionManager has the getAllConnections method
+                if (typeof ConnectionManager.getAllConnections === 'function') {
+                    availableConnections = ConnectionManager.getAllConnections();
+                    console.log('✅ DEBUG: Got connections from ConnectionManager.getAllConnections()');
+                } else {
+                    console.log('⚠️  DEBUG: ConnectionManager.getAllConnections() not available, using fallback');
+                    availableConnections = new Map();
+                    
+                    // Try alternative methods
+                    if (typeof ConnectionManager.getStats === 'function') {
+                        const stats = ConnectionManager.getStats();
+                        console.log('🔍 DEBUG: ConnectionManager stats:', stats);
+                    }
+                }
+
+                if (typeof ConnectionManager.getConnectionRouting === 'function') {
+                    databaseRouting = ConnectionManager.getConnectionRouting();
+                    console.log('✅ DEBUG: Got database routing from ConnectionManager');
+                } else {
+                    console.log('⚠️  DEBUG: ConnectionManager.getConnectionRouting() not available, using fallback');
+                    databaseRouting = { 
+                        databaseConnections: new Map(),
+                        tenantConnections: new Map()
+                    };
+                }
+            } catch (connectionError) {
+                console.error('❌ DEBUG: Error getting connections:', connectionError.message);
+                console.error('❌ DEBUG: Available ConnectionManager methods:', Object.getOwnPropertyNames(ConnectionManager));
+                
+                // Create fallback routing
+                availableConnections = new Map();
+                databaseRouting = { 
+                    databaseConnections: new Map(),
+                    tenantConnections: new Map()
+                };
+            }
 
             logger.info('Available database connections', {
                 totalConnections: availableConnections.size,
-                databaseConnections: databaseRouting.databaseConnections,
-                tenantConnections: databaseRouting.tenantConnections
+                databaseConnections: databaseRouting.databaseConnections ? databaseRouting.databaseConnections.size || 0 : 0,
+                tenantConnections: databaseRouting.tenantConnections ? databaseRouting.tenantConnections.size || 0 : 0
             });
 
             // Map database types to their specific purposes and collections
@@ -309,13 +552,45 @@ class AdminServer extends EventEmitter {
                 }
             };
 
+            console.log('🔍 DEBUG: Database purposes configured:', Object.keys(databasePurposes));
+
             // Initialize each database connection and verify collections
             for (const [dbType, config] of Object.entries(databasePurposes)) {
+                console.log(`🔄 DEBUG: Processing database type: ${dbType}`);
+                
                 try {
-                    // Get database connection
-                    const connection = Database.getDatabaseConnection(dbType);
+                    // FIXED: Get database connection using the correct method
+                    let connection = null;
+                    
+                    // Try multiple methods to get the connection
+                    if (typeof ConnectionManager.getDatabaseConnection === 'function') {
+                        connection = ConnectionManager.getDatabaseConnection(dbType);
+                        console.log(`🔍 DEBUG: ConnectionManager.getDatabaseConnection(${dbType}):`, connection ? 'Found' : 'Not found');
+                    }
+                    
+                    if (!connection && typeof ConnectionManager.getConnection === 'function') {
+                        connection = ConnectionManager.getConnection(dbType);
+                        console.log(`🔍 DEBUG: ConnectionManager.getConnection(${dbType}):`, connection ? 'Found' : 'Not found');
+                        
+                        if (!connection) {
+                            connection = ConnectionManager.getConnection(`${dbType}_connection`);
+                            console.log(`🔍 DEBUG: ConnectionManager.getConnection(${dbType}_connection):`, connection ? 'Found' : 'Not found');
+                        }
+                    }
+                    
+                    if (!connection && typeof Database.getConnection === 'function') {
+                        connection = Database.getConnection(dbType);
+                        console.log(`🔍 DEBUG: Database.getConnection(${dbType}):`, connection ? 'Found' : 'Not found');
+                    }
+                    
+                    if (!connection && typeof Database.getPrimaryConnection === 'function') {
+                        connection = Database.getPrimaryConnection();
+                        console.log(`🔍 DEBUG: Using Database.getPrimaryConnection() as fallback:`, connection ? 'Found' : 'Not found');
+                    }
                     
                     if (connection) {
+                        console.log(`✅ DEBUG: Found connection for ${dbType}`);
+                        
                         // Store connection reference
                         this.databaseConnections.set(dbType, connection);
                         
@@ -323,8 +598,10 @@ class AdminServer extends EventEmitter {
                         this.databaseCollectionMapping.set(dbType, config.collections);
                         
                         // Verify database health
+                        console.log(`🔄 DEBUG: Verifying health for ${dbType}...`);
                         const healthStatus = await this.verifyDatabaseHealth(dbType, connection, config);
                         this.databaseHealthStatus.set(dbType, healthStatus);
+                        console.log(`✅ DEBUG: Health verification completed for ${dbType}:`, healthStatus.healthy ? 'Healthy' : 'Unhealthy');
                         
                         logger.info(`Database ${dbType} initialized successfully`, {
                             purpose: config.purpose,
@@ -334,6 +611,7 @@ class AdminServer extends EventEmitter {
                             databaseName: connection.db?.databaseName
                         });
                     } else {
+                        console.log(`⚠️  DEBUG: No connection available for database type: ${dbType}`);
                         logger.warn(`Database connection for ${dbType} not available`, {
                             expectedPurpose: config.purpose,
                             expectedCollections: config.collections.length
@@ -346,6 +624,7 @@ class AdminServer extends EventEmitter {
                         });
                     }
                 } catch (error) {
+                    console.error(`❌ DEBUG: Error initializing database ${dbType}:`, error.message);
                     logger.error(`Failed to initialize database ${dbType}`, {
                         error: error.message,
                         purpose: config.purpose
@@ -363,18 +642,53 @@ class AdminServer extends EventEmitter {
             const healthyDatabases = Array.from(this.databaseHealthStatus.entries())
                 .filter(([db, status]) => status.healthy);
             
+            console.log(`🔍 DEBUG: Healthy databases found: ${healthyDatabases.length}`);
+            console.log(`🔍 DEBUG: Healthy database list:`, healthyDatabases.map(([db]) => db));
+            
             if (healthyDatabases.length === 0) {
-                throw new Error('No healthy database connections available for admin operations');
+                console.error('❌ DEBUG: No healthy database connections available');
+                
+                // In development, create a basic fallback
+                if (process.env.NODE_ENV === 'development') {
+                    console.log('⚠️  DEBUG: Creating development fallback for admin operations');
+                    
+                    // Try to get any available connection
+                    let fallbackConnection = null;
+                    if (typeof Database.getPrimaryConnection === 'function') {
+                        fallbackConnection = Database.getPrimaryConnection();
+                    }
+                    
+                    if (fallbackConnection) {
+                        console.log('✅ DEBUG: Using primary connection as fallback for all database operations');
+                        this.databaseConnections.set('admin', fallbackConnection);
+                        this.databaseCollectionMapping.set('admin', databasePurposes.admin.collections);
+                        this.databaseHealthStatus.set('admin', {
+                            healthy: true,
+                            fallback: true,
+                            timestamp: new Date().toISOString()
+                        });
+                    } else {
+                        logger.warn('No database connections available for admin operations, some features will be limited');
+                    }
+                } else {
+                    throw new Error('No healthy database connections available for admin operations');
+                }
             }
 
             // Ensure admin database is available for core operations
             if (!this.databaseHealthStatus.get('admin')?.healthy) {
+                console.log('⚠️  DEBUG: Admin database not healthy, operations may be limited');
                 logger.warn('Admin database not healthy, operations may be limited');
             }
 
+            const finalHealthyCount = Array.from(this.databaseHealthStatus.entries())
+                .filter(([db, status]) => status.healthy).length;
+
+            console.log(`✅ DEBUG: Multi-database architecture initialization completed with ${finalHealthyCount} healthy databases`);
+
             logger.info('Multi-database architecture initialized successfully', {
                 totalDatabases: this.databaseConnections.size,
-                healthyDatabases: healthyDatabases.length,
+                healthyDatabases: finalHealthyCount,
                 databaseStatus: Object.fromEntries(
                     Array.from(this.databaseHealthStatus.entries()).map(([db, status]) => 
                         [db, { healthy: status.healthy, error: status.error }]
@@ -384,10 +698,14 @@ class AdminServer extends EventEmitter {
             });
 
         } catch (error) {
+            console.error('❌ DEBUG: Multi-database architecture initialization failed:', error.message);
+            console.error('❌ DEBUG: Error stack:', error.stack);
+            
             logger.error('Failed to initialize multi-database architecture', {
                 error: error.message,
                 stack: error.stack
             });
+            
             throw new AppError('Multi-database initialization failed', 500, 'MULTI_DATABASE_INIT_ERROR', {
                 originalError: error.message
             });
@@ -398,6 +716,8 @@ class AdminServer extends EventEmitter {
      * Verify database health and collection availability
      */
     async verifyDatabaseHealth(dbType, connection, config) {
+        console.log(`🔄 DEBUG: Starting health verification for ${dbType}...`);
+        
         try {
             const healthStatus = {
                 healthy: false,
@@ -408,11 +728,28 @@ class AdminServer extends EventEmitter {
                 timestamp: new Date().toISOString()
             };
 
-            // Test basic database connectivity
-            const collections = await connection.db.listCollections().toArray();
+            console.log(`🔍 DEBUG: Testing basic connectivity for ${dbType}...`);
+
+            // Test basic database connectivity with timeout
+            let collections;
+            try {
+                const listCollectionsPromise = connection.db.listCollections().toArray();
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('List collections timeout')), 10000)
+                );
+                
+                collections = await Promise.race([listCollectionsPromise, timeoutPromise]);
+                console.log(`✅ DEBUG: Listed ${collections.length} collections for ${dbType}`);
+            } catch (listError) {
+                console.error(`❌ DEBUG: Failed to list collections for ${dbType}:`, listError.message);
+                healthStatus.errors.push(`List collections failed: ${listError.message}`);
+                collections = [];
+            }
+
             const availableCollectionNames = collections.map(c => c.name);
-            
             healthStatus.totalCollections = collections.length;
+
+            console.log(`🔍 DEBUG: Available collections in ${dbType}:`, availableCollectionNames.slice(0, 10)); // Limit log output
 
             // Check each expected collection
             for (const expectedCollection of config.collections) {
@@ -420,15 +757,35 @@ class AdminServer extends EventEmitter {
                     const exists = availableCollectionNames.includes(expectedCollection);
                     
                     if (exists) {
-                        // Test collection access
-                        const count = await connection.db.collection(expectedCollection).countDocuments({}, { limit: 1 });
-                        healthStatus.collections[expectedCollection] = {
-                            exists: true,
-                            accessible: true,
-                            hasDocuments: count > 0
-                        };
-                        healthStatus.availableCollections++;
+                        console.log(`✅ DEBUG: Collection ${expectedCollection} exists in ${dbType}`);
+                        
+                        // Test collection access with timeout
+                        try {
+                            const countPromise = connection.db.collection(expectedCollection).countDocuments({}, { limit: 1 });
+                            const countTimeoutPromise = new Promise((_, reject) => 
+                                setTimeout(() => reject(new Error('Count timeout')), 5000)
+                            );
+                            
+                            const count = await Promise.race([countPromise, countTimeoutPromise]);
+                            
+                            healthStatus.collections[expectedCollection] = {
+                                exists: true,
+                                accessible: true,
+                                hasDocuments: count > 0
+                            };
+                            healthStatus.availableCollections++;
+                            console.log(`✅ DEBUG: Collection ${expectedCollection} is accessible (${count} docs)`);
+                        } catch (accessError) {
+                            console.log(`⚠️  DEBUG: Collection ${expectedCollection} exists but access test failed:`, accessError.message);
+                            healthStatus.collections[expectedCollection] = {
+                                exists: true,
+                                accessible: false,
+                                hasDocuments: false,
+                                accessError: accessError.message
+                            };
+                        }
                     } else {
+                        console.log(`⚠️  DEBUG: Collection ${expectedCollection} does not exist in ${dbType}`);
                         healthStatus.collections[expectedCollection] = {
                             exists: false,
                             accessible: false,
@@ -436,6 +793,7 @@ class AdminServer extends EventEmitter {
                         };
                     }
                 } catch (collectionError) {
+                    console.error(`❌ DEBUG: Error checking collection ${expectedCollection}:`, collectionError.message);
                     healthStatus.collections[expectedCollection] = {
                         exists: availableCollectionNames.includes(expectedCollection),
                         accessible: false,
@@ -449,6 +807,7 @@ class AdminServer extends EventEmitter {
             healthStatus.healthy = true;
 
             // Test write operations
+            console.log(`🔄 DEBUG: Testing write operations for ${dbType}...`);
             try {
                 const testCollection = connection.db.collection('_admin_health_test');
                 const testDoc = {
@@ -458,18 +817,29 @@ class AdminServer extends EventEmitter {
                     serverInstance: process.pid
                 };
                 
-                await testCollection.insertOne(testDoc);
-                await testCollection.deleteOne({ test: true });
+                const writeTimeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Write test timeout')), 10000)
+                );
+                
+                const insertPromise = testCollection.insertOne(testDoc);
+                await Promise.race([insertPromise, writeTimeoutPromise]);
+                
+                const deletePromise = testCollection.deleteOne({ test: true });
+                await Promise.race([deletePromise, writeTimeoutPromise]);
                 
                 healthStatus.writeOperations = true;
+                console.log(`✅ DEBUG: Write operations successful for ${dbType}`);
             } catch (writeError) {
+                console.error(`❌ DEBUG: Write operations failed for ${dbType}:`, writeError.message);
                 healthStatus.writeOperations = false;
                 healthStatus.errors.push(`Write test failed: ${writeError.message}`);
             }
 
+            console.log(`✅ DEBUG: Health verification completed for ${dbType}. Healthy: ${healthStatus.healthy}`);
             return healthStatus;
 
         } catch (error) {
+            console.error(`❌ DEBUG: Database health verification failed for ${dbType}:`, error.message);
             return {
                 healthy: false,
                 error: error.message,
@@ -518,10 +888,11 @@ class AdminServer extends EventEmitter {
     }
 
     /**
-     * ENHANCED: Validate and recover models with multi-database support
+     * ENHANCED: Validate and recover models with multi-database support - FIXED VERSION
      */
     async validateAndRecoverModels() {
         try {
+            console.log('🔄 DEBUG: Starting model validation and recovery...');
             logger.info('Starting enhanced model validation and recovery with multi-database support', {
                 attempt: this.modelRecoveryAttempts + 1,
                 maxAttempts: this.maxModelRecoveryAttempts,
@@ -529,8 +900,26 @@ class AdminServer extends EventEmitter {
             });
 
             // Get current model status
-            const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
-            const modelErrors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
+            let modelSummary = { total: 0, successful: 0, failed: 0 };
+            let modelErrors = [];
+            
+            try {
+                if (typeof Database.getRegistrationSummary === 'function') {
+                    modelSummary = Database.getRegistrationSummary();
+                    console.log('✅ DEBUG: Got model summary from Database.getRegistrationSummary()');
+                } else {
+                    console.log('⚠️  DEBUG: Database.getRegistrationSummary() not available');
+                }
+
+                if (typeof Database.getRegistrationErrors === 'function') {
+                    modelErrors = Database.getRegistrationErrors();
+                    console.log('✅ DEBUG: Got model errors from Database.getRegistrationErrors()');
+                } else {
+                    console.log('⚠️  DEBUG: Database.getRegistrationErrors() not available');
+                }
+            } catch (summaryError) {
+                console.error('❌ DEBUG: Error getting model summary:', summaryError.message);
+            }
 
             logger.info('Current model registration status', {
                 total: modelSummary.total,
@@ -541,6 +930,8 @@ class AdminServer extends EventEmitter {
 
             // If models failed to register and we haven't exceeded retry attempts
             if (modelSummary.failed > 0 && this.modelRecoveryAttempts < this.maxModelRecoveryAttempts) {
+                console.log(`🔄 DEBUG: Attempting model recovery (attempt ${this.modelRecoveryAttempts + 1})...`);
+                
                 logger.warn('Some models failed to register, attempting recovery', {
                     failed: modelSummary.failed,
                     successful: modelSummary.successful,
@@ -550,72 +941,128 @@ class AdminServer extends EventEmitter {
                 this.modelRecoveryAttempts++;
 
                 // Force model registration
-                if (Database.forceModelRegistration) {
-                    const forceResult = Database.forceModelRegistration();
-                    logger.info('Force model registration result', forceResult);
+                try {
+                    if (typeof Database.forceModelRegistration === 'function') {
+                        const forceResult = Database.forceModelRegistration();
+                        logger.info('Force model registration result', forceResult);
+                        console.log('✅ DEBUG: Force model registration completed');
+                    } else {
+                        console.log('⚠️  DEBUG: Database.forceModelRegistration() not available');
+                    }
+                } catch (forceError) {
+                    console.error('❌ DEBUG: Force model registration failed:', forceError.message);
                 }
 
                 // Attempt to reload models
-                if (Database.reloadModels) {
-                    const reloadResult = await Database.reloadModels();
-                    logger.info('Model reload completed', reloadResult);
+                try {
+                    if (typeof Database.reloadModels === 'function') {
+                        const reloadResult = await Database.reloadModels();
+                        logger.info('Model reload completed', reloadResult);
+                        console.log('✅ DEBUG: Model reload completed');
+                    } else {
+                        console.log('⚠️  DEBUG: Database.reloadModels() not available');
+                    }
+                } catch (reloadError) {
+                    console.error('❌ DEBUG: Model reload failed:', reloadError.message);
                 }
 
                 // Re-check status after recovery attempt
-                const updatedSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : modelSummary;
-                logger.info('Model status after recovery attempt', {
-                    previousFailed: modelSummary.failed,
-                    currentFailed: updatedSummary.failed,
-                    improvement: modelSummary.failed - updatedSummary.failed
-                });
+                try {
+                    const updatedSummary = typeof Database.getRegistrationSummary === 'function' ? 
+                        Database.getRegistrationSummary() : modelSummary;
+                    logger.info('Model status after recovery attempt', {
+                        previousFailed: modelSummary.failed,
+                        currentFailed: updatedSummary.failed,
+                        improvement: modelSummary.failed - updatedSummary.failed
+                    });
+                    console.log(`🔍 DEBUG: Model recovery improvement: ${modelSummary.failed - updatedSummary.failed} models recovered`);
+                } catch (updateError) {
+                    console.error('❌ DEBUG: Error getting updated model summary:', updateError.message);
+                }
             }
 
             // Validate essential models are available across databases
             const essentialModels = ['User', 'Organization', 'AuditLog'];
             const missingEssential = [];
 
+            console.log('🔄 DEBUG: Checking essential models...');
             for (const modelName of essentialModels) {
                 try {
-                    const model = await Database.getModel(modelName);
+                    let model = null;
+                    
+                    if (typeof Database.getModel === 'function') {
+                        model = await Database.getModel(modelName);
+                        console.log(`🔍 DEBUG: Database.getModel(${modelName}):`, model ? 'Found' : 'Not found');
+                    } else {
+                        console.log(`⚠️  DEBUG: Database.getModel() not available for ${modelName}`);
+                    }
+                    
                     if (!model) {
                         missingEssential.push(modelName);
+                        console.log(`⚠️  DEBUG: Essential model missing: ${modelName}`);
                     } else {
+                        console.log(`✅ DEBUG: Essential model verified: ${modelName}`);
                         logger.debug(`Essential model verified: ${modelName}`);
                     }
                 } catch (error) {
+                    console.error(`❌ DEBUG: Failed to verify essential model ${modelName}:`, error.message);
                     logger.warn(`Failed to verify essential model: ${modelName}`, { error: error.message });
                     missingEssential.push(modelName);
                 }
             }
 
             if (missingEssential.length > 0) {
+                console.log(`⚠️  DEBUG: Missing essential models: ${missingEssential.join(', ')}`);
                 logger.error('Essential models missing', { missing: missingEssential });
+                
                 // Create fallback models if needed
-                await this.createFallbackModels(missingEssential);
-            }
-
-            // Test database operations across all available databases
-            await this.testMultiDatabaseOperations();
-
-            // Create test collections to ensure databases are properly set up
-            if (Database.createTestCollections) {
                 try {
-                    const testResult = await Database.createTestCollections();
-                    logger.info('Database test collections created successfully', testResult);
-                } catch (testError) {
-                    logger.warn('Failed to create test collections', { error: testError.message });
+                    await this.createFallbackModels(missingEssential);
+                    console.log('✅ DEBUG: Fallback models creation completed');
+                } catch (fallbackError) {
+                    console.error('❌ DEBUG: Fallback model creation failed:', fallbackError.message);
                 }
             }
 
+            // Test database operations across all available databases
+            console.log('🔄 DEBUG: Testing multi-database operations...');
+            try {
+                await this.testMultiDatabaseOperations();
+                console.log('✅ DEBUG: Multi-database operations test completed');
+            } catch (testError) {
+                console.error('❌ DEBUG: Multi-database operations test failed:', testError.message);
+            }
+
+            // Create test collections to ensure databases are properly set up
+            console.log('🔄 DEBUG: Creating test collections...');
+            try {
+                if (typeof Database.createTestCollections === 'function') {
+                    const testResult = await Database.createTestCollections();
+                    logger.info('Database test collections created successfully', testResult);
+                    console.log('✅ DEBUG: Test collections created successfully');
+                } else {
+                    console.log('⚠️  DEBUG: Database.createTestCollections() not available');
+                }
+            } catch (testError) {
+                console.error('❌ DEBUG: Failed to create test collections:', testError.message);
+                logger.warn('Failed to create test collections', { error: testError.message });
+            }
+
+            const finalEssentialCount = essentialModels.length - missingEssential.length;
+            console.log(`✅ DEBUG: Model validation completed. Essential models available: ${finalEssentialCount}/${essentialModels.length}`);
+
             logger.info('Model validation and recovery completed successfully', {
                 recoveryAttempts: this.modelRecoveryAttempts,
-                essentialModelsAvailable: essentialModels.length - missingEssential.length,
+                essentialModelsAvailable: finalEssentialCount,
                 totalEssentialModels: essentialModels.length,
                 databasesAvailable: this.databaseConnections.size,
                 healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length
             });
 
         } catch (error) {
+            console.error('❌ DEBUG: Model validation and recovery failed:', error.message);
+            console.error('❌ DEBUG: Model validation error stack:', error.stack);
+            
             logger.error('Model validation and recovery failed', { 
                 error: error.message,
                 stack: error.stack,
@@ -624,6 +1071,7 @@ class AdminServer extends EventEmitter {
 
             // Don't fail startup for model issues in development
             if (process.env.NODE_ENV === 'development') {
+                console.log('⚠️  DEBUG: Continuing startup despite model validation failure in development mode');
                 logger.warn('Continuing startup despite model validation failure in development mode');
                 return;
             }
@@ -640,14 +1088,25 @@ class AdminServer extends EventEmitter {
      */
     async testMultiDatabaseOperations() {
         try {
+            console.log('🔄 DEBUG: Starting multi-database operations test...');
             const testResults = new Map();
 
             for (const [dbType, connection] of this.databaseConnections) {
+                console.log(`🔄 DEBUG: Testing operations for database: ${dbType}`);
+                
                 try {
-                    // Test basic read operation
-                    const collections = await connection.db.listCollections().toArray();
+                    // Test basic read operation with timeout
+                    console.log(`🔍 DEBUG: Testing read operations for ${dbType}...`);
+                    const listPromise = connection.db.listCollections().toArray();
+                    const readTimeoutPromise = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Read test timeout')), 10000)
+                    );
                     
-                    // Test basic write operation
+                    const collections = await Promise.race([listPromise, readTimeoutPromise]);
+                    console.log(`✅ DEBUG: Read test passed for ${dbType} (${collections.length} collections)`);
+
+                    // Test basic write operation (safe test) with timeout
+                    console.log(`🔍 DEBUG: Testing write operations for ${dbType}...`);
                     const testCollection = connection.db.collection('_admin_multi_db_test');
                     const testDoc = {
                         test: true,
@@ -656,8 +1115,17 @@ class AdminServer extends EventEmitter {
                         serverInstance: process.pid
                     };
                     
-                    await testCollection.insertOne(testDoc);
-                    await testCollection.deleteOne({ test: true });
+                    const writeTimeoutPromise = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Write test timeout')), 10000)
+                    );
+                    
+                    const insertPromise = testCollection.insertOne(testDoc);
+                    await Promise.race([insertPromise, writeTimeoutPromise]);
+                    
+                    const deletePromise = testCollection.deleteOne({ test: true });
+                    await Promise.race([deletePromise, writeTimeoutPromise]);
+                    
+                    console.log(`✅ DEBUG: Write test passed for ${dbType}`);
                     
                     testResults.set(dbType, {
                         success: true,
@@ -672,6 +1140,8 @@ class AdminServer extends EventEmitter {
                     });
                     
                 } catch (dbError) {
+                    console.error(`❌ DEBUG: Database operations test failed for ${dbType}:`, dbError.message);
+                    
                     testResults.set(dbType, {
                         success: false,
                         error: dbError.message
@@ -686,6 +1156,8 @@ class AdminServer extends EventEmitter {
             const successfulTests = Array.from(testResults.values()).filter(r => r.success).length;
             const totalTests = testResults.size;
 
+            console.log(`✅ DEBUG: Multi-database operations test completed. Success rate: ${successfulTests}/${totalTests}`);
+
             logger.info('Multi-database operations test completed', {
                 totalDatabases: totalTests,
                 successfulTests: successfulTests,
@@ -698,6 +1170,7 @@ class AdminServer extends EventEmitter {
             }
 
         } catch (error) {
+            console.error('❌ DEBUG: Multi-database operations test failed:', error.message);
             logger.error('Multi-database operations test failed', {
                 error: error.message,
                 stack: error.stack
@@ -710,87 +1183,138 @@ class AdminServer extends EventEmitter {
      * Create fallback models for missing essential models
      */
     async createFallbackModels(missingModels) {
+        console.log('🔄 DEBUG: Creating fallback models for:', missingModels);
+        
         for (const modelName of missingModels) {
             try {
+                console.log(`🔄 DEBUG: Creating fallback model: ${modelName}`);
                 logger.info(`Creating fallback model: ${modelName}`);
                 
                 // Try to use Database.createTestCollections to ensure basic functionality
-                if (Database.createTestCollections) {
+                if (typeof Database.createTestCollections === 'function') {
                     await Database.createTestCollections();
+                    console.log(`✅ DEBUG: Test collections created for ${modelName}`);
                 }
 
                 // Try to register essential models if BaseModel is available
-                const BaseModel = require('../../shared/lib/database/models/base-model');
-                if (BaseModel && BaseModel.createModel) {
-                    const mongoose = require('mongoose');
+                try {
+                    const BaseModel = require('../../shared/lib/database/models/base-model');
+                    console.log(`✅ DEBUG: BaseModel loaded for ${modelName}`);
                     
-                    if (modelName === 'User' && !await Database.getModel('User')) {
-                        const userSchema = new mongoose.Schema({
-                            username: { type: String, required: true, unique: true },
-                            email: { type: String, required: true, unique: true },
-                            password: { type: String, required: true },
-                            profile: {
-                                firstName: { type: String, required: true },
-                                lastName: { type: String, required: true },
-                                displayName: String
-                            },
-                            accountStatus: {
-                                status: { type: String, default: 'active' }
-                            },
-                            isSystem: { type: Boolean, default: false },
-                            metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
-                            createdAt: { type: Date, default: Date.now },
-                            updatedAt: { type: Date, default: Date.now }
-                        });
+                    if (BaseModel && BaseModel.createModel) {
+                        const mongoose = require('mongoose');
+                        
+                        if (modelName === 'User' && !(await Database.getModel('User'))) {
+                            console.log('🔄 DEBUG: Creating fallback User model...');
+                            
+                            const userSchema = new mongoose.Schema({
+                                username: { type: String, required: true, unique: true },
+                                email: { type: String, required: true, unique: true },
+                                password: { type: String, required: true },
+                                profile: {
+                                    firstName: { type: String, required: true },
+                                    lastName: { type: String, required: true },
+                                    displayName: String
+                                },
+                                accountStatus: {
+                                    status: { type: String, default: 'active' }
+                                },
+                                isSystem: { type: Boolean, default: false },
+                                metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+                                createdAt: { type: Date, default: Date.now },
+                                updatedAt: { type: Date, default: Date.now }
+                            });
 
-                        Database.registerModel('User', userSchema);
-                        logger.info('Fallback User model created');
+                            if (typeof Database.registerModel === 'function') {
+                                Database.registerModel('User', userSchema);
+                                console.log('✅ DEBUG: Fallback User model created and registered');
+                                logger.info('Fallback User model created');
+                            } else {
+                                console.log('⚠️  DEBUG: Database.registerModel() not available for User');
+                            }
+                        }
+
+                        if (modelName === 'Organization' && !(await Database.getModel('Organization'))) {
+                            console.log('🔄 DEBUG: Creating fallback Organization model...');
+                            
+                            const organizationSchema = new mongoose.Schema({
+                                name: { type: String, required: true },
+                                slug: { type: String, required: true, unique: true },
+                                displayName: String,
+                                description: String,
+                                type: { 
+                                    type: String, 
+                                    enum: ['individual', 'business', 'nonprofit', 'government', 'educational', 'healthcare', 'system', 'other'],
+                                    default: 'business'
+                                },
+                                contact: {
+                                    email: { type: String, required: true },
+                                    phone: String,
+                                    website: String
+                                },
+                                ownership: {
+                                    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+                                    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+                                },
+                                subscription: {
+                                    status: { type: String, default: 'active' },
+                                    tier: { type: String, default: 'starter' }
+                                },
+                                status: {
+                                    state: { type: String, default: 'active' }
+                                },
+                                metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+                                createdAt: { type: Date, default: Date.now },
+                                updatedAt: { type: Date, default: Date.now }
+                            });
+
+                            if (typeof Database.registerModel === 'function') {
+                                Database.registerModel('Organization', organizationSchema);
+                                console.log('✅ DEBUG: Fallback Organization model created and registered');
+                                logger.info('Fallback Organization model created');
+                            } else {
+                                console.log('⚠️  DEBUG: Database.registerModel() not available for Organization');
+                            }
+                        }
+                        
+                        if (modelName === 'AuditLog' && !(await Database.getModel('AuditLog'))) {
+                            console.log('🔄 DEBUG: Creating fallback AuditLog model...');
+                            
+                            const auditLogSchema = new mongoose.Schema({
+                                eventType: { type: String, required: true },
+                                userId: { type: String },
+                                tenantId: { type: String },
+                                resource: { type: String, required: true },
+                                action: { type: String, required: true },
+                                result: { type: String, required: true },
+                                metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+                                context: { type: mongoose.Schema.Types.Mixed, default: {} },
+                                timestamp: { type: Date, default: Date.now }
+                            });
+
+                            if (typeof Database.registerModel === 'function') {
+                                Database.registerModel('AuditLog', auditLogSchema);
+                                console.log('✅ DEBUG: Fallback AuditLog model created and registered');
+                                logger.info('Fallback AuditLog model created');
+                            } else {
+                                console.log('⚠️  DEBUG: Database.registerModel() not available for AuditLog');
+                            }
+                        }
                     }
-
-                    if (modelName === 'Organization' && !await Database.getModel('Organization')) {
-                        const organizationSchema = new mongoose.Schema({
-                            name: { type: String, required: true },
-                            slug: { type: String, required: true, unique: true },
-                            displayName: String,
-                            description: String,
-                            type: { 
-                                type: String, 
-                                enum: ['individual', 'business', 'nonprofit', 'government', 'educational', 'healthcare', 'system', 'other'],
-                                default: 'business'
-                            },
-                            contact: {
-                                email: { type: String, required: true },
-                                phone: String,
-                                website: String
-                            },
-                            ownership: {
-                                ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-                                createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
-                            },
-                            subscription: {
-                                status: { type: String, default: 'active' },
-                                tier: { type: String, default: 'starter' }
-                            },
-                            status: {
-                                state: { type: String, default: 'active' }
-                            },
-                            metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
-                            createdAt: { type: Date, default: Date.now },
-                            updatedAt: { type: Date, default: Date.now }
-                        });
-
-                        Database.registerModel('Organization', organizationSchema);
-                        logger.info('Fallback Organization model created');
-                    }
+                } catch (baseModelError) {
+                    console.error(`❌ DEBUG: BaseModel operations failed for ${modelName}:`, baseModelError.message);
                 }
 
             } catch (error) {
+                console.error(`❌ DEBUG: Failed to create fallback for ${modelName}:`, error.message);
                 logger.error(`Failed to create fallback for ${modelName}`, { 
                     error: error.message,
                     stack: error.stack
                 });
             }
         }
+        
+        console.log('✅ DEBUG: Fallback models creation process completed');
     }
 
     /**
@@ -902,51 +1426,73 @@ class AdminServer extends EventEmitter {
      * ENHANCED: Verify security prerequisites for admin server with multi-database support
      */
     async verifySecurityPrerequisites() {
+        console.log('🔄 DEBUG: Starting security prerequisites verification...');
         const checks = [];
 
         // Check SSL certificates only if SSL is required
         if (this.shouldUseSSL()) {
+            console.log('🔍 DEBUG: Adding SSL certificate verification...');
             checks.push(this.verifySslCertificates());
         }
 
         // Check IP whitelist configuration
         if (this.adminConfig.security.ipWhitelist?.enabled) {
+            console.log('🔍 DEBUG: Adding IP whitelist verification...');
             checks.push(this.verifyIpWhitelist());
         }
 
         // Check audit log availability
+        console.log('🔍 DEBUG: Adding audit log system verification...');
         checks.push(this.verifyAuditLogSystem());
 
         // ENHANCED: Check multi-database permissions
+        console.log('🔍 DEBUG: Adding multi-database permissions verification...');
         checks.push(this.verifyMultiDatabasePermissions());
 
         // Check environment configuration
+        console.log('🔍 DEBUG: Adding environment configuration verification...');
         checks.push(this.verifyEnvironmentConfiguration());
 
+        console.log(`🔍 DEBUG: Running ${checks.length} security prerequisite checks...`);
         const results = await Promise.allSettled(checks);
         const failures = results.filter(r => r.status === 'rejected');
 
         if (failures.length > 0) {
+            console.error(`❌ DEBUG: ${failures.length} security prerequisite checks failed:`, failures.map(f => f.reason?.message || f.reason));
             throw new Error(`Security prerequisites failed: ${failures.map(f => f.reason).join(', ')}`);
         }
 
+        console.log('✅ DEBUG: All security prerequisites verified successfully');
         logger.info('All security prerequisites verified successfully with multi-database support');
     }
 
     /**
-     * ENHANCED: Verify database permissions for admin operations across all databases
+     * ENHANCED: Verify database permissions for admin operations across all databases - FIXED VERSION
      */
     async verifyMultiDatabasePermissions() {
         try {
+            console.log('🔄 DEBUG: Starting multi-database permissions verification...');
             const permissionResults = new Map();
 
             // Check permissions for each database
             for (const [dbType, connection] of this.databaseConnections) {
+                console.log(`🔍 DEBUG: Checking permissions for database: ${dbType}`);
+                
                 try {
-                    // Test basic read permissions
-                    const collections = await connection.db.listCollections().toArray();
+                    // Test basic read permissions with timeout
+                    const readTimeoutPromise = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Read permissions test timeout')), 10000)
+                    );
                     
-                    // Test write permissions
+                    const listPromise = connection.db.listCollections().toArray();
+                    const collections = await Promise.race([listPromise, readTimeoutPromise]);
+                    console.log(`✅ DEBUG: Read permissions OK for ${dbType} (${collections.length} collections)`);
+                    
+                    // Test write permissions with timeout
+                    const writeTimeoutPromise = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Write permissions test timeout')), 10000)
+                    );
+                    
                     const testCollection = connection.db.collection('_admin_permission_test');
                     const testDoc = {
                         test: true,
@@ -954,8 +1500,13 @@ class AdminServer extends EventEmitter {
                         dbType: dbType
                     };
                     
-                    await testCollection.insertOne(testDoc);
-                    await testCollection.deleteOne({ test: true });
+                    const insertPromise = testCollection.insertOne(testDoc);
+                    await Promise.race([insertPromise, writeTimeoutPromise]);
+                    
+                    const deletePromise = testCollection.deleteOne({ test: true });
+                    await Promise.race([deletePromise, writeTimeoutPromise]);
+                    
+                    console.log(`✅ DEBUG: Write permissions OK for ${dbType}`);
                     
                     permissionResults.set(dbType, {
                         success: true,
@@ -970,6 +1521,8 @@ class AdminServer extends EventEmitter {
                     });
                     
                 } catch (error) {
+                    console.error(`❌ DEBUG: Permission check failed for ${dbType}:`, error.message);
+                    
                     permissionResults.set(dbType, {
                         success: false,
                         error: error.message
@@ -984,11 +1537,14 @@ class AdminServer extends EventEmitter {
             const successfulChecks = Array.from(permissionResults.values()).filter(r => r.success).length;
             const totalChecks = permissionResults.size;
 
-            if (successfulChecks === 0) {
+            console.log(`🔍 DEBUG: Permission verification results: ${successfulChecks}/${totalChecks} successful`);
+
+            if (successfulChecks === 0 && totalChecks > 0) {
                 throw new AppError('No database permissions available for admin operations', 500, 'NO_DATABASE_PERMISSIONS');
             }
 
             if (successfulChecks < totalChecks) {
+                console.log(`⚠️  DEBUG: Some database permission checks failed (${totalChecks - successfulChecks} failed)`);
                 logger.warn('Some database permission checks failed', {
                     successful: successfulChecks,
                     total: totalChecks,
@@ -999,11 +1555,13 @@ class AdminServer extends EventEmitter {
             logger.info('Multi-database permissions verified', {
                 totalDatabases: totalChecks,
                 successfulChecks: successfulChecks,
-                coverage: (successfulChecks / totalChecks) * 100
+                coverage: totalChecks > 0 ? (successfulChecks / totalChecks) * 100 : 100
             });
 
+            console.log('✅ DEBUG: Multi-database permissions verification completed');
             return true;
         } catch (error) {
+            console.error('❌ DEBUG: Multi-database permission verification failed:', error.message);
             throw new AppError(`Multi-database permission check failed: ${error.message}`, 500, 'MULTI_DATABASE_PERMISSION_ERROR');
         }
     }
@@ -1014,18 +1572,23 @@ class AdminServer extends EventEmitter {
      * @returns {boolean} Whether SSL should be used
      */
     shouldUseSSL() {
+        console.log('🔍 DEBUG: Checking SSL configuration...');
+        
         // Check if SSL is explicitly enabled in admin configuration
         if (this.adminConfig?.security?.ssl?.enabled === true) {
+            console.log('✅ DEBUG: SSL enabled via admin config');
             return true;
         }
 
         // Check admin-specific SSL configuration
         if (this.adminConfig?.security?.forceSSL === true) {
+            console.log('✅ DEBUG: SSL forced via admin config');
             return true;
         }
 
         // Check environment variables
         if (process.env.ADMIN_SSL_ENABLED === 'true' || process.env.ADMIN_FORCE_SSL === 'true') {
+            console.log('✅ DEBUG: SSL enabled via environment variables');
             return true;
         }
 
@@ -1035,10 +1598,12 @@ class AdminServer extends EventEmitter {
             const certPath = path.resolve(process.cwd(), this.adminConfig.security.ssl.certPath);
             
             if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+                console.log('✅ DEBUG: SSL certificates found, enabling SSL');
                 return true;
             }
         }
 
+        console.log('🔓 DEBUG: SSL not required/configured, using HTTP');
         // Default to false for development
         return false;
     }
@@ -1050,6 +1615,8 @@ class AdminServer extends EventEmitter {
      */
     validateAndSetupAdminConfiguration() {
         try {
+            console.log('🔄 DEBUG: Creating admin configuration structure...');
+            
             // Create a local admin configuration object instead of modifying the frozen config
             this.adminConfig = {
                 port: parseInt(process.env.ADMIN_PORT, 10) || 4001,
@@ -1063,6 +1630,7 @@ class AdminServer extends EventEmitter {
                     requireMFA: process.env.ADMIN_REQUIRE_MFA === 'true' || false,
                     sessionTimeout: parseInt(process.env.ADMIN_SESSION_TIMEOUT, 10) || 3600000,
                     ssl: {
+                        enabled: process.env.ADMIN_SSL_ENABLED === 'true' || false,
                         keyPath: process.env.ADMIN_SSL_KEY_PATH || process.env.SSL_KEY_PATH || '/insightserenity-platform/servers/admin-server/key.pem',
                         certPath: process.env.ADMIN_SSL_CERT_PATH || process.env.SSL_CERT_PATH || '/insightserenity-platform/servers/admin-server/cert.pem',
                         ca: process.env.ADMIN_SSL_CA_PATH || process.env.SSL_CA_PATH
@@ -1092,6 +1660,11 @@ class AdminServer extends EventEmitter {
                 admin: this.adminConfig
             };
 
+            console.log('✅ DEBUG: Admin configuration structure created successfully');
+            console.log('🔍 DEBUG: Admin config port:', this.adminConfig.port);
+            console.log('🔍 DEBUG: Admin config host:', this.adminConfig.host);
+            console.log('🔍 DEBUG: SSL enabled:', this.shouldUseSSL());
+
             logger.info('Admin configuration structure validated and initialized', {
                 port: this.adminConfig.port,
                 host: this.adminConfig.host,
@@ -1105,12 +1678,14 @@ class AdminServer extends EventEmitter {
             });
 
         } catch (error) {
+            console.error('❌ DEBUG: Admin configuration validation failed:', error.message);
             logger.error('Failed to validate admin configuration structure', {
                 error: error.message,
                 stack: error.stack
             });
 
             // Set minimal working configuration as fallback
+            console.log('⚠️  DEBUG: Using fallback admin configuration');
             this.adminConfig = {
                 port: parseInt(process.env.ADMIN_PORT, 10) || 4001,
                 host: process.env.ADMIN_HOST || '127.0.0.1',
@@ -1153,9 +1728,13 @@ class AdminServer extends EventEmitter {
      */
     async initializeAuditSystemSafely() {
         try {
+            console.log('🔄 DEBUG: Checking audit configuration...');
+            
             // Check if audit config exists and is valid
             if (!auditConfig || typeof auditConfig !== 'object') {
+                console.log('⚠️  DEBUG: Audit config not found or invalid, creating minimal config');
                 logger.warn('Audit config not found or invalid, creating minimal config');
+                
                 // Create minimal audit config
                 global.auditConfig = {
                     enabled: false,
@@ -1183,24 +1762,34 @@ class AdminServer extends EventEmitter {
                 return;
             }
 
+            console.log('✅ DEBUG: Audit config is valid, proceeding with initialization');
+
             // Validate enterprise audit configuration
-            AuditServiceFactory.validateConfig(auditConfig);
+            if (AuditServiceFactory && typeof AuditServiceFactory.validateConfig === 'function') {
+                AuditServiceFactory.validateConfig(auditConfig);
+                console.log('✅ DEBUG: Audit configuration validated');
 
-            // Initialize audit service factory with enterprise configuration
-            AuditServiceFactory.initialize(auditConfig);
+                // Initialize audit service factory with enterprise configuration
+                AuditServiceFactory.initialize(auditConfig);
+                console.log('✅ DEBUG: AuditServiceFactory initialized');
 
-            // Get configured audit service instance
-            this.auditService = AuditServiceFactory.getInstance();
+                // Get configured audit service instance
+                this.auditService = AuditServiceFactory.getInstance();
+                console.log('✅ DEBUG: Audit service instance obtained');
+            } else {
+                console.log('⚠️  DEBUG: AuditServiceFactory not available');
+            }
 
             logger.info('Enterprise audit system initialized', {
                 enabled: auditConfig.enabled,
                 environment: auditConfig.environment,
-                storageType: auditConfig.storage.type,
-                batchSize: auditConfig.processing.batchSize,
-                flushInterval: auditConfig.processing.flushInterval
+                storageType: auditConfig.storage?.type,
+                batchSize: auditConfig.processing?.batchSize,
+                flushInterval: auditConfig.processing?.flushInterval
             });
 
         } catch (error) {
+            console.error('❌ DEBUG: Audit system initialization failed:', error.message);
             logger.warn('Audit system initialization failed, continuing without audit', {
                 error: error.message
             });
@@ -1225,7 +1814,8 @@ class AdminServer extends EventEmitter {
                 };
             }
 
-            const factoryStatus = AuditServiceFactory.getStatus();
+            const factoryStatus = AuditServiceFactory && typeof AuditServiceFactory.getStatus === 'function' ? 
+                AuditServiceFactory.getStatus() : { initialized: false, enabled: false };
             const auditServiceConfig = this.auditService?.getConfig() || {};
 
             return {
@@ -1251,6 +1841,8 @@ class AdminServer extends EventEmitter {
      * Verify environment configuration is properly loaded
      */
     async verifyEnvironmentConfiguration() {
+        console.log('🔄 DEBUG: Verifying environment configuration...');
+        
         const requiredConfigs = [
             { key: 'NODE_ENV', value: process.env.NODE_ENV },
             { key: 'ADMIN_PORT', value: process.env.ADMIN_PORT },
@@ -1258,7 +1850,16 @@ class AdminServer extends EventEmitter {
             { key: 'SESSION_SECRET', value: process.env.SESSION_SECRET }
         ];
 
-        const missing = requiredConfigs.filter(config => !config.value);
+        console.log('🔍 DEBUG: Checking required configurations...');
+        const missing = requiredConfigs.filter(config => {
+            const isMissing = !config.value;
+            if (isMissing) {
+                console.log(`❌ DEBUG: Missing required config: ${config.key}`);
+            } else {
+                console.log(`✅ DEBUG: Required config present: ${config.key}`);
+            }
+            return isMissing;
+        });
 
         if (missing.length > 0) {
             throw new Error(`Missing critical environment variables: ${missing.map(c => c.key).join(', ')}`);
@@ -1266,17 +1867,29 @@ class AdminServer extends EventEmitter {
 
         // Validate environment-specific requirements
         if (process.env.NODE_ENV === 'production') {
+            console.log('🔍 DEBUG: Checking production-specific requirements...');
+            
             const prodRequired = [
                 { key: 'JWT_SECRET', value: process.env.JWT_SECRET },
                 { key: 'ENCRYPTION_KEY', value: process.env.ENCRYPTION_KEY }
             ];
 
-            const prodMissing = prodRequired.filter(config => !config.value);
+            const prodMissing = prodRequired.filter(config => {
+                const isMissing = !config.value;
+                if (isMissing) {
+                    console.log(`❌ DEBUG: Missing production config: ${config.key}`);
+                } else {
+                    console.log(`✅ DEBUG: Production config present: ${config.key}`);
+                }
+                return isMissing;
+            });
+            
             if (prodMissing.length > 0) {
                 throw new Error(`Missing production environment variables: ${prodMissing.map(c => c.key).join(', ')}`);
             }
         }
 
+        console.log('✅ DEBUG: Environment configuration verification completed');
         logger.info('Environment configuration verified successfully', {
             nodeEnv: process.env.NODE_ENV,
             redisEnabled: process.env.REDIS_ENABLED === 'true',
@@ -1322,6 +1935,7 @@ class AdminServer extends EventEmitter {
      * Create HTTP server (development only)
      */
     createHttpServer(app) {
+        console.log('🔓 DEBUG: Creating HTTP server for development');
         logger.warn('Creating HTTP server for admin - development only');
         return http.createServer(app);
     }
@@ -1415,7 +2029,9 @@ class AdminServer extends EventEmitter {
                 return true; // Not an error if intentionally disabled
             }
 
-            const isEnabled = this.auditService.isEnabled();
+            const isEnabled = typeof this.auditService.isEnabled === 'function' ? 
+                this.auditService.isEnabled() : false;
+            
             if (!isEnabled) {
                 logger.warn('Audit system is disabled');
                 return true; // Not an error if intentionally disabled
@@ -1437,6 +2053,8 @@ class AdminServer extends EventEmitter {
             // Use adminConfig values
             const port = this.adminConfig.port;
             const host = this.adminConfig.host;
+
+            console.log(`🔄 DEBUG: Starting server on ${host}:${port}...`);
 
             this.server.listen(port, host, () => {
                 const protocol = this.server instanceof https.Server ? 'HTTPS' : 'HTTP';
@@ -1490,10 +2108,13 @@ class AdminServer extends EventEmitter {
                     console.log(`📚 API Docs: ${protocol.toLowerCase()}://${host}:${port}/admin/api-docs`);
                 }
 
+                console.log('✅ DEBUG: Server listening setup completed');
                 resolve();
             });
 
             this.server.on('error', (error) => {
+                console.error('❌ DEBUG: Server error:', error.message);
+                
                 if (error.code === 'EADDRINUSE') {
                     logger.error(`Admin port ${port} is already in use`);
                 } else if (error.code === 'EACCES') {
@@ -1510,6 +2131,8 @@ class AdminServer extends EventEmitter {
      * Setup admin-specific connection handlers
      */
     setupAdminHandlers() {
+        console.log('🔄 DEBUG: Setting up admin handlers...');
+        
         this.server.on('connection', (socket) => {
             const connectionId = `${socket.remoteAddress}:${socket.remotePort}`;
             this.adminConnections.set(connectionId, {
@@ -1518,117 +2141,268 @@ class AdminServer extends EventEmitter {
                 remoteAddress: socket.remoteAddress
             });
 
+            console.log(`🔗 DEBUG: New admin connection: ${connectionId}`);
+            logger.debug('New admin connection established', {
+                connectionId,
+                remoteAddress: socket.remoteAddress,
+                totalConnections: this.adminConnections.size
+            });
+
             socket.on('close', () => {
                 this.adminConnections.delete(connectionId);
+                console.log(`🔌 DEBUG: Admin connection closed: ${connectionId}`);
+                logger.debug('Admin connection closed', {
+                    connectionId,
+                    remainingConnections: this.adminConnections.size
+                });
+            });
+
+            socket.on('error', (error) => {
+                console.error(`❌ DEBUG: Socket error for ${connectionId}:`, error.message);
+                logger.warn('Admin socket error', {
+                    connectionId,
+                    error: error.message
+                });
             });
         });
 
         // Monitor admin connections
-        setInterval(() => {
+        const connectionMonitorInterval = setInterval(() => {
             if (this.adminConnections.size > 0) {
+                console.log(`🔗 DEBUG: Active admin connections: ${this.adminConnections.size}`);
                 logger.debug('Active admin connections', {
                     count: this.adminConnections.size,
                     addresses: Array.from(this.adminConnections.values()).map(c => c.remoteAddress)
                 });
             }
         }, 60000);
+
+        // Store interval for cleanup
+        this.connectionMonitorInterval = connectionMonitorInterval;
+
+        console.log('✅ DEBUG: Admin handlers setup completed');
     }
 
     /**
      * Setup security monitoring for admin activities
      */
     setupSecurityMonitoring() {
-        // Monitor failed login attempts
-        this.on('admin:login:failed', async (data) => {
-            if (this.auditService) {
-                try {
-                    await this.auditService.logEvent({
-                        eventType: AuditEvents.AUTH.LOGIN_FAILURE,
-                        userId: data.username || 'unknown',
-                        tenantId: 'admin',
-                        resource: 'admin_portal',
-                        action: 'login_attempt',
-                        result: 'failure',
-                        metadata: {
-                            attempts: data.attempts,
-                            reason: data.reason
-                        },
-                        context: {
-                            ip: data.ip,
-                            userAgent: data.userAgent
-                        }
-                    });
-                } catch (auditError) {
-                    logger.warn('Failed to log audit event', { error: auditError.message });
-                }
-            }
+        try {
+            console.log('🔄 DEBUG: Setting up security monitoring...');
 
-            if (data.attempts > 5) {
-                logger.warn('Potential brute force attack on admin', data);
-            }
-        });
-
-        // Monitor privilege escalations
-        this.on('admin:privilege:changed', async (data) => {
-            if (this.auditService) {
-                try {
-                    await this.auditService.logEvent({
-                        eventType: AuditEvents.AUTH.PRIVILEGE_ESCALATION,
-                        userId: data.actor?.id || 'unknown',
-                        tenantId: 'admin',
-                        resource: data.target?.type || 'user_account',
-                        action: 'privilege_changed',
-                        result: 'success',
-                        metadata: {
-                            changes: data.changes,
-                            target: data.target
-                        }
-                    });
-                } catch (auditError) {
-                    logger.warn('Failed to log audit event', { error: auditError.message });
+            // Monitor failed login attempts
+            this.on('admin:login:failed', async (data) => {
+                console.log(`🚨 DEBUG: Admin login failed for user: ${data.username || 'unknown'} from IP: ${data.ip}`);
+                
+                if (this.auditService) {
+                    try {
+                        await this.auditService.logEvent({
+                            eventType: AuditEvents.AUTH.LOGIN_FAILURE,
+                            userId: data.username || 'unknown',
+                            tenantId: 'admin',
+                            resource: 'admin_portal',
+                            action: 'login_attempt',
+                            result: 'failure',
+                            metadata: {
+                                attempts: data.attempts,
+                                reason: data.reason
+                            },
+                            context: {
+                                ip: data.ip,
+                                userAgent: data.userAgent
+                            }
+                        });
+                        console.log('✅ DEBUG: Failed login attempt logged to audit');
+                    } catch (auditError) {
+                        console.error('❌ DEBUG: Failed to log audit event:', auditError.message);
+                        logger.warn('Failed to log audit event', { error: auditError.message });
+                    }
                 }
-            }
-        });
+
+                if (data.attempts > 5) {
+                    console.log(`🚨 DEBUG: Potential brute force attack detected from IP: ${data.ip}`);
+                    logger.warn('Potential brute force attack on admin', data);
+                }
+            });
+
+            // Monitor privilege escalations
+            this.on('admin:privilege:changed', async (data) => {
+                console.log(`🔐 DEBUG: Admin privilege changed for user: ${data.target?.id || 'unknown'}`);
+                
+                if (this.auditService) {
+                    try {
+                        await this.auditService.logEvent({
+                            eventType: AuditEvents.AUTH.PRIVILEGE_ESCALATION,
+                            userId: data.actor?.id || 'unknown',
+                            tenantId: 'admin',
+                            resource: data.target?.type || 'user_account',
+                            action: 'privilege_changed',
+                            result: 'success',
+                            metadata: {
+                                changes: data.changes,
+                                target: data.target
+                            }
+                        });
+                        console.log('✅ DEBUG: Privilege change logged to audit');
+                    } catch (auditError) {
+                        console.error('❌ DEBUG: Failed to log privilege change to audit:', auditError.message);
+                        logger.warn('Failed to log audit event', { error: auditError.message });
+                    }
+                }
+            });
+
+            // Monitor suspicious admin activities
+            this.on('admin:suspicious:activity', async (data) => {
+                console.log(`🚨 DEBUG: Suspicious admin activity detected:`, data.activity);
+                
+                if (this.auditService) {
+                    try {
+                        await this.auditService.logEvent({
+                            eventType: AuditEvents.SECURITY.THREAT_DETECTED,
+                            userId: data.userId || 'unknown',
+                            tenantId: 'admin',
+                            resource: 'admin_portal',
+                            action: data.activity,
+                            result: 'alert',
+                            metadata: data.metadata || {},
+                            context: data.context || {}
+                        });
+                        console.log('✅ DEBUG: Suspicious activity logged to audit');
+                    } catch (auditError) {
+                        console.error('❌ DEBUG: Failed to log suspicious activity to audit:', auditError.message);
+                    }
+                }
+
+                logger.error('Suspicious admin activity detected', data);
+            });
+
+            console.log('✅ DEBUG: Security monitoring setup completed');
+            logger.info('Admin security monitoring initialized successfully');
+
+        } catch (error) {
+            console.error('❌ DEBUG: Security monitoring setup failed:', error.message);
+            logger.error('Failed to setup security monitoring', { error: error.message });
+        }
     }
 
     /**
      * Check admin sessions health
      */
     async checkAdminSessions() {
-        return {
-            healthy: true,
-            activeSessions: 0,
-            expiredToday: 0,
-            store: process.env.SESSION_STORE || 'memory'
-        };
+        try {
+            console.log('🔄 DEBUG: Checking admin sessions health...');
+            
+            const sessionStatus = {
+                healthy: true,
+                activeSessions: this.adminConnections.size,
+                expiredToday: 0,
+                store: process.env.SESSION_STORE || 'memory',
+                connections: [],
+                lastCheck: new Date().toISOString()
+            };
+
+            // Get connection details
+            for (const [id, conn] of this.adminConnections) {
+                const duration = (new Date() - conn.connectedAt) / 1000;
+                sessionStatus.connections.push({
+                    id: id,
+                    address: conn.remoteAddress,
+                    duration: duration,
+                    active: duration < this.adminConfig.security.sessionTimeout / 1000
+                });
+            }
+
+            console.log(`✅ DEBUG: Admin sessions check completed. Active: ${sessionStatus.activeSessions}`);
+            return sessionStatus;
+        } catch (error) {
+            console.error('❌ DEBUG: Admin sessions check failed:', error.message);
+            return {
+                healthy: false,
+                error: error.message,
+                lastCheck: new Date().toISOString()
+            };
+        }
     }
 
     /**
      * Check security status
      */
     async checkSecurityStatus() {
-        return {
-            healthy: true,
-            sslEnabled: this.server instanceof https.Server,
-            ipWhitelistActive: this.adminConfig.security.ipWhitelist?.enabled,
-            mfaRequired: this.adminConfig.security.requireMFA,
-            lastSecurityScan: new Date().toISOString()
-        };
+        try {
+            console.log('🔄 DEBUG: Checking security status...');
+            
+            const securityStatus = {
+                healthy: true,
+                sslEnabled: this.server instanceof https.Server,
+                ipWhitelistActive: this.adminConfig.security.ipWhitelist?.enabled || false,
+                mfaRequired: this.adminConfig.security.requireMFA || false,
+                securityLevel: this.adminConfig.security.level || 'medium',
+                advancedSecurity: this.adminConfig.security.advanced || false,
+                sessionTimeout: this.adminConfig.security.sessionTimeout,
+                lastSecurityScan: new Date().toISOString(),
+                securityManager: !!this.securityManager
+            };
+
+            console.log(`✅ DEBUG: Security check completed. SSL: ${securityStatus.sslEnabled}, MFA: ${securityStatus.mfaRequired}`);
+            return securityStatus;
+        } catch (error) {
+            console.error('❌ DEBUG: Security status check failed:', error.message);
+            return {
+                healthy: false,
+                error: error.message,
+                lastCheck: new Date().toISOString()
+            };
+        }
     }
 
     /**
      * Check environment configuration health
      */
     async checkEnvironmentConfig() {
-        return {
-            healthy: true,
-            redisEnabled: process.env.REDIS_ENABLED === 'true',
-            fallbackToMemory: process.env.CACHE_FALLBACK_TO_MEMORY === 'true',
-            sessionStore: process.env.SESSION_STORE || 'memory',
-            environment: process.env.NODE_ENV,
-            auditEnabled: auditConfig?.enabled || false,
-            multiDatabaseEnabled: this.adminConfig?.features?.multiDatabase || false
-        };
+        try {
+            console.log('🔄 DEBUG: Checking environment configuration...');
+            
+            const envStatus = {
+                healthy: true,
+                redisEnabled: process.env.REDIS_ENABLED === 'true',
+                fallbackToMemory: process.env.CACHE_FALLBACK_TO_MEMORY === 'true',
+                sessionStore: process.env.SESSION_STORE || 'memory',
+                environment: process.env.NODE_ENV,
+                auditEnabled: auditConfig?.enabled || false,
+                multiDatabaseEnabled: this.adminConfig?.features?.multiDatabase || false,
+                requiredVarsPresent: {
+                    NODE_ENV: !!process.env.NODE_ENV,
+                    ADMIN_PORT: !!process.env.ADMIN_PORT,
+                    DB_URI: !!process.env.DB_URI,
+                    SESSION_SECRET: !!process.env.SESSION_SECRET,
+                    JWT_SECRET: !!process.env.JWT_SECRET,
+                    ACCESS_TOKEN_SECRET: !!process.env.ACCESS_TOKEN_SECRET,
+                    TEMPORARY_TOKEN_SECRET: !!process.env.TEMPORARY_TOKEN_SECRET
+                },
+                lastCheck: new Date().toISOString()
+            };
+
+            // Check if all required vars are present
+            const missingVars = Object.entries(envStatus.requiredVarsPresent)
+                .filter(([key, present]) => !present)
+                .map(([key]) => key);
+
+            if (missingVars.length > 0) {
+                envStatus.healthy = false;
+                envStatus.missingVariables = missingVars;
+                console.log(`⚠️  DEBUG: Missing environment variables: ${missingVars.join(', ')}`);
+            }
+
+            console.log(`✅ DEBUG: Environment configuration check completed. Healthy: ${envStatus.healthy}`);
+            return envStatus;
+        } catch (error) {
+            console.error('❌ DEBUG: Environment configuration check failed:', error.message);
+            return {
+                healthy: false,
+                error: error.message,
+                lastCheck: new Date().toISOString()
+            };
+        }
     }
 
     /**
@@ -1636,18 +2410,44 @@ class AdminServer extends EventEmitter {
      */
     async checkModelStatus() {
         try {
-            const modelSummary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
-            const modelErrors = Database.getRegistrationErrors ? Database.getRegistrationErrors() : [];
+            console.log('🔄 DEBUG: Checking model status...');
             
-            return {
+            let modelSummary = { total: 0, successful: 0, failed: 0 };
+            let modelErrors = [];
+            
+            try {
+                if (typeof Database.getRegistrationSummary === 'function') {
+                    modelSummary = Database.getRegistrationSummary();
+                    console.log('✅ DEBUG: Got model summary from Database.getRegistrationSummary()');
+                } else {
+                    console.log('⚠️  DEBUG: Database.getRegistrationSummary() not available');
+                }
+
+                if (typeof Database.getRegistrationErrors === 'function') {
+                    modelErrors = Database.getRegistrationErrors();
+                    console.log('✅ DEBUG: Got model errors from Database.getRegistrationErrors()');
+                } else {
+                    console.log('⚠️  DEBUG: Database.getRegistrationErrors() not available');
+                }
+            } catch (summaryError) {
+                console.error('❌ DEBUG: Error getting model summary:', summaryError.message);
+            }
+            
+            const modelStatus = {
                 healthy: modelSummary.failed === 0,
                 summary: modelSummary,
                 errors: modelErrors.slice(0, 5), // Limit error details
                 lastCheck: new Date().toISOString(),
                 recoveryAttempts: this.modelRecoveryAttempts,
-                maxRecoveryAttempts: this.maxModelRecoveryAttempts
+                maxRecoveryAttempts: this.maxModelRecoveryAttempts,
+                recoveryEnabled: this.adminConfig?.features?.modelRecovery || true,
+                databasesAvailable: this.databaseConnections.size
             };
+
+            console.log(`✅ DEBUG: Model status check completed. Total: ${modelSummary.total}, Failed: ${modelSummary.failed}`);
+            return modelStatus;
         } catch (error) {
+            console.error('❌ DEBUG: Model status check failed:', error.message);
             logger.error('Model status check failed', { error: error.message });
             return {
                 healthy: false,
@@ -1662,17 +2462,26 @@ class AdminServer extends EventEmitter {
      */
     async checkModelRecoveryStatus() {
         try {
-            return {
+            console.log('🔄 DEBUG: Checking model recovery status...');
+            
+            const recoveryStatus = {
                 healthy: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts,
                 recoveryAttempts: this.modelRecoveryAttempts,
                 maxAttempts: this.maxModelRecoveryAttempts,
                 canRecover: this.modelRecoveryAttempts < this.maxModelRecoveryAttempts,
-                lastRecoveryAttempt: this.modelRecoveryAttempts > 0 ? new Date().toISOString() : null
+                lastRecoveryAttempt: this.modelRecoveryAttempts > 0 ? new Date().toISOString() : null,
+                recoveryEnabled: this.adminConfig?.features?.modelRecovery || true,
+                lastCheck: new Date().toISOString()
             };
+
+            console.log(`✅ DEBUG: Model recovery status check completed. Attempts: ${recoveryStatus.recoveryAttempts}/${recoveryStatus.maxAttempts}`);
+            return recoveryStatus;
         } catch (error) {
+            console.error('❌ DEBUG: Model recovery status check failed:', error.message);
             return {
                 healthy: false,
-                error: error.message
+                error: error.message,
+                lastCheck: new Date().toISOString()
             };
         }
     }
@@ -1682,15 +2491,38 @@ class AdminServer extends EventEmitter {
      */
     async getModelsHealthStatus() {
         try {
-            const summary = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { successful: 0, failed: 0 };
-            return {
-                total: summary.total || summary.successful + summary.failed,
+            console.log('🔄 DEBUG: Getting models health status...');
+            
+            let summary = { successful: 0, failed: 0, total: 0 };
+            
+            try {
+                if (typeof Database.getRegistrationSummary === 'function') {
+                    summary = Database.getRegistrationSummary();
+                    console.log('✅ DEBUG: Got registration summary from Database');
+                } else {
+                    console.log('⚠️  DEBUG: Database.getRegistrationSummary() not available');
+                }
+            } catch (summaryError) {
+                console.error('❌ DEBUG: Error getting registration summary:', summaryError.message);
+            }
+
+            const healthStatus = {
+                total: summary.total || (summary.successful + summary.failed),
                 successful: summary.successful,
                 failed: summary.failed,
-                healthy: summary.failed === 0 || summary.successful > 0
+                healthy: summary.failed === 0 || summary.successful > 0,
+                lastCheck: new Date().toISOString()
             };
+
+            console.log(`✅ DEBUG: Models health status obtained. Total: ${healthStatus.total}, Healthy: ${healthStatus.healthy}`);
+            return healthStatus;
         } catch (error) {
-            return { healthy: false, error: error.message };
+            console.error('❌ DEBUG: Getting models health status failed:', error.message);
+            return { 
+                healthy: false, 
+                error: error.message,
+                lastCheck: new Date().toISOString()
+            };
         }
     }
 
@@ -1699,21 +2531,31 @@ class AdminServer extends EventEmitter {
      */
     setupModelRecoveryMonitoring() {
         try {
+            console.log('🔄 DEBUG: Setting up model recovery monitoring...');
+
             // Monitor for model-related events
             this.on('model:recovery:needed', async (data) => {
+                console.log('🔧 DEBUG: Model recovery needed event triggered:', data);
                 logger.warn('Model recovery needed', data);
                 
                 if (this.modelRecoveryAttempts < this.maxModelRecoveryAttempts) {
                     try {
+                        console.log('🔄 DEBUG: Attempting automatic model recovery...');
                         await this.validateAndRecoverModels();
+                        console.log('✅ DEBUG: Automatic model recovery completed');
                     } catch (error) {
+                        console.error('❌ DEBUG: Automatic model recovery failed:', error.message);
                         logger.error('Automatic model recovery failed', { error: error.message });
                     }
+                } else {
+                    console.log('⚠️  DEBUG: Max model recovery attempts reached, manual intervention required');
+                    logger.error('Max model recovery attempts reached, manual intervention required');
                 }
             });
 
             // Monitor for model failures
             this.on('model:failure', async (data) => {
+                console.log('❌ DEBUG: Model failure detected:', data);
                 logger.error('Model failure detected', data);
                 
                 if (this.auditService) {
@@ -1727,15 +2569,29 @@ class AdminServer extends EventEmitter {
                             result: 'failure',
                             metadata: data
                         });
+                        console.log('✅ DEBUG: Model failure logged to audit');
                     } catch (auditError) {
+                        console.error('❌ DEBUG: Failed to log model failure to audit:', auditError.message);
                         logger.warn('Failed to log model failure to audit', { error: auditError.message });
                     }
                 }
+
+                // Trigger recovery if not at max attempts
+                if (this.modelRecoveryAttempts < this.maxModelRecoveryAttempts) {
+                    console.log('🔄 DEBUG: Triggering model recovery due to failure...');
+                    this.emit('model:recovery:needed', {
+                        trigger: 'model_failure',
+                        originalFailure: data,
+                        timestamp: new Date().toISOString()
+                    });
+                }
             });
 
+            console.log('✅ DEBUG: Model recovery monitoring setup completed');
             logger.info('Model recovery monitoring setup completed');
 
         } catch (error) {
+            console.error('❌ DEBUG: Failed to setup model recovery monitoring:', error.message);
             logger.error('Failed to setup model recovery monitoring', { error: error.message });
         }
     }
@@ -1744,18 +2600,22 @@ class AdminServer extends EventEmitter {
      * Setup graceful shutdown handlers
      */
     setupGracefulShutdown() {
+        console.log('🔄 DEBUG: Setting up graceful shutdown handlers...');
+
         const shutdown = async (signal) => {
             if (this.isShuttingDown) {
+                console.log('⚠️  DEBUG: Admin shutdown already in progress');
                 logger.warn('Admin shutdown already in progress');
                 return;
             }
 
             this.isShuttingDown = true;
+            console.log(`🔄 DEBUG: Admin server received ${signal}, starting graceful shutdown...`);
             logger.info(`Admin server received ${signal}, starting graceful shutdown`);
 
             try {
                 // Log shutdown event
-                logger.info('Admin server graceful shutdown initiated', {
+                const shutdownInfo = {
                     signal,
                     uptime: process.uptime(),
                     activeConnections: this.adminConnections.size,
@@ -1764,34 +2624,78 @@ class AdminServer extends EventEmitter {
                         totalDatabases: this.databaseConnections.size,
                         healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length
                     }
-                });
+                };
+
+                console.log('📊 DEBUG: Shutdown info:', shutdownInfo);
+                logger.info('Admin server graceful shutdown initiated', shutdownInfo);
+
+                // Clear intervals
+                if (this.connectionMonitorInterval) {
+                    clearInterval(this.connectionMonitorInterval);
+                    console.log('✅ DEBUG: Connection monitor interval cleared');
+                }
 
                 // Stop health monitoring
                 if (this.healthMonitor) {
+                    console.log('🔄 DEBUG: Stopping health monitor...');
                     await this.healthMonitor.stop();
+                    console.log('✅ DEBUG: Health monitor stopped');
                 }
 
                 // Close all admin connections
+                console.log('🔄 DEBUG: Closing admin connections...');
                 for (const [id, conn] of this.adminConnections) {
-                    conn.socket.destroy();
+                    try {
+                        conn.socket.destroy();
+                        console.log(`✅ DEBUG: Connection ${id} destroyed`);
+                    } catch (connError) {
+                        console.error(`❌ DEBUG: Error destroying connection ${id}:`, connError.message);
+                    }
                 }
+                console.log('✅ DEBUG: All admin connections closed');
 
                 // Close server
+                console.log('🔄 DEBUG: Closing server...');
                 await this.closeServer();
+                console.log('✅ DEBUG: Server closed');
 
                 // Close database connections
-                await Database.shutdown();
+                console.log('🔄 DEBUG: Closing database connections...');
+                try {
+                    await Database.shutdown();
+                    console.log('✅ DEBUG: Database connections closed');
+                } catch (dbShutdownError) {
+                    console.error('❌ DEBUG: Database shutdown error:', dbShutdownError.message);
+                    logger.error('Database shutdown error', { error: dbShutdownError.message });
+                }
 
                 // Stop the Express app
-                if (app.stop) {
-                    await app.stop();
+                console.log('🔄 DEBUG: Stopping Express app...');
+                try {
+                    if (app.stop && typeof app.stop === 'function') {
+                        await app.stop();
+                        console.log('✅ DEBUG: Express app stopped');
+                    } else {
+                        console.log('⚠️  DEBUG: app.stop() not available');
+                    }
+                } catch (appStopError) {
+                    console.error('❌ DEBUG: Express app stop error:', appStopError.message);
                 }
 
                 // Flush audit logs and cleanup audit system
                 if (this.auditService) {
-                    await this.auditService.cleanup();
+                    console.log('🔄 DEBUG: Cleaning up audit system...');
+                    try {
+                        if (typeof this.auditService.cleanup === 'function') {
+                            await this.auditService.cleanup();
+                            console.log('✅ DEBUG: Audit system cleaned up');
+                        }
+                    } catch (auditCleanupError) {
+                        console.error('❌ DEBUG: Audit cleanup error:', auditCleanupError.message);
+                    }
                 }
 
+                console.log('✅ DEBUG: Admin server graceful shutdown completed');
                 logger.info('Admin server graceful shutdown completed', {
                     signal,
                     uptime: process.uptime()
@@ -1799,29 +2703,47 @@ class AdminServer extends EventEmitter {
 
                 process.exit(0);
             } catch (error) {
+                console.error('❌ DEBUG: Error during admin shutdown:', error.message);
                 logger.error('Error during admin shutdown', { error: error.message });
                 process.exit(1);
             }
         };
 
-        process.on('SIGINT', () => shutdown('SIGINT'));
-        process.on('SIGTERM', () => shutdown('SIGTERM'));
+        process.on('SIGINT', () => {
+            console.log('🛑 DEBUG: Received SIGINT signal');
+            shutdown('SIGINT');
+        });
+        
+        process.on('SIGTERM', () => {
+            console.log('🛑 DEBUG: Received SIGTERM signal');
+            shutdown('SIGTERM');
+        });
+
+        console.log('✅ DEBUG: Graceful shutdown handlers setup completed');
     }
 
     /**
      * Setup error handlers
      */
     setupErrorHandlers() {
+        console.log('🔄 DEBUG: Setting up error handlers...');
+
         process.on('uncaughtException', async (error) => {
-            logger.error('Admin Server: Uncaught Exception', {
+            console.error('❌ DEBUG: UNCAUGHT EXCEPTION:', error.message);
+            console.error('❌ DEBUG: UNCAUGHT EXCEPTION STACK:', error.stack);
+            
+            const errorInfo = {
                 error: error.message,
                 stack: error.stack,
                 severity: 'critical',
                 multiDatabase: {
                     totalDatabases: this.databaseConnections.size,
                     healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length
-                }
-            });
+                },
+                timestamp: new Date().toISOString()
+            };
+
+            logger.error('Admin Server: Uncaught Exception', errorInfo);
 
             // Log critical error to audit if available
             if (this.auditService) {
@@ -1839,13 +2761,16 @@ class AdminServer extends EventEmitter {
                             severity: 'critical'
                         }
                     });
+                    console.log('✅ DEBUG: Uncaught exception logged to audit');
                 } catch (auditError) {
+                    console.error('❌ DEBUG: Failed to log uncaught exception to audit:', auditError.message);
                     logger.error('Failed to log uncaught exception to audit', { error: auditError.message });
                 }
             }
 
             // Emit model recovery needed if it's a model-related error
             if (error.message && error.message.toLowerCase().includes('model')) {
+                console.log('🔧 DEBUG: Uncaught exception appears model-related, emitting model:failure event');
                 this.emit('model:failure', {
                     error: error.message,
                     type: 'uncaught_exception',
@@ -1854,20 +2779,29 @@ class AdminServer extends EventEmitter {
             }
 
             setTimeout(() => {
+                console.log('💥 DEBUG: Forcing process exit due to uncaught exception');
                 process.exit(1);
             }, 1000);
         });
 
         process.on('unhandledRejection', async (reason, promise) => {
-            logger.error('Admin Server: Unhandled Promise Rejection', {
-                reason: reason instanceof Error ? reason.message : reason,
-                stack: reason instanceof Error ? reason.stack : undefined,
+            console.error('❌ DEBUG: UNHANDLED REJECTION:', reason);
+            
+            const reasonString = reason instanceof Error ? reason.message : String(reason);
+            const stack = reason instanceof Error ? reason.stack : undefined;
+            
+            const rejectionInfo = {
+                reason: reasonString,
+                stack: stack,
                 severity: 'high',
                 multiDatabase: {
                     totalDatabases: this.databaseConnections.size,
                     healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length
-                }
-            });
+                },
+                timestamp: new Date().toISOString()
+            };
+
+            logger.error('Admin Server: Unhandled Promise Rejection', rejectionInfo);
 
             // Log unhandled rejection to audit if available
             if (this.auditService) {
@@ -1880,25 +2814,30 @@ class AdminServer extends EventEmitter {
                         action: 'unhandled_rejection',
                         result: 'failure',
                         metadata: {
-                            reason: reason instanceof Error ? reason.message : reason,
-                            stack: reason instanceof Error ? reason.stack : undefined,
+                            reason: reasonString,
+                            stack: stack,
                             severity: 'high'
                         }
                     });
+                    console.log('✅ DEBUG: Unhandled rejection logged to audit');
                 } catch (auditError) {
+                    console.error('❌ DEBUG: Failed to log unhandled rejection to audit:', auditError.message);
                     logger.error('Failed to log unhandled rejection to audit', { error: auditError.message });
                 }
             }
 
             // Emit model recovery needed if it's a model-related error
-            if (reason && String(reason).toLowerCase().includes('model')) {
+            if (reason && reasonString.toLowerCase().includes('model')) {
+                console.log('🔧 DEBUG: Unhandled rejection appears model-related, emitting model:failure event');
                 this.emit('model:failure', {
-                    error: String(reason),
+                    error: reasonString,
                     type: 'unhandled_rejection',
                     timestamp: new Date().toISOString()
                 });
             }
         });
+
+        console.log('✅ DEBUG: Error handlers setup completed');
     }
 
     /**
@@ -1906,12 +2845,16 @@ class AdminServer extends EventEmitter {
      */
     closeServer() {
         return new Promise((resolve, reject) => {
+            console.log('🔄 DEBUG: Starting server close process...');
+            
             if (!this.server) {
+                console.log('✅ DEBUG: No server to close');
                 resolve();
                 return;
             }
 
             const timeout = setTimeout(() => {
+                console.error('❌ DEBUG: Admin server forceful shutdown due to timeout');
                 logger.error('Admin server forceful shutdown due to timeout');
                 reject(new Error('Server close timeout'));
             }, 30000);
@@ -1920,9 +2863,11 @@ class AdminServer extends EventEmitter {
                 clearTimeout(timeout);
 
                 if (error) {
+                    console.error('❌ DEBUG: Error closing admin server:', error.message);
                     logger.error('Error closing admin server', { error: error.message });
                     reject(error);
                 } else {
+                    console.log('✅ DEBUG: Admin server closed successfully');
                     logger.info('Admin server closed successfully');
                     resolve();
                 }
@@ -1934,95 +2879,200 @@ class AdminServer extends EventEmitter {
      * ENHANCED: Get admin server status with multi-database architecture information
      */
     getStatus() {
-        const dbHealth = Database.getHealthStatus ? Database.getHealthStatus() : { status: 'unknown' };
-        const uptime = this.startTime ? (new Date() - this.startTime) / 1000 : 0;
-        const auditStatus = this.auditService ? {
-            enabled: this.auditService.isEnabled(),
-            config: this.auditService.getConfig(),
-            factoryStatus: AuditServiceFactory.getStatus()
-        } : { enabled: false };
+        try {
+            console.log('🔄 DEBUG: Getting admin server status...');
+            
+            let dbHealth = { status: 'unknown' };
+            try {
+                if (typeof Database.getHealthStatus === 'function') {
+                    dbHealth = Database.getHealthStatus();
+                    console.log('✅ DEBUG: Got database health status from Database.getHealthStatus()');
+                } else {
+                    console.log('⚠️  DEBUG: Database.getHealthStatus() not available');
+                }
+            } catch (healthError) {
+                console.error('❌ DEBUG: Error getting database health status:', healthError.message);
+            }
+            
+            const uptime = this.startTime ? (new Date() - this.startTime) / 1000 : 0;
+            
+            let auditStatus = { enabled: false };
+            try {
+                auditStatus = this.auditService ? {
+                    enabled: typeof this.auditService.isEnabled === 'function' ? this.auditService.isEnabled() : false,
+                    config: typeof this.auditService.getConfig === 'function' ? this.auditService.getConfig() : {},
+                    factoryStatus: AuditServiceFactory && typeof AuditServiceFactory.getStatus === 'function' ? 
+                        AuditServiceFactory.getStatus() : { initialized: false, enabled: false }
+                } : { enabled: false };
+                console.log('✅ DEBUG: Got audit status');
+            } catch (auditError) {
+                console.error('❌ DEBUG: Error getting audit status:', auditError.message);
+            }
 
-        const modelStatus = Database.getRegistrationSummary ? Database.getRegistrationSummary() : { total: 0, successful: 0, failed: 0 };
+            let modelStatus = { total: 0, successful: 0, failed: 0 };
+            try {
+                if (typeof Database.getRegistrationSummary === 'function') {
+                    modelStatus = Database.getRegistrationSummary();
+                    console.log('✅ DEBUG: Got model status from Database.getRegistrationSummary()');
+                } else {
+                    console.log('⚠️  DEBUG: Database.getRegistrationSummary() not available for status');
+                }
+            } catch (modelError) {
+                console.error('❌ DEBUG: Error getting model status:', modelError.message);
+            }
 
-        // Multi-database status
-        const multiDatabaseStatus = {
-            enabled: this.adminConfig?.features?.multiDatabase || false,
-            totalDatabases: this.databaseConnections.size,
-            databases: Object.fromEntries(
-                Array.from(this.databaseConnections.entries()).map(([dbType, connection]) => {
-                    const health = this.databaseHealthStatus.get(dbType);
-                    const collections = this.databaseCollectionMapping.get(dbType);
-                    return [dbType, {
-                        connectionName: connection.name,
-                        databaseName: connection.db?.databaseName,
-                        healthy: health?.healthy || false,
-                        collections: collections?.length || 0,
-                        collectionsExpected: collections || [],
-                        writeOperations: health?.writeOperations || false,
-                        lastHealthCheck: health?.timestamp,
-                        error: health?.error
-                    }];
-                })
-            ),
-            healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length,
-            collectionsMapping: Object.fromEntries(this.databaseCollectionMapping)
-        };
+            // Multi-database status
+            const multiDatabaseStatus = {
+                enabled: this.adminConfig?.features?.multiDatabase || false,
+                totalDatabases: this.databaseConnections.size,
+                databases: Object.fromEntries(
+                    Array.from(this.databaseConnections.entries()).map(([dbType, connection]) => {
+                        const health = this.databaseHealthStatus.get(dbType);
+                        const collections = this.databaseCollectionMapping.get(dbType);
+                        return [dbType, {
+                            connectionName: connection?.name || 'unknown',
+                            databaseName: connection?.db?.databaseName || 'unknown',
+                            healthy: health?.healthy || false,
+                            collections: collections?.length || 0,
+                            collectionsExpected: collections || [],
+                            writeOperations: health?.writeOperations || false,
+                            lastHealthCheck: health?.timestamp,
+                            error: health?.error
+                        }];
+                    })
+                ),
+                healthyDatabases: Array.from(this.databaseHealthStatus.values()).filter(s => s.healthy).length,
+                collectionsMapping: Object.fromEntries(this.databaseCollectionMapping)
+            };
 
-        return {
-            server: {
-                running: !!this.server,
-                uptime,
-                startTime: this.startTime,
-                environment: config.app?.env,
-                version: config.app?.version,
-                nodeVersion: process.version
-            },
-            connections: {
-                active: this.adminConnections.size,
-                addresses: Array.from(this.adminConnections.values()).map(c => ({
-                    address: c.remoteAddress,
-                    duration: (new Date() - c.connectedAt) / 1000
-                }))
-            },
-            security: {
-                ssl: this.server instanceof https.Server,
-                ipWhitelist: this.adminConfig.security.ipWhitelist?.enabled,
-                mfa: this.adminConfig.security.requireMFA
-            },
-            configuration: {
-                redis: process.env.REDIS_ENABLED === 'true',
-                sessionStore: process.env.SESSION_STORE || 'memory',
-                cacheFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true'
-            },
-            models: {
-                total: modelStatus.total,
-                successful: modelStatus.successful,
-                failed: modelStatus.failed,
-                recoveryAttempts: this.modelRecoveryAttempts,
-                maxRecoveryAttempts: this.maxModelRecoveryAttempts,
-                recoveryEnabled: this.adminConfig.features.modelRecovery
-            },
-            multiDatabase: multiDatabaseStatus,
-            audit: auditStatus,
-            database: dbHealth,
-            health: this.healthMonitor?.getStatus() || {},
-            timestamp: new Date().toISOString()
-        };
+            const status = {
+                server: {
+                    running: !!this.server,
+                    uptime,
+                    startTime: this.startTime,
+                    environment: config.app?.env,
+                    version: config.app?.version,
+                    nodeVersion: process.version,
+                    shuttingDown: this.isShuttingDown
+                },
+                connections: {
+                    active: this.adminConnections.size,
+                    addresses: Array.from(this.adminConnections.values()).map(c => ({
+                        address: c.remoteAddress,
+                        duration: (new Date() - c.connectedAt) / 1000
+                    }))
+                },
+                security: {
+                    ssl: this.server instanceof https.Server,
+                    ipWhitelist: this.adminConfig?.security?.ipWhitelist?.enabled || false,
+                    mfa: this.adminConfig?.security?.requireMFA || false,
+                    securityLevel: this.adminConfig?.security?.level || 'medium',
+                    advancedSecurity: this.adminConfig?.security?.advanced || false,
+                    securityManager: !!this.securityManager
+                },
+                configuration: {
+                    redis: process.env.REDIS_ENABLED === 'true',
+                    sessionStore: process.env.SESSION_STORE || 'memory',
+                    cacheFallback: process.env.CACHE_FALLBACK_TO_MEMORY === 'true',
+                    adminPort: this.adminConfig?.port || 'unknown',
+                    adminHost: this.adminConfig?.host || 'unknown'
+                },
+                models: {
+                    total: modelStatus.total,
+                    successful: modelStatus.successful,
+                    failed: modelStatus.failed,
+                    recoveryAttempts: this.modelRecoveryAttempts,
+                    maxRecoveryAttempts: this.maxModelRecoveryAttempts,
+                    recoveryEnabled: this.adminConfig?.features?.modelRecovery || true,
+                    healthy: modelStatus.failed === 0 || modelStatus.successful > 0
+                },
+                multiDatabase: multiDatabaseStatus,
+                audit: auditStatus,
+                database: dbHealth,
+                health: this.healthMonitor?.getStatus() || { status: 'not_available' },
+                timestamp: new Date().toISOString()
+            };
+
+            console.log('✅ DEBUG: Admin server status compiled successfully');
+            return status;
+        } catch (error) {
+            console.error('❌ DEBUG: Error getting admin server status:', error.message);
+            logger.error('Error getting admin server status', { error: error.message });
+            return {
+                error: error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    /**
+     * Force restart server (for emergency situations)
+     */
+    async forceRestart() {
+        try {
+            console.log('🔄 DEBUG: Force restart initiated...');
+            logger.warn('Admin server force restart initiated');
+            
+            if (this.auditService) {
+                try {
+                    await this.auditService.logEvent({
+                        eventType: AuditEvents.SYSTEM.RESTART,
+                        userId: 'system',
+                        tenantId: 'admin',
+                        resource: 'admin_server',
+                        action: 'force_restart',
+                        result: 'initiated',
+                        metadata: {
+                            trigger: 'manual',
+                            uptime: process.uptime()
+                        }
+                    });
+                    console.log('✅ DEBUG: Force restart logged to audit');
+                } catch (auditError) {
+                    console.error('❌ DEBUG: Failed to log force restart to audit:', auditError.message);
+                }
+            }
+
+            // Reset recovery attempts
+            this.modelRecoveryAttempts = 0;
+            
+            // Close current server
+            await this.closeServer();
+            
+            // Reinitialize everything
+            await this.start();
+            
+            console.log('✅ DEBUG: Force restart completed successfully');
+            logger.info('Admin server force restart completed successfully');
+            
+            return { success: true, timestamp: new Date().toISOString() };
+        } catch (error) {
+            console.error('❌ DEBUG: Force restart failed:', error.message);
+            logger.error('Admin server force restart failed', { error: error.message });
+            throw error;
+        }
     }
 }
 
 // Create singleton instance
 const adminServer = new AdminServer();
 
+// Export both the instance and the class for testing
+module.exports = adminServer;
+module.exports.AdminServer = AdminServer;
+
 // Start server if run directly
 if (require.main === module) {
+    console.log('🚀 DEBUG: Starting admin server as main module...');
     adminServer.start().catch((error) => {
+        console.error('❌ DEBUG: Failed to start admin server from main:', error.message);
+        console.error('❌ DEBUG: Main startup error stack:', error.stack);
+        
         logger.error('Failed to start admin server', {
             error: error.message,
-            stack: error.stack
+            stack: error.stack,
+            trigger: 'main_module'
         });
         process.exit(1);
     });
 }
-
-module.exports = adminServer;

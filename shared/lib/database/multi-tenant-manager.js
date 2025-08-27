@@ -1,1226 +1,544 @@
 'use strict';
 
 /**
- * @fileoverview Multi-tenant database management with dynamic tenant resolution
+ * @fileoverview Simplified multi-tenant manager for hybrid database architecture
  * @module shared/lib/database/multi-tenant-manager
  * @requires module:shared/lib/database/connection-manager
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
- * @requires module:shared/config
+ * @requires module:shared/config/base-config
  */
 
 const ConnectionManager = require('./connection-manager');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/app-error');
-const config = require('../../config');
+const config = require('../../config/base-config');
 
 /**
  * @class MultiTenantManager
- * @description Manages multi-tenant database architecture with isolation strategies
+ * @description Simplified multi-tenant manager supporting:
+ * - Shared database with tenant isolation (most tenants)
+ * - Dedicated databases for enterprise tenants
+ * - Tenant-aware model operations
  */
 class MultiTenantManager {
+  
+  /**
+   * @private
+   * @static
+   * @type {Map<string, Object>}
+   * @description Active tenant contexts
+   */
+  static #tenantContexts = new Map();
+
+  /**
+   * @private
+   * @static
+   * @type {Object}
+   * @description Primary and analytics connections
+   */
+  static #connections = {
+    primary: null,
+    analytics: null
+  };
+
+  /**
+   * @private
+   * @static
+   * @type {boolean}
+   * @description Manager initialization status
+   */
+  static #initialized = false;
+
   /**
    * @private
    * @static
    * @readonly
+   * @type {Object}
+   * @description Tenant isolation strategies
    */
-  static #ISOLATION_STRATEGIES = {
-    DATABASE: 'database-per-tenant',
-    SCHEMA: 'schema-per-tenant',
-    COLLECTION: 'shared-collection',
-    HYBRID: 'hybrid-isolation'
-  };
-
-  static #TENANT_TYPES = {
-    PREMIUM: 'premium',
-    STANDARD: 'standard',
-    TRIAL: 'trial',
-    ENTERPRISE: 'enterprise'
-  };
-
-  static #CACHE_DURATION = 300000; // 5 minutes
-
-  static #tenantConnections = new Map();
-  static #tenantConfigurations = new Map();
-  static #tenantCache = new Map();
-  static #tenantModels = new Map();
-  static #isolationStrategy = config.database?.multiTenant?.strategy || MultiTenantManager.#ISOLATION_STRATEGIES.DATABASE;
+  static #ISOLATION_STRATEGIES = Object.freeze({
+    SHARED: 'shared',           // Shared database with tenant field filtering
+    DEDICATED: 'dedicated',     // Dedicated database per tenant
+    HYBRID: 'hybrid'           // Shared for standard, dedicated for enterprise
+  });
 
   /**
-   * Initializes multi-tenant manager
+   * @private
+   * @static
+   * @readonly
+   * @type {Object}
+   * @description Tenant types
+   */
+  static #TENANT_TYPES = Object.freeze({
+    TRIAL: 'trial',
+    STANDARD: 'standard',
+    PREMIUM: 'premium',
+    ENTERPRISE: 'enterprise'
+  });
+
+  /**
+   * Initializes the multi-tenant manager
    * @static
    * @async
-   * @param {Object} [options={}] - Initialization options
-   * @param {string} [options.strategy] - Isolation strategy
-   * @param {Object} [options.sharedConnection] - Shared connection options
-   * @param {boolean} [options.enableCache=true] - Enable tenant caching
-   * @param {number} [options.cacheDuration] - Cache duration in ms
+   * @param {Object} options - Initialization options
+   * @param {mongoose.Connection} options.primaryConnection - Primary database connection
+   * @param {mongoose.Connection} options.analyticsConnection - Analytics database connection
    * @returns {Promise<void>}
-   * @throws {AppError} If initialization fails
    */
   static async initialize(options = {}) {
     try {
-      const {
-        strategy = MultiTenantManager.#isolationStrategy,
-        sharedConnection = {},
-        enableCache = true,
-        cacheDuration = MultiTenantManager.#CACHE_DURATION
-      } = options;
-
-      // Validate strategy
-      if (!Object.values(MultiTenantManager.#ISOLATION_STRATEGIES).includes(strategy)) {
-        throw new AppError('Invalid isolation strategy', 400, 'INVALID_STRATEGY');
+      if (MultiTenantManager.#initialized) {
+        logger.debug('Multi-tenant manager already initialized');
+        return;
       }
 
-      MultiTenantManager.#isolationStrategy = strategy;
-      MultiTenantManager.#CACHE_DURATION = cacheDuration;
+      logger.info('Initializing simplified multi-tenant manager');
 
-      // Initialize shared connection if needed
-      if (strategy === MultiTenantManager.#ISOLATION_STRATEGIES.COLLECTION ||
-          strategy === MultiTenantManager.#ISOLATION_STRATEGIES.SCHEMA) {
-        await ConnectionManager.connect('shared', sharedConnection);
+      MultiTenantManager.#connections.primary = options.primaryConnection;
+      MultiTenantManager.#connections.analytics = options.analyticsConnection;
+
+      if (!MultiTenantManager.#connections.primary) {
+        throw new AppError(
+          'Primary connection is required for multi-tenant manager',
+          500,
+          'PRIMARY_CONNECTION_REQUIRED'
+        );
       }
 
-      // Load tenant configurations if available
-      await MultiTenantManager.#loadTenantConfigurations();
+      MultiTenantManager.#initialized = true;
 
-      logger.info('Multi-tenant manager initialized', {
-        strategy,
-        enableCache,
-        cacheDuration
+      logger.info('Multi-tenant manager initialized successfully', {
+        primaryConnection: 'Connected',
+        analyticsConnection: MultiTenantManager.#connections.analytics ? 'Connected' : 'Using primary'
       });
 
     } catch (error) {
       logger.error('Failed to initialize multi-tenant manager', error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
       throw new AppError(
-        'Multi-tenant initialization failed',
+        'Multi-tenant manager initialization failed',
         500,
-        'INIT_ERROR',
+        'MULTI_TENANT_INIT_ERROR',
         { originalError: error.message }
       );
     }
   }
 
   /**
-   * Gets or creates tenant-specific database connection
+   * Creates a tenant context based on tenant configuration
    * @static
    * @async
    * @param {string} tenantId - Tenant identifier
-   * @param {Object} [options={}] - Connection options
-   * @returns {Promise<Object>} Tenant database context
-   * @throws {AppError} If tenant connection fails
+   * @param {Object} [tenantConfig={}] - Tenant configuration
+   * @returns {Promise<Object>} Tenant context
    */
-  static async getTenantConnection(tenantId, options = {}) {
+  static async createTenantContext(tenantId, tenantConfig = {}) {
     try {
-      if (!tenantId) {
-        throw new AppError('Tenant ID is required', 400, 'MISSING_TENANT_ID');
+      if (!MultiTenantManager.#initialized) {
+        throw new AppError(
+          'Multi-tenant manager not initialized',
+          500,
+          'MULTI_TENANT_NOT_INITIALIZED'
+        );
       }
 
-      // Check cache first
-      const cached = MultiTenantManager.#getCachedTenant(tenantId);
-      if (cached && cached.connection) {
-        return cached;
+      // Return existing context if available
+      if (MultiTenantManager.#tenantContexts.has(tenantId)) {
+        return MultiTenantManager.#tenantContexts.get(tenantId);
       }
 
-      // Get tenant configuration
-      const tenantConfig = await MultiTenantManager.#getTenantConfiguration(tenantId);
-      
-      if (!tenantConfig) {
-        throw new AppError('Tenant not found', 404, 'TENANT_NOT_FOUND');
+      logger.info('Creating tenant context', { tenantId, type: tenantConfig.type });
+
+      const strategy = MultiTenantManager.#determineIsolationStrategy(tenantConfig);
+      let context;
+
+      switch (strategy) {
+        case MultiTenantManager.#ISOLATION_STRATEGIES.SHARED:
+          context = await MultiTenantManager.#createSharedContext(tenantId, tenantConfig);
+          break;
+
+        case MultiTenantManager.#ISOLATION_STRATEGIES.DEDICATED:
+          context = await MultiTenantManager.#createDedicatedContext(tenantId, tenantConfig);
+          break;
+
+        case MultiTenantManager.#ISOLATION_STRATEGIES.HYBRID:
+          context = await MultiTenantManager.#createHybridContext(tenantId, tenantConfig);
+          break;
+
+        default:
+          throw new AppError(
+            `Unsupported isolation strategy: ${strategy}`,
+            400,
+            'UNSUPPORTED_ISOLATION_STRATEGY'
+          );
       }
 
-      // Create connection based on isolation strategy
-      const context = await MultiTenantManager.#createTenantContext(
+      MultiTenantManager.#tenantContexts.set(tenantId, context);
+
+      logger.info('Tenant context created successfully', {
         tenantId,
-        tenantConfig,
-        options
-      );
-
-      // Cache the connection
-      MultiTenantManager.#cacheTenant(tenantId, context);
-
-      logger.info('Tenant connection established', {
-        tenantId,
-        strategy: MultiTenantManager.#isolationStrategy
+        strategy,
+        type: tenantConfig.type
       });
 
       return context;
 
     } catch (error) {
-      logger.error('Failed to get tenant connection', error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
-      throw new AppError(
-        'Tenant connection failed',
-        500,
-        'TENANT_CONNECTION_ERROR',
-        { originalError: error.message }
-      );
-    }
-  }
-
-  /**
-   * Creates a new tenant
-   * @static
-   * @async
-   * @param {Object} tenantData - Tenant information
-   * @returns {Promise<Object>} Created tenant
-   * @throws {AppError} If tenant creation fails
-   */
-  static async createTenant(tenantData) {
-    try {
-      const {
-        tenantId,
-        name,
-        type = MultiTenantManager.#TENANT_TYPES.STANDARD,
-        configuration = {},
-        metadata = {}
-      } = tenantData;
-
-      if (!tenantId || !name) {
-        throw new AppError('Tenant ID and name are required', 400, 'INVALID_TENANT_DATA');
-      }
-
-      // Check if tenant already exists
-      const existing = MultiTenantManager.#tenantConfigurations.get(tenantId);
-      if (existing) {
-        throw new AppError('Tenant already exists', 409, 'TENANT_EXISTS');
-      }
-
-      const tenant = {
-        tenantId,
-        name,
-        type,
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        configuration: {
-          ...MultiTenantManager.#getDefaultConfiguration(type),
-          ...configuration
-        },
-        metadata,
-        isolationStrategy: MultiTenantManager.#isolationStrategy
-      };
-
-      // Create tenant resources based on strategy
-      await MultiTenantManager.#provisionTenantResources(tenant);
-
-      // Store configuration
-      MultiTenantManager.#tenantConfigurations.set(tenantId, tenant);
-
-      // Persist to database if available
-      await MultiTenantManager.#persistTenantConfiguration(tenant);
-
-      logger.info('Tenant created successfully', {
-        tenantId,
-        name,
-        type
-      });
-
-      return tenant;
-
-    } catch (error) {
-      logger.error('Failed to create tenant', error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
-      throw new AppError(
-        'Tenant creation failed',
-        500,
-        'TENANT_CREATION_ERROR',
-        { originalError: error.message }
-      );
-    }
-  }
-
-  /**
-   * Updates tenant configuration
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant identifier
-   * @param {Object} updates - Configuration updates
-   * @returns {Promise<Object>} Updated tenant
-   * @throws {AppError} If update fails
-   */
-  static async updateTenant(tenantId, updates) {
-    try {
-      if (!tenantId) {
-        throw new AppError('Tenant ID is required', 400, 'MISSING_TENANT_ID');
-      }
-
-      const tenant = await MultiTenantManager.#getTenantConfiguration(tenantId);
+      logger.error(`Failed to create tenant context for ${tenantId}:`, error);
       
-      if (!tenant) {
-        throw new AppError('Tenant not found', 404, 'TENANT_NOT_FOUND');
-      }
-
-      // Update configuration
-      const updatedTenant = {
-        ...tenant,
-        ...updates,
-        tenantId, // Prevent ID change
-        updatedAt: new Date().toISOString()
-      };
-
-      // Update resources if needed
-      if (updates.configuration || updates.type) {
-        await MultiTenantManager.#updateTenantResources(updatedTenant);
-      }
-
-      // Update in memory
-      MultiTenantManager.#tenantConfigurations.set(tenantId, updatedTenant);
-
-      // Clear cache
-      MultiTenantManager.#clearTenantCache(tenantId);
-
-      // Persist changes
-      await MultiTenantManager.#persistTenantConfiguration(updatedTenant);
-
-      logger.info('Tenant updated successfully', { tenantId });
-
-      return updatedTenant;
-
-    } catch (error) {
-      logger.error('Failed to update tenant', error);
-
       if (error instanceof AppError) {
         throw error;
       }
 
       throw new AppError(
-        'Tenant update failed',
+        'Tenant context creation failed',
         500,
-        'TENANT_UPDATE_ERROR',
-        { originalError: error.message }
-      );
-    }
-  }
-
-  /**
-   * Deletes a tenant and its resources
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant identifier
-   * @param {Object} [options={}] - Deletion options
-   * @returns {Promise<void>}
-   * @throws {AppError} If deletion fails
-   */
-  static async deleteTenant(tenantId, options = {}) {
-    try {
-      const {
-        softDelete = true,
-        backupData = true,
-        force = false
-      } = options;
-
-      if (!tenantId) {
-        throw new AppError('Tenant ID is required', 400, 'MISSING_TENANT_ID');
-      }
-
-      const tenant = await MultiTenantManager.#getTenantConfiguration(tenantId);
-      
-      if (!tenant) {
-        throw new AppError('Tenant not found', 404, 'TENANT_NOT_FOUND');
-      }
-
-      // Backup data if requested
-      if (backupData) {
-        await MultiTenantManager.#backupTenantData(tenantId);
-      }
-
-      // Close connections
-      await MultiTenantManager.#closeTenantConnections(tenantId);
-
-      if (softDelete && !force) {
-        // Soft delete - mark as deleted
-        tenant.status = 'deleted';
-        tenant.deletedAt = new Date().toISOString();
-        await MultiTenantManager.#persistTenantConfiguration(tenant);
-      } else {
-        // Hard delete - remove resources
-        await MultiTenantManager.#deprovisionTenantResources(tenant);
-        MultiTenantManager.#tenantConfigurations.delete(tenantId);
-      }
-
-      // Clear cache
-      MultiTenantManager.#clearTenantCache(tenantId);
-
-      logger.info('Tenant deleted successfully', {
-        tenantId,
-        softDelete,
-        force
-      });
-
-    } catch (error) {
-      logger.error('Failed to delete tenant', error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
-      throw new AppError(
-        'Tenant deletion failed',
-        500,
-        'TENANT_DELETION_ERROR',
-        { originalError: error.message }
-      );
-    }
-  }
-
-  /**
-   * Gets tenant model with isolation applied
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant identifier
-   * @param {string} modelName - Model name
-   * @param {Object} schema - Mongoose schema
-   * @param {Object} [options={}] - Model options
-   * @returns {Promise<Object>} Tenant-specific model
-   * @throws {AppError} If model creation fails
-   */
-  static async getTenantModel(tenantId, modelName, schema, options = {}) {
-    try {
-      if (!tenantId || !modelName || !schema) {
-        throw new AppError(
-          'Tenant ID, model name, and schema are required',
-          400,
-          'INVALID_MODEL_PARAMS'
-        );
-      }
-
-      // Check cache
-      const cacheKey = `${tenantId}:${modelName}`;
-      const cached = MultiTenantManager.#tenantModels.get(cacheKey);
-      if (cached) {
-        return cached;
-      }
-
-      // Get tenant context
-      const context = await MultiTenantManager.getTenantConnection(tenantId);
-
-      let model;
-
-      switch (MultiTenantManager.#isolationStrategy) {
-        case MultiTenantManager.#ISOLATION_STRATEGIES.DATABASE:
-          // Use tenant-specific database
-          model = context.connection.model(modelName, schema);
-          break;
-
-        case MultiTenantManager.#ISOLATION_STRATEGIES.SCHEMA:
-          // Use tenant-specific schema prefix
-          const schemaName = `${tenantId}_${modelName}`;
-          model = context.connection.model(schemaName, schema);
-          break;
-
-        case MultiTenantManager.#ISOLATION_STRATEGIES.COLLECTION:
-          // Add tenant discriminator
-          const tenantSchema = schema.clone();
-          tenantSchema.add({ tenantId: { type: String, required: true, index: true } });
-          
-          // Apply tenant filter middleware
-          tenantSchema.pre(/^find/, function() {
-            this.where({ tenantId });
-          });
-          
-          tenantSchema.pre('save', function() {
-            this.tenantId = tenantId;
-          });
-
-          model = context.connection.model(modelName, tenantSchema);
-          break;
-
-        case MultiTenantManager.#ISOLATION_STRATEGIES.HYBRID:
-          // Hybrid approach based on tenant type
-          model = await MultiTenantManager.#createHybridModel(
-            tenantId,
-            modelName,
-            schema,
-            context
-          );
-          break;
-      }
-
-      // Cache model
-      MultiTenantManager.#tenantModels.set(cacheKey, model);
-
-      logger.debug('Tenant model created', {
-        tenantId,
-        modelName,
-        strategy: MultiTenantManager.#isolationStrategy
-      });
-
-      return model;
-
-    } catch (error) {
-      logger.error('Failed to get tenant model', error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
-      throw new AppError(
-        'Tenant model creation failed',
-        500,
-        'MODEL_CREATION_ERROR',
-        { originalError: error.message }
-      );
-    }
-  }
-
-  /**
-   * Executes operation in tenant context
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant identifier
-   * @param {Function} operation - Operation to execute
-   * @param {Object} [options={}] - Execution options
-   * @returns {Promise<*>} Operation result
-   * @throws {AppError} If execution fails
-   */
-  static async executeInTenantContext(tenantId, operation, options = {}) {
-    try {
-      if (!tenantId || typeof operation !== 'function') {
-        throw new AppError(
-          'Tenant ID and operation function are required',
-          400,
-          'INVALID_CONTEXT_PARAMS'
-        );
-      }
-
-      // Get tenant context
-      const context = await MultiTenantManager.getTenantConnection(tenantId);
-
-      // Create tenant context object
-      const tenantContext = {
-        tenantId,
-        connection: context.connection,
-        database: context.database,
-        configuration: context.configuration,
-        getModel: (modelName, schema) => 
-          MultiTenantManager.getTenantModel(tenantId, modelName, schema)
-      };
-
-      // Execute operation with tenant context
-      const result = await operation(tenantContext);
-
-      logger.debug('Operation executed in tenant context', {
-        tenantId,
-        operationName: operation.name || 'anonymous'
-      });
-
-      return result;
-
-    } catch (error) {
-      logger.error('Failed to execute in tenant context', error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
-      throw new AppError(
-        'Tenant context execution failed',
-        500,
-        'CONTEXT_EXECUTION_ERROR',
-        { originalError: error.message }
-      );
-    }
-  }
-
-  /**
-   * Lists all active tenants
-   * @static
-   * @async
-   * @param {Object} [filters={}] - Filter criteria
-   * @returns {Promise<Array>} List of tenants
-   * @throws {AppError} If listing fails
-   */
-  static async listTenants(filters = {}) {
-    try {
-      const {
-        status = 'active',
-        type,
-        limit = 100,
-        offset = 0
-      } = filters;
-
-      let tenants = Array.from(MultiTenantManager.#tenantConfigurations.values());
-
-      // Apply filters
-      if (status) {
-        tenants = tenants.filter(t => t.status === status);
-      }
-
-      if (type) {
-        tenants = tenants.filter(t => t.type === type);
-      }
-
-      // Apply pagination
-      const totalCount = tenants.length;
-      tenants = tenants.slice(offset, offset + limit);
-
-      logger.info('Tenants listed', {
-        totalCount,
-        returned: tenants.length
-      });
-
-      return {
-        tenants,
-        totalCount,
-        limit,
-        offset,
-        hasMore: totalCount > offset + limit
-      };
-
-    } catch (error) {
-      logger.error('Failed to list tenants', error);
-
-      throw new AppError(
-        'Tenant listing failed',
-        500,
-        'TENANT_LIST_ERROR',
-        { originalError: error.message }
-      );
-    }
-  }
-
-  /**
-   * Gets tenant statistics
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant identifier
-   * @returns {Promise<Object>} Tenant statistics
-   * @throws {AppError} If statistics retrieval fails
-   */
-  static async getTenantStatistics(tenantId) {
-    try {
-      if (!tenantId) {
-        throw new AppError('Tenant ID is required', 400, 'MISSING_TENANT_ID');
-      }
-
-      const tenant = await MultiTenantManager.#getTenantConfiguration(tenantId);
-      
-      if (!tenant) {
-        throw new AppError('Tenant not found', 404, 'TENANT_NOT_FOUND');
-      }
-
-      const context = await MultiTenantManager.getTenantConnection(tenantId);
-      const stats = {
-        tenantId,
-        name: tenant.name,
-        type: tenant.type,
-        status: tenant.status,
-        createdAt: tenant.createdAt,
-        isolationStrategy: tenant.isolationStrategy
-      };
-
-      if (context.database) {
-        // Get database statistics
-        const dbStats = await context.database.stats();
-        stats.database = {
-          collections: dbStats.collections,
-          dataSize: dbStats.dataSize,
-          storageSize: dbStats.storageSize,
-          indexes: dbStats.indexes,
-          indexSize: dbStats.indexSize
-        };
-      }
-
-      // Get connection health
-      const connectionName = MultiTenantManager.#getConnectionName(tenantId);
-      const health = await ConnectionManager.checkHealth(connectionName);
-      stats.connectionHealth = health;
-
-      logger.info('Tenant statistics retrieved', { tenantId });
-
-      return stats;
-
-    } catch (error) {
-      logger.error('Failed to get tenant statistics', error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
-      throw new AppError(
-        'Statistics retrieval failed',
-        500,
-        'TENANT_STATS_ERROR',
-        { originalError: error.message }
+        'TENANT_CONTEXT_ERROR',
+        { tenantId, originalError: error.message }
       );
     }
   }
 
   /**
    * @private
-   * Loads tenant configurations from storage
+   * Determines the appropriate isolation strategy for a tenant
    * @static
-   * @async
-   */
-  static async #loadTenantConfigurations() {
-    try {
-      // In production, load from database
-      // For now, initialize with defaults
-      logger.info('Loading tenant configurations');
-
-      // Example: Load from a tenant configuration collection
-      const TenantModel = require('./models\organizations\tenant-model');
-      if (TenantModel) {
-        const tenants = await TenantModel.find({ status: 'active' });
-        
-        tenants.forEach(tenant => {
-          MultiTenantManager.#tenantConfigurations.set(tenant.tenantId, tenant);
-        });
-
-        logger.info(`Loaded ${tenants.length} tenant configurations`);
-      }
-
-    } catch (error) {
-      logger.warn('Failed to load tenant configurations', error);
-      // Continue with empty configurations
-    }
-  }
-
-  /**
-   * @private
-   * Gets tenant configuration
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant ID
-   * @returns {Promise<Object|null>} Tenant configuration
-   */
-  static async #getTenantConfiguration(tenantId) {
-    let config = MultiTenantManager.#tenantConfigurations.get(tenantId);
-
-    if (!config) {
-      // Try to load from database
-      try {
-        const TenantModel = require('./models\organizations\tenant-model');
-        config = await TenantModel.findOne({ tenantId });
-        
-        if (config) {
-          MultiTenantManager.#tenantConfigurations.set(tenantId, config);
-        }
-      } catch (error) {
-        logger.debug('Could not load tenant from database', error);
-      }
-    }
-
-    return config;
-  }
-
-  /**
-   * @private
-   * Creates tenant context based on isolation strategy
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant ID
    * @param {Object} tenantConfig - Tenant configuration
-   * @param {Object} options - Connection options
-   * @returns {Promise<Object>} Tenant context
+   * @returns {string} Isolation strategy
    */
-  static async #createTenantContext(tenantId, tenantConfig, options) {
-    const strategy = MultiTenantManager.#isolationStrategy;
-    let context = {};
+  static #determineIsolationStrategy(tenantConfig) {
+    const tenantType = tenantConfig.type || MultiTenantManager.#TENANT_TYPES.STANDARD;
 
-    switch (strategy) {
-      case MultiTenantManager.#ISOLATION_STRATEGIES.DATABASE:
-        // Create separate database connection
-        const dbName = `tenant_${tenantId}`;
-        const connectionName = MultiTenantManager.#getConnectionName(tenantId);
-        
-        const connection = await ConnectionManager.connect(connectionName, {
-          ...options,
-          uri: `${config.database.uri}/${dbName}`
-        });
-
-        context = {
-          tenantId,
-          connection,
-          database: connection.db,
-          configuration: tenantConfig
-        };
-        break;
-
-      case MultiTenantManager.#ISOLATION_STRATEGIES.SCHEMA:
-      case MultiTenantManager.#ISOLATION_STRATEGIES.COLLECTION:
-        // Use shared connection
-        const sharedConnection = ConnectionManager.getConnection('shared');
-        
-        context = {
-          tenantId,
-          connection: sharedConnection,
-          database: sharedConnection.db,
-          configuration: tenantConfig,
-          schemaPrefix: strategy === MultiTenantManager.#ISOLATION_STRATEGIES.SCHEMA ? `${tenantId}_` : ''
-        };
-        break;
-
-      case MultiTenantManager.#ISOLATION_STRATEGIES.HYBRID:
-        // Determine based on tenant type
-        context = await MultiTenantManager.#createHybridContext(
-          tenantId,
-          tenantConfig,
-          options
-        );
-        break;
+    // Enterprise tenants get dedicated databases
+    if (tenantType === MultiTenantManager.#TENANT_TYPES.ENTERPRISE) {
+      return MultiTenantManager.#ISOLATION_STRATEGIES.DEDICATED;
     }
 
-    MultiTenantManager.#tenantConnections.set(tenantId, context);
-    return context;
+    // All other tenants share the primary database with tenant isolation
+    return MultiTenantManager.#ISOLATION_STRATEGIES.SHARED;
   }
 
   /**
    * @private
-   * Gets default configuration for tenant type
+   * Creates a shared tenant context
    * @static
-   * @param {string} type - Tenant type
-   * @returns {Object} Default configuration
+   * @async
+   * @param {string} tenantId - Tenant identifier
+   * @param {Object} tenantConfig - Tenant configuration
+   * @returns {Promise<Object>} Shared tenant context
    */
-  static #getDefaultConfiguration(type) {
-    const configurations = {
-      [MultiTenantManager.#TENANT_TYPES.TRIAL]: {
-        maxUsers: 5,
-        maxStorage: 1024 * 1024 * 100, // 100MB
-        features: ['basic'],
-        expirationDays: 30
-      },
-      [MultiTenantManager.#TENANT_TYPES.STANDARD]: {
-        maxUsers: 50,
-        maxStorage: 1024 * 1024 * 1024 * 10, // 10GB
-        features: ['basic', 'advanced'],
-        backupEnabled: true
-      },
-      [MultiTenantManager.#TENANT_TYPES.PREMIUM]: {
-        maxUsers: 200,
-        maxStorage: 1024 * 1024 * 1024 * 100, // 100GB
-        features: ['basic', 'advanced', 'premium'],
-        backupEnabled: true,
-        replicationEnabled: true
-      },
-      [MultiTenantManager.#TENANT_TYPES.ENTERPRISE]: {
-        maxUsers: -1, // Unlimited
-        maxStorage: -1, // Unlimited
-        features: ['all'],
-        backupEnabled: true,
-        replicationEnabled: true,
-        dedicatedResources: true
+  static async #createSharedContext(tenantId, tenantConfig) {
+    return {
+      tenantId,
+      strategy: MultiTenantManager.#ISOLATION_STRATEGIES.SHARED,
+      connection: MultiTenantManager.#connections.primary,
+      analyticsConnection: MultiTenantManager.#connections.analytics || 
+                          MultiTenantManager.#connections.primary,
+      configuration: tenantConfig,
+      isolated: false,
+      filters: {
+        tenantId: tenantId
       }
     };
-
-    return configurations[type] || configurations[MultiTenantManager.#TENANT_TYPES.STANDARD];
   }
 
   /**
    * @private
-   * Provisions tenant resources
+   * Creates a dedicated tenant context
    * @static
    * @async
-   * @param {Object} tenant - Tenant data
-   */
-  static async #provisionTenantResources(tenant) {
-    const strategy = MultiTenantManager.#isolationStrategy;
-
-    switch (strategy) {
-      case MultiTenantManager.#ISOLATION_STRATEGIES.DATABASE:
-        // Create tenant database
-        const dbName = `tenant_${tenant.tenantId}`;
-        const connection = await ConnectionManager.createConnection(
-          `${config.database.uri}/${dbName}`
-        );
-        
-        // Initialize collections and indexes
-        await MultiTenantManager.#initializeTenantDatabase(connection, tenant);
-        
-        await connection.close();
-        break;
-
-      case MultiTenantManager.#ISOLATION_STRATEGIES.SCHEMA:
-        // Create schema prefix structures
-        await MultiTenantManager.#initializeTenantSchema(tenant);
-        break;
-
-      case MultiTenantManager.#ISOLATION_STRATEGIES.COLLECTION:
-        // No special provisioning needed
-        break;
-
-      case MultiTenantManager.#ISOLATION_STRATEGIES.HYBRID:
-        // Provision based on tenant type
-        await MultiTenantManager.#provisionHybridResources(tenant);
-        break;
-    }
-
-    logger.info('Tenant resources provisioned', {
-      tenantId: tenant.tenantId,
-      strategy
-    });
-  }
-
-  /**
-   * @private
-   * Deprovisions tenant resources
-   * @static
-   * @async
-   * @param {Object} tenant - Tenant data
-   */
-  static async #deprovisionTenantResources(tenant) {
-    const strategy = MultiTenantManager.#isolationStrategy;
-
-    switch (strategy) {
-      case MultiTenantManager.#ISOLATION_STRATEGIES.DATABASE:
-        // Drop tenant database
-        const dbName = `tenant_${tenant.tenantId}`;
-        const connection = await ConnectionManager.createConnection(config.database.uri);
-        await connection.db.admin().dropDatabase(dbName);
-        await connection.close();
-        break;
-
-      case MultiTenantManager.#ISOLATION_STRATEGIES.SCHEMA:
-        // Remove tenant collections
-        await MultiTenantManager.#removeTenantSchema(tenant);
-        break;
-
-      case MultiTenantManager.#ISOLATION_STRATEGIES.COLLECTION:
-        // Remove tenant data
-        await MultiTenantManager.#removeTenantData(tenant);
-        break;
-
-      case MultiTenantManager.#ISOLATION_STRATEGIES.HYBRID:
-        // Deprovision based on tenant type
-        await MultiTenantManager.#deprovisionHybridResources(tenant);
-        break;
-    }
-
-    logger.info('Tenant resources deprovisioned', {
-      tenantId: tenant.tenantId,
-      strategy
-    });
-  }
-
-  /**
-   * @private
-   * Initializes tenant database
-   * @static
-   * @async
-   * @param {Object} connection - Database connection
-   * @param {Object} tenant - Tenant data
-   */
-  static async #initializeTenantDatabase(connection, tenant) {
-    // Create default collections and indexes
-    const collections = ['users', 'settings', 'audit_logs'];
-    
-    for (const collectionName of collections) {
-      await connection.createCollection(collectionName);
-      
-      // Add default indexes
-      if (collectionName === 'users') {
-        await connection.collection(collectionName).createIndex(
-          { email: 1 },
-          { unique: true }
-        );
-      }
-    }
-
-    // Store tenant metadata
-    await connection.collection('_tenant_metadata').insertOne({
-      tenantId: tenant.tenantId,
-      name: tenant.name,
-      type: tenant.type,
-      createdAt: tenant.createdAt,
-      configuration: tenant.configuration
-    });
-  }
-
-  /**
-   * @private
-   * Persists tenant configuration
-   * @static
-   * @async
-   * @param {Object} tenant - Tenant data
-   */
-  static async #persistTenantConfiguration(tenant) {
-    try {
-      // In production, save to database
-      const TenantModel = require('./models\organizations\tenant-model');
-      if (TenantModel) {
-        await TenantModel.findOneAndUpdate(
-          { tenantId: tenant.tenantId },
-          tenant,
-          { upsert: true, new: true }
-        );
-      }
-    } catch (error) {
-      logger.error('Failed to persist tenant configuration', error);
-    }
-  }
-
-  /**
-   * @private
-   * Gets cached tenant
-   * @static
-   * @param {string} tenantId - Tenant ID
-   * @returns {Object|null} Cached tenant context
-   */
-  static #getCachedTenant(tenantId) {
-    const cached = MultiTenantManager.#tenantCache.get(tenantId);
-    
-    if (cached && cached.timestamp > Date.now() - MultiTenantManager.#CACHE_DURATION) {
-      return cached.data;
-    }
-
-    return null;
-  }
-
-  /**
-   * @private
-   * Caches tenant context
-   * @static
-   * @param {string} tenantId - Tenant ID
-   * @param {Object} context - Tenant context
-   */
-  static #cacheTenant(tenantId, context) {
-    MultiTenantManager.#tenantCache.set(tenantId, {
-      data: context,
-      timestamp: Date.now()
-    });
-  }
-
-  /**
-   * @private
-   * Clears tenant cache
-   * @static
-   * @param {string} tenantId - Tenant ID
-   */
-  static #clearTenantCache(tenantId) {
-    MultiTenantManager.#tenantCache.delete(tenantId);
-    
-    // Clear model cache for tenant
-    const modelKeys = Array.from(MultiTenantManager.#tenantModels.keys());
-    modelKeys.forEach(key => {
-      if (key.startsWith(`${tenantId}:`)) {
-        MultiTenantManager.#tenantModels.delete(key);
-      }
-    });
-  }
-
-  /**
-   * @private
-   * Gets connection name for tenant
-   * @static
-   * @param {string} tenantId - Tenant ID
-   * @returns {string} Connection name
-   */
-  static #getConnectionName(tenantId) {
-    return `tenant_${tenantId}`;
-  }
-
-  /**
-   * @private
-   * Closes tenant connections
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant ID
-   */
-  static async #closeTenantConnections(tenantId) {
-    const connectionName = MultiTenantManager.#getConnectionName(tenantId);
-    await ConnectionManager.disconnect(connectionName);
-    
-    MultiTenantManager.#tenantConnections.delete(tenantId);
-  }
-
-  /**
-   * @private
-   * Backs up tenant data
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant ID
-   */
-  static async #backupTenantData(tenantId) {
-    logger.info('Backing up tenant data', { tenantId });
-    // Implementation would perform actual backup
-  }
-
-  /**
-   * @private
-   * Creates hybrid model based on tenant type
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant ID
-   * @param {string} modelName - Model name
-   * @param {Object} schema - Mongoose schema
-   * @param {Object} context - Tenant context
-   * @returns {Promise<Object>} Tenant model
-   */
-  static async #createHybridModel(tenantId, modelName, schema, context) {
-    const tenant = await MultiTenantManager.#getTenantConfiguration(tenantId);
-    
-    if (tenant.type === MultiTenantManager.#TENANT_TYPES.ENTERPRISE) {
-      // Use database isolation for enterprise
-      return context.connection.model(modelName, schema);
-    } else {
-      // Use collection isolation for others
-      const tenantSchema = schema.clone();
-      tenantSchema.add({ tenantId: { type: String, required: true, index: true } });
-      
-      tenantSchema.pre(/^find/, function() {
-        this.where({ tenantId });
-      });
-      
-      tenantSchema.pre('save', function() {
-        this.tenantId = tenantId;
-      });
-
-      return context.connection.model(modelName, tenantSchema);
-    }
-  }
-
-  /**
-   * @private
-   * Creates hybrid context based on tenant type
-   * @static
-   * @async
-   * @param {string} tenantId - Tenant ID
+   * @param {string} tenantId - Tenant identifier
    * @param {Object} tenantConfig - Tenant configuration
-   * @param {Object} options - Connection options
-   * @returns {Promise<Object>} Tenant context
+   * @returns {Promise<Object>} Dedicated tenant context
    */
-  static async #createHybridContext(tenantId, tenantConfig, options) {
-    if (tenantConfig.type === MultiTenantManager.#TENANT_TYPES.ENTERPRISE) {
-      // Enterprise gets dedicated database
-      const dbName = `tenant_${tenantId}`;
-      const connectionName = MultiTenantManager.#getConnectionName(tenantId);
+  static async #createDedicatedContext(tenantId, tenantConfig) {
+    // Create dedicated connection for this tenant
+    const dedicatedConnection = await ConnectionManager.createTenantConnection(tenantId, {
+      maxPoolSize: tenantConfig.maxConnections || 10,
+      minPoolSize: tenantConfig.minConnections || 2
+    });
+
+    return {
+      tenantId,
+      strategy: MultiTenantManager.#ISOLATION_STRATEGIES.DEDICATED,
+      connection: dedicatedConnection,
+      analyticsConnection: MultiTenantManager.#connections.analytics || dedicatedConnection,
+      configuration: tenantConfig,
+      isolated: true,
+      filters: {}
+    };
+  }
+
+  /**
+   * @private
+   * Creates a hybrid tenant context
+   * @static
+   * @async
+   * @param {string} tenantId - Tenant identifier
+   * @param {Object} tenantConfig - Tenant configuration
+   * @returns {Promise<Object>} Hybrid tenant context
+   */
+  static async #createHybridContext(tenantId, tenantConfig) {
+    // For now, hybrid is same as shared, but could be extended
+    return MultiTenantManager.#createSharedContext(tenantId, tenantConfig);
+  }
+
+  /**
+   * Gets a tenant context by ID
+   * @static
+   * @param {string} tenantId - Tenant identifier
+   * @returns {Object|null} Tenant context or null
+   */
+  static getTenantContext(tenantId) {
+    return MultiTenantManager.#tenantContexts.get(tenantId) || null;
+  }
+
+  /**
+   * Gets a tenant-aware model instance
+   * @static
+   * @param {string} modelName - Model name
+   * @param {string} tenantId - Tenant identifier
+   * @returns {Function|null} Tenant-aware model or null
+   */
+  static getTenantModel(modelName, tenantId) {
+    try {
+      const context = MultiTenantManager.getTenantContext(tenantId);
+      if (!context) {
+        logger.warn(`Tenant context not found: ${tenantId}`);
+        return null;
+      }
+
+      const connection = MultiTenantManager.#isAnalyticsModel(modelName) ? 
+        context.analyticsConnection : context.connection;
+
+      if (!connection) {
+        logger.warn(`No connection available for model ${modelName} and tenant ${tenantId}`);
+        return null;
+      }
+
+      // For shared databases, we need to add tenant filtering
+      if (context.strategy === MultiTenantManager.#ISOLATION_STRATEGIES.SHARED) {
+        return MultiTenantManager.#createTenantAwareModel(modelName, connection, tenantId);
+      }
+
+      // For dedicated databases, use the model directly
+      try {
+        return connection.model(modelName);
+      } catch (error) {
+        // Model might not exist on this connection yet
+        logger.debug(`Model ${modelName} not found on tenant connection, will need to be created`);
+        return null;
+      }
+
+    } catch (error) {
+      logger.error(`Error getting tenant model ${modelName} for tenant ${tenantId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * @private
+   * Creates a tenant-aware model with automatic filtering
+   * @static
+   * @param {string} modelName - Model name
+   * @param {mongoose.Connection} connection - Database connection
+   * @param {string} tenantId - Tenant identifier
+   * @returns {Function|null} Tenant-aware model
+   */
+  static #createTenantAwareModel(modelName, connection, tenantId) {
+    try {
+      const Model = connection.model(modelName);
       
-      const connection = await ConnectionManager.connect(connectionName, {
-        ...options,
-        uri: `${config.database.uri}/${dbName}`
-      });
+      if (!Model) {
+        return null;
+      }
 
-      return {
-        tenantId,
-        connection,
-        database: connection.db,
-        configuration: tenantConfig
-      };
-    } else {
-      // Others share connection with collection isolation
-      const sharedConnection = ConnectionManager.getConnection('shared');
+      // Create a wrapper that automatically adds tenant filtering
+      class TenantAwareModel extends Model {
+        constructor(doc) {
+          super(doc);
+          this.tenantId = tenantId;
+        }
+
+        static find(filter = {}, ...args) {
+          return super.find({ ...filter, tenantId }, ...args);
+        }
+
+        static findOne(filter = {}, ...args) {
+          return super.findOne({ ...filter, tenantId }, ...args);
+        }
+
+        static findById(id, ...args) {
+          return super.findById(id, ...args).where({ tenantId });
+        }
+
+        static updateOne(filter = {}, ...args) {
+          return super.updateOne({ ...filter, tenantId }, ...args);
+        }
+
+        static updateMany(filter = {}, ...args) {
+          return super.updateMany({ ...filter, tenantId }, ...args);
+        }
+
+        static deleteOne(filter = {}, ...args) {
+          return super.deleteOne({ ...filter, tenantId }, ...args);
+        }
+
+        static deleteMany(filter = {}, ...args) {
+          return super.deleteMany({ ...filter, tenantId }, ...args);
+        }
+
+        static countDocuments(filter = {}, ...args) {
+          return super.countDocuments({ ...filter, tenantId }, ...args);
+        }
+      }
+
+      // Copy static methods and properties
+      Object.setPrototypeOf(TenantAwareModel, Model);
+      TenantAwareModel.modelName = Model.modelName;
+      TenantAwareModel.schema = Model.schema;
+      TenantAwareModel.collection = Model.collection;
+
+      return TenantAwareModel;
+
+    } catch (error) {
+      logger.error(`Failed to create tenant-aware model ${modelName}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * @private
+   * Determines if a model should use analytics connection
+   * @static
+   * @param {string} modelName - Model name
+   * @returns {boolean} True if model is analytics-related
+   */
+  static #isAnalyticsModel(modelName) {
+    const analyticsModels = [
+      'Analytics', 'Metrics', 'Event', 'Usage', 'Performance',
+      'Tracking', 'Statistics', 'TimeSeries'
+    ];
+    
+    return analyticsModels.some(pattern => 
+      modelName.includes(pattern) || modelName.toLowerCase().includes(pattern.toLowerCase())
+    );
+  }
+
+  /**
+   * Gets all active tenant IDs
+   * @static
+   * @returns {Array<string>} Array of active tenant IDs
+   */
+  static getActiveTenants() {
+    return Array.from(MultiTenantManager.#tenantContexts.keys());
+  }
+
+  /**
+   * Removes a tenant context
+   * @static
+   * @async
+   * @param {string} tenantId - Tenant identifier
+   * @returns {Promise<void>}
+   */
+  static async removeTenantContext(tenantId) {
+    try {
+      const context = MultiTenantManager.#tenantContexts.get(tenantId);
       
-      return {
-        tenantId,
-        connection: sharedConnection,
-        database: sharedConnection.db,
-        configuration: tenantConfig
-      };
+      if (!context) {
+        logger.debug(`Tenant context not found: ${tenantId}`);
+        return;
+      }
+
+      // Close dedicated connection if it exists
+      if (context.strategy === MultiTenantManager.#ISOLATION_STRATEGIES.DEDICATED) {
+        const tenantConnection = ConnectionManager.getTenantConnection(tenantId);
+        if (tenantConnection) {
+          await tenantConnection.close();
+        }
+      }
+
+      MultiTenantManager.#tenantContexts.delete(tenantId);
+      
+      logger.info('Tenant context removed', { tenantId });
+
+    } catch (error) {
+      logger.error(`Failed to remove tenant context ${tenantId}:`, error);
+      throw new AppError(
+        'Tenant context removal failed',
+        500,
+        'TENANT_CONTEXT_REMOVAL_ERROR',
+        { tenantId, originalError: error.message }
+      );
     }
   }
 
   /**
-   * @private
-   * Updates tenant resources
+   * Gets multi-tenant manager statistics
    * @static
-   * @async
-   * @param {Object} tenant - Updated tenant
+   * @returns {Object} Manager statistics
    */
-  static async #updateTenantResources(tenant) {
-    // Update resources based on configuration changes
-    logger.info('Updating tenant resources', { tenantId: tenant.tenantId });
+  static getStats() {
+    const contexts = Array.from(MultiTenantManager.#tenantContexts.values());
+    
+    return {
+      initialized: MultiTenantManager.#initialized,
+      totalTenants: contexts.length,
+      strategies: {
+        shared: contexts.filter(c => c.strategy === MultiTenantManager.#ISOLATION_STRATEGIES.SHARED).length,
+        dedicated: contexts.filter(c => c.strategy === MultiTenantManager.#ISOLATION_STRATEGIES.DEDICATED).length,
+        hybrid: contexts.filter(c => c.strategy === MultiTenantManager.#ISOLATION_STRATEGIES.HYBRID).length
+      },
+      tenantTypes: {
+        trial: contexts.filter(c => c.configuration?.type === MultiTenantManager.#TENANT_TYPES.TRIAL).length,
+        standard: contexts.filter(c => c.configuration?.type === MultiTenantManager.#TENANT_TYPES.STANDARD).length,
+        premium: contexts.filter(c => c.configuration?.type === MultiTenantManager.#TENANT_TYPES.PREMIUM).length,
+        enterprise: contexts.filter(c => c.configuration?.type === MultiTenantManager.#TENANT_TYPES.ENTERPRISE).length
+      }
+    };
   }
 
   /**
-   * @private
-   * Initializes tenant schema
+   * Shuts down the multi-tenant manager
    * @static
    * @async
-   * @param {Object} tenant - Tenant data
+   * @returns {Promise<void>}
    */
-  static async #initializeTenantSchema(tenant) {
-    logger.info('Initializing tenant schema', { tenantId: tenant.tenantId });
-    // Implementation for schema-based isolation
-  }
+  static async shutdown() {
+    try {
+      logger.info('Shutting down multi-tenant manager');
 
-  /**
-   * @private
-   * Removes tenant schema
-   * @static
-   * @async
-   * @param {Object} tenant - Tenant data
-   */
-  static async #removeTenantSchema(tenant) {
-    logger.info('Removing tenant schema', { tenantId: tenant.tenantId });
-    // Implementation for schema removal
-  }
+      // Remove all tenant contexts
+      const tenantIds = Array.from(MultiTenantManager.#tenantContexts.keys());
+      await Promise.all(
+        tenantIds.map(tenantId => MultiTenantManager.removeTenantContext(tenantId))
+      );
 
-  /**
-   * @private
-   * Removes tenant data
-   * @static
-   * @async
-   * @param {Object} tenant - Tenant data
-   */
-  static async #removeTenantData(tenant) {
-    logger.info('Removing tenant data', { tenantId: tenant.tenantId });
-    // Implementation for data removal in shared collections
-  }
+      MultiTenantManager.#tenantContexts.clear();
+      MultiTenantManager.#connections.primary = null;
+      MultiTenantManager.#connections.analytics = null;
+      MultiTenantManager.#initialized = false;
 
-  /**
-   * @private
-   * Provisions hybrid resources
-   * @static
-   * @async
-   * @param {Object} tenant - Tenant data
-   */
-  static async #provisionHybridResources(tenant) {
-    if (tenant.type === MultiTenantManager.#TENANT_TYPES.ENTERPRISE) {
-      await MultiTenantManager.#provisionTenantResources({
-        ...tenant,
-        isolationStrategy: MultiTenantManager.#ISOLATION_STRATEGIES.DATABASE
-      });
+      logger.info('Multi-tenant manager shutdown complete');
+
+    } catch (error) {
+      logger.error('Error during multi-tenant manager shutdown', error);
+      throw new AppError(
+        'Multi-tenant manager shutdown failed',
+        500,
+        'MULTI_TENANT_SHUTDOWN_ERROR',
+        { originalError: error.message }
+      );
     }
   }
 
   /**
-   * @private
-   * Deprovisions hybrid resources
+   * Checks if the manager is initialized
    * @static
-   * @async
-   * @param {Object} tenant - Tenant data
+   * @returns {boolean} Initialization status
    */
-  static async #deprovisionHybridResources(tenant) {
-    if (tenant.type === MultiTenantManager.#TENANT_TYPES.ENTERPRISE) {
-      await MultiTenantManager.#deprovisionTenantResources({
-        ...tenant,
-        isolationStrategy: MultiTenantManager.#ISOLATION_STRATEGIES.DATABASE
-      });
-    } else {
-      await MultiTenantManager.#removeTenantData(tenant);
-    }
-  }
-
-  /**
-   * Cleanup method to close all connections
-   * @static
-   * @async
-   */
-  static async cleanup() {
-    // Close all tenant connections
-    for (const tenantId of MultiTenantManager.#tenantConnections.keys()) {
-      await MultiTenantManager.#closeTenantConnections(tenantId);
-    }
-
-    // Clear all caches
-    MultiTenantManager.#tenantCache.clear();
-    MultiTenantManager.#tenantModels.clear();
-    MultiTenantManager.#tenantConfigurations.clear();
-
-    logger.info('Multi-tenant manager cleaned up');
+  static isInitialized() {
+    return MultiTenantManager.#initialized;
   }
 }
 

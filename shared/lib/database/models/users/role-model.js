@@ -758,7 +758,4 @@ roleSchema.statics.seedDefaultRoles = async function() {
 // Create and export model
 const RoleModel = BaseModel.createModel('Role', roleSchema);
 
-module.exports = {
-  schema: roleSchema,
-  model: RoleModel
-};
+module.exports = RoleModel;

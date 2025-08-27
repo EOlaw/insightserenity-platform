@@ -1570,7 +1570,4 @@ organizationSchema.statics.getOrganizationStatistics = async function(filters = 
 // Create and export model
 const OrganizationModel = BaseModel.createModel('Organization', organizationSchema);
 
-module.exports = {
-  schema: organizationSchema,
-  model: OrganizationModel
-};
+module.exports = OrganizationModel;

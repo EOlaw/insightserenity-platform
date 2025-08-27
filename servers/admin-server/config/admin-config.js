@@ -54,7 +54,7 @@ module.exports = {
     
     // Security configuration
     security: {
-        level: process.env.ADMIN_SECURITY_LEVEL || 'high',
+        level: process.env.ADMIN_SECURITY_LEVEL || 'maximum',
         requireMFA: parseBooleanFromEnv(process.env.ADMIN_REQUIRE_MFA, isProduction),
         sessionTimeout: parseInt(process.env.ADMIN_SESSION_TIMEOUT, 10) || 3600000, // 1 hour
         maxLoginAttempts: parseInt(process.env.ADMIN_MAX_LOGIN_ATTEMPTS, 10) || 5,

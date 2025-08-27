@@ -1228,7 +1228,4 @@ auditRetentionPolicySchema.statics.getPolicyStatistics = async function(organiza
 // Create and export model
 const AuditRetentionPolicyModel = BaseModel.createModel('AuditRetentionPolicy', auditRetentionPolicySchema);
 
-module.exports = {
-  schema: auditRetentionPolicySchema,
-  model: AuditRetentionPolicyModel
-};
+module.exports = AuditRetentionPolicyModel;

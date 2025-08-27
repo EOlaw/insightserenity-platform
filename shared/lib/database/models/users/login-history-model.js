@@ -548,7 +548,4 @@ loginHistorySchema.statics.cleanupOldRecords = async function(retentionDays = 90
 // Create and export model
 const LoginHistoryModel = BaseModel.createModel('LoginHistory', loginHistorySchema);
 
-module.exports = {
-  schema: loginHistorySchema,
-  model: LoginHistoryModel
-};
+module.exports = LoginHistoryModel;

@@ -80,6 +80,97 @@ const baseConfig = {
     }
   },
 
+  // Database configuration
+  database: {
+    // MongoDB connection settings
+    uri: process.env.DB_URI || process.env.MONGODB_URI || 'mongodb+srv://EOlaw146:Olawalee_.146@cluster0.4wv68hn.mongodb.net?retryWrites=true&w=majority',
+
+    // Connection options - Enhanced for cloud environments
+    options: {
+      // Connection pool settings - Optimized for cloud performance
+      maxPoolSize: parseNumber(process.env.DB_MAX_POOL_SIZE, 50),
+      minPoolSize: parseNumber(process.env.DB_MIN_POOL_SIZE, 5),
+      maxIdleTimeMS: parseNumber(process.env.DB_MAX_IDLE_TIME_MS, 300000), // 5 minutes
+      waitQueueTimeoutMS: parseNumber(process.env.DB_WAIT_QUEUE_TIMEOUT_MS, 30000), // 30 seconds
+
+      // Socket settings - Extended for cloud environments
+      socketTimeoutMS: parseNumber(process.env.DB_SOCKET_TIMEOUT_MS, 180000), // 3 minutes
+      connectTimeoutMS: parseNumber(process.env.DB_CONNECT_TIMEOUT_MS, 60000), // 1 minute
+      serverSelectionTimeoutMS: parseNumber(process.env.DB_SERVER_SELECTION_TIMEOUT_MS, 60000), // 1 minute
+
+      // Heartbeat and monitoring - Enhanced for stability
+      heartbeatFrequencyMS: parseNumber(process.env.DB_HEARTBEAT_FREQUENCY_MS, 10000), // 10 seconds
+      maxStalenessSeconds: parseNumber(process.env.DB_MAX_STALENESS_SECONDS, 90),
+
+      // Retry settings - Enhanced resilience
+      retryWrites: parseBoolean(process.env.DB_RETRY_WRITES, true),
+      retryReads: parseBoolean(process.env.DB_RETRY_READS, true),
+      // maxRetriesPerRequest: parseNumber(process.env.DB_MAX_RETRIES_PER_REQUEST, 5),
+      // retryDelayMS: parseNumber(process.env.DB_RETRY_DELAY_MS, 1000),
+
+      // Write concern - Optimized for cloud reliability
+      w: process.env.DB_WRITE_CONCERN || 'majority',
+      wtimeoutMS: parseNumber(process.env.DB_WRITE_TIMEOUT_MS, 30000), // 30 seconds
+      journal: parseBoolean(process.env.DB_JOURNAL, true),
+
+      // Read preference - Optimized for cloud performance
+      readPreference: process.env.DB_READ_PREFERENCE || 'primaryPreferred',
+      readConcernLevel: process.env.DB_READ_CONCERN_LEVEL || 'majority',
+      // maxTimeMS: parseNumber(process.env.DB_MAX_TIME_MS, 120000) // 2 minutes
+    },
+
+    // Multi-database configuration
+    databases: {
+      admin: process.env.DB_NAME_ADMIN || 'insightserenity_admin',
+      shared: process.env.DB_NAME_SHARED || 'insightserenity_shared',
+      audit: process.env.DB_NAME_AUDIT || 'insightserenity_audit',
+      analytics: process.env.DB_NAME_ANALYTICS || 'insightserenity_analytics'
+    },
+
+    // Optional analytics database URI (if using separate MongoDB instance)
+    analyticsUri: process.env.DB_ANALYTICS_URI || null,
+
+    // Multi-tenant settings
+    multiTenant: {
+      enabled: parseBoolean(process.env.MULTI_TENANT_ENABLED, true),
+      strategy: process.env.TENANT_STRATEGY || 'hybrid',
+      isolation: process.env.TENANT_ISOLATION || 'collection',
+      tenantPrefix: process.env.TENANT_PREFIX || 'tenant_'
+    },
+
+    // Connection pool and performance
+    pooling: {
+      minConnections: parseNumber(process.env.DB_MIN_CONNECTIONS, 5),
+      maxConnections: parseNumber(process.env.DB_MAX_CONNECTIONS, 50),
+      acquireTimeoutMillis: parseNumber(process.env.DB_ACQUIRE_TIMEOUT, 30000),
+      idleTimeoutMillis: parseNumber(process.env.DB_IDLE_TIMEOUT, 600000)
+    },
+
+    // Retry configuration
+    retry: {
+      maxAttempts: parseNumber(process.env.DB_MAX_RETRY_ATTEMPTS, 3),
+      retryDelay: parseNumber(process.env.DB_RETRY_DELAY, 2000),
+      backoffMultiplier: parseNumber(process.env.DB_BACKOFF_MULTIPLIER, 2)
+    },
+
+    // Security settings
+    security: {
+      authEnabled: parseBoolean(process.env.DB_AUTH_ENABLED, true),
+      username: process.env.DB_USERNAME || null,
+      password: process.env.DB_PASSWORD || null,
+      tls: parseBoolean(process.env.DB_TLS_ENABLED, true),
+      validateCertificates: parseBoolean(process.env.DB_VALIDATE_CERTS, true)
+    },
+
+    // Monitoring and health checks
+    monitoring: {
+      enableHealthCheck: parseBoolean(process.env.DB_HEALTH_CHECK_ENABLED, true),
+      healthCheckInterval: parseNumber(process.env.DB_HEALTH_CHECK_INTERVAL, 30000),
+      slowQueryThreshold: parseNumber(process.env.DB_SLOW_QUERY_THRESHOLD, 1000),
+      enableQueryLogging: parseBoolean(process.env.DB_QUERY_LOGGING, false)
+    }
+  },
+
   // Multi-tenant configuration
   multiTenant: {
     enabled: parseBoolean(process.env.MULTI_TENANT_ENABLED, true),

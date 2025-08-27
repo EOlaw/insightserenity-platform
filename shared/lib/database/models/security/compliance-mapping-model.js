@@ -1211,7 +1211,4 @@ complianceMappingSchema.statics.generateCrossFrameworkMapping = async function(o
 // Create and export model
 const ComplianceMappingModel = BaseModel.createModel('ComplianceMapping', complianceMappingSchema);
 
-module.exports = {
-  schema: complianceMappingSchema,
-  model: ComplianceMappingModel
-};
+module.exports = ComplianceMappingModel;

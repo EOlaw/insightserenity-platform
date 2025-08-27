@@ -1104,7 +1104,4 @@ systemConfigurationSchema.statics.importConfigurations = async function(data, op
 // Create and export model
 const SystemConfigurationModel = BaseModel.createModel('SystemConfiguration', systemConfigurationSchema);
 
-module.exports = {
-  schema: systemConfigurationSchema,
-  model: SystemConfigurationModel
-};
+module.exports = SystemConfigurationModel;

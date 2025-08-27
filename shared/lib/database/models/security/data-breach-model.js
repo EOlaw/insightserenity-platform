@@ -454,6 +454,6 @@ dataBreachSchema.statics.generateComplianceReport = async function(breachId) {
 };
 
 // Create and export model
-const DataBreach = BaseModel.createModel('DataBreach', dataBreachSchema);
+const DataBreachModel = BaseModel.createModel('DataBreach', dataBreachSchema);
 
-module.exports = DataBreach;
+module.exports = DataBreachModel;

@@ -13,7 +13,7 @@
 const helmet = require('helmet');
 const logger = require('../utils/logger');
 const CacheService = require('../services/cache-service');
-const SecurityPolicyModel = require('../../../servers/admin-server/modules/security-administration/models/security-policy-model');
+const SecurityPolicyModel = require('../database/models/admin-server/security-administration/models/security-policy-model');
 // const config = require('./helmet-config');
 
 /**

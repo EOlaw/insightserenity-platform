@@ -1691,7 +1691,4 @@ securityIncidentSchema.statics.getUpcomingDeadlines = async function(organizatio
 // Create and export model
 const SecurityIncidentModel = BaseModel.createModel('SecurityIncident', securityIncidentSchema);
 
-module.exports = {
-  schema: securityIncidentSchema,
-  model: SecurityIncidentModel
-};
+module.exports = SecurityIncidentModel;

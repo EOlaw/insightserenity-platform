@@ -715,7 +715,4 @@ apiUsageSchema.statics.cleanupOldRecords = async function(daysToKeep = 90) {
 // Create and export model
 const ApiUsageModel = BaseModel.createModel('ApiUsage', apiUsageSchema);
 
-module.exports = {
-  schema: apiUsageSchema,
-  model: ApiUsageModel
-};
+module.exports = ApiUsageModel;

@@ -804,7 +804,4 @@ oauthProviderSchema.statics.cleanupExpiredProviders = async function() {
 // Create and export model
 const OAuthProviderModel = BaseModel.createModel('OAuthProvider', oauthProviderSchema);
 
-module.exports = {
-  schema: oauthProviderSchema,
-  model: OAuthProviderModel
-};
+module.exports = OAuthProviderModel;

@@ -966,7 +966,4 @@ notificationSchema.statics.cleanupExpiredNotifications = async function() {
 // Create and export model
 const NotificationModel = BaseModel.createModel('Notification', notificationSchema);
 
-module.exports = {
-  schema: notificationSchema,
-  model: NotificationModel
-};
+module.exports = NotificationModel;

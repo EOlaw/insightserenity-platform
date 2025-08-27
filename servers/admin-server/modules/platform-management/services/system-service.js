@@ -16,7 +16,7 @@
 
 const os = require('os');
 const si = require('systeminformation');
-const SystemModel = require('../models/system-model');
+const SystemModel = require('../../../../../shared/lib/database/models/admin-server/platform-management/models/system-model');
 const logger = require('../../../../../shared/lib/utils/logger');
 const { AppError } = require('../../../../../shared/lib/utils/app-error');
 const CacheService = require('../../../../../shared/lib/services/cache-service');

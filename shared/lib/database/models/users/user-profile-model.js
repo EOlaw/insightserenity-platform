@@ -889,17 +889,22 @@ const userProfileSchemaDefinition = {
   }
 };
 
+const userProfileSchema = BaseModel.createSchema(userProfileSchemaDefinition, {
+  collection: 'user_profiles',
+  timestamps: true
+});
+
 // Create schema with proper error handling
-let userProfileSchema;
-try {
-  userProfileSchema = BaseModel.createSchema(userProfileSchemaDefinition, {
-    collection: 'user_profiles',
-    timestamps: true
-  });
-} catch (error) {
-  logger.error('Failed to create UserProfile schema', { error: error.message });
-  throw new AppError('UserProfile schema creation failed', 500, 'SCHEMA_CREATION_ERROR');
-}
+// let userProfileSchema;
+// try {
+//   userProfileSchema = BaseModel.createSchema(userProfileSchemaDefinition, {
+//     collection: 'user_profiles',
+//     timestamps: true
+//   });
+// } catch (error) {
+//   logger.error('Failed to create UserProfile schema', { error: error.message });
+//   throw new AppError('UserProfile schema creation failed', 500, 'SCHEMA_CREATION_ERROR');
+// }
 
 // ==================== Indexes ====================
 userProfileSchema.index({ userId: 1 });
@@ -1548,14 +1553,19 @@ userProfileSchema.statics.bulkImportFromLinkedIn = async function(linkedInData, 
   }
 };
 
+// ==================== Create Model ====================
+const UserProfileModel = BaseModel.createModel('UserProfile', userProfileSchema);
+
+module.exports = UserProfileModel;
+
 // Create and export model
-let UserProfileModel;
-try {
-  UserProfileModel = BaseModel.createModel('UserProfile', userProfileSchema);
-} catch (error) {
-  logger.error('Failed to create UserProfile model', { error: error.message });
-  throw new AppError('UserProfile model creation failed', 500, 'MODEL_CREATION_ERROR');
-}
+// let UserProfileModel;
+// try {
+//   UserProfileModel = BaseModel.createModel('UserProfile', userProfileSchema);
+// } catch (error) {
+//   logger.error('Failed to create UserProfile model', { error: error.message });
+//   throw new AppError('UserProfile model creation failed', 500, 'MODEL_CREATION_ERROR');
+// }
 
 module.exports = {
   schema: userProfileSchema,

@@ -1,1225 +1,542 @@
 'use strict';
 
 /**
- * @fileoverview Enhanced database models index - FIXED Configuration model registration path and improved error handling
+ * @fileoverview Enhanced model registration for hybrid database architecture with admin-server models
  * @module shared/lib/database/models
- * @description This file imports and registers all database models to ensure they are
- * available during Database.initialize(). Models must be imported here to be recognized.
- * ENHANCED: Now includes multi-database routing and comprehensive model registration.
+ * @requires module:shared/lib/database/models/base-model
+ * @requires module:shared/lib/utils/logger
  */
 
-const logger = require('../../utils/logger');
 const BaseModel = require('./base-model');
-const path = require('path'); // ADDED: For proper path resolution
-
-// Track registration progress
-let registeredModels = new Map();
-let registrationErrors = [];
+const logger = require('../../utils/logger');
 
 /**
- * ENHANCED: Safely imports and registers a model with enhanced database routing and improved path handling
- * @param {string} modelPath - Path to model file
- * @param {string} modelName - Name for registration
- * @param {string} [expectedCollection] - Expected collection name for database routing
- * @param {string} [databaseType] - Target database type (admin, shared, audit, analytics)
- * @returns {Object|null} Registered model or null if failed
+ * Model registry for the enhanced hybrid architecture
+ * Loads and exports all database models including admin-server models
  */
-function safeRegisterModel(modelPath, modelName, expectedCollection = null, databaseType = null) {
-    try {
-        let resolvedPath = modelPath;
-        
-        // FIXED: Handle complex relative paths for Configuration model
-        if (modelPath.includes('servers/admin-server/modules/platform-management/models/configuration-model')) {
-            // Try different path resolution strategies for the Configuration model
-            const possiblePaths = [
-                // Direct relative path from current location
-                path.resolve(__dirname, '../../../../servers/admin-server/modules/platform-management/models/configuration-model'),
-                // From project root
-                path.resolve(process.cwd(), 'servers/admin-server/modules/platform-management/models/configuration-model'),
-                // Alternative structure
-                path.resolve(__dirname, '../../../admin-server/modules/platform-management/models/configuration-model'),
-                // Try the original path as-is
-                modelPath
-            ];
-            
-            let modelFound = false;
-            for (const testPath of possiblePaths) {
-                try {
-                    require.resolve(testPath);
-                    resolvedPath = testPath;
-                    modelFound = true;
-                    logger.debug(`Configuration model found at: ${testPath}`);
-                    break;
-                } catch (resolveError) {
-                    logger.debug(`Configuration model not found at: ${testPath}`);
-                }
-            }
-            
-            if (!modelFound) {
-                logger.warn(`Configuration model not found in any expected location. Trying alternative registration...`);
-                // Try to create the model manually if the file doesn't exist
-                return createConfigurationModelManually(modelName, expectedCollection, databaseType);
-            }
-        }
-
-        const modelModule = require(resolvedPath);
-
-        // Handle different export patterns
-        let model = null;
-        let schema = null;
-        let collectionName = expectedCollection;
-
-        if (modelModule.model) {
-            // Pattern: { model: Model, schema: Schema }
-            model = modelModule.model;
-            schema = modelModule.schema;
-        } else if (modelModule.default) {
-            // Pattern: { default: Model }
-            model = modelModule.default;
-        } else if (typeof modelModule === 'function') {
-            // Pattern: module.exports = Model
-            model = modelModule;
-        } else if (modelModule.Configuration) {
-            // Pattern: { Configuration: Model } - specific to Configuration model
-            model = modelModule.Configuration;
-        } else {
-            logger.warn(`Unknown export pattern for ${modelName} at ${resolvedPath}`, {
-                exportKeys: Object.keys(modelModule),
-                modelPath: resolvedPath,
-                modelName
-            });
-            
-            // For Configuration model, try to create it manually
-            if (modelName === 'Configuration') {
-                return createConfigurationModelManually(modelName, expectedCollection, databaseType);
-            }
-            
-            return null;
-        }
-
-        if (model) {
-            // Extract collection name if not provided
-            if (!collectionName) {
-                if (model.collection && model.collection.name) {
-                    collectionName = model.collection.name;
-                } else if (schema && schema.options && schema.options.collection) {
-                    collectionName = schema.options.collection;
-                } else {
-                    // Generate collection name from model name
-                    collectionName = BaseModel.pluralize ? BaseModel.pluralize(modelName.toLowerCase()) : modelName.toLowerCase() + 's';
-                }
-            }
-
-            // Register with BaseModel if not already registered
-            if (BaseModel.modelRegistry && !BaseModel.modelRegistry.has(modelName)) {
-                BaseModel.modelRegistry.set(modelName, model);
-
-                if (schema && BaseModel.schemaCache) {
-                    BaseModel.schemaCache.set(modelName, schema);
-                }
-
-                // ENHANCED: Add collection mapping for database routing
-                if (collectionName && BaseModel.addCollectionMapping) {
-                    // Use provided database type or determine from collection name
-                    const targetDatabaseType = databaseType || BaseModel.getDatabaseTypeForCollection(collectionName);
-                    if (targetDatabaseType && targetDatabaseType !== 'unknown') {
-                        BaseModel.addCollectionMapping(collectionName, targetDatabaseType);
-                        logger.debug(`Collection routing configured: ${collectionName} -> ${targetDatabaseType} database`);
-                    } else if (databaseType) {
-                        // Force the mapping if database type was explicitly provided
-                        BaseModel.addCollectionMapping(collectionName, databaseType);
-                        logger.debug(`Collection routing forced: ${collectionName} -> ${databaseType} database`);
-                    }
-                }
-            }
-
-            registeredModels.set(modelName, model);
-            logger.debug(`Registered model: ${modelName}`, {
-                collection: collectionName,
-                databaseType: databaseType || BaseModel.getDatabaseTypeForCollection(collectionName) || 'unmapped',
-                resolvedPath: resolvedPath
-            });
-            return model;
-        }
-
-        return null;
-
-    } catch (error) {
-        const errorMsg = `Failed to register ${modelName}: ${error.message}`;
-        logger.error(errorMsg, {
-            modelPath,
-            modelName,
-            expectedCollection,
-            databaseType,
-            error: error.message,
-            stack: error.stack
-        });
-        registrationErrors.push({ 
-            modelName, 
-            path: modelPath, 
-            expectedCollection,
-            databaseType,
-            error: error.message 
-        });
-        
-        // For Configuration model, try to create it manually as fallback
-        if (modelName === 'Configuration') {
-            logger.warn('Attempting to create Configuration model manually as fallback...');
-            return createConfigurationModelManually(modelName, expectedCollection, databaseType);
-        }
-        
-        return null;
-    }
-}
-
-/**
- * ADDED: Creates Configuration model manually if the file cannot be found
- * @param {string} modelName - Model name
- * @param {string} expectedCollection - Expected collection name
- * @param {string} databaseType - Database type
- * @returns {Object|null} Created model or null if failed
- */
-function createConfigurationModelManually(modelName, expectedCollection, databaseType) {
-    try {
-        const mongoose = require('mongoose');
-        
-        logger.info('Creating Configuration model manually due to import issues...');
-        
-        // Create a basic Configuration schema
-        const configurationSchema = new mongoose.Schema({
-            configId: {
-                type: String,
-                required: true,
-                unique: true,
-                trim: true,
-                description: 'Unique configuration identifier'
-            },
-            name: {
-                type: String,
-                required: true,
-                unique: true,
-                trim: true,
-                description: 'Human-readable configuration name'
-            },
-            description: {
-                type: String,
-                trim: true,
-                description: 'Configuration description'
-            },
-            displayName: {
-                type: String,
-                trim: true,
-                description: 'Display name for UI'
-            },
-            configType: {
-                type: String,
-                enum: ['application', 'system', 'environment', 'feature', 'integration', 'security', 'ui'],
-                default: 'application',
-                description: 'Type of configuration'
-            },
-            
-            // Configuration data
-            configurations: [{
-                key: {
-                    type: String,
-                    required: true,
-                    trim: true,
-                    description: 'Configuration key'
-                },
-                value: {
-                    type: mongoose.Schema.Types.Mixed,
-                    description: 'Configuration value'
-                },
-                dataType: {
-                    type: String,
-                    enum: ['string', 'number', 'boolean', 'object', 'array', 'date', 'encrypted'],
-                    default: 'string',
-                    description: 'Data type of value'
-                },
-                category: {
-                    type: String,
-                    trim: true,
-                    description: 'Configuration category'
-                },
-                description: {
-                    type: String,
-                    description: 'Key description'
-                },
-                required: {
-                    type: Boolean,
-                    default: false,
-                    description: 'Whether key is required'
-                },
-                encrypted: {
-                    type: Boolean,
-                    default: false,
-                    description: 'Whether value is encrypted'
-                },
-                validationRules: {
-                    type: mongoose.Schema.Types.Mixed,
-                    description: 'Validation rules for the value'
-                },
-                defaultValue: {
-                    type: mongoose.Schema.Types.Mixed,
-                    description: 'Default value'
-                }
-            }],
-            
-            // Environment configurations
-            environments: [{
-                environment: {
-                    type: String,
-                    required: true,
-                    enum: ['development', 'staging', 'production', 'test'],
-                    description: 'Environment name'
-                },
-                active: {
-                    type: Boolean,
-                    default: true,
-                    description: 'Whether environment is active'
-                },
-                configurations: {
-                    type: mongoose.Schema.Types.Mixed,
-                    description: 'Environment-specific configurations'
-                }
-            }],
-            
-            // Versioning
-            versions: [{
-                version: {
-                    type: String,
-                    required: true,
-                    description: 'Version identifier'
-                },
-                configurations: {
-                    type: mongoose.Schema.Types.Mixed,
-                    description: 'Version configurations'
-                },
-                changes: [{
-                    key: {
-                        type: String,
-                        description: 'Changed configuration key'
-                    },
-                    changeType: {
-                        type: String,
-                        enum: ['create', 'modify', 'delete', 'add'],
-                        description: 'Type of change'
-                    },
-                    oldValue: {
-                        type: mongoose.Schema.Types.Mixed,
-                        description: 'Previous value'
-                    },
-                    newValue: {
-                        type: mongoose.Schema.Types.Mixed,
-                        description: 'New value'
-                    },
-                    encrypted: {
-                        type: Boolean,
-                        default: false,
-                        description: 'Whether values are encrypted'
-                    },
-                    environment: {
-                        type: String,
-                        description: 'Environment where change applies'
-                    }
-                }],
-                createdAt: {
-                    type: Date,
-                    default: Date.now,
-                    description: 'Version creation time'
-                },
-                createdBy: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: 'User',
-                    description: 'User who created version'
-                },
-                comment: {
-                    type: String,
-                    description: 'Version description/comment'
-                },
-                deployed: {
-                    type: Boolean,
-                    default: false,
-                    description: 'Whether version is deployed'
-                },
-                deployedAt: {
-                    type: Date,
-                    description: 'Deployment timestamp'
-                }
-            }],
-
-            // Audit trail
-            auditTrail: [{
-                action: {
-                    type: String,
-                    required: true,
-                    description: 'Action performed'
-                },
-                timestamp: {
-                    type: Date,
-                    default: Date.now,
-                    required: true,
-                    description: 'Action timestamp'
-                },
-                performedBy: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: 'User',
-                    required: true,
-                    description: 'User who performed action'
-                },
-                details: {
-                    type: mongoose.Schema.Types.Mixed,
-                    description: 'Action details'
-                },
-                ipAddress: {
-                    type: String,
-                    description: 'Client IP address'
-                },
-                userAgent: {
-                    type: String,
-                    description: 'User agent string'
-                }
-            }],
-
-            // Synchronization settings
-            synchronization: {
-                enabled: {
-                    type: Boolean,
-                    default: false,
-                    description: 'Whether sync is enabled'
-                },
-                mode: {
-                    type: String,
-                    enum: ['push', 'pull', 'bidirectional'],
-                    default: 'push',
-                    description: 'Sync mode'
-                },
-                targets: [{
-                    name: {
-                        type: String,
-                        description: 'Target name'
-                    },
-                    type: {
-                        type: String,
-                        enum: ['database', 'file', 'api', 'git', 'consul', 'etcd'],
-                        description: 'Target type'
-                    },
-                    connection: {
-                        type: mongoose.Schema.Types.Mixed,
-                        description: 'Connection details'
-                    },
-                    mapping: {
-                        type: mongoose.Schema.Types.Mixed,
-                        description: 'Field mapping'
-                    },
-                    lastSync: {
-                        type: Date,
-                        description: 'Last sync timestamp'
-                    },
-                    syncStatus: {
-                        type: String,
-                        enum: ['success', 'failed', 'pending'],
-                        description: 'Sync status'
-                    }
-                }]
-            },
-            
-            // Metadata
-            metadata: {
-                createdBy: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: 'User',
-                    required: true,
-                    description: 'User who created configuration'
-                },
-                lastModifiedBy: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: 'User',
-                    description: 'User who last modified'
-                },
-                tags: [{
-                    type: String,
-                    trim: true,
-                    lowercase: true,
-                    description: 'Configuration tags'
-                }],
-                category: {
-                    type: String,
-                    trim: true,
-                    description: 'Configuration category'
-                },
-                priority: {
-                    type: String,
-                    enum: ['low', 'medium', 'high', 'critical'],
-                    default: 'medium',
-                    description: 'Configuration priority'
-                },
-                customFields: {
-                    type: mongoose.Schema.Types.Mixed,
-                    default: {},
-                    description: 'Custom metadata fields'
-                }
-            },
-            
-            // Status
-            status: {
-                active: {
-                    type: Boolean,
-                    default: true,
-                    description: 'Whether configuration is active'
-                },
-                locked: {
-                    type: Boolean,
-                    default: false,
-                    description: 'Whether configuration is locked'
-                },
-                lockedBy: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: 'User',
-                    description: 'User who locked configuration'
-                },
-                lockedAt: {
-                    type: Date,
-                    description: 'Lock timestamp'
-                },
-                lockReason: {
-                    type: String,
-                    description: 'Reason for locking'
-                },
-                validationStatus: {
-                    type: String,
-                    enum: ['valid', 'invalid', 'pending', 'unknown'],
-                    default: 'unknown',
-                    description: 'Validation status'
-                },
-                validationErrors: [{
-                    key: String,
-                    error: String,
-                    severity: String
-                }],
-                lastValidated: {
-                    type: Date,
-                    description: 'Last validation timestamp'
-                }
-            }
-        }, {
-            collection: expectedCollection || 'configuration_management',
-            strict: true,
-            timestamps: true
-        });
-
-        // Add indexes
-        configurationSchema.index({ configId: 1 }, { unique: true });
-        configurationSchema.index({ name: 1 }, { unique: true });
-        configurationSchema.index({ 'configurations.key': 1 });
-        configurationSchema.index({ 'configurations.category': 1 });
-        configurationSchema.index({ 'environments.environment': 1 });
-        configurationSchema.index({ 'status.active': 1 });
-        configurationSchema.index({ 'metadata.tags': 1 });
-        configurationSchema.index({ createdAt: -1 });
-
-        // Virtual properties
-        configurationSchema.virtual('configurationCount').get(function() {
-            return this.configurations.length;
-        });
-
-        configurationSchema.virtual('environmentCount').get(function() {
-            return this.environments.length;
-        });
-
-        configurationSchema.virtual('versionCount').get(function() {
-            return this.versions.length;
-        });
-
-        configurationSchema.virtual('hasUnsavedChanges').get(function() {
-            const latestVersion = this.versions[this.versions.length - 1];
-            return latestVersion && !latestVersion.deployed;
-        });
-
-        // Add static methods
-        configurationSchema.statics.findByEnvironment = function(environment) {
-            return this.find({
-                'environments.environment': environment,
-                'status.active': true
-            });
-        };
-
-        configurationSchema.statics.findByTag = function(tag) {
-            return this.find({
-                'metadata.tags': tag,
-                'status.active': true
-            });
-        };
-
-        // Add instance methods
-        configurationSchema.methods.getValue = function(key, environment) {
-            // First check environment-specific values
-            if (environment) {
-                const envConfig = this.environments.find(e => e.environment === environment);
-                if (envConfig && envConfig.configurations && envConfig.configurations[key] !== undefined) {
-                    return envConfig.configurations[key];
-                }
-            }
-
-            // Then check base configuration
-            const config = this.configurations.find(c => c.key === key);
-            return config ? config.value : undefined;
-        };
-
-        configurationSchema.methods.setValue = function(key, value, environment) {
-            if (environment) {
-                let envConfig = this.environments.find(e => e.environment === environment);
-                if (!envConfig) {
-                    envConfig = {
-                        environment,
-                        active: true,
-                        configurations: {}
-                    };
-                    this.environments.push(envConfig);
-                }
-                envConfig.configurations[key] = value;
-            } else {
-                const config = this.configurations.find(c => c.key === key);
-                if (config) {
-                    config.value = value;
-                } else {
-                    this.configurations.push({
-                        key,
-                        value,
-                        dataType: typeof value,
-                        category: 'general'
-                    });
-                }
-            }
-        };
-
-        // Create model
-        const ConfigurationModel = mongoose.model(modelName, configurationSchema);
-
-        // Register with BaseModel
-        if (BaseModel.modelRegistry) {
-            BaseModel.modelRegistry.set(modelName, ConfigurationModel);
-        }
-        if (BaseModel.schemaCache) {
-            BaseModel.schemaCache.set(modelName, configurationSchema);
-        }
-        
-        // Add collection mapping
-        if (BaseModel.addCollectionMapping && expectedCollection && databaseType) {
-            BaseModel.addCollectionMapping(expectedCollection, databaseType);
-        }
-
-        registeredModels.set(modelName, ConfigurationModel);
-        logger.info(`Configuration model created manually: ${modelName}`, {
-            collection: expectedCollection || 'configuration_management',
-            databaseType: databaseType || 'admin'
-        });
-
-        return ConfigurationModel;
-
-    } catch (manualCreationError) {
-        logger.error('Failed to create Configuration model manually:', {
-            error: manualCreationError.message,
-            stack: manualCreationError.stack
-        });
-        registrationErrors.push({
-            modelName,
-            path: 'manual_creation',
-            expectedCollection,
-            databaseType,
-            error: `Manual creation failed: ${manualCreationError.message}`
-        });
-        return null;
-    }
-}
 
 // ============================================================================
-// INITIALIZE BASE MODEL REGISTRIES
-// ============================================================================
-logger.info('BaseModel loading...', typeof BaseModel);
-
-if (!BaseModel.modelRegistry) {
-    BaseModel.modelRegistry = new Map();
-}
-if (!BaseModel.schemaCache) {
-    BaseModel.schemaCache = new Map();
-}
-
-logger.info('Starting model registration process...');
-
-// ============================================================================
-// CORE/BASE MODELS - Register these first
-// ============================================================================
-logger.debug('Registering core models...');
-
-// ============================================================================
-// USER MODELS - Admin Database
-// ============================================================================
-logger.debug('Registering user models...');
-
-const User = safeRegisterModel('./users/user-model', 'User', 'users', 'admin');
-const UserProfile = safeRegisterModel('./users/user-profile-model', 'UserProfile', 'user_profiles', 'admin');
-const UserSession = safeRegisterModel('./users/session-model', 'UserSession', 'sessions', 'admin');
-const UserActivity = safeRegisterModel('./users/user-activity-model', 'UserActivity', 'user_activities', 'admin');
-const LoginHistory = safeRegisterModel('./users/login-history-model', 'LoginHistory', 'login_history', 'admin');
-const Permission = safeRegisterModel('./users/permission-model', 'Permission', 'permissions', 'admin');
-const AnonymizedUser = safeRegisterModel('./users/anonymized-user-model', 'AnonymizedUser', 'anonymized_users', 'admin');
-
-// ============================================================================
-// ORGANIZATION MODELS - Admin Database
-// ============================================================================
-logger.debug('Registering organization models...');
-
-const Organization = safeRegisterModel('./organizations/organization-model', 'Organization', 'organizations', 'admin');
-const OrganizationMember = safeRegisterModel('./organizations/organization-member-model', 'OrganizationMember', 'organization_members', 'admin');
-const OrganizationInvitation = safeRegisterModel('./organizations/organization-invitation-model', 'OrganizationInvitation', 'organization_invitations', 'admin');
-const Tenant = safeRegisterModel('./organizations/tenant-model', 'Tenant', 'tenants', 'admin');
-
-// ============================================================================
-// SECURITY & PERMISSIONS MODELS - Mixed Databases
-// ============================================================================
-logger.debug('Registering security models...');
-
-const Role = safeRegisterModel('./users/role-model', 'Role', 'roles', 'admin');
-const SecurityIncident = safeRegisterModel('./security/security-incident-model', 'SecurityIncident', 'security_incidents', 'admin');
-const AuditLog = safeRegisterModel('./security/audit-log-model', 'AuditLog', 'audit_logs', 'audit');
-const AuditAlert = safeRegisterModel('./security/audit-alert-model', 'AuditAlert', 'audit_alerts', 'audit');
-const AuditExport = safeRegisterModel('./security/audit-export-model', 'AuditExport', 'audit_exports', 'audit');
-const AuditRetentionPolicy = safeRegisterModel('./security/audit-retention-policy-model', 'AuditRetentionPolicy', 'audit_retention_policies', 'audit');
-const ComplianceMapping = safeRegisterModel('./security/compliance-mapping-model', 'ComplianceMapping', 'compliance_mappings', 'audit');
-
-// ============================================================================
-// AUTHENTICATION MODELS - Shared Database
-// ============================================================================
-logger.debug('Registering authentication models...');
-
-const Passkey = safeRegisterModel('./users/passkey-model', 'Passkey', 'passkeys', 'shared');
-const OAuthProvider = safeRegisterModel('./users/oauth-provider-model', 'OAuthProvider', 'oauth_providers', 'shared');
-const SessionData = safeRegisterModel('./users/session-model', 'SessionData', 'sessions', 'admin');
-
-// ============================================================================
-// PRIVACY & COMPLIANCE MODELS - Audit Database
-// ============================================================================
-logger.debug('Registering privacy models...');
-
-const Consent = safeRegisterModel('./users/consent-model', 'Consent', 'consents', 'audit');
-const DataBreach = safeRegisterModel('./security/data-breach-model', 'DataBreach', 'data_breaches', 'audit');
-const ErasureLog = safeRegisterModel('./security/erasure-log-model', 'ErasureLog', 'erasure_logs', 'audit');
-const ProcessingActivity = safeRegisterModel('./security/processing-activity-model', 'ProcessingActivity', 'processing_activities', 'audit');
-
-// ============================================================================
-// BILLING & SUBSCRIPTION MODELS - Shared Database
-// ============================================================================
-logger.debug('Registering billing models...');
-
-const PaymentMethod = safeRegisterModel('./billing/payment-method-model', 'PaymentMethod', 'payment_methods', 'shared');
-const Subscription = safeRegisterModel('./billing/subscription-model', 'Subscription', 'subscriptions', 'shared');
-const SubscriptionPlan = safeRegisterModel('./billing/subscription-plan-model', 'SubscriptionPlan', 'subscription_plans', 'shared');
-const UsageRecord = safeRegisterModel('./billing/usage-record-model', 'UsageRecord', 'usage_records', 'analytics');
-
-// ============================================================================
-// PLATFORM MODELS - Mixed Databases
-// ============================================================================
-logger.debug('Registering platform models...');
-
-const ApiIntegration = safeRegisterModel('./platform/api-integration-model', 'ApiIntegration', 'api_integrations', 'shared');
-const ApiUsage = safeRegisterModel('./platform/api-usage-model', 'ApiUsage', 'api_usage', 'analytics');
-const Notification = safeRegisterModel('./platform/notification-model', 'Notification', 'notifications', 'shared');
-const SystemConfiguration = safeRegisterModel('./platform/system-configuration-model', 'SystemConfiguration', 'system_configurations', 'admin');
-const Webhook = safeRegisterModel('./platform/webhook-model', 'Webhook', 'webhooks', 'shared');
-
-// ============================================================================
-// CONFIGURATION MANAGEMENT MODELS - Admin Database (FIXED: Improved registration with fallback)
-// ============================================================================
-logger.debug('Registering configuration management models with enhanced path resolution...');
-
-// FIXED: Try multiple strategies to register the Configuration model
-let Configuration = null;
-
-// Strategy 1: Try the original path with improved resolution
-Configuration = safeRegisterModel(
-    '../../../../servers/admin-server/modules/platform-management/models/configuration-model', 
-    'Configuration', 
-    'configuration_management', 
-    'admin'
-);
-
-// Strategy 2: If not found, create it manually (handled in safeRegisterModel)
-if (!Configuration && !registeredModels.has('Configuration')) {
-    logger.info('Configuration model not found via file import, creating manually...');
-    Configuration = createConfigurationModelManually('Configuration', 'configuration_management', 'admin');
-}
-
-// Verify Configuration model registration
-if (Configuration) {
-    logger.info('Configuration model registered successfully', {
-        modelName: 'Configuration',
-        collection: 'configuration_management',
-        databaseType: 'admin',
-        registrationMethod: 'file import or manual creation'
-    });
-} else {
-    logger.error('Failed to register Configuration model through all methods');
-    registrationErrors.push({
-        modelName: 'Configuration',
-        path: 'multiple attempts',
-        expectedCollection: 'configuration_management',
-        databaseType: 'admin',
-        error: 'All registration strategies failed'
-    });
-}
-
-// ============================================================================
-// ADDITIONAL MODEL CATEGORIES - Enhanced Discovery
+// CORE BUSINESS MODELS - Primary Database
 // ============================================================================
 
-// Try to load additional models from other potential directories
-const additionalModelCategories = [
-    { folder: 'analytics', database: 'analytics' },
-    { folder: 'communication', database: 'shared' },
-    { folder: 'content', database: 'shared' },
-    { folder: 'workflow', database: 'shared' },
-    { folder: 'reporting', database: 'analytics' },
-    { folder: 'integration', database: 'shared' },
-    { folder: 'monitoring', database: 'analytics' }
-];
-
-for (const { folder, database } of additionalModelCategories) {
-    try {
-        logger.debug(`Attempting to register ${folder} models...`);
-        
-        // Try to require the category index file
-        const categoryModels = require(`./${folder}`);
-        
-        if (categoryModels && typeof categoryModels === 'object') {
-            for (const [modelName, model] of Object.entries(categoryModels)) {
-                if (model && typeof model === 'function') {
-                    try {
-                        // Generate collection name from model name
-                        const collectionName = BaseModel.pluralize ? BaseModel.pluralize(modelName.toLowerCase()) : modelName.toLowerCase() + 's';
-                        
-                        // Register with BaseModel
-                        BaseModel.modelRegistry.set(modelName, model);
-                        registeredModels.set(modelName, model);
-                        
-                        // Add database routing
-                        if (BaseModel.addCollectionMapping) {
-                            BaseModel.addCollectionMapping(collectionName, database);
-                        }
-                        
-                        logger.debug(`Registered ${folder} model: ${modelName}`, {
-                            collection: collectionName,
-                            database: database
-                        });
-                    } catch (regError) {
-                        logger.warn(`Failed to register ${folder} model ${modelName}`, {
-                            error: regError.message
-                        });
-                        registrationErrors.push({
-                            modelName: `${folder}.${modelName}`,
-                            path: `./${folder}`,
-                            error: regError.message
-                        });
-                    }
-                }
-            }
-        }
-    } catch (categoryError) {
-        // Category doesn't exist or has issues - this is expected for some
-        logger.debug(`${folder} models not available or had issues`, {
-            error: categoryError.message
-        });
-    }
-}
-
-// ============================================================================
-// SPECIALIZED MODEL LOADING - Enhanced with Database Routing
-// ============================================================================
-
-/**
- * ENHANCED: Load models from subdirectories dynamically with database routing
- * @param {string} subdirectory - Subdirectory name
- * @param {string} databaseType - Target database type
- */
-function loadModelsFromSubdirectory(subdirectory, databaseType) {
-    try {
-        const fs = require('fs');
-        const path = require('path');
-        
-        const subdirPath = path.join(__dirname, subdirectory);
-        
-        if (fs.existsSync(subdirPath)) {
-            const files = fs.readdirSync(subdirPath);
-            
-            for (const file of files) {
-                if (file.endsWith('-model.js')) {
-                    const modelName = file
-                        .replace('-model.js', '')
-                        .split('-')
-                        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                        .join('');
-                    
-                    const modelPath = `./${subdirectory}/${file}`;
-                    const collectionName = file.replace('-model.js', '').replace('-', '_') + 's';
-                    
-                    // Add collection mapping for the target database
-                    if (BaseModel.addCollectionMapping) {
-                        BaseModel.addCollectionMapping(collectionName, databaseType);
-                    }
-                    
-                    safeRegisterModel(modelPath, modelName, collectionName, databaseType);
-                }
-            }
-        }
-    } catch (error) {
-        logger.debug(`Could not load models from ${subdirectory}`, {
-            error: error.message
-        });
-    }
-}
-
-// Load models from known subdirectories with their target databases
-loadModelsFromSubdirectory('admin', 'admin');
-loadModelsFromSubdirectory('shared', 'shared');
-loadModelsFromSubdirectory('audit', 'audit');
-loadModelsFromSubdirectory('analytics', 'analytics');
-
-// ============================================================================
-// SPECIAL MODELS - Handle edge cases
-// ============================================================================
-
-// Try to register additional models that might have different patterns
+// User Management Models
+let User, UserProfile, Role, Permission;
 try {
-    // Handle potential variations in model exports
-    const specialModels = [
-        { path: './security/cors-whitelist-model', name: 'CorsWhitelist', collection: 'cors_whitelist', database: 'shared' },
-        { path: './billing/payment-model', name: 'Payment', collection: 'payments', database: 'shared' },
-        { path: './users/session-model', name: 'Session', collection: 'sessions', database: 'admin' }
-    ];
-
-    for (const { path, name, collection, database } of specialModels) {
-        try {
-            safeRegisterModel(path, name, collection, database);
-        } catch (specialError) {
-            logger.debug(`Special model ${name} not available`, {
-                error: specialError.message
-            });
-        }
-    }
-} catch (specialHandlingError) {
-    logger.debug('Special model handling had issues', {
-        error: specialHandlingError.message
-    });
+  User = require('./users/user-model');
+  UserProfile = require('./users/user-profile-model');
+  Role = require('./users/role-model');
+  Permission = require('./users/permission-model');
+  logger.debug('User management models loaded successfully');
+} catch (error) {
+  logger.warn('Some user management models could not be loaded:', error.message);
 }
 
-// ============================================================================
-// CORS WHITELIST MODEL - Special handling (maintained from original)
-// ============================================================================
+// Organization Models
+let Organization, OrganizationMember, OrganizationInvitation, Tenant;
 try {
-    const CorsWhitelist = safeRegisterModel('./security/cors-whitelist-model', 'CorsWhitelist', 'cors_whitelist', 'shared');
-    if (!CorsWhitelist) {
-        logger.warn('Unknown export pattern for CorsWhitelist at ./security/cors-whitelist-model');
-    }
-} catch (corsError) {
-    logger.warn('CorsWhitelist model handling had issues', {
-        error: corsError.message
-    });
+  Organization = require('./organizations/organization-model');
+  OrganizationMember = require('./organizations/organization-member-model');
+  OrganizationInvitation = require('./organizations/organization-invitation-model');
+  Tenant = require('./organizations/tenant-model');
+  logger.debug('Organization models loaded successfully');
+} catch (error) {
+  logger.warn('Some organization models could not be loaded:', error.message);
+}
+
+// Configuration Models
+let Configuration, SystemConfiguration, FeatureFlag;
+try {
+  Configuration = require('./configurations/configuration-model');
+  SystemConfiguration = require('./configurations/system-configuration-model');
+  FeatureFlag = require('./configurations/feature-flag-model');
+  logger.debug('Configuration models loaded successfully');
+} catch (error) {
+  logger.warn('Some configuration models could not be loaded:', error.message);
+}
+
+// Authentication & Security Models
+let Session, LoginHistory, SecurityIncident, ApiKey;
+try {
+  Session = require('./auth/session-model');
+  LoginHistory = require('./auth/login-history-model');
+  SecurityIncident = require('./security/security-incident-model');
+  ApiKey = require('./auth/api-key-model');
+  logger.debug('Authentication and security models loaded successfully');
+} catch (error) {
+  logger.warn('Some authentication/security models could not be loaded:', error.message);
+}
+
+// Subscription & Billing Models
+let SubscriptionPlan, Subscription, Invoice, Payment;
+try {
+  SubscriptionPlan = require('./billing/subscription-plan-model');
+  Subscription = require('./billing/subscription-model');
+  Invoice = require('./billing/invoice-model');
+  Payment = require('./billing/payment-model');
+  logger.debug('Subscription and billing models loaded successfully');
+} catch (error) {
+  logger.warn('Some billing models could not be loaded:', error.message);
+}
+
+// Integration Models
+let Webhook, ApiIntegration, OAuthProvider, Passkey;
+try {
+  Webhook = require('./integrations/webhook-model');
+  ApiIntegration = require('./integrations/api-integration-model');
+  OAuthProvider = require('./integrations/oauth-provider-model');
+  Passkey = require('./integrations/passkey-model');
+  logger.debug('Integration models loaded successfully');
+} catch (error) {
+  logger.warn('Some integration models could not be loaded:', error.message);
+}
+
+// Communication Models
+let Notification, EmailTemplate, SmsTemplate;
+try {
+  Notification = require('./communication/notification-model');
+  EmailTemplate = require('./communication/email-template-model');
+  SmsTemplate = require('./communication/sms-template-model');
+  logger.debug('Communication models loaded successfully');
+} catch (error) {
+  logger.warn('Some communication models could not be loaded:', error.message);
 }
 
 // ============================================================================
-// REGISTRATION SUMMARY AND VALIDATION
+// ADMIN-SERVER MODELS - Administrative Functions
 // ============================================================================
 
-// Calculate registration statistics
-const totalAttempted = registeredModels.size + registrationErrors.length;
-const successCount = registeredModels.size;
-const errorCount = registrationErrors.length;
+// User Management Admin Models
+let AdminUser, AdminSession, UserPermission, AdminActionLog;
+try {
+  AdminUser = require('./admin-server/user-management/admin-user-model');
+  AdminSession = require('./admin-server/user-management/admin-session-model');
+  UserPermission = require('./admin-server/user-management/user-permission-model');
+  // AdminActionLog = require('./admin-server/user-management/admin-action-log-model');
+  logger.debug('Admin user management models loaded successfully');
+} catch (error) {
+  logger.warn('Some admin user management models could not be loaded:', error.message);
+}
 
-// Log registration completion
-logger.info('Model registration completed', {
-    attempted: totalAttempted,
-    successful: successCount,
-    failed: errorCount,
-    registeredModels: Array.from(registeredModels.keys()),
-    configurationModelRegistered: registeredModels.has('Configuration'),
-    errors: registrationErrors.length > 0 ? registrationErrors.map(e => `${e.modelName}: ${e.error}`) : undefined
-});
+// Organization Management Admin Models
+let OrganizationAdmin, OrganizationSettings, BillingConfiguration;
+try {
+  OrganizationAdmin = require('./admin-server/organization-management/organization-admin-model');
+  OrganizationSettings = require('./admin-server/organization-management/organization-settings-model');
+  BillingConfiguration = require('./admin-server/organization-management/billing-configuration-model');
+  logger.debug('Admin organization management models loaded successfully');
+} catch (error) {
+  logger.warn('Some admin organization management models could not be loaded:', error.message);
+}
 
-// Validate essential models are registered
-const essentialModels = ['User', 'Organization', 'Role', 'Permission', 'AuditLog', 'Configuration'];
-const missingEssential = essentialModels.filter(modelName => !registeredModels.has(modelName));
+// Platform Management Admin Models
+let PlatformConfiguration, SystemSettings, MaintenanceSchedule;
+try {
+  PlatformConfiguration = require('./admin-server/platform-management/configuration-model');
+  SystemSettings = require('./admin-server/platform-management/system-settings-model');
+  MaintenanceSchedule = require('./admin-server/platform-management/maintenance-schedule-model');
+  logger.debug('Admin platform management models loaded successfully');
+} catch (error) {
+  logger.warn('Some admin platform management models could not be loaded:', error.message);
+}
 
-if (missingEssential.length > 0) {
-    logger.warn('Some essential models failed to register', {
-        missing: missingEssential,
-        registered: essentialModels.filter(modelName => registeredModels.has(modelName))
-    });
-} else {
-    logger.info('All essential models registered successfully', {
-        essentialModels: essentialModels
-    });
+// Security Administration Models
+let AccessControl, SecurityPolicy, ComplianceRule, ThreatDetection;
+try {
+  AccessControl = require('./admin-server/security-administration/access-control-model');
+  SecurityPolicy = require('./admin-server/security-administration/security-policy-model');
+  ComplianceRule = require('./admin-server/security-administration/compliance-rule-model');
+  ThreatDetection = require('./admin-server/security-administration/threat-detection-model');
+  logger.debug('Admin security administration models loaded successfully');
+} catch (error) {
+  logger.warn('Some admin security administration models could not be loaded:', error.message);
+}
+
+// Reports & Analytics Admin Models
+let ReportModel, AnalyticsConfiguration, DataExport;
+try {
+  ReportModel = require('./admin-server/reports-analytics/report-model');
+  AnalyticsConfiguration = require('./admin-server/reports-analytics/analytics-configuration-model');
+  DataExport = require('./admin-server/reports-analytics/data-export-model');
+  logger.debug('Admin reports and analytics models loaded successfully');
+} catch (error) {
+  logger.warn('Some admin reports and analytics models could not be loaded:', error.message);
+}
+
+// Support Administration Models
+let SupportTicket, KnowledgeBase, SupportAgent;
+try {
+  SupportTicket = require('./admin-server/support-administration/support-ticket-model');
+  KnowledgeBase = require('./admin-server/support-administration/knowledge-base-model');
+  SupportAgent = require('./admin-server/support-administration/support-agent-model');
+  logger.debug('Admin support administration models loaded successfully');
+} catch (error) {
+  logger.warn('Some admin support administration models could not be loaded:', error.message);
+}
+
+// System Monitoring Admin Models
+let SystemHealth, PerformanceMetrics, AlertConfiguration;
+try {
+  SystemHealth = require('./admin-server/system-monitoring/system-health-model');
+  PerformanceMetrics = require('./admin-server/system-monitoring/performance-metrics-model');
+  AlertConfiguration = require('./admin-server/system-monitoring/alert-configuration-model');
+  logger.debug('Admin system monitoring models loaded successfully');
+} catch (error) {
+  logger.warn('Some admin system monitoring models could not be loaded:', error.message);
+}
+
+// Billing Administration Models
+let BillingAdmin, PaymentProcessor, SubscriptionAdmin;
+try {
+  BillingAdmin = require('./admin-server/billing-administration/billing-admin-model');
+  PaymentProcessor = require('./admin-server/billing-administration/payment-processor-model');
+  SubscriptionAdmin = require('./admin-server/billing-administration/subscription-admin-model');
+  logger.debug('Admin billing administration models loaded successfully');
+} catch (error) {
+  logger.warn('Some admin billing administration models could not be loaded:', error.message);
 }
 
 // ============================================================================
-// DATABASE ROUTING VALIDATION - Enhanced
+// AUDIT MODELS - Primary Database (consolidated from audit database)
 // ============================================================================
 
-if (BaseModel.isMultiDatabaseEnabled && BaseModel.isMultiDatabaseEnabled()) {
-    logger.info('Validating database routing for registered models...');
-    
-    const routingValidation = {
-        admin: [],
-        shared: [],
-        audit: [],
-        analytics: [],
-        unmapped: []
-    };
-
-    for (const [modelName, model] of registeredModels) {
-        try {
-            const collectionName = model.collection?.name || 
-                                 (BaseModel.pluralize ? BaseModel.pluralize(modelName.toLowerCase()) : modelName.toLowerCase() + 's');
-            const databaseType = BaseModel.getDatabaseTypeForCollection ? BaseModel.getDatabaseTypeForCollection(collectionName) : null;
-            
-            if (databaseType && routingValidation[databaseType]) {
-                routingValidation[databaseType].push({
-                    model: modelName,
-                    collection: collectionName
-                });
-            } else {
-                routingValidation.unmapped.push({
-                    model: modelName,
-                    collection: collectionName
-                });
-            }
-        } catch (routingError) {
-            logger.warn(`Database routing validation failed for ${modelName}`, {
-                error: routingError.message
-            });
-            routingValidation.unmapped.push({
-                model: modelName,
-                collection: 'unknown',
-                error: routingError.message
-            });
-        }
-    }
-
-    logger.info('Database routing validation completed', {
-        admin: routingValidation.admin.length,
-        shared: routingValidation.shared.length,
-        audit: routingValidation.audit.length,
-        analytics: routingValidation.analytics.length,
-        unmapped: routingValidation.unmapped.length,
-        details: routingValidation
-    });
-
-    // Log potential issues
-    if (routingValidation.unmapped.length > 0) {
-        logger.warn('Some models are not mapped to specific databases', {
-            unmappedModels: routingValidation.unmapped.map(item => item.model)
-        });
-    }
+let AuditLog, AuditAlert, ComplianceMapping, DataBreach;
+try {
+  AuditLog = require('./audit/audit-log-model');
+  AuditAlert = require('./audit/audit-alert-model');
+  ComplianceMapping = require('./audit/compliance-mapping-model');
+  DataBreach = require('./audit/data-breach-model');
+  logger.debug('Audit models loaded successfully');
+} catch (error) {
+  logger.warn('Some audit models could not be loaded:', error.message);
 }
 
 // ============================================================================
-// EXPORT MODELS INDEX - Enhanced with Configuration Model Fix
+// ANALYTICS MODELS - Analytics Database or Primary with separate collections
 // ============================================================================
 
-const modelsIndex = {
-    // Export all registered models
-    ...Object.fromEntries(registeredModels),
-    
-    // Core model exports (maintained from original)
-    BaseModel,
+let Analytics, Metrics, Event, Usage, Performance;
+try {
+  Analytics = require('./analytics/analytics-model');
+  Metrics = require('./analytics/metrics-model');
+  Event = require('./analytics/event-model');
+  Usage = require('./analytics/usage-model');
+  Performance = require('./analytics/performance-model');
+  logger.debug('Analytics models loaded successfully');
+} catch (error) {
+  logger.warn('Some analytics models could not be loaded:', error.message);
+}
 
-    // Users
-    User,
-    UserProfile,
-    UserSession,
-    UserActivity,
-    LoginHistory,
-    Permission,
-    AnonymizedUser,
+// ============================================================================
+// CONTENT & WORKFLOW MODELS - Primary Database
+// ============================================================================
 
-    // Organizations
-    Organization,
-    OrganizationMember,
-    OrganizationInvitation,
-    Tenant,
+let Content, Template, Workflow, Task;
+try {
+  Content = require('./content/content-model');
+  Template = require('./content/template-model');
+  Workflow = require('./workflow/workflow-model');
+  Task = require('./workflow/task-model');
+  logger.debug('Content and workflow models loaded successfully');
+} catch (error) {
+  logger.warn('Some content/workflow models could not be loaded:', error.message);
+}
 
-    // Security & Permissions
-    Role,
-    SecurityIncident,
-    AuditLog,
-    AuditAlert,
-    AuditExport,
-    AuditRetentionPolicy,
-    ComplianceMapping,
+// ============================================================================
+// EXPORT ALL MODELS
+// ============================================================================
 
-    // Authentication
-    Passkey,
-    OAuthProvider,
-    SessionData,
+const models = {
+  // Core User Management
+  User,
+  UserProfile,
+  Role,
+  Permission,
 
-    // Privacy & Compliance
-    Consent,
-    DataBreach,
-    ErasureLog,
-    ProcessingActivity,
+  // Core Organizations
+  Organization,
+  OrganizationMember,
+  OrganizationInvitation,
+  Tenant,
 
-    // Billing
-    PaymentMethod,
-    Subscription,
-    SubscriptionPlan,
-    UsageRecord,
+  // Core Configuration
+  Configuration,
+  SystemConfiguration,
+  FeatureFlag,
 
-    // Platform
-    ApiIntegration,
-    ApiUsage,
-    Notification,
-    SystemConfiguration,
-    Webhook,
+  // Core Authentication & Security
+  Session,
+  LoginHistory,
+  SecurityIncident,
+  ApiKey,
 
-    // FIXED: Configuration Management - Explicit export with verification
-    Configuration: Configuration || registeredModels.get('Configuration'),
+  // Core Billing
+  SubscriptionPlan,
+  Subscription,
+  Invoice,
+  Payment,
 
-    // Utility functions (maintained from original)
-    getRegisteredModels: () => new Map(registeredModels),
-    getRegistrationErrors: () => [...registrationErrors],
-    getRegistrationSummary: () => ({
-        total: totalAttempted,
-        successful: successCount,
-        failed: errorCount,
-        essentialModelsRegistered: essentialModels.filter(name => registeredModels.has(name)).length,
-        essentialModelsTotal: essentialModels.length,
-        models: Array.from(registeredModels.keys()),
-        configurationModelStatus: registeredModels.has('Configuration') ? 'registered' : 'failed'
-    }),
-    
-    // Export specific model getters for common models (maintained from original)
-    getUserModel: () => registeredModels.get('User'),
-    getOrganizationModel: () => registeredModels.get('Organization'),
-    getRoleModel: () => registeredModels.get('Role'),
-    getPermissionModel: () => registeredModels.get('Permission'),
-    getAuditLogModel: () => registeredModels.get('AuditLog'),
-    
-    // FIXED: Added Configuration model getter with fallback
-    getConfigurationModel: () => registeredModels.get('Configuration') || Configuration,
-    
-    // ADDED: Configuration model verification
-    verifyConfigurationModel: () => {
-        const config = registeredModels.get('Configuration');
-        if (!config) {
-            return { available: false, error: 'Model not registered' };
-        }
-        
-        return {
-            available: true,
-            modelName: config.modelName,
-            collectionName: config.collection?.name,
-            databaseType: BaseModel.getDatabaseTypeForCollection ? 
-                BaseModel.getDatabaseTypeForCollection(config.collection?.name) : 'unknown'
-        };
-    },
+  // Core Integrations
+  Webhook,
+  ApiIntegration,
+  OAuthProvider,
+  Passkey,
 
-    // ENHANCED: Export database type utilities
-    getModelsForDatabase: (databaseType) => {
-        const models = [];
-        for (const [modelName, model] of registeredModels) {
-            try {
-                const collectionName = model.collection?.name || 
-                                     (BaseModel.pluralize ? BaseModel.pluralize(modelName.toLowerCase()) : modelName.toLowerCase() + 's');
-                if (BaseModel.getDatabaseTypeForCollection && BaseModel.getDatabaseTypeForCollection(collectionName) === databaseType) {
-                    models.push({ modelName, model, collectionName });
-                }
-            } catch (error) {
-                // Skip models that can't be processed
-            }
-        }
-        return models;
-    },
+  // Core Communication
+  Notification,
+  EmailTemplate,
+  SmsTemplate,
 
-    // ENHANCED: Database routing utilities
-    getDatabaseRouting: () => {
-        const routing = {
-            admin: [],
-            shared: [],
-            audit: [],
-            analytics: [],
-            unmapped: []
-        };
+  // Admin-Server Models
+  AdminUser,
+  AdminSession,
+  UserPermission,
+  // AdminActionLog,
+  OrganizationAdmin,
+  OrganizationSettings,
+  BillingConfiguration,
+  PlatformConfiguration,
+  SystemSettings,
+  MaintenanceSchedule,
+  AccessControl,
+  SecurityPolicy,
+  ComplianceRule,
+  ThreatDetection,
+  ReportModel,
+  AnalyticsConfiguration,
+  DataExport,
+  SupportTicket,
+  KnowledgeBase,
+  SupportAgent,
+  SystemHealth,
+  PerformanceMetrics,
+  AlertConfiguration,
+  BillingAdmin,
+  PaymentProcessor,
+  SubscriptionAdmin,
 
-        for (const [modelName, model] of registeredModels) {
-            try {
-                const collectionName = model.collection?.name || 
-                                     (BaseModel.pluralize ? BaseModel.pluralize(modelName.toLowerCase()) : modelName.toLowerCase() + 's');
-                const databaseType = BaseModel.getDatabaseTypeForCollection ? BaseModel.getDatabaseTypeForCollection(collectionName) : null;
-                
-                if (databaseType && routing[databaseType]) {
-                    routing[databaseType].push({ modelName, collectionName });
-                } else {
-                    routing.unmapped.push({ modelName, collectionName });
-                }
-            } catch (error) {
-                routing.unmapped.push({ modelName, collectionName: 'unknown' });
-            }
-        }
+  // Audit (now in primary database)
+  AuditLog,
+  AuditAlert,
+  ComplianceMapping,
+  DataBreach,
 
-        return routing;
-    },
+  // Analytics
+  Analytics,
+  Metrics,
+  Event,
+  Usage,
+  Performance,
 
-    // ENHANCED: Collection mapping utilities
-    getCollectionDatabaseMapping: () => {
-        if (BaseModel.getAllCollectionMappings) {
-            return BaseModel.getAllCollectionMappings();
-        }
-        return new Map();
-    },
-
-    // ENHANCED: Validation utilities
-    validateRegistration: () => {
-        const validation = {
-            isValid: true,
-            issues: [],
-            statistics: {
-                total: totalAttempted,
-                successful: successCount,
-                failed: errorCount,
-                essentialComplete: missingEssential.length === 0
-            }
-        };
-
-        if (errorCount > 0) {
-            validation.isValid = false;
-            validation.issues.push(`${errorCount} models failed to register`);
-        }
-
-        if (missingEssential.length > 0) {
-            validation.isValid = false;
-            validation.issues.push(`Missing essential models: ${missingEssential.join(', ')}`);
-        }
-
-        if (BaseModel.isMultiDatabaseEnabled && BaseModel.isMultiDatabaseEnabled()) {
-            const routing = modelsIndex.getDatabaseRouting();
-            if (routing.unmapped.length > 0) {
-                validation.issues.push(`${routing.unmapped.length} models have no database routing`);
-            }
-        }
-
-        return validation;
-    }
+  // Content & Workflow
+  Content,
+  Template,
+  Workflow,
+  Task
 };
 
-// Also export individual models for convenient access (maintained from original)
-modelsIndex.models = Object.fromEntries(registeredModels);
+// Filter out undefined models and register with BaseModel
+const registeredModels = {};
+const registrationErrors = [];
 
-logger.info('Models index module loaded successfully', {
-    exportedModels: Object.keys(modelsIndex).length - 10, // Subtract utility functions
-    totalRegistered: registeredModels.size,
-    hasErrors: registrationErrors.length > 0,
-    multiDatabaseEnabled: BaseModel.isMultiDatabaseEnabled ? BaseModel.isMultiDatabaseEnabled() : false,
-    configurationModelRegistered: registeredModels.has('Configuration'),
-    configurationModelAvailable: !!modelsIndex.getConfigurationModel()
+Object.entries(models).forEach(([modelName, ModelClass]) => {
+  if (ModelClass && typeof ModelClass === 'function') {
+    try {
+      // Register with BaseModel for centralized management
+      if (BaseModel.modelRegistry) {
+        BaseModel.modelRegistry.set(modelName, ModelClass);
+      }
+      
+      registeredModels[modelName] = ModelClass;
+      
+      logger.debug(`Model registered successfully: ${modelName}`);
+    } catch (error) {
+      registrationErrors.push({
+        modelName,
+        error: error.message
+      });
+      logger.warn(`Failed to register model ${modelName}:`, error.message);
+    }
+  }
 });
 
-module.exports = modelsIndex;
+// Log registration summary
+logger.info('Enhanced model registration completed', {
+  totalModels: Object.keys(registeredModels).length,
+  errors: registrationErrors.length,
+  coreModels: Object.keys(models).filter(key => !key.startsWith('Admin')).length,
+  adminModels: Object.keys(models).filter(key => key.startsWith('Admin') || 
+    ['OrganizationAdmin', 'PlatformConfiguration', 'SystemSettings', 'MaintenanceSchedule',
+     'AccessControl', 'SecurityPolicy', 'ComplianceRule', 'ThreatDetection',
+     'ReportModel', 'AnalyticsConfiguration', 'DataExport',
+     'SupportTicket', 'KnowledgeBase', 'SupportAgent',
+     'SystemHealth', 'PerformanceMetrics', 'AlertConfiguration',
+     'BillingAdmin', 'PaymentProcessor', 'SubscriptionAdmin'].includes(key)).length
+});
+
+if (registrationErrors.length > 0) {
+  logger.warn('Model registration errors occurred:', registrationErrors);
+}
+
+// ============================================================================
+// ENHANCED HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Gets a model by name
+ * @param {string} modelName - Model name
+ * @returns {Function|null} Model constructor or null
+ */
+function getModel(modelName) {
+  return registeredModels[modelName] || null;
+}
+
+/**
+ * Gets all registered models
+ * @returns {Object} All registered models
+ */
+function getAllModels() {
+  return { ...registeredModels };
+}
+
+/**
+ * Gets models by category
+ * @param {string} category - Model category
+ * @returns {Object} Models in the specified category
+ */
+function getModelsByCategory(category) {
+  const categories = {
+    user: ['User', 'UserProfile', 'Role', 'Permission'],
+    organization: ['Organization', 'OrganizationMember', 'OrganizationInvitation', 'Tenant'],
+    configuration: ['Configuration', 'SystemConfiguration', 'FeatureFlag'],
+    auth: ['Session', 'LoginHistory', 'SecurityIncident', 'ApiKey'],
+    billing: ['SubscriptionPlan', 'Subscription', 'Invoice', 'Payment'],
+    integration: ['Webhook', 'ApiIntegration', 'OAuthProvider', 'Passkey'],
+    communication: ['Notification', 'EmailTemplate', 'SmsTemplate'],
+    audit: ['AuditLog', 'AuditAlert', 'ComplianceMapping', 'DataBreach'],
+    analytics: ['Analytics', 'Metrics', 'Event', 'Usage', 'Performance'],
+    content: ['Content', 'Template', 'Workflow', 'Task'],
+    // Admin-Server Categories
+    adminUser: ['AdminUser', 'AdminSession', 'UserPermission'],
+    adminOrganization: ['OrganizationAdmin', 'OrganizationSettings', 'BillingConfiguration'],
+    adminPlatform: ['PlatformConfiguration', 'SystemSettings', 'MaintenanceSchedule'],
+    adminSecurity: ['AccessControl', 'SecurityPolicy', 'ComplianceRule', 'ThreatDetection'],
+    adminReports: ['ReportModel', 'AnalyticsConfiguration', 'DataExport'],
+    adminSupport: ['SupportTicket', 'KnowledgeBase', 'SupportAgent'],
+    adminMonitoring: ['SystemHealth', 'PerformanceMetrics', 'AlertConfiguration'],
+    adminBilling: ['BillingAdmin', 'PaymentProcessor', 'SubscriptionAdmin']
+  };
+
+  const modelNames = categories[category] || [];
+  const categoryModels = {};
+
+  modelNames.forEach(modelName => {
+    if (registeredModels[modelName]) {
+      categoryModels[modelName] = registeredModels[modelName];
+    }
+  });
+
+  return categoryModels;
+}
+
+/**
+ * Gets all admin-server models
+ * @returns {Object} All admin-server models
+ */
+function getAdminModels() {
+  const adminModels = {};
+  
+  Object.entries(registeredModels).forEach(([modelName, ModelClass]) => {
+    if (modelName.startsWith('Admin') || 
+        ['OrganizationAdmin', 'PlatformConfiguration', 'SystemSettings', 'MaintenanceSchedule',
+         'AccessControl', 'SecurityPolicy', 'ComplianceRule', 'ThreatDetection',
+         'ReportModel', 'AnalyticsConfiguration', 'DataExport',
+         'SupportTicket', 'KnowledgeBase', 'SupportAgent',
+         'SystemHealth', 'PerformanceMetrics', 'AlertConfiguration',
+         'BillingAdmin', 'PaymentProcessor', 'SubscriptionAdmin'].includes(modelName)) {
+      adminModels[modelName] = ModelClass;
+    }
+  });
+
+  return adminModels;
+}
+
+/**
+ * Gets all core business models (non-admin)
+ * @returns {Object} All core business models
+ */
+function getCoreModels() {
+  const coreModels = {};
+  
+  Object.entries(registeredModels).forEach(([modelName, ModelClass]) => {
+    if (!modelName.startsWith('Admin') && 
+        !['OrganizationAdmin', 'PlatformConfiguration', 'SystemSettings', 'MaintenanceSchedule',
+          'AccessControl', 'SecurityPolicy', 'ComplianceRule', 'ThreatDetection',
+          'ReportModel', 'AnalyticsConfiguration', 'DataExport',
+          'SupportTicket', 'KnowledgeBase', 'SupportAgent',
+          'SystemHealth', 'PerformanceMetrics', 'AlertConfiguration',
+          'BillingAdmin', 'PaymentProcessor', 'SubscriptionAdmin'].includes(modelName)) {
+      coreModels[modelName] = ModelClass;
+    }
+  });
+
+  return coreModels;
+}
+
+/**
+ * Checks if a model is registered
+ * @param {string} modelName - Model name
+ * @returns {boolean} True if model is registered
+ */
+function hasModel(modelName) {
+  return !!registeredModels[modelName];
+}
+
+/**
+ * Gets registration statistics
+ * @returns {Object} Registration statistics
+ */
+function getRegistrationStats() {
+  return {
+    totalRegistered: Object.keys(registeredModels).length,
+    totalErrors: registrationErrors.length,
+    coreModels: Object.keys(getCoreModels()).length,
+    adminModels: Object.keys(getAdminModels()).length,
+    categories: {
+      user: getModelsByCategory('user'),
+      organization: getModelsByCategory('organization'),
+      configuration: getModelsByCategory('configuration'),
+      auth: getModelsByCategory('auth'),
+      billing: getModelsByCategory('billing'),
+      integration: getModelsByCategory('integration'),
+      communication: getModelsByCategory('communication'),
+      audit: getModelsByCategory('audit'),
+      analytics: getModelsByCategory('analytics'),
+      content: getModelsByCategory('content'),
+      adminUser: getModelsByCategory('adminUser'),
+      adminOrganization: getModelsByCategory('adminOrganization'),
+      adminPlatform: getModelsByCategory('adminPlatform'),
+      adminSecurity: getModelsByCategory('adminSecurity'),
+      adminReports: getModelsByCategory('adminReports'),
+      adminSupport: getModelsByCategory('adminSupport'),
+      adminMonitoring: getModelsByCategory('adminMonitoring'),
+      adminBilling: getModelsByCategory('adminBilling')
+    }
+  };
+}
+
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
+// Export individual models
+module.exports = registeredModels;
+
+// Export helper functions
+module.exports.getModel = getModel;
+module.exports.getAllModels = getAllModels;
+module.exports.getModelsByCategory = getModelsByCategory;
+module.exports.getAdminModels = getAdminModels;
+module.exports.getCoreModels = getCoreModels;
+module.exports.hasModel = hasModel;
+module.exports.getRegistrationStats = getRegistrationStats;
+module.exports.registrationErrors = registrationErrors;

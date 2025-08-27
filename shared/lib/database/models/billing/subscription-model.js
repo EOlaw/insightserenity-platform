@@ -1286,7 +1286,4 @@ subscriptionSchema.statics.getSubscriptionMetrics = async function(filters = {})
 // Create and export model
 const SubscriptionModel = BaseModel.createModel('Subscription', subscriptionSchema);
 
-module.exports = {
-  schema: subscriptionSchema,
-  model: SubscriptionModel
-};
+module.exports = SubscriptionModel;

@@ -298,6 +298,6 @@ erasureLogSchema.statics.getErasureStatistics = async function(startDate, endDat
 };
 
 // Create and export model
-const ErasureLog = BaseModel.createModel('ErasureLog', erasureLogSchema);
+const ErasureLogModel = BaseModel.createModel('ErasureLog', erasureLogSchema);
 
-module.exports = ErasureLog;
+module.exports = ErasureLogModel;

@@ -1621,10 +1621,19 @@ userSchema.statics.bulkInvite = async function(invitations, invitedBy) {
   return results;
 };
 
-// Create and export model
-const User = BaseModel.createModel('User', userSchema);
+// ==================== Create Model ====================
+const User = BaseModel.createModel('User', userSchema, {
+  collection: 'users',
+  enableTimestamps: true,
+  enableAudit: true
+});
 
-module.exports = {
-  schema: userSchema,
-  model: User
-};
+module.exports = User;
+
+// Create and export model
+// const User = BaseModel.createModel('User', userSchema);
+
+// module.exports = {
+//   schema: userSchema,
+//   model: User
+// };

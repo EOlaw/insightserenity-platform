@@ -1154,7 +1154,4 @@ auditAlertSchema.statics.correlateAlerts = async function(alertId, timeWindow = 
 // Create and export model
 const AuditAlertModel = BaseModel.createModel('AuditAlert', auditAlertSchema);
 
-module.exports = {
-  schema: auditAlertSchema,
-  model: AuditAlertModel
-};
+module.exports = AuditAlertModel;

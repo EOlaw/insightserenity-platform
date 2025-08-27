@@ -183,6 +183,6 @@ anonymizedUserSchema.statics.findExpiredRetentions = async function() {
 };
 
 // Create and export model
-const AnonymizedUser = BaseModel.createModel('AnonymizedUser', anonymizedUserSchema);
+const AnonymizedUserModel = BaseModel.createModel('AnonymizedUser', anonymizedUserSchema);
 
-module.exports = AnonymizedUser;
+module.exports = AnonymizedUserModel;

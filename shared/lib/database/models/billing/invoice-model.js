@@ -1244,7 +1244,4 @@ invoiceSchema.statics.getRevenueMetrics = async function(filters = {}) {
 // Create and export model
 const InvoiceModel = BaseModel.createModel('Invoice', invoiceSchema);
 
-module.exports = {
-  schema: invoiceSchema,
-  model: InvoiceModel
-};
+module.exports = InvoiceModel;

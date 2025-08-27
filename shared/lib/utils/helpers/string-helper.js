@@ -90,15 +90,15 @@ class StringHelper {
    */
   static toSlug(str, options = {}) {
     const { separator = '-', lowercase = true } = options;
-    
+
     if (!str || typeof str !== 'string') return '';
-    
+
     let slug = str
       .trim()
       .replace(/[^\w\s-]/g, '') // Remove special characters
       .replace(/[\s_-]+/g, separator) // Replace spaces and underscores with separator
       .replace(new RegExp(`^${separator}+|${separator}+$`, 'g'), ''); // Remove leading/trailing separators
-    
+
     return lowercase ? slug.toLowerCase() : slug;
   }
 
@@ -196,15 +196,15 @@ class StringHelper {
       uppercase = true,
       special = false
     } = options;
-    
+
     let chars = '';
     if (numbers) chars += '0123456789';
     if (lowercase) chars += 'abcdefghijklmnopqrstuvwxyz';
     if (uppercase) chars += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     if (special) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?';
-    
+
     if (!chars) chars = '0123456789abcdefghijklmnopqrstuvwxyz';
-    
+
     let result = '';
     for (let i = 0; i < length; i++) {
       result += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -224,9 +224,9 @@ class StringHelper {
   static pad(str, length, char = ' ', position = 'right') {
     str = String(str);
     if (str.length >= length) return str;
-    
+
     const padLength = length - str.length;
-    
+
     switch (position) {
       case 'left':
         return char.repeat(padLength) + str;
@@ -248,7 +248,7 @@ class StringHelper {
    */
   static trim(str, position = 'both') {
     if (!str || typeof str !== 'string') return '';
-    
+
     switch (position) {
       case 'left':
         return str.replace(/^\s+/, '');
@@ -271,12 +271,12 @@ class StringHelper {
    */
   static contains(str, substring, caseSensitive = true) {
     if (!str || !substring) return false;
-    
+
     if (!caseSensitive) {
       str = str.toLowerCase();
       substring = substring.toLowerCase();
     }
-    
+
     return str.indexOf(substring) !== -1;
   }
 
@@ -290,12 +290,12 @@ class StringHelper {
    */
   static countOccurrences(str, substring, caseSensitive = true) {
     if (!str || !substring) return 0;
-    
+
     if (!caseSensitive) {
       str = str.toLowerCase();
       substring = substring.toLowerCase();
     }
-    
+
     return str.split(substring).length - 1;
   }
 
@@ -310,7 +310,7 @@ class StringHelper {
    */
   static replaceAll(str, search, replace, caseSensitive = true) {
     if (!str || typeof str !== 'string') return '';
-    
+
     const flags = caseSensitive ? 'g' : 'gi';
     const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return str.replace(new RegExp(escapedSearch, flags), replace);
@@ -364,14 +364,14 @@ class StringHelper {
    */
   static mask(str, options = {}) {
     const { start = 0, end = 4, mask = '*' } = options;
-    
+
     if (!str || typeof str !== 'string') return '';
     if (str.length <= start + end) return mask.repeat(str.length);
-    
+
     const startStr = str.substring(0, start);
     const endStr = str.substring(str.length - end);
     const maskLength = str.length - start - end;
-    
+
     return startStr + mask.repeat(maskLength) + endStr;
   }
 
@@ -411,6 +411,36 @@ class StringHelper {
   static removeDuplicates(str) {
     if (!str || typeof str !== 'string') return '';
     return [...new Set(str)].join('');
+  }
+
+  /**
+ * Pluralize string
+ * @static
+ * @param {string} str - String to pluralize
+ * @returns {string} Pluralized string
+ */
+  static pluralize(str) {
+    if (!str || typeof str !== 'string') return '';
+
+    // Basic English pluralization rules
+    if (str.match(/(s|ss|sh|ch|x|z)$/i)) {
+      return str + 'es';
+    }
+    if (str.match(/([^aeiou])y$/i)) {
+      return str.slice(0, -1) + 'ies';
+    }
+    if (str.match(/f$/i)) {
+      return str.slice(0, -1) + 'ves';
+    }
+    if (str.match(/fe$/i)) {
+      return str.slice(0, -2) + 'ves';
+    }
+    if (str.match(/(o)$/i)) {
+      return str + 'es';
+    }
+
+    // Default: just add 's'
+    return str + 's';
   }
 }
 

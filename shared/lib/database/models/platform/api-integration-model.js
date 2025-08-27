@@ -1378,7 +1378,4 @@ apiIntegrationSchema.statics.findIntegrationsNeedingAttention = async function(o
 // Create and export model
 const ApiIntegrationModel = BaseModel.createModel('ApiIntegration', apiIntegrationSchema);
 
-module.exports = {
-  schema: apiIntegrationSchema,
-  model: ApiIntegrationModel
-};
+module.exports = ApiIntegrationModel;

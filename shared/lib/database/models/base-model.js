@@ -1,243 +1,147 @@
 'use strict';
 
 /**
- * @fileoverview Enhanced base model class with multi-database routing and common functionality for all models
+ * @fileoverview Simplified base model for hybrid database architecture
  * @module shared/lib/database/models/base-model
  * @requires mongoose
  * @requires module:shared/lib/utils/logger
  * @requires module:shared/lib/utils/app-error
- * @requires module:shared/lib/database/query-builder
- * @requires module:shared/lib/security/audit/audit-service
+ * @requires module:shared/lib/utils/helpers/string-helper
  */
 
 const mongoose = require('mongoose');
-
-// Lazy load dependencies to avoid circular dependency issues
-let logger;
-let AppError;
-let QueryBuilder;
-let AuditService;
-let ConnectionManager;
-
-function getLogger() {
-  if (!logger) {
-    logger = require('../../utils/logger');
-  }
-  return logger;
-}
-
-function getAppError() {
-  if (!AppError) {
-    const appErrorModule = require('../../utils/app-error');
-    AppError = appErrorModule.AppError || appErrorModule;
-  }
-  return AppError;
-}
-
-function getQueryBuilder() {
-  if (!QueryBuilder) {
-    try {
-      QueryBuilder = require('../query-builder');
-    } catch (error) {
-      // QueryBuilder might not be available in all environments
-      QueryBuilder = null;
-    }
-  }
-  return QueryBuilder;
-}
-
-function getAuditService() {
-  if (!AuditService) {
-    try {
-      AuditService = require('../../security/audit/audit-service');
-    } catch (error) {
-      // AuditService might not be available in all environments
-      AuditService = null;
-    }
-  }
-  return AuditService;
-}
-
-function getConnectionManager() {
-  if (!ConnectionManager) {
-    try {
-      ConnectionManager = require('../connection-manager');
-    } catch (error) {
-      // ConnectionManager might not be available during initial loading
-      ConnectionManager = null;
-    }
-  }
-  return ConnectionManager;
-}
+const logger = require('../../utils/logger');
+const { AppError } = require('../../utils/app-error');
+const stringHelper = require('../../utils/helpers/string-helper');
 
 /**
  * @class BaseModel
- * @description Enhanced abstract base model with multi-database routing and common functionality
+ * @description Simplified abstract base model providing common functionality
+ * for all database models in the hybrid architecture
  */
 class BaseModel {
-  
+
   /**
-   * Static registries and properties for models and schemas with multi-database support
    * @static
    * @private
+   * @type {Map<string, Function>}
+   * @description Registry of all model constructors
    */
   static modelRegistry = new Map();
-  static schemaCache = new Map();
-  static auditService = null;
-  static connectionManager = null;
-  static multiDatabaseEnabled = false;
-  static initialized = false;
-  
+
   /**
-   * ENHANCED: Database collection mapping for multi-database architecture
    * @static
    * @private
+   * @type {Map<string, mongoose.Schema>}
+   * @description Cache of all schemas
    */
-  static collectionDatabaseMapping = new Map([
-    // Admin database collections
-    ['users', 'admin'],
-    ['user_profiles', 'admin'],
-    ['user_activities', 'admin'],
-    ['login_history', 'admin'],
-    ['roles', 'admin'],
-    ['permissions', 'admin'],
-    ['organizations', 'admin'],
-    ['organization_members', 'admin'],
-    ['organization_invitations', 'admin'],
-    ['tenants', 'admin'],
-    ['system_configurations', 'admin'],
-    ['configuration_management', 'admin'], // FIXED: Added explicit mapping for configuration_management
-    ['security_incidents', 'admin'],
-    ['sessions', 'admin'],
-    
-    // Shared database collections
-    ['subscription_plans', 'shared'],
-    ['features', 'shared'],
-    ['system_settings', 'shared'],
-    ['webhooks', 'shared'],
-    ['api_integrations', 'shared'],
-    ['notifications', 'shared'],
-    ['oauth_providers', 'shared'],
-    ['passkeys', 'shared'],
-    
-    // Audit database collections
-    ['audit_logs', 'audit'],
-    ['audit_alerts', 'audit'],
-    ['audit_exports', 'audit'],
-    ['audit_retention_policies', 'audit'],
-    ['compliance_mappings', 'audit'],
-    ['data_breaches', 'audit'],
-    ['erasure_logs', 'audit'],
-    ['processing_activities', 'audit'],
-    
-    // Analytics database collections
-    ['api_usage', 'analytics'],
-    ['usage_records', 'analytics'],
-    ['performance_metrics', 'analytics'],
-    ['user_analytics', 'analytics'],
-    ['system_metrics', 'analytics']
-  ]);
+  static schemaCache = new Map();
 
   /**
-   * ENHANCED: Initialize BaseModel with multi-database support
    * @static
-   * @async
-   * @param {Object} [options={}] - Initialization options
-   * @param {Object} options.connectionManager - Connection manager instance
-   * @param {boolean} options.multiDatabase - Enable multi-database support
-   * @param {Object} options.auditService - Audit service instance
-   * @returns {Promise<void>}
+   * @private
+   * @type {boolean}
+   * @description Initialization status
    */
-  static async initialize(options = {}) {
+  static initialized = false;
+
+  /**
+   * @static
+   * @private
+   * @type {Object}
+   * @description Audit service instance
+   */
+  static auditService = null;
+
+  /**
+   * Creates a new model with enhanced functionality
+   * @static
+   * @param {string} modelName - Model name
+   * @param {mongoose.Schema} schema - Mongoose schema
+   * @param {Object} [options={}] - Model options
+   * @param {string} [options.collection] - Collection name
+   * @param {boolean} [options.enableAudit=true] - Enable audit logging
+   * @param {boolean} [options.enableTimestamps=true] - Enable timestamps
+   * @returns {Function} Enhanced Mongoose model
+   */
+  static createModel(modelName, schema, options = {}) {
     try {
-      const logger = getLogger();
-      
-      if (BaseModel.initialized) {
-        logger.debug('BaseModel already initialized');
-        return;
+      // Validate inputs
+      if (!modelName || typeof modelName !== 'string') {
+        throw new AppError('Model name is required and must be a string', 400, 'INVALID_MODEL_NAME');
       }
 
-      BaseModel.connectionManager = options.connectionManager || getConnectionManager();
-      BaseModel.multiDatabaseEnabled = options.multiDatabase || false;
-
-      // Initialize registries if not already done
-      if (!BaseModel.modelRegistry) {
-        BaseModel.modelRegistry = new Map();
-      }
-      if (!BaseModel.schemaCache) {
-        BaseModel.schemaCache = new Map();
+      if (!schema || !(schema instanceof mongoose.Schema)) {
+        throw new AppError('Valid Mongoose schema is required', 400, 'INVALID_SCHEMA');
       }
 
-      // Initialize audit service
-      if (options.auditService) {
-        BaseModel.auditService = options.auditService;
+      // Set collection name
+      let collectionName;
+      if (options.collection) {
+        collectionName = options.collection;
       } else {
-        const AuditService = getAuditService();
-        if (AuditService) {
-          BaseModel.auditService = new AuditService();
-        }
+        collectionName = BaseModel.getCollectionName(modelName);
       }
 
-      BaseModel.initialized = true;
-      
-      logger.info('BaseModel initialized', {
-        multiDatabaseEnabled: BaseModel.multiDatabaseEnabled,
-        connectionManager: BaseModel.connectionManager ? 'Available' : 'Not Available',
-        auditService: BaseModel.auditService ? 'Available' : 'Not Available',
-        modelRegistry: BaseModel.modelRegistry.size,
-        schemaCache: BaseModel.schemaCache.size
+      // Ensure schema has the collection name set
+      if (!schema.options.collection) {
+        schema.options.collection = collectionName;
+      }
+
+      // Add timestamps if enabled
+      if (options.enableTimestamps !== false) {
+        BaseModel.addTimestamps(schema);
+      }
+
+      // Add audit fields if enabled
+      if (options.enableAudit !== false) {
+        BaseModel.addAuditFields(schema);
+      }
+
+      // Create the model using primary connection by default
+      const model = mongoose.model(modelName, schema, collectionName);
+
+      // Enhance model with base functionality
+      BaseModel.enhanceModel(model, options);
+
+      // Register the model
+      BaseModel.modelRegistry.set(modelName, model);
+      BaseModel.schemaCache.set(modelName, schema);
+
+      logger.info('Model created and registered successfully', {
+        modelName,
+        collection: collectionName,
+        hasTimestamps: options.enableTimestamps !== false,
+        hasAudit: options.enableAudit !== false
       });
 
+      return model;
+
     } catch (error) {
-      const logger = getLogger();
-      logger.error('BaseModel initialization failed', { error: error.message });
-      throw error;
+      logger.error(`Failed to create model ${modelName}:`, error);
+
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw new AppError(
+        'Model creation failed',
+        500,
+        'MODEL_CREATION_ERROR',
+        { modelName, originalError: error.message }
+      );
     }
   }
 
   /**
-   * ENHANCED: Get appropriate database connection for a collection with multi-database routing
-   * @static
-   * @param {string} collectionName - Name of the collection
-   * @returns {mongoose.Connection|null} Database connection
-   */
-  static getDatabaseConnectionForCollection(collectionName) {
-    try {
-      if (!BaseModel.multiDatabaseEnabled || !BaseModel.connectionManager) {
-        return null;
-      }
-
-      const dbType = BaseModel.collectionDatabaseMapping.get(collectionName);
-      if (dbType && BaseModel.connectionManager.getDatabaseConnection) {
-        return BaseModel.connectionManager.getDatabaseConnection(dbType);
-      }
-
-      // Fallback to connection manager's method
-      if (BaseModel.connectionManager.getConnectionForCollection) {
-        return BaseModel.connectionManager.getConnectionForCollection(collectionName);
-      }
-
-      return null;
-    } catch (error) {
-      const logger = getLogger();
-      logger.warn(`Failed to get database connection for collection ${collectionName}`, {
-        error: error.message
-      });
-      return null;
-    }
-  }
-
-  /**
-   * Creates model schema with base functionality
-   * @static
-   * @param {Object} schemaDefinition - Schema field definitions
-   * @param {Object} [options={}] - Schema options
-   * @returns {mongoose.Schema} Configured schema
-   */
+ * Creates model schema with base functionality
+ * @static
+ * @param {Object} schemaDefinition - Schema field definitions
+ * @param {Object} [options={}] - Schema options
+ * @returns {mongoose.Schema} Configured schema
+ */
   static createSchema(schemaDefinition, options = {}) {
     try {
-      const logger = getLogger();
-      
       // Default options
       const DEFAULT_OPTIONS = {
         timestamps: true,
@@ -250,6 +154,8 @@ class BaseModel {
           virtuals: true,
           transform: (doc, ret) => {
             delete ret.__v;
+            ret.id = ret._id;
+            delete ret._id;
             return ret;
           }
         },
@@ -257,103 +163,43 @@ class BaseModel {
           virtuals: true,
           transform: (doc, ret) => {
             delete ret.__v;
+            ret.id = ret._id;
+            delete ret._id;
             return ret;
           }
         }
       };
 
-      // Merge options with defaults
-      const schemaOptions = {
-        ...DEFAULT_OPTIONS,
-        ...options
-      };
+      // Merge options
+      const schemaOptions = { ...DEFAULT_OPTIONS, ...options };
 
-      // ENHANCED: Add common fields with improved multi-database support
-      const enhancedDefinition = {
-        ...schemaDefinition,
-        
-        // Common audit fields
-        _tenantId: {
-          type: String,
-          index: true,
-          sparse: true
-        },
-        _deleted: {
-          type: Boolean,
-          default: false,
-          index: true
-        },
-        _deletedAt: {
-          type: Date,
-          default: null
-        },
-        _version: {
-          type: Number,
-          default: 1
-        },
-        _metadata: {
-          type: mongoose.Schema.Types.Mixed,
-          default: {}
-        },
-        
-        // ENHANCED: Multi-database tracking fields
-        _createdBy: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'User',
-          index: true
-        },
-        
-        _updatedBy: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'User',
-          index: true
-        },
-        
-        // Enhanced organization tracking
-        _organizationId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'Organization',
-          index: true
-        }
-      };
+      // Create the schema
+      const schema = new mongoose.Schema(schemaDefinition, schemaOptions);
 
-      // Create schema
-      const schema = new mongoose.Schema(enhancedDefinition, schemaOptions);
+      // Add common indexes
+      if (schemaDefinition.tenantId) {
+        schema.index({ tenantId: 1 });
+      }
 
-      // Add indexes
-      BaseModel.addDefaultIndexes(schema);
-
-      // Add virtual fields
-      BaseModel.addVirtualFields(schema);
-
-      // Add instance methods
-      BaseModel.addInstanceMethods(schema);
-
-      // Add static methods
-      BaseModel.addStaticMethods(schema);
-
-      // Add middleware
-      BaseModel.addMiddleware(schema);
-
-      // Add plugins
-      BaseModel.addPlugins(schema, options);
+      if (schemaDefinition.organizationId) {
+        schema.index({ organizationId: 1 });
+      }
 
       // Cache the schema
       const collectionName = schemaOptions.collection || 'unknown';
       BaseModel.schemaCache.set(collectionName, schema);
 
-      logger.debug('Schema created', {
+      logger.info('Schema created successfully', {
         collection: collectionName,
-        fieldCount: Object.keys(schemaDefinition).length
+        fieldCount: Object.keys(schemaDefinition).length,
+        hasTimestamps: schemaOptions.timestamps,
+        hasCollection: !!schemaOptions.collection
       });
 
       return schema;
 
     } catch (error) {
-      const logger = getLogger();
-      const AppError = getAppError();
-      
-      logger.error('Failed to create schema', error);
+      logger.error('Failed to create schema:', error);
 
       throw new AppError(
         'Schema creation failed',
@@ -365,943 +211,380 @@ class BaseModel {
   }
 
   /**
-   * ENHANCED: Creates and registers a model with multi-database routing
+   * Adds common timestamp fields to schema
    * @static
-   * @param {string} modelName - Model name
-   * @param {mongoose.Schema} schema - Model schema
-   * @param {Object} [options={}] - Model options
-   * @returns {mongoose.Model} Mongoose model
+   * @param {mongoose.Schema} schema - Mongoose schema
    */
-  static createModel(modelName, schema, options = {}) {
-    try {
-      const logger = getLogger();
-      const AppError = getAppError();
-      
-      if (!modelName || !schema) {
-        throw new AppError('Model name and schema are required', 400, 'INVALID_MODEL_PARAMS');
+  static addTimestamps(schema) {
+    schema.add({
+      createdAt: {
+        type: Date,
+        default: Date.now,
+        index: true
+      },
+      updatedAt: {
+        type: Date,
+        default: Date.now,
+        index: true
       }
+    });
 
-      // Check if model already exists
-      if (BaseModel.modelRegistry && BaseModel.modelRegistry.has(modelName)) {
-        return BaseModel.modelRegistry.get(modelName);
+    // Update the updatedAt field on save
+    schema.pre('save', function (next) {
+      if (!this.isNew) {
+        this.updatedAt = new Date();
       }
+      next();
+    });
 
-      // Initialize registries if not exists
-      if (!BaseModel.modelRegistry) {
-        BaseModel.modelRegistry = new Map();
+    // Update the updatedAt field on update operations
+    schema.pre(['updateOne', 'updateMany', 'findOneAndUpdate'], function () {
+      this.set({ updatedAt: new Date() });
+    });
+  }
+
+  /**
+   * Adds audit fields to schema
+   * @static
+   * @param {mongoose.Schema} schema - Mongoose schema
+   */
+  static addAuditFields(schema) {
+    schema.add({
+      createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      updatedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      version: {
+        type: Number,
+        default: 1
+      },
+      isDeleted: {
+        type: Boolean,
+        default: false,
+        index: true
+      },
+      deletedAt: {
+        type: Date,
+        default: null
+      },
+      deletedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
       }
-      if (!BaseModel.schemaCache) {
-        BaseModel.schemaCache = new Map();
+    });
+
+    // Increment version on save
+    schema.pre('save', function (next) {
+      if (!this.isNew) {
+        this.increment();
       }
+      next();
+    });
 
-      // FIXED: Properly extract collection name from schema options first, then fallback to generated name
-      let collectionName;
-      if (schema.options && schema.options.collection) {
-        // Use explicitly defined collection name from schema options
-        collectionName = schema.options.collection;
-        logger.debug(`Using explicit collection name from schema: ${collectionName}`);
-      } else if (options.collection) {
-        // Use collection name from options
-        collectionName = options.collection;
-      } else {
-        // Generate collection name from model name as fallback
-        collectionName = BaseModel.getCollectionName(modelName);
+    // Add soft delete functionality
+    schema.methods.softDelete = function (deletedBy) {
+      this.isDeleted = true;
+      this.deletedAt = new Date();
+      if (deletedBy) {
+        this.deletedBy = deletedBy;
       }
+      return this.save();
+    };
 
-      // Ensure schema has the collection name set
-      if (!schema.options.collection) {
-        schema.options.collection = collectionName;
+    schema.methods.restore = function () {
+      this.isDeleted = false;
+      this.deletedAt = null;
+      this.deletedBy = null;
+      return this.save();
+    };
+
+    // Filter out soft deleted documents by default
+    schema.pre(/^find/, function () {
+      if (!this.getOptions().includeSoftDeleted) {
+        this.where({ isDeleted: { $ne: true } });
       }
+    });
+  }
 
-      let model;
+  /**
+   * Enhances a model with additional functionality
+   * @static
+   * @param {Function} model - Mongoose model
+   * @param {Object} [options={}] - Enhancement options
+   */
+  static enhanceModel(model, options = {}) {
+    // Add static method for safe creation
+    model.createSafely = async function (data, context = {}) {
+      try {
+        const document = new this(data);
 
-      // ENHANCED: Try to use appropriate database connection for multi-database setup
-      if (BaseModel.multiDatabaseEnabled) {
-        const connection = BaseModel.getDatabaseConnectionForCollection(collectionName);
-        
-        if (connection) {
-          try {
-            model = connection.model(modelName, schema, collectionName);
-            const dbType = BaseModel.collectionDatabaseMapping.get(collectionName);
-            logger.debug(`Model created with specific database connection`, {
-              modelName,
-              collection: collectionName,
-              database: dbType || 'unknown'
-            });
-          } catch (connectionError) {
-            logger.warn(`Failed to create model with specific connection, falling back to default`, {
-              modelName,
-              error: connectionError.message
-            });
-            model = mongoose.model(modelName, schema, collectionName);
-          }
-        } else {
-          model = mongoose.model(modelName, schema, collectionName);
-          const dbType = BaseModel.collectionDatabaseMapping.get(collectionName);
-          logger.debug(`Model created with default connection`, {
-            modelName,
-            collection: collectionName,
-            database: dbType || 'unmapped - will use admin as fallback'
-          });
+        if (context.user) {
+          document.createdBy = context.user;
+          document.updatedBy = context.user;
         }
-      } else {
-        model = mongoose.model(modelName, schema, collectionName);
-      }
 
-      // Enhance model with base functionality
-      BaseModel.enhanceModel(model, options);
+        const result = await document.save();
 
-      // Register the model
-      BaseModel.modelRegistry.set(modelName, model);
+        if (BaseModel.auditService && options.enableAudit !== false) {
+          BaseModel.auditService.logModelAction('CREATE', model.modelName, result._id, context);
+        }
 
-      // Cache schema
-      BaseModel.schemaCache.set(modelName, schema);
-
-      logger.info('Model created and registered', {
-        modelName,
-        collection: collectionName
-      });
-
-      return model;
-
-    } catch (error) {
-      const logger = getLogger();
-      const AppError = getAppError();
-      
-      logger.error('Failed to create model', error);
-
-      if (error instanceof AppError || (error.constructor && error.constructor.name === 'AppError')) {
+        return result;
+      } catch (error) {
+        logger.error(`Error creating ${model.modelName}:`, error);
         throw error;
       }
-
-      throw new AppError(
-        'Model creation failed',
-        500,
-        'MODEL_CREATION_ERROR',
-        { originalError: error.message }
-      );
-    }
-  }
-
-  /**
-   * Adds default indexes to schema
-   * @static
-   * @param {mongoose.Schema} schema - Schema instance
-   */
-  static addDefaultIndexes(schema) {
-    // Compound index for multi-tenant queries
-    schema.index({ _tenantId: 1, _deleted: 1 });
-    
-    // Index for soft delete queries
-    schema.index({ _deleted: 1, _deletedAt: -1 });
-    
-    // Enhanced organization-based queries
-    schema.index({ _organizationId: 1, _deleted: 1 });
-    
-    // Audit trail indexes
-    schema.index({ _createdBy: 1, createdAt: -1 });
-    schema.index({ _updatedBy: 1, updatedAt: -1 });
-    
-    // Text search index if searchable fields defined
-    const searchableFields = {};
-    schema.eachPath((path, schemaType) => {
-      if (schemaType.options && schemaType.options.searchable) {
-        searchableFields[path] = 'text';
-      }
-    });
-
-    if (Object.keys(searchableFields).length > 0) {
-      schema.index(searchableFields);
-    }
-  }
-
-  /**
-   * Adds virtual fields to schema
-   * @static
-   * @param {mongoose.Schema} schema - Schema instance
-   */
-  static addVirtualFields(schema) {
-    // Virtual for document age
-    schema.virtual('age').get(function() {
-      if (this.createdAt) {
-        return Date.now() - this.createdAt.getTime();
-      }
-      return null;
-    });
-
-    // Virtual for soft delete status
-    schema.virtual('isDeleted').get(function() {
-      return this._deleted === true;
-    });
-
-    // Virtual for display ID
-    schema.virtual('displayId').get(function() {
-      return this._id ? this._id.toString() : null;
-    });
-
-    // ENHANCED: Virtual for database type routing
-    schema.virtual('databaseType').get(function() {
-      const collectionName = this.constructor.collection.name;
-      return BaseModel.collectionDatabaseMapping.get(collectionName) || 'unknown';
-    });
-
-    // Virtual for audit summary
-    schema.virtual('auditSummary').get(function() {
-      return {
-        createdBy: this._createdBy,
-        updatedBy: this._updatedBy,
-        version: this._version,
-        organizationId: this._organizationId,
-        tenantId: this._tenantId
-      };
-    });
-  }
-
-  /**
-   * Adds instance methods to schema
-   * @static
-   * @param {mongoose.Schema} schema - Schema instance
-   */
-  static addInstanceMethods(schema) {
-    /**
-     * Soft deletes the document
-     * @param {Object} [options={}] - Delete options
-     * @returns {Promise<Object>} Deleted document
-     */
-    schema.methods.softDelete = async function(options = {}) {
-      this._deleted = true;
-      this._deletedAt = new Date();
-      
-      if (options.deletedBy) {
-        this._metadata.deletedBy = options.deletedBy;
-      }
-
-      return await this.save();
     };
 
-    /**
-     * Restores soft deleted document
-     * @returns {Promise<Object>} Restored document
-     */
-    schema.methods.restore = async function() {
-      this._deleted = false;
-      this._deletedAt = null;
-      
-      if (this._metadata.deletedBy) {
-        delete this._metadata.deletedBy;
-      }
-
-      return await this.save();
-    };
-
-    /**
-     * Increments document version
-     * @returns {Promise<Object>} Updated document
-     */
-    schema.methods.incrementVersion = async function() {
-      this._version = (this._version || 0) + 1;
-      return await this.save();
-    };
-
-    /**
-     * Adds metadata to document
-     * @param {string} key - Metadata key
-     * @param {*} value - Metadata value
-     * @returns {Promise<Object>} Updated document
-     */
-    schema.methods.addMetadata = async function(key, value) {
-      if (!this._metadata) {
-        this._metadata = {};
-      }
-      this._metadata[key] = value;
-      this.markModified('_metadata');
-      return await this.save();
-    };
-
-    /**
-     * Creates audit log for document
-     * @param {string} action - Action performed
-     * @param {Object} [details={}] - Additional details
-     * @returns {Promise<void>}
-     */
-    schema.methods.audit = async function(action, details = {}) {
-      if (BaseModel.auditService) {
-        try {
-          await BaseModel.auditService.logActivity({
-            action,
-            category: 'DATABASE',
-            entityType: this.constructor.modelName,
-            entityId: this._id,
-            details: {
-              ...details,
-              collection: this.constructor.collection.name,
-              databaseType: this.databaseType
-            }
-          });
-        } catch (error) {
-          const logger = getLogger();
-          logger.error('Audit logging failed', error);
-        }
-      }
-    };
-
-    /**
-     * Converts document to safe JSON
-     * @param {Object} [options={}] - Conversion options
-     * @returns {Object} Safe JSON representation
-     */
-    schema.methods.toSafeJSON = function(options = {}) {
-      const obj = this.toJSON();
-      
-      // Remove sensitive fields
-      const sensitiveFields = options.sensitiveFields || ['password', '__v', '_deleted'];
-      sensitiveFields.forEach(field => {
-        delete obj[field];
-      });
-
-      // Remove tenant ID if not requested
-      if (!options.includeTenant) {
-        delete obj._tenantId;
-      }
-
-      return obj;
-    };
-
-    /**
-     * Validates document against custom rules
-     * @param {Object} [rules={}] - Validation rules
-     * @returns {Promise<Object>} Validation result
-     */
-    schema.methods.validateCustom = async function(rules = {}) {
-      const errors = [];
-
-      for (const [field, rule] of Object.entries(rules)) {
-        const value = this.get(field);
-        
-        if (rule.required && !value) {
-          errors.push({ field, message: `${field} is required` });
+    // Add static method for safe updates
+    model.updateSafely = async function (id, updates, context = {}) {
+      try {
+        if (context.user) {
+          updates.updatedBy = context.user;
         }
 
-        if (value && rule.validator) {
-          const isValid = await rule.validator(value, this);
-          if (!isValid) {
-            errors.push({ field, message: rule.message || `${field} validation failed` });
-          }
+        const result = await this.findByIdAndUpdate(id, updates, {
+          new: true,
+          runValidators: true
+        });
+
+        if (result && BaseModel.auditService && options.enableAudit !== false) {
+          BaseModel.auditService.logModelAction('UPDATE', model.modelName, id, context);
         }
+
+        return result;
+      } catch (error) {
+        logger.error(`Error updating ${model.modelName}:`, error);
+        throw error;
       }
-
-      return {
-        valid: errors.length === 0,
-        errors
-      };
     };
 
-    /**
-     * ENHANCED: Sets the user context for audit trail
-     * @param {mongoose.Schema.Types.ObjectId} userId - User ID
-     * @param {mongoose.Schema.Types.ObjectId} [organizationId] - Organization ID
-     * @returns {Object} Document instance for chaining
-     */
-    schema.methods.setUserContext = function(userId, organizationId = null) {
-      if (this.isNew) {
-        this._createdBy = userId;
-      }
-      this._updatedBy = userId;
-      
-      if (organizationId) {
-        this._organizationId = organizationId;
-      }
-      
-      return this;
-    };
-
-    /**
-     * ENHANCED: Gets the database type for this document
-     * @returns {string} Database type
-     */
-    schema.methods.getDatabaseType = function() {
-      const collectionName = this.constructor.collection.name;
-      return BaseModel.collectionDatabaseMapping.get(collectionName) || 'unknown';
-    };
-  }
-
-  /**
-   * Adds static methods to schema
-   * @static
-   * @param {mongoose.Schema} schema - Schema instance
-   */
-  static addStaticMethods(schema) {
-    /**
-     * Creates query builder instance
-     * @param {Object} [options={}] - Query builder options
-     * @returns {QueryBuilder} Query builder instance
-     */
-    schema.statics.query = function(options = {}) {
-      const QueryBuilder = getQueryBuilder();
-      return new QueryBuilder(this, options);
-    };
-
-    /**
-     * Finds documents excluding soft deleted
-     * @param {Object} [conditions={}] - Query conditions
-     * @param {Object} [options={}] - Query options
-     * @returns {Promise<Array>} Documents
-     */
-    schema.statics.findActive = async function(conditions = {}, options = {}) {
-      return await this.find({ ...conditions, _deleted: false }, null, options);
-    };
-
-    /**
-     * Finds one document excluding soft deleted
-     * @param {Object} [conditions={}] - Query conditions
-     * @param {Object} [options={}] - Query options
-     * @returns {Promise<Object|null>} Document
-     */
-    schema.statics.findOneActive = async function(conditions = {}, options = {}) {
-      return await this.findOne({ ...conditions, _deleted: false }, null, options);
-    };
-
-    /**
-     * Finds documents including soft deleted
-     * @param {Object} [conditions={}] - Query conditions
-     * @param {Object} [options={}] - Query options
-     * @returns {Promise<Array>} Documents
-     */
-    schema.statics.findWithDeleted = async function(conditions = {}, options = {}) {
-      return await this.find(conditions, null, options);
-    };
-
-    /**
-     * Finds only soft deleted documents
-     * @param {Object} [conditions={}] - Query conditions
-     * @param {Object} [options={}] - Query options
-     * @returns {Promise<Array>} Documents
-     */
-    schema.statics.findDeleted = async function(conditions = {}, options = {}) {
-      return await this.find({ ...conditions, _deleted: true }, null, options);
-    };
-
-    /**
-     * Soft deletes multiple documents
-     * @param {Object} conditions - Delete conditions
-     * @param {Object} [options={}] - Delete options
-     * @returns {Promise<Object>} Delete result
-     */
-    schema.statics.softDeleteMany = async function(conditions, options = {}) {
-      const updateData = {
-        _deleted: true,
-        _deletedAt: new Date()
-      };
-
-      if (options.deletedBy) {
-        updateData['_metadata.deletedBy'] = options.deletedBy;
-      }
-
-      return await this.updateMany(conditions, updateData);
-    };
-
-    /**
-     * Restores multiple soft deleted documents
-     * @param {Object} conditions - Restore conditions
-     * @returns {Promise<Object>} Restore result
-     */
-    schema.statics.restoreMany = async function(conditions) {
-      return await this.updateMany(
-        { ...conditions, _deleted: true },
-        {
-          _deleted: false,
-          _deletedAt: null,
-          $unset: { '_metadata.deletedBy': 1 }
+    // Add static method for safe deletion
+    model.deleteSafely = async function (id, context = {}) {
+      try {
+        const document = await this.findById(id);
+        if (!document) {
+          throw new AppError(`${model.modelName} not found`, 404, 'DOCUMENT_NOT_FOUND');
         }
-      );
-    };
 
-    /**
-     * Performs bulk operations
-     * @param {Array} operations - Bulk operations
-     * @param {Object} [options={}] - Bulk options
-     * @returns {Promise<Object>} Bulk result
-     */
-    schema.statics.bulkOps = async function(operations, options = {}) {
-      const AppError = getAppError();
-      
-      if (!Array.isArray(operations) || operations.length === 0) {
-        throw new AppError('Operations array is required', 400, 'INVALID_BULK_OPS');
-      }
-
-      const bulkOps = operations.map(op => {
-        if (op.insertOne) {
-          return { insertOne: { document: { ...op.insertOne.document, _deleted: false } } };
+        let result;
+        if (document.softDelete) {
+          result = await document.softDelete(context.user);
+        } else {
+          result = await this.findByIdAndDelete(id);
         }
-        return op;
-      });
 
-      return await this.bulkWrite(bulkOps, options);
+        if (BaseModel.auditService && options.enableAudit !== false) {
+          BaseModel.auditService.logModelAction('DELETE', model.modelName, id, context);
+        }
+
+        return result;
+      } catch (error) {
+        logger.error(`Error deleting ${model.modelName}:`, error);
+        throw error;
+      }
     };
 
-    /**
-     * Counts active documents
-     * @param {Object} [conditions={}] - Count conditions
-     * @returns {Promise<number>} Document count
-     */
-    schema.statics.countActive = async function(conditions = {}) {
-      return await this.countDocuments({ ...conditions, _deleted: false });
-    };
-
-    /**
-     * Finds documents with pagination
-     * @param {Object} [conditions={}] - Query conditions
-     * @param {Object} [options={}] - Pagination options
-     * @returns {Promise<Object>} Paginated results
-     */
-    schema.statics.paginate = async function(conditions = {}, options = {}) {
+    // Add pagination helper
+    model.paginate = async function (query = {}, options = {}) {
       const {
         page = 1,
-        limit = 20,
+        limit = 10,
         sort = { createdAt: -1 },
-        select,
-        populate
+        populate = null
       } = options;
 
       const skip = (page - 1) * limit;
 
+      let queryBuilder = this.find(query)
+        .sort(sort)
+        .skip(skip)
+        .limit(limit);
+
+      if (populate) {
+        if (Array.isArray(populate)) {
+          populate.forEach(p => queryBuilder = queryBuilder.populate(p));
+        } else {
+          queryBuilder = queryBuilder.populate(populate);
+        }
+      }
+
       const [documents, totalCount] = await Promise.all([
-        this.find({ ...conditions, _deleted: false })
-          .sort(sort)
-          .limit(limit)
-          .skip(skip)
-          .select(select)
-          .populate(populate || ''),
-        this.countDocuments({ ...conditions, _deleted: false })
+        queryBuilder.exec(),
+        this.countDocuments(query)
       ]);
 
       return {
         documents,
         pagination: {
-          page,
-          limit,
-          totalCount,
+          currentPage: page,
           totalPages: Math.ceil(totalCount / limit),
+          totalDocuments: totalCount,
           hasNextPage: page < Math.ceil(totalCount / limit),
-          hasPreviousPage: page > 1
+          hasPrevPage: page > 1
         }
       };
     };
-
-    /**
-     * Searches documents using text search
-     * @param {string} searchText - Search text
-     * @param {Object} [options={}] - Search options
-     * @returns {Promise<Array>} Search results
-     */
-    schema.statics.search = async function(searchText, options = {}) {
-      const {
-        filters = {},
-        limit = 50,
-        scoreThreshold = 0.5
-      } = options;
-
-      return await this.find(
-        {
-          $text: { $search: searchText },
-          ...filters,
-          _deleted: false
-        },
-        {
-          score: { $meta: 'textScore' }
-        }
-      )
-      .sort({ score: { $meta: 'textScore' } })
-      .limit(limit)
-      .where('score').gte(scoreThreshold);
-    };
-
-    /**
-     * Gets model statistics
-     * @returns {Promise<Object>} Model statistics
-     */
-    schema.statics.getStatistics = async function() {
-      const [
-        totalCount,
-        activeCount,
-        deletedCount,
-        recentCount
-      ] = await Promise.all([
-        this.countDocuments(),
-        this.countDocuments({ _deleted: false }),
-        this.countDocuments({ _deleted: true }),
-        this.countDocuments({
-          createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-        })
-      ]);
-
-      return {
-        total: totalCount,
-        active: activeCount,
-        deleted: deletedCount,
-        recent24h: recentCount,
-        deletionRate: totalCount > 0 ? (deletedCount / totalCount) * 100 : 0
-      };
-    };
-
-    /**
-     * ENHANCED: Finds documents by organization
-     * @param {mongoose.Schema.Types.ObjectId} organizationId - Organization ID
-     * @param {Object} [conditions={}] - Additional conditions
-     * @param {Object} [options={}] - Query options
-     * @returns {Promise<Array>} Documents
-     */
-    schema.statics.findByOrganization = async function(organizationId, conditions = {}, options = {}) {
-      return await this.findActive({ ...conditions, _organizationId: organizationId }, options);
-    };
-
-    /**
-     * ENHANCED: Finds documents by tenant
-     * @param {string} tenantId - Tenant ID
-     * @param {Object} [conditions={}] - Additional conditions
-     * @param {Object} [options={}] - Query options
-     * @returns {Promise<Array>} Documents
-     */
-    schema.statics.findByTenant = async function(tenantId, conditions = {}, options = {}) {
-      return await this.findActive({ ...conditions, _tenantId: tenantId }, options);
-    };
-
-    /**
-     * ENHANCED: Gets the database type for this model
-     * @returns {string} Database type
-     */
-    schema.statics.getDatabaseType = function() {
-      const collectionName = this.collection.name;
-      return BaseModel.collectionDatabaseMapping.get(collectionName) || 'unknown';
-    };
   }
 
   /**
-   * Adds middleware to schema
-   * @static
-   * @param {mongoose.Schema} schema - Schema instance
-   */
-  static addMiddleware(schema) {
-    const logger = getLogger();
-    
-    // Pre-save middleware
-    schema.pre('save', async function(next) {
-      try {
-        // Update version on modification
-        if (this.isModified() && !this.isNew) {
-          this._version = (this._version || 0) + 1;
-        }
-
-        // Set default metadata
-        if (!this._metadata) {
-          this._metadata = {};
-        }
-
-        next();
-      } catch (error) {
-        next(error);
-      }
-    });
-
-    // Post-save middleware
-    schema.post('save', async function(doc) {
-      try {
-        // Audit creation or update
-        if (BaseModel.auditService) {
-          const action = doc.wasNew ? 'DOCUMENT_CREATED' : 'DOCUMENT_UPDATED';
-          await doc.audit(action);
-        }
-      } catch (error) {
-        logger.error('Post-save audit failed', error);
-      }
-    });
-
-    // Pre-find middleware
-    schema.pre(/^find/, function() {
-      // Exclude soft deleted by default unless explicitly included
-      if (!this.getQuery().hasOwnProperty('_deleted')) {
-        this.where({ _deleted: false });
-      }
-    });
-
-    // Pre-update middleware
-    schema.pre(/^update/, function() {
-      // Increment version on update
-      if (!this.getUpdate().$inc) {
-        this.getUpdate().$inc = {};
-      }
-      this.getUpdate().$inc._version = 1;
-
-      // Set updated timestamp
-      this.setUpdate({ updatedAt: new Date() });
-    });
-
-    // Pre-remove middleware
-    schema.pre('remove', async function(next) {
-      try {
-        // Audit deletion
-        if (BaseModel.auditService) {
-          await this.audit('DOCUMENT_DELETED');
-        }
-        next();
-      } catch (error) {
-        next(error);
-      }
-    });
-
-    // Error handling middleware
-    schema.post('save', function(error, doc, next) {
-      if (error) {
-        logger.error('Document save error', {
-          model: this.constructor.modelName,
-          error: error.message
-        });
-      }
-      next(error);
-    });
-  }
-
-  /**
-   * Adds plugins to schema
-   * @static
-   * @param {mongoose.Schema} schema - Schema instance
-   * @param {Object} options - Schema options
-   */
-  static addPlugins(schema, options) {
-    // Timestamp plugin is handled by mongoose timestamps option
-    
-    // Add custom plugins if specified
-    if (options.plugins && Array.isArray(options.plugins)) {
-      options.plugins.forEach(plugin => {
-        if (typeof plugin === 'function') {
-          schema.plugin(plugin);
-        } else if (plugin.fn && typeof plugin.fn === 'function') {
-          schema.plugin(plugin.fn, plugin.options || {});
-        }
-      });
-    }
-  }
-
-  /**
-   * Enhances model with additional functionality
-   * @static
-   * @param {mongoose.Model} Model - Mongoose model
-   * @param {Object} options - Enhancement options
-   */
-  static enhanceModel(Model, options) {
-    // Add model-level query builder
-    Model.queryBuilder = function() {
-      const QueryBuilder = getQueryBuilder();
-      return new QueryBuilder(this);
-    };
-
-    // Add tenant-specific query builder
-    Model.forTenant = function(tenantId) {
-      const QueryBuilder = getQueryBuilder();
-      return new QueryBuilder(this, { tenantId });
-    };
-
-    // ENHANCED: Add organization-specific query builder
-    Model.forOrganization = function(organizationId) {
-      const QueryBuilder = getQueryBuilder();
-      return new QueryBuilder(this, { organizationId });
-    };
-
-    // Add model events
-    Model.events = new (require('events').EventEmitter)();
-
-    // Override create to emit events
-    const originalCreate = Model.create;
-    Model.create = async function(...args) {
-      const result = await originalCreate.apply(this, args);
-      Model.events.emit('created', result);
-      return result;
-    };
-
-    // Override findOneAndUpdate to emit events
-    const originalFindOneAndUpdate = Model.findOneAndUpdate;
-    Model.findOneAndUpdate = async function(...args) {
-      const result = await originalFindOneAndUpdate.apply(this, args);
-      if (result) {
-        Model.events.emit('updated', result);
-      }
-      return result;
-    };
-
-    // Override findOneAndDelete to emit events
-    const originalFindOneAndDelete = Model.findOneAndDelete;
-    Model.findOneAndDelete = async function(...args) {
-      const result = await originalFindOneAndDelete.apply(this, args);
-      if (result) {
-        Model.events.emit('deleted', result);
-      }
-      return result;
-    };
-  }
-
-  /**
-   * Gets collection name from model name
+   * Generates collection name from model name
    * @static
    * @param {string} modelName - Model name
    * @returns {string} Collection name
    */
   static getCollectionName(modelName) {
-    // Convert PascalCase to snake_case plural
-    return modelName
-      .replace(/([A-Z])/g, '_$1')
-      .toLowerCase()
-      .substring(1) + 's';
+    if (!modelName) {
+      throw new AppError('Model name is required', 400, 'MODEL_NAME_REQUIRED');
+    }
+
+    // Convert PascalCase to snake_case and pluralize
+    return stringHelper.pluralize(
+      stringHelper.toSnakeCase(modelName)
+    );
   }
 
   /**
-   * Gets registered model
+   * Gets a registered model by name
    * @static
    * @param {string} modelName - Model name
-   * @returns {mongoose.Model|null} Registered model
+   * @returns {Function|null} Model constructor or null
    */
   static getModel(modelName) {
-    return (BaseModel.modelRegistry && BaseModel.modelRegistry.get(modelName)) || null;
+    return BaseModel.modelRegistry.get(modelName) || null;
   }
 
   /**
    * Gets all registered models
    * @static
-   * @returns {Map<string, mongoose.Model>} All registered models
+   * @returns {Map<string, Function>} All registered models
    */
   static getAllModels() {
-    return BaseModel.modelRegistry ? new Map(BaseModel.modelRegistry) : new Map();
+    return new Map(BaseModel.modelRegistry);
   }
 
   /**
-   * Clears model registry (for testing)
+   * Gets a cached schema by model name
    * @static
+   * @param {string} modelName - Model name
+   * @returns {mongoose.Schema|null} Cached schema or null
    */
-  static clearRegistry() {
-    if (BaseModel.modelRegistry) {
-      BaseModel.modelRegistry.clear();
-    }
-    if (BaseModel.schemaCache) {
-      BaseModel.schemaCache.clear();
-    }
+  static getSchema(modelName) {
+    return BaseModel.schemaCache.get(modelName) || null;
   }
 
   /**
-   * ENHANCED: Get database type for a collection
+   * Sets audit service for model operations
    * @static
-   * @param {string} collectionName - Collection name
-   * @returns {string|null} Database type
+   * @param {Object} auditService - Audit service instance
    */
-  static getDatabaseTypeForCollection(collectionName) {
-    return BaseModel.collectionDatabaseMapping.get(collectionName) || null;
+  static setAuditService(auditService) {
+    BaseModel.auditService = auditService;
+    logger.info('Audit service configured for BaseModel');
   }
 
   /**
-   * ENHANCED: Add custom collection mapping
+   * Creates index for a model
    * @static
-   * @param {string} collectionName - Collection name
-   * @param {string} databaseType - Database type (admin, shared, audit, analytics)
+   * @async
+   * @param {string} modelName - Model name
+   * @param {Object} indexSpec - Index specification
+   * @param {Object} [options={}] - Index options
+   * @returns {Promise<void>}
    */
-  static addCollectionMapping(collectionName, databaseType) {
-    BaseModel.collectionDatabaseMapping.set(collectionName, databaseType);
-    
-    const logger = getLogger();
-    logger.debug(`Collection mapping added: ${collectionName} -> ${databaseType}`);
-  }
+  static async createIndex(modelName, indexSpec, options = {}) {
+    try {
+      const Model = BaseModel.getModel(modelName);
+      if (!Model) {
+        throw new AppError(`Model not found: ${modelName}`, 404, 'MODEL_NOT_FOUND');
+      }
 
-  /**
-   * ENHANCED: Get all collection mappings
-   * @static
-   * @returns {Map<string, string>} Collection to database mappings
-   */
-  static getAllCollectionMappings() {
-    return new Map(BaseModel.collectionDatabaseMapping);
-  }
+      await Model.collection.createIndex(indexSpec, options);
 
-  /**
-   * ENHANCED: Check if multi-database is enabled
-   * @static
-   * @returns {boolean} Multi-database status
-   */
-  static isMultiDatabaseEnabled() {
-    return BaseModel.multiDatabaseEnabled;
-  }
+      logger.info('Index created successfully', {
+        modelName,
+        indexSpec,
+        options
+      });
 
-  /**
-   * ENHANCED: Get connection manager instance
-   * @static
-   * @returns {Object|null} Connection manager
-   */
-  static getConnectionManager() {
-    return BaseModel.connectionManager;
-  }
-
-  /**
-   * ENHANCED: Simple pluralization helper
-   * @static
-   * @param {string} word - Word to pluralize
-   * @returns {string} Pluralized word
-   */
-  static pluralize(word) {
-    if (word.endsWith('y')) {
-      return word.slice(0, -1) + 'ies';
-    } else if (word.endsWith('s') || word.endsWith('x') || word.endsWith('z') || 
-               word.endsWith('ch') || word.endsWith('sh')) {
-      return word + 'es';
-    } else {
-      return word + 's';
+    } catch (error) {
+      logger.error(`Failed to create index for ${modelName}:`, error);
+      throw new AppError(
+        'Index creation failed',
+        500,
+        'INDEX_CREATION_ERROR',
+        { modelName, originalError: error.message }
+      );
     }
   }
 
   /**
-   * ENHANCED: Register a model manually with database routing
+   * Validates model configuration
    * @static
-   * @param {string} modelName - Name of the model
-   * @param {mongoose.Model} model - Model instance
-   * @param {mongoose.Schema} [schema] - Schema instance
-   * @param {string} [databaseType] - Target database type
+   * @param {string} modelName - Model name
+   * @param {mongoose.Schema} schema - Schema to validate
+   * @returns {Object} Validation result
    */
-  static registerModel(modelName, model, schema = null, databaseType = null) {
-    BaseModel.modelRegistry.set(modelName, model);
-    
-    if (schema) {
-      BaseModel.schemaCache.set(modelName, schema);
+  static validateModel(modelName, schema) {
+    const validation = {
+      isValid: true,
+      errors: [],
+      warnings: []
+    };
+
+    // Check required fields
+    if (!modelName) {
+      validation.isValid = false;
+      validation.errors.push('Model name is required');
     }
-    
-    // Add collection mapping if database type provided
-    if (databaseType && model.collection) {
-      BaseModel.addCollectionMapping(model.collection.name, databaseType);
+
+    if (!schema || !(schema instanceof mongoose.Schema)) {
+      validation.isValid = false;
+      validation.errors.push('Valid Mongoose schema is required');
     }
-    
-    const logger = getLogger();
-    logger.debug(`Model registered: ${modelName}`, {
-      databaseType: databaseType || 'default',
-      collection: model.collection?.name || 'unknown'
-    });
+
+    // Check for timestamp fields
+    if (schema && !schema.paths.createdAt && !schema.paths.updatedAt) {
+      validation.warnings.push('Model does not have timestamp fields');
+    }
+
+    // Check for audit fields
+    if (schema && !schema.paths.createdBy) {
+      validation.warnings.push('Model does not have audit fields');
+    }
+
+    return validation;
   }
 
   /**
-   * ENHANCED: Get registration statistics
+   * Clears all registries (for testing)
    * @static
-   * @returns {Object} Registration stats
    */
-  static getRegistrationStats() {
+  static clearRegistries() {
+    BaseModel.modelRegistry.clear();
+    BaseModel.schemaCache.clear();
+    BaseModel.initialized = false;
+    logger.info('BaseModel registries cleared');
+  }
+
+  /**
+   * Gets registry statistics
+   * @static
+   * @returns {Object} Registry statistics
+   */
+  static getRegistryStats() {
     return {
-      models: BaseModel.modelRegistry.size,
-      schemas: BaseModel.schemaCache.size,
-      multiDatabaseEnabled: BaseModel.multiDatabaseEnabled,
+      totalModels: BaseModel.modelRegistry.size,
+      totalSchemas: BaseModel.schemaCache.size,
       initialized: BaseModel.initialized,
-      connectionManager: BaseModel.connectionManager ? 'Available' : 'Not Available',
-      collectionMappings: BaseModel.collectionDatabaseMapping.size
+      auditEnabled: !!BaseModel.auditService,
+      models: Array.from(BaseModel.modelRegistry.keys())
     };
   }
 }
-
-// Initialize static properties
-BaseModel.modelRegistry = new Map();
-BaseModel.schemaCache = new Map();
-BaseModel.auditService = null;
-BaseModel.connectionManager = null;
-BaseModel.multiDatabaseEnabled = false;
-BaseModel.initialized = false;
 
 module.exports = BaseModel;

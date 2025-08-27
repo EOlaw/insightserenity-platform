@@ -1087,7 +1087,4 @@ organizationInvitationSchema.statics.cleanupExpiredInvitations = async function(
 // Create and export model
 const OrganizationInvitationModel = BaseModel.createModel('OrganizationInvitation', organizationInvitationSchema);
 
-module.exports = {
-  schema: organizationInvitationSchema,
-  model: OrganizationInvitationModel
-};
+module.exports = OrganizationInvitationModel;
