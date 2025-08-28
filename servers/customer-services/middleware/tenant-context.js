@@ -4,6 +4,11 @@
  *              Sets up tenant-specific database connections, configurations, and business rules
  * @version 2.1.0
  * @author InsightSerenity Platform Team
+ * @module insightserenity-platform/servers/customer-services/middleware/tenant-context
+ * @requires ../../../shared/lib/utils/logger
+ * @requires ../../../shared/lib/utils/app-error
+ * @requires ../../../shared/lib/database
+ * @requires ../../../shared/lib/services/cache-service
  */
 
 'use strict';

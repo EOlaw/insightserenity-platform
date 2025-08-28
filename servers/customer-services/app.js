@@ -4,6 +4,53 @@
  *              multi-tenant support, comprehensive business modules, and enterprise security
  * @version 2.1.0
  * @author InsightSerenity Platform Team
+ * @module insightserenity-platform/servers/customer-services/app
+ * @requires ../../../shared/config
+ * @requires ../../../shared/lib/utils/logger
+ * @requires ../../../shared/lib/database
+ * @requires ../../../shared/lib/utils/app-error
+ * @requires ../../../shared/lib/utils/constants/error-codes
+ * @requires ../../../shared/lib/auth/middleware/authenticate
+ * @requires ../../../shared/lib/auth/middleware/authorize
+ * @requires ../../../shared/lib/security/session-manager
+ * @requires ../../../shared/lib/services/email-service
+ * @requires ../../../shared/lib/services/cache-service
+ * @requires ../../../shared/lib/services/payment-service
+ * @requires ../../../shared/lib/services/file-service
+ * @requires ../../../shared/lib/services/notification-service
+ * @requires ../../../shared/lib/services/analytics-service
+ * @requires ../../../shared/lib/services/webhook-service
+ * @requires ../../../shared/lib/middleware/error-handlers/error-handler
+ * @requires ../../../shared/lib/middleware/error-handlers/not-found-handler
+ * @requires ../../../shared/lib/middleware/logging/request-logger
+ * @requires ../../../shared/lib/middleware/logging/audit-logger
+ * @requires ../../../shared/lib/middleware/cors-middleware
+ * @requires ./middleware/tenant-detection
+ * @requires ./middleware/tenant-context
+ * @requires ./middleware/performance-monitoring
+ * @requires ./middleware/subscription-validation
+ * @requires ./middleware/feature-flags
+ * @requires ./modules/core-business/clients/routes
+ * @requires ./modules/core-business/projects/routes
+ * @requires ./modules/core-business/consultants/routes
+ * @requires ./modules/core-business/engagements/routes
+ * @requires ./modules/core-business/analytics/routes
+ * @requires ./modules/hosted-organizations/organizations/routes
+ * @requires ./modules/hosted-organizations/tenants/routes
+ * @requires ./modules/hosted-organizations/subscriptions/routes
+ * @requires ./modules/hosted-organizations/white-label/routes
+ * @requires ./modules/recruitment-services/jobs/routes
+ * @requires ./modules/recruitment-services/candidates/routes
+ * @requires ./modules/recruitment-services/applications/routes
+ * @requires ./modules/recruitment-services/partnerships/routes
+ * @requires ./modules/recruitment-services/analytics/routes
+ * @requires ../../../shared/lib/auth/strategies/local-strategy
+ * @requires ../../../shared/lib/auth/strategies/jwt-strategy
+ * @requires ../../../shared/lib/auth/strategies/organization-strategy
+ * @requires ../../../shared/lib/auth/strategies/passkey-strategy
+ * @requires ../../../shared/lib/auth/strategies/google-strategy
+ * @requires ../../../shared/lib/auth/strategies/github-strategy
+ * @requires ../../../shared/lib/auth/strategies/linkedin-strategy
  */
 
 'use strict';

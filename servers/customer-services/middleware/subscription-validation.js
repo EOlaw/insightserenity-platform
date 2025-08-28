@@ -4,6 +4,12 @@
  *              Enforces subscription-based access controls, usage limits, and feature restrictions
  * @version 2.1.0
  * @author InsightSerenity Platform Team
+ * @module insightserenity-platform/servers/customer-services/middleware/subscription-validation
+ * @requires ../../../shared/lib/utils/logger
+ * @requires ../../../shared/lib/utils/app-error
+ * @requires ../../../shared/lib/database
+ * @requires ../../../shared/lib/services/cache-service
+ * @requires ../../../shared/lib/services/payment-service
  */
 
 'use strict';

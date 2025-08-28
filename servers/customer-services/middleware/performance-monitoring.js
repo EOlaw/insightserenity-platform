@@ -3,7 +3,11 @@
  * @description Comprehensive performance monitoring middleware for customer services
  *              Tracks request metrics, database performance, tenant isolation overhead, and business KPIs
  * @version 2.1.0
- * @author InsightSerenity Platform Team
+ * @author InsightSerenity Platform Team\
+ * @module insightserenity-platform/servers/customer-services/middleware/performance-monitoring
+ * @requires ../../../shared/lib/utils/logger
+ * @requires ../../../shared/lib/services/cache-service
+ * @requires ../../../shared/lib/services/analytics-service
  */
 
 'use strict';

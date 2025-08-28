@@ -4,6 +4,17 @@
  *              cluster management, graceful shutdown, and comprehensive business functionality
  * @version 2.1.0
  * @author InsightSerenity Platform Team
+ * @module insightserenity-platform/servers/customer-services/server
+ * @requires ../../../shared/config
+ * @requires ../../../shared/lib/database
+ * @requires ../../../shared/lib/utils/logger
+ * @requires ../../../shared/lib/utils/app-error
+ * @requires ../../../shared/lib/security/session-manager
+ * @requires ../../../shared/lib/services/cache-service
+ * @requires ../../../shared/lib/services/payment-service
+ * @requires ../../../shared/lib/services/email-service
+ * @requires ../../../shared/lib/services/file-service
+ * @requires ./app
  */
 
 'use strict';
