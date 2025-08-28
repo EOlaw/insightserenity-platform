@@ -11,10 +11,10 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const dateHelper = require('../../../../utils/helpers/date-helper');
 
 /**
  * @typedef {Object} SystemMetric
@@ -77,7 +77,7 @@ const dateHelper = require('../../../../../utils/helpers/date-helper');
 /**
  * System health monitoring schema definition
  */
-const systemSchema = BaseModel.createSchema({
+const systemSettingSchemaDefinition = {
   // System Identification
   systemId: {
     type: String,
@@ -983,44 +983,49 @@ const systemSchema = BaseModel.createSchema({
       description: 'Status message'
     }
   }
-}, {
+}
+
+const systemSettingSchema = BaseModel.createSchema(systemSettingSchemaDefinition, {
   collection: 'system_health',
+  timestamps: true,
   strict: true,
-  timestamps: true
-});
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // Indexes
-systemSchema.index({ systemId: 1 }, { unique: true });
-systemSchema.index({ environment: 1, hostname: 1 });
-systemSchema.index({ 'status.overall': 1 });
-systemSchema.index({ 'alerts.severity': 1, 'alerts.resolvedAt': 1 });
-systemSchema.index({ 'services.serviceName': 1 });
-systemSchema.index({ 'history.metrics.timestamp': -1 });
-systemSchema.index({ createdAt: -1 });
+systemSettingSchema.index({ systemId: 1 }, { unique: true });
+systemSettingSchema.index({ environment: 1, hostname: 1 });
+systemSettingSchema.index({ 'status.overall': 1 });
+systemSettingSchema.index({ 'alerts.severity': 1, 'alerts.resolvedAt': 1 });
+systemSettingSchema.index({ 'services.serviceName': 1 });
+systemSettingSchema.index({ 'history.metrics.timestamp': -1 });
+systemSettingSchema.index({ createdAt: -1 });
 
 // Virtual properties
-systemSchema.virtual('isHealthy').get(function() {
+systemSettingSchema.virtual('isHealthy').get(function() {
   return this.status.overall === 'healthy';
 });
 
-systemSchema.virtual('activeAlertCount').get(function() {
+systemSettingSchema.virtual('activeAlertCount').get(function() {
   return this.alerts.filter(alert => !alert.resolvedAt).length;
 });
 
-systemSchema.virtual('criticalAlertCount').get(function() {
+systemSettingSchema.virtual('criticalAlertCount').get(function() {
   return this.alerts.filter(alert => 
     alert.severity === 'critical' && !alert.resolvedAt
   ).length;
 });
 
-systemSchema.virtual('uptimePercentage').get(function() {
+systemSettingSchema.virtual('uptimePercentage').get(function() {
   if (!this.systemInfo.runtime.uptime) return 0;
   
   const totalTime = (Date.now() - this.createdAt.getTime()) / 1000;
   return Math.min(100, (this.systemInfo.runtime.uptime / totalTime) * 100);
 });
 
-systemSchema.virtual('healthScore').get(function() {
+systemSettingSchema.virtual('healthScore').get(function() {
   let score = 100;
   
   // Deduct for unhealthy services
@@ -1044,7 +1049,7 @@ systemSchema.virtual('healthScore').get(function() {
 });
 
 // Instance methods
-systemSchema.methods.updateMetrics = async function(newMetrics) {
+systemSettingSchema.methods.updateMetrics = async function(newMetrics) {
   try {
     // Update current metrics
     Object.assign(this.metrics, newMetrics);
@@ -1106,7 +1111,7 @@ systemSchema.methods.updateMetrics = async function(newMetrics) {
   }
 };
 
-systemSchema.methods.checkThresholds = async function() {
+systemSettingSchema.methods.checkThresholds = async function() {
   const thresholds = this.monitoring.thresholds;
   const alerts = [];
   
@@ -1241,7 +1246,7 @@ systemSchema.methods.checkThresholds = async function() {
   }
 };
 
-systemSchema.methods.updateServiceHealth = async function(serviceName, healthData) {
+systemSettingSchema.methods.updateServiceHealth = async function(serviceName, healthData) {
   try {
     let service = this.services.find(s => s.serviceName === serviceName);
     
@@ -1348,7 +1353,7 @@ systemSchema.methods.updateServiceHealth = async function(serviceName, healthDat
   }
 };
 
-systemSchema.methods.createAlert = async function(alertData) {
+systemSettingSchema.methods.createAlert = async function(alertData) {
   try {
     const alert = {
       alertId: `ALERT_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1394,7 +1399,7 @@ systemSchema.methods.createAlert = async function(alertData) {
   }
 };
 
-systemSchema.methods.acknowledgeAlert = async function(alertId, userId) {
+systemSettingSchema.methods.acknowledgeAlert = async function(alertId, userId) {
   try {
     const alert = this.alerts.find(a => a.alertId === alertId);
     
@@ -1428,7 +1433,7 @@ systemSchema.methods.acknowledgeAlert = async function(alertId, userId) {
   }
 };
 
-systemSchema.methods.resolveAlert = async function(alertId, resolution) {
+systemSettingSchema.methods.resolveAlert = async function(alertId, resolution) {
   try {
     const alert = this.alerts.find(a => a.alertId === alertId);
     
@@ -1471,7 +1476,7 @@ systemSchema.methods.resolveAlert = async function(alertId, resolution) {
   }
 };
 
-systemSchema.methods.getMetricsHistory = async function(options = {}) {
+systemSettingSchema.methods.getMetricsHistory = async function(options = {}) {
   const {
     startDate = new Date(Date.now() - 24 * 60 * 60 * 1000),
     endDate = new Date(),
@@ -1576,7 +1581,7 @@ systemSchema.methods.getMetricsHistory = async function(options = {}) {
   }).sort((a, b) => a.timestamp - b.timestamp);
 };
 
-systemSchema.methods.updateSystemStatus = function() {
+systemSettingSchema.methods.updateSystemStatus = function() {
   const unhealthyServices = this.services.filter(s => s.status === 'unhealthy' || s.status === 'offline').length;
   const degradedServices = this.services.filter(s => s.status === 'degraded').length;
   const criticalAlerts = this.alerts.filter(a => a.severity === 'critical' && !a.resolvedAt).length;
@@ -1596,7 +1601,7 @@ systemSchema.methods.updateSystemStatus = function() {
   this.status.lastUpdate = new Date();
 };
 
-systemSchema.methods.sendAlertNotifications = async function(alert) {
+systemSettingSchema.methods.sendAlertNotifications = async function(alert) {
   const channels = this.monitoring.alerting.channels.filter(c => 
     c.enabled && c.severities.includes(alert.severity)
   );
@@ -1635,17 +1640,17 @@ systemSchema.methods.sendAlertNotifications = async function(alert) {
 };
 
 // Static methods
-systemSchema.statics.findByEnvironment = function(environment) {
+systemSettingSchema.statics.findByEnvironment = function(environment) {
   return this.find({ environment });
 };
 
-systemSchema.statics.findUnhealthy = function() {
+systemSettingSchema.statics.findUnhealthy = function() {
   return this.find({
     'status.overall': { $in: ['unhealthy', 'degraded'] }
   });
 };
 
-systemSchema.statics.findWithActiveAlerts = function(severity) {
+systemSettingSchema.statics.findWithActiveAlerts = function(severity) {
   const query = {
     'alerts': {
       $elemMatch: {
@@ -1661,7 +1666,7 @@ systemSchema.statics.findWithActiveAlerts = function(severity) {
   return this.find(query);
 };
 
-systemSchema.statics.getAggregatedMetrics = async function(options = {}) {
+systemSettingSchema.statics.getAggregatedMetrics = async function(options = {}) {
   const {
     environment,
     startDate = new Date(Date.now() - 24 * 60 * 60 * 1000),
@@ -1707,7 +1712,7 @@ systemSchema.statics.getAggregatedMetrics = async function(options = {}) {
 };
 
 // Middleware
-systemSchema.pre('save', function(next) {
+systemSettingSchema.pre('save', function(next) {
   // Clean up old history data based on retention
   if (this.history.metrics.length > 0) {
     const cutoffDate = new Date(Date.now() - this.history.retentionDays * 24 * 60 * 60 * 1000);
@@ -1720,7 +1725,7 @@ systemSchema.pre('save', function(next) {
   next();
 });
 
-systemSchema.post('save', function(doc) {
+systemSettingSchema.post('save', function(doc) {
   logger.debug('System health data saved', {
     systemId: doc.systemId,
     environment: doc.environment,
@@ -1729,7 +1734,7 @@ systemSchema.post('save', function(doc) {
 });
 
 // Create model
-const SystemModel = BaseModel.createModel('System', systemSchema);
+const SystemSettingsModel = BaseModel.createModel('SystemSettings', systemSettingSchema);
 
 // Export
-module.exports = SystemModel;
+module.exports = SystemSettingsModel;

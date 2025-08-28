@@ -14,7 +14,7 @@
  * @requires module:shared/lib/utils/helpers/string-helper
  */
 
-const PlatformModel = require('../../../../../shared/lib/database/models/admin-server/platform-management/models/platform-model');
+const PlatformModel = require('../../../../../shared/lib/database/models/admin-server/platform-management/platform-model');
 const logger = require('../../../../../shared/lib/utils/logger');
 const { AppError } = require('../../../../../shared/lib/utils/app-error');
 const CacheService = require('../../../../../shared/lib/services/cache-service');

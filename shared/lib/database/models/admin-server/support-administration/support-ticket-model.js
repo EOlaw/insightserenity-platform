@@ -17,23 +17,23 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const cryptoHelper = require('../../../../../utils/helpers/crypto-helper');
-const NotificationService = require('../../../../../services/notification-service');
-const EmailService = require('../../../../../services/email-service');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const EncryptionService = require('../../../../security/encryption/encryption-service');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const cryptoHelper = require('../../../../utils/helpers/crypto-helper');
+const NotificationService = require('../../../../services/notification-service');
+const EmailService = require('../../../../services/email-service');
 
 /**
  * @class SupportTicketSchema
  * @description Comprehensive support ticket administration schema for enterprise ticket management
  * @extends mongoose.Schema
  */
-const supportTicketSchema = new mongoose.Schema({
+const supportTicketSchemaDefinition = {
   // ==================== Core Ticket Identification ====================
   ticketId: {
     type: String,
@@ -790,12 +790,16 @@ const supportTicketSchema = new mongoose.Schema({
       default: 'PRIVATE'
     }
   }
-}, {
-  timestamps: true,
+}
+
+const supportTicketSchema = BaseModel.createSchema(supportTicketSchemaDefinition, {
   collection: 'support_tickets',
+  timestamps: true,
   strict: true,
-  versionKey: '__v'
-});
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // ==================== Indexes ====================
 supportTicketSchema.index({ 'ticketReference.organizationId': 1, 'lifecycle.status.current': 1 });
@@ -1568,6 +1572,6 @@ supportTicketSchema.post('save', async function(doc) {
 });
 
 // ==================== Model Export ====================
-const SupportTicket = mongoose.model('SupportTicket', supportTicketSchema);
+const SupportTicketModel = mongoose.model('SupportTicket', supportTicketSchema);
 
-module.exports = SupportTicket;
+module.exports = SupportTicketModel;

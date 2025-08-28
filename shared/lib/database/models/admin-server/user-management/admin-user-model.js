@@ -16,20 +16,20 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const HashService = require('../../../../../security/encryption/hash-service');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const { ROLES } = require('../../../../../utils/constants/roles');
-const { PERMISSIONS } = require('../../../../../utils/constants/permissions');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const HashService = require('../../../../security/encryption/hash-service');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const { ROLES } = require('../../../../utils/constants/roles');
+const { PERMISSIONS } = require('../../../../utils/constants/permissions');
 
 /**
  * Enhanced administrative user schema definition for platform management
  */
-const adminUserSchema = new mongoose.Schema({
+const adminUserSchemaDefinition = {
   // ==================== Core Identity Management ====================
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -771,12 +771,15 @@ const adminUserSchema = new mongoose.Schema({
       nextCheckDate: Date
     }]
   }
-}, {
-  timestamps: true,
+};
+
+const adminUserSchema = BaseModel.createSchema(adminUserSchemaDefinition, {
   collection: 'admin_users',
-  strict: true,
-  versionKey: '__v'
-});
+  timestamps: true,
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // ==================== Indexes for Performance ====================
 adminUserSchema.index({ 'adminProfile.department': 1, 'status.accountStatus': 1 });
@@ -1706,6 +1709,6 @@ adminUserSchema.statics.performComplianceAudit = async function(complianceType) 
 };
 
 // ==================== Model Registration ====================
-const AdminUser = mongoose.model('AdminUser', adminUserSchema);
+const AdminUserModel = BaseModel.model('AdminUser', adminUserSchema);
 
-module.exports = AdminUser;
+module.exports = AdminUserModel;

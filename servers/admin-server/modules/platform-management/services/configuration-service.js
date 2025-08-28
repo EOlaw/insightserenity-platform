@@ -18,7 +18,7 @@
 
 const yaml = require('js-yaml');
 const xml2js = require('xml2js');
-const ConfigurationModel = require('../../../../../shared/lib/database/models/admin-server/platform-management/models/configuration-model');
+const ConfigurationModel = require('../../../../../shared/lib/database/models/admin-server/platform-management/configuration-model');
 const logger = require('../../../../../shared/lib/utils/logger');
 const { AppError } = require('../../../../../shared/lib/utils/app-error');
 const CacheService = require('../../../../../shared/lib/services/cache-service');

@@ -16,22 +16,22 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const cryptoHelper = require('../../../../../utils/helpers/crypto-helper');
-const CacheService = require('../../../../../services/cache-service');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const EncryptionService = require('../../../../security/encryption/encryption-service');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const cryptoHelper = require('../../../../utils/helpers/crypto-helper');
+const CacheService = require('../../../../services/cache-service');
 
 /**
  * @class AnalyticsSchema
  * @description Comprehensive analytics schema for enterprise metrics and measurements
  * @extends mongoose.Schema
  */
-const analyticsSchema = new mongoose.Schema({
+const analyticsSchemaDefinition = {
   // ==================== Core Analytics Identification ====================
   analyticsId: {
     type: String,
@@ -780,12 +780,16 @@ const analyticsSchema = new mongoose.Schema({
       consistency: Number
     }
   }
-}, {
-  timestamps: true,
+}
+
+const analyticsSchema = BaseModel.createSchema(analyticsSchemaDefinition, {
   collection: 'analytics',
+  timestamps: true,
   strict: true,
-  versionKey: '__v'
-});
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // ==================== Indexes ====================
 analyticsSchema.index({ 'analyticsReference.organizationId': 1, 'analyticsReference.entityType': 1 });
@@ -1316,6 +1320,6 @@ analyticsSchema.post('save', async function(doc) {
 });
 
 // ==================== Model Export ====================
-const Analytics = mongoose.model('Analytics', analyticsSchema);
+const AnalyticsModel = mongoose.model('Analytics', analyticsSchema);
 
-module.exports = Analytics;
+module.exports = AnalyticsModel;

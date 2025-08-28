@@ -17,23 +17,23 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const cryptoHelper = require('../../../../../utils/helpers/crypto-helper');
-const NotificationService = require('../../../../../services/notification-service');
-const EmailService = require('../../../../../services/email-service');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const EncryptionService = require('../../../../security/encryption/encryption-service');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const cryptoHelper = require('../../../../utils/helpers/crypto-helper');
+const NotificationService = require('../../../../services/notification-service');
+const EmailService = require('../../../../services/email-service');
 
 /**
  * @class ReportSchema
  * @description Comprehensive report schema for enterprise reporting and analytics
  * @extends mongoose.Schema
  */
-const reportSchema = new mongoose.Schema({
+const reportSchemaDefinition = {
   // ==================== Core Report Identification ====================
   reportId: {
     type: String,
@@ -776,12 +776,16 @@ const reportSchema = new mongoose.Schema({
       metadata: mongoose.Schema.Types.Mixed
     }]
   }
-}, {
-  timestamps: true,
+}
+
+const reportSchema = BaseModel.createSchema(reportSchemaDefinition, {
   collection: 'reports',
+  timestamps: true,
   strict: true,
-  versionKey: '__v'
-});
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // ==================== Indexes ====================
 reportSchema.index({ 'reportReference.organizationId': 1, 'configuration.type': 1 });
@@ -1362,6 +1366,6 @@ reportSchema.post('save', async function(doc) {
 });
 
 // ==================== Model Export ====================
-const Report = mongoose.model('Report', reportSchema);
+const ReportModel = mongoose.model('Report', reportSchema);
 
-module.exports = Report;
+module.exports = ReportModel;

@@ -16,22 +16,22 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const { ROLES } = require('../../../../../utils/constants/roles');
-const { PERMISSIONS } = require('../../../../../utils/constants/permissions');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const EncryptionService = require('../../../../security/encryption/encryption-service');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const { ROLES } = require('../../../../utils/constants/roles');
+const { PERMISSIONS } = require('../../../../utils/constants/permissions');
 
 /**
  * @class SecurityPolicySchema
  * @description Comprehensive security policy schema for enterprise platform security management
  * @extends mongoose.Schema
  */
-const securityPolicySchema = new mongoose.Schema({
+const securityPolicySchemaDefinition = {
   // ==================== Core Policy Identification ====================
   policyId: {
     type: String,
@@ -1163,12 +1163,16 @@ const securityPolicySchema = new mongoose.Schema({
       roi: Number
     }
   }
-}, {
-  timestamps: true,
+}
+
+const securityPolicySchema = BaseModel.createSchema(securityPolicySchemaDefinition, {
   collection: 'security_policies',
+  timestamps: true,
   strict: true,
-  versionKey: '__v'
-});
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // ==================== Indexes for Performance ====================
 securityPolicySchema.index({ 'policyMetadata.name': 1, 'lifecycle.status': 1 });
@@ -1685,6 +1689,6 @@ securityPolicySchema.statics.findHighRiskPolicies = async function() {
 };
 
 // ==================== Model Registration ====================
-const SecurityPolicy = mongoose.model('SecurityPolicy', securityPolicySchema);
+const SecurityPolicyModel = mongoose.model('SecurityPolicy', securityPolicySchema);
 
-module.exports = SecurityPolicy;
+module.exports = SecurityPolicyModel;

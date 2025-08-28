@@ -12,11 +12,11 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const currencyFormatter = require('../../../../../utils/formatters/currency-formatter');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const currencyFormatter = require('../../../../utils/formatters/currency-formatter');
 
 /**
  * @class SubscriptionAdminSchema

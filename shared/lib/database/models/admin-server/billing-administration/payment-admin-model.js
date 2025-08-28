@@ -19,18 +19,18 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const cryptoHelper = require('../../../../../utils/helpers/crypto-helper');
-const currencyFormatter = require('../../../../../utils/formatters/currency-formatter');
-const StripeService = require('../../../../../integrations/payment/stripe-service');
-const PayPalService = require('../../../../../integrations/payment/paypal-service');
-const PaymentProcessor = require('../../../../../integrations/payment/payment-processor');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const EncryptionService = require('../../../../security/encryption/encryption-service');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const cryptoHelper = require('../../../../utils/helpers/crypto-helper');
+const currencyFormatter = require('../../../../utils/formatters/currency-formatter');
+const StripeService = require('../../../../integrations/payment/stripe-service');
+const PayPalService = require('../../../../integrations/payment/paypal-service');
+const PaymentProcessor = require('../../../../integrations/payment/payment-processor');
 
 /**
  * @class PaymentAdminSchema

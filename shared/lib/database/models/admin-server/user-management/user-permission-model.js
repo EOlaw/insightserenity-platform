@@ -15,19 +15,19 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const { PERMISSIONS } = require('../../../../../utils/constants/permissions');
-const { ROLES } = require('../../../../../utils/constants/roles');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const { PERMISSIONS } = require('../../../../utils/constants/permissions');
+const { ROLES } = require('../../../../utils/constants/roles');
 
 /**
  * User permission schema for fine-grained access control
  */
-const userPermissionSchema = new mongoose.Schema({
+const userPermissionSchemaDefinition = {
   // ==================== Core Permission Identity ====================
   permissionId: {
     type: String,
@@ -801,10 +801,13 @@ const userPermissionSchema = new mongoose.Schema({
       nextReviewDate: Date
     }]
   }
-}, {
-  timestamps: true,
+}
+
+const userPermissionSchema = BaseModel.createSchema(userPermissionSchemaDefinition, {
   collection: 'user_permissions',
-  strict: true,
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
   versionKey: '__v'
 });
 
@@ -1441,6 +1444,6 @@ userPermissionSchema.statics.generatePermissionMatrix = async function(userId) {
 };
 
 // ==================== Model Registration ====================
-const UserPermission = mongoose.model('UserPermission', userPermissionSchema);
+const UserPermissionModel = BaseModel.model('UserPermission', userPermissionSchema);
 
-module.exports = UserPermission;
+module.exports = UserPermissionModel;

@@ -16,22 +16,22 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const { ROLES } = require('../../../../../utils/constants/roles');
-const { PERMISSIONS } = require('../../../../../utils/constants/permissions');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const EncryptionService = require('../../../../security/encryption/encryption-service');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const { ROLES } = require('../../../../utils/constants/roles');
+const { PERMISSIONS } = require('../../../../utils/constants/permissions');
 
 /**
  * @class SecurityIncidentSchema
  * @description Comprehensive security incident schema for enterprise incident response management
  * @extends mongoose.Schema
  */
-const securityIncidentSchema = new mongoose.Schema({
+const securityIncidentSchemaDefinition = {
   // ==================== Core Incident Identification ====================
   incidentId: {
     type: String,
@@ -1273,12 +1273,16 @@ const securityIncidentSchema = new mongoose.Schema({
       escalations: Number
     }
   }
-}, {
-  timestamps: true,
+}
+
+const securityIncidentSchema = BaseModel.createSchema(securityIncidentSchemaDefinition, {
   collection: 'security_incidents',
+  timestamps: true,
   strict: true,
-  versionKey: '__v'
-});
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // ==================== Indexes for Performance ====================
 securityIncidentSchema.index({ 'incidentMetadata.title': 1, 'lifecycle.status': 1 });
@@ -1290,6 +1294,6 @@ securityIncidentSchema.index({ 'responseTeam.incidentCommander.user': 1 });
 securityIncidentSchema.index({ createdAt: -1 });
 
 // ==================== Model Registration ====================
-const SecurityIncident = mongoose.model('SecurityIncident', securityIncidentSchema);
+const SecurityIncidentModels = mongoose.model('SecurityIncident', securityIncidentSchema);
 
-module.exports = SecurityIncident;
+module.exports = SecurityIncidentModels;

@@ -17,23 +17,23 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const cryptoHelper = require('../../../../../utils/helpers/crypto-helper');
-const CacheService = require('../../../../../services/cache-service');
-const AnalyticsService = require('../../../../../services/analytics-service');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const EncryptionService = require('../../../../security/encryption/encryption-service');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const cryptoHelper = require('../../../../utils/helpers/crypto-helper');
+const CacheService = require('../../../../services/cache-service');
+const AnalyticsService = require('../../../../services/analytics-service');
 
 /**
  * @class DashboardSchema
  * @description Comprehensive dashboard schema for enterprise business intelligence visualization
  * @extends mongoose.Schema
  */
-const dashboardSchema = new mongoose.Schema({
+const dashboardSchemaDefinition = {
   // ==================== Core Dashboard Identification ====================
   dashboardId: {
     type: String,
@@ -845,12 +845,16 @@ const dashboardSchema = new mongoose.Schema({
       url: String
     }]
   }
-}, {
-  timestamps: true,
+}
+
+const dashboardSchema = BaseModel.createSchema(dashboardSchemaDefinition, {
   collection: 'dashboards',
+  timestamps: true,
   strict: true,
-  versionKey: '__v'
-});
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // ==================== Indexes ====================
 dashboardSchema.index({ 'dashboardReference.organizationId': 1, 'configuration.type': 1 });
@@ -1393,6 +1397,6 @@ dashboardSchema.post('save', async function(doc) {
 });
 
 // ==================== Model Export ====================
-const Dashboard = mongoose.model('Dashboard', dashboardSchema);
+const DashboardModel = mongoose.model('Dashboard', dashboardSchema);
 
-module.exports = Dashboard;
+module.exports = DashboardModel;

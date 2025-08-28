@@ -11,10 +11,10 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const EncryptionService = require('../../../../security/encryption/encryption-service');
 
 /**
  * @typedef {Object} FeatureFlag
@@ -102,7 +102,7 @@ const EncryptionService = require('../../../../../security/encryption/encryption
 /**
  * Platform configuration schema definition
  */
-const platformSchemaDefinition = {
+const platformConfigurationSchemaDefinition = {
   // Platform Identity
   platformId: {
     type: String,
@@ -1008,7 +1008,7 @@ const platformSchemaDefinition = {
   }
 };
 
-const platformSchema = BaseModel.createSchema(platformSchemaDefinition, {
+const platformConfigurationSchema = BaseModel.createSchema(platformConfigurationSchemaDefinition, {
   collection: 'platform_configurations',
   timestamps: true,
   toJSON: { virtuals: true },
@@ -1016,16 +1016,16 @@ const platformSchema = BaseModel.createSchema(platformSchemaDefinition, {
 })
 
 // Indexes
-platformSchema.index({ platformId: 1 }, { unique: true });
-platformSchema.index({ 'featureFlags.name': 1 });
-platformSchema.index({ 'systemModules.name': 1 });
-platformSchema.index({ 'deployment.version': 1, 'deployment.environment': 1 });
-platformSchema.index({ 'maintenanceWindows.startTime': 1, 'maintenanceWindows.endTime': 1 });
-platformSchema.index({ 'status.operational': 1 });
-platformSchema.index({ createdAt: -1 });
+platformConfigurationSchema.index({ platformId: 1 }, { unique: true });
+platformConfigurationSchema.index({ 'featureFlags.name': 1 });
+platformConfigurationSchema.index({ 'systemModules.name': 1 });
+platformConfigurationSchema.index({ 'deployment.version': 1, 'deployment.environment': 1 });
+platformConfigurationSchema.index({ 'maintenanceWindows.startTime': 1, 'maintenanceWindows.endTime': 1 });
+platformConfigurationSchema.index({ 'status.operational': 1 });
+platformConfigurationSchema.index({ createdAt: -1 });
 
 // Virtual properties
-platformSchema.virtual('isInMaintenance').get(function() {
+platformConfigurationSchema.virtual('isInMaintenance').get(function() {
   const now = new Date();
   return this.maintenanceWindows.some(window => 
     window.status === 'in-progress' ||
@@ -1033,11 +1033,11 @@ platformSchema.virtual('isInMaintenance').get(function() {
   );
 });
 
-platformSchema.virtual('activeFeatures').get(function() {
+platformConfigurationSchema.virtual('activeFeatures').get(function() {
   return this.featureFlags.filter(flag => flag.enabled).map(flag => flag.name);
 });
 
-platformSchema.virtual('healthStatus').get(function() {
+platformConfigurationSchema.virtual('healthStatus').get(function() {
   if (!this.status.operational) return 'offline';
   if (this.status.healthScore >= 90) return 'healthy';
   if (this.status.healthScore >= 70) return 'degraded';
@@ -1045,7 +1045,7 @@ platformSchema.virtual('healthStatus').get(function() {
 });
 
 // Instance methods
-platformSchema.methods.enableFeature = async function(featureName, options = {}) {
+platformConfigurationSchema.methods.enableFeature = async function(featureName, options = {}) {
   try {
     const feature = this.featureFlags.find(f => f.name === featureName);
     
@@ -1083,7 +1083,7 @@ platformSchema.methods.enableFeature = async function(featureName, options = {})
   }
 };
 
-platformSchema.methods.disableFeature = async function(featureName, options = {}) {
+platformConfigurationSchema.methods.disableFeature = async function(featureName, options = {}) {
   try {
     const feature = this.featureFlags.find(f => f.name === featureName);
     
@@ -1114,7 +1114,7 @@ platformSchema.methods.disableFeature = async function(featureName, options = {}
   }
 };
 
-platformSchema.methods.isFeatureEnabledForTenant = function(featureName, tenantId) {
+platformConfigurationSchema.methods.isFeatureEnabledForTenant = function(featureName, tenantId) {
   const feature = this.featureFlags.find(f => f.name === featureName);
   
   if (!feature) return false;
@@ -1146,7 +1146,7 @@ platformSchema.methods.isFeatureEnabledForTenant = function(featureName, tenantI
   return true;
 };
 
-platformSchema.methods.scheduleMaintenance = async function(maintenanceData) {
+platformConfigurationSchema.methods.scheduleMaintenance = async function(maintenanceData) {
   try {
     const maintenance = {
       id: `MW_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1195,7 +1195,7 @@ platformSchema.methods.scheduleMaintenance = async function(maintenanceData) {
   }
 };
 
-platformSchema.methods.updateSystemModule = async function(moduleName, updates) {
+platformConfigurationSchema.methods.updateSystemModule = async function(moduleName, updates) {
   try {
     const module = this.systemModules.find(m => m.name === moduleName);
     
@@ -1235,7 +1235,7 @@ platformSchema.methods.updateSystemModule = async function(moduleName, updates) 
   }
 };
 
-platformSchema.methods.recordDeployment = async function(deploymentInfo) {
+platformConfigurationSchema.methods.recordDeployment = async function(deploymentInfo) {
   try {
     // Archive current deployment to rollback history
     if (this.deployment.version) {
@@ -1276,7 +1276,7 @@ platformSchema.methods.recordDeployment = async function(deploymentInfo) {
   }
 };
 
-platformSchema.methods.performHealthCheck = async function() {
+platformConfigurationSchema.methods.performHealthCheck = async function() {
   try {
     const healthMetrics = {
       modules: {},
@@ -1334,7 +1334,7 @@ platformSchema.methods.performHealthCheck = async function() {
 };
 
 // Change the checkModuleHealth method to a private method by adding a # prefix
-platformSchema.methods.checkModuleHealth = async function(module) {
+platformConfigurationSchema.methods.checkModuleHealth = async function(module) {
   // This is a placeholder for actual health check logic
   // In production, this would make HTTP calls to health endpoints
   const randomHealth = Math.random();
@@ -1349,11 +1349,11 @@ platformSchema.methods.checkModuleHealth = async function(module) {
 };
 
 // Static methods
-platformSchema.statics.findByEnvironment = function(environment) {
+platformConfigurationSchema.statics.findByEnvironment = function(environment) {
   return this.findOne({ 'deployment.environment': environment });
 };
 
-platformSchema.statics.getActiveMaintenanceWindows = function() {
+platformConfigurationSchema.statics.getActiveMaintenanceWindows = function() {
   const now = new Date();
   return this.find({
     'maintenanceWindows': {
@@ -1366,7 +1366,7 @@ platformSchema.statics.getActiveMaintenanceWindows = function() {
   });
 };
 
-platformSchema.statics.findByFeature = function(featureName) {
+platformConfigurationSchema.statics.findByFeature = function(featureName) {
   return this.find({
     'featureFlags': {
       $elemMatch: {
@@ -1378,7 +1378,7 @@ platformSchema.statics.findByFeature = function(featureName) {
 };
 
 // Middleware
-platformSchema.pre('save', function(next) {
+platformConfigurationSchema.pre('save', function(next) {
   // Update lastModifiedBy in metadata
   if (this.isModified() && !this.isNew) {
     this.metadata.lastModifiedBy = this._lastModifiedBy || this.metadata.createdBy;
@@ -1412,19 +1412,19 @@ platformSchema.pre('save', function(next) {
   next();
 });
 
-platformSchema.post('save', function(doc) {
+platformConfigurationSchema.post('save', function(doc) {
   logger.info('Platform configuration saved', {
     platformId: doc.platformId,
     environment: doc.deployment.environment
   });
 });
 
-platformSchema.pre('findOneAndUpdate', function() {
+platformConfigurationSchema.pre('findOneAndUpdate', function() {
   this.set({ 'metadata.lastModifiedBy': this.getOptions()._lastModifiedBy });
 });
 
 // Encryption for sensitive fields
-platformSchema.pre('save', async function(next) {
+platformConfigurationSchema.pre('save', async function(next) {
   try {
     const encryptionService = new EncryptionService();
 
@@ -1453,7 +1453,7 @@ platformSchema.pre('save', async function(next) {
 });
 
 // Decrypt sensitive fields when retrieving
-platformSchema.post('init', async function() {
+platformConfigurationSchema.post('init', async function() {
   try {
     const encryptionService = new EncryptionService();
 
@@ -1483,12 +1483,12 @@ platformSchema.post('init', async function() {
 });
 
 // ==================== Create Model ====================
-const PlatformModel = BaseModel.createModel('Platform', platformSchema, {
+const PlatformConfigurationModel = BaseModel.createModel('PlatformConfiguration', platformConfigurationSchema, {
   enableTimestamps: true,
   enableAudit: true
 });
 
-module.exports = PlatformModel;
+module.exports = PlatformConfigurationModel;
 
 // {
 //   collection: 'platform_configurations',

@@ -15,19 +15,19 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const HashService = require('../../../../../security/encryption/hash-service');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const { STATUS_CODES } = require('../../../../../utils/constants/status-codes');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const HashService = require('../../../../security/encryption/hash-service');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const { STATUS_CODES } = require('../../../../utils/constants/status-codes');
 
 /**
  * Administrative session schema for secure session management
  */
-const adminSessionSchema = new mongoose.Schema({
+const adminSessionSchemaDefinition = {
   // ==================== Core Session Identity ====================
   sessionId: {
     type: String,
@@ -759,10 +759,13 @@ const adminSessionSchema = new mongoose.Schema({
       error: String
     }]
   }
-}, {
-  timestamps: true,
+}
+
+const adminSessionSchema = BaseModel.createSchema(adminSessionSchemaDefinition, {
   collection: 'admin_sessions',
-  strict: true,
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
   versionKey: '__v'
 });
 
@@ -1594,6 +1597,6 @@ adminSessionSchema.statics.generateSessionReport = async function(adminUserId, d
 };
 
 // ==================== Model Registration ====================
-const AdminSession = mongoose.model('AdminSession', adminSessionSchema);
+const AdminSessionModel = mongoose.model('AdminSession', adminSessionSchema);
 
-module.exports = AdminSession;
+module.exports = AdminSessionModel;

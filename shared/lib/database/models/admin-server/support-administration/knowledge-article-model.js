@@ -17,23 +17,23 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const cryptoHelper = require('../../../../../utils/helpers/crypto-helper');
-const SearchService = require('../../../../../services/search-service');
-const CacheService = require('../../../../../services/cache-service');
-const AnalyticsService = require('../../../../../services/analytics-service');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const cryptoHelper = require('../../../../utils/helpers/crypto-helper');
+const SearchService = require('../../../../services/search-service');
+const CacheService = require('../../../../services/cache-service');
+const AnalyticsService = require('../../../../services/analytics-service');
 
 /**
  * @class KnowledgeArticleSchema
  * @description Comprehensive knowledge article schema for enterprise knowledge base management
  * @extends mongoose.Schema
  */
-const knowledgeArticleSchema = new mongoose.Schema({
+const knowledgeArticleSchemaDefinition = {
   // ==================== Core Article Identification ====================
   articleId: {
     type: String,
@@ -793,12 +793,16 @@ const knowledgeArticleSchema = new mongoose.Schema({
       highPriority: Boolean
     }
   }
-}, {
-  timestamps: true,
+}
+
+const knowledgeArticleSchema = BaseModel.createSchema(knowledgeArticleSchemaDefinition, {
   collection: 'knowledge_articles',
+  timestamps: true,
   strict: true,
-  versionKey: '__v'
-});
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // ==================== Indexes ====================
 knowledgeArticleSchema.index({ 'content.title': 'text', 'content.body.plainText': 'text', 'content.summary': 'text' });
@@ -1551,6 +1555,6 @@ knowledgeArticleSchema.post('save', async function(doc) {
 });
 
 // ==================== Model Export ====================
-const KnowledgeArticle = mongoose.model('KnowledgeArticle', knowledgeArticleSchema);
+const KnowledgeArticleModel = mongoose.model('KnowledgeArticle', knowledgeArticleSchema);
 
-module.exports = KnowledgeArticle;
+module.exports = KnowledgeArticleModel;

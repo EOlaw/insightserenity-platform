@@ -16,22 +16,22 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const { ROLES } = require('../../../../../utils/constants/roles');
-const { PERMISSIONS } = require('../../../../../utils/constants/permissions');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const EncryptionService = require('../../../../security/encryption/encryption-service');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const { ROLES } = require('../../../../utils/constants/roles');
+const { PERMISSIONS } = require('../../../../utils/constants/permissions');
 
 /**
  * @class AccessControlSchema
  * @description Comprehensive access control schema for enterprise authorization management
  * @extends mongoose.Schema
  */
-const accessControlSchema = new mongoose.Schema({
+const accessControlSchemaDefinition ={
   // ==================== Core Access Control Identification ====================
   accessControlId: {
     type: String,
@@ -1211,12 +1211,16 @@ const accessControlSchema = new mongoose.Schema({
       }]
     }
   }
-}, {
-  timestamps: true,
+}
+
+const accessControlSchema = BaseModel.createSchema(accessControlSchemaDefinition, {
   collection: 'access_controls',
+  timestamps: true,
   strict: true,
-  versionKey: '__v'
-});
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // ==================== Indexes for Performance ====================
 accessControlSchema.index({ 'accessControlMetadata.name': 1, 'lifecycle.status': 1 });
@@ -1876,6 +1880,6 @@ accessControlSchema.statics.findHighRiskAccess = async function() {
 };
 
 // ==================== Model Registration ====================
-const AccessControl = mongoose.model('AccessControl', accessControlSchema);
+const AccessControlModel = mongoose.model('AccessControl', accessControlSchema);
 
-module.exports = AccessControl;
+module.exports = AccessControlModel;

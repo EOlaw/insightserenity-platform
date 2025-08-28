@@ -58,7 +58,7 @@ console.log('\n👤 Loading Admin User Management Models...');
 const AdminUserModel = safeImport('AdminUser', './admin-server/user-management/admin-user-model', 'admin-user');
 const AdminSessionModel = safeImport('AdminSession', './admin-server/user-management/admin-session-model', 'admin-user');
 const UserPermissionModel = safeImport('UserPermission', './admin-server/user-management/user-permission-model', 'admin-user');
-const AdminActionLogModel = safeImport('AdminActionLog', './admin-server/user-management/admin-action-log-model', 'admin-user');
+// const AdminActionLogModel = safeImport('AdminActionLog', './admin-server/user-management/admin-action-log-model', 'admin-user');
 
 // Organization Management Admin Models
 console.log('\n🏢 Loading Admin Organization Management Models...');
@@ -70,25 +70,28 @@ const BillingConfigurationModel = safeImport('BillingConfiguration', './admin-se
 console.log('\nLoading Admin Platform Management Models...');
 const PlatformConfigurationModel = safeImport('PlatformConfiguration', './admin-server/platform-management/configuration-model', 'admin-platform');
 const SystemSettingsModel = safeImport('SystemSettings', './admin-server/platform-management/system-settings-model', 'admin-platform');
+const ConfigurationModel = safeImport('Configuration', './admin-server/platform-management/configuration-model', 'admin-platform');
 const MaintenanceScheduleModel = safeImport('MaintenanceSchedule', './admin-server/platform-management/maintenance-schedule-model', 'admin-platform');
 
 // Security Administration Models
 console.log('\nLoading Admin Security Administration Models...');
 const AccessControlModel = safeImport('AccessControl', './admin-server/security-administration/access-control-model', 'admin-security');
 const SecurityPolicyModel = safeImport('SecurityPolicy', './admin-server/security-administration/security-policy-model', 'admin-security');
-const ComplianceRuleModel = safeImport('ComplianceRule', './admin-server/security-administration/compliance-rule-model', 'admin-security');
-const ThreatDetectionModel = safeImport('ThreatDetection', './admin-server/security-administration/threat-detection-model', 'admin-security');
+const SecurityIncidentModels = safeImport('SecurityIncident', './admin-server/security-administration/security-incident-model', 'admin-security');
+// const ComplianceRuleModel = safeImport('ComplianceRule', './admin-server/security-administration/compliance-rule-model', 'admin-security');
+// const ThreatDetectionModel = safeImport('ThreatDetection', './admin-server/security-administration/threat-detection-model', 'admin-security');
 
 // Reports & Analytics Admin Models
 console.log('\nLoading Admin Reports & Analytics Models...');
-const ReportModelClass = safeImport('ReportModel', './admin-server/reports-analytics/report-model', 'admin-reports');
-const AnalyticsConfigurationModel = safeImport('AnalyticsConfiguration', './admin-server/reports-analytics/analytics-configuration-model', 'admin-reports');
-const DataExportModel = safeImport('DataExport', './admin-server/reports-analytics/data-export-model', 'admin-reports');
+const ReportModel = safeImport('Report', './admin-server/reports-analytics/report-model', 'admin-reports');
+const AnalyticsConfigurationModel = safeImport('Analytics', './admin-server/reports-analytics/analytics-model', 'admin-reports');
+const DashboardModel = safeImport('Dashboard', './admin-server/reports-analytics/dashboard-model', 'admin-reports');
 
 // Support Administration Models
 console.log('\nLoading Admin Support Administration Models...');
+const EscalationRuleModel = safeImport('EscalationRule', './admin-server/support-administration/escalation-rule-model', 'admin-support');
 const SupportTicketModel = safeImport('SupportTicket', './admin-server/support-administration/support-ticket-model', 'admin-support');
-const KnowledgeBaseModel = safeImport('KnowledgeBase', './admin-server/support-administration/knowledge-base-model', 'admin-support');
+const KnowledgeArticleModel = safeImport('KnowledgeArticle', './admin-server/support-administration/knowledge-article-model', 'admin-support');
 const SupportAgentModel = safeImport('SupportAgent', './admin-server/support-administration/support-agent-model', 'admin-support');
 
 // System Monitoring Admin Models
@@ -125,7 +128,7 @@ const TenantModel = safeImport('Tenant', './organizations/tenant-model', 'organi
 
 // Configuration Models
 console.log('\nLoading Configuration Models...');
-const ConfigurationModel = safeImport('Configuration', './configurations/configuration-model', 'configuration');
+const ConfigurationModels = safeImport('Configuration', './configurations/configuration-model', 'configuration');
 const SystemConfigurationModel = safeImport('SystemConfiguration', './configurations/system-configuration-model', 'configuration');
 const FeatureFlagModel = safeImport('FeatureFlag', './configurations/feature-flag-model', 'configuration');
 
@@ -198,22 +201,25 @@ const models = {
   AdminUser: AdminUserModel,
   AdminSession: AdminSessionModel,
   UserPermission: UserPermissionModel,
-  AdminActionLog: AdminActionLogModel,
+  // AdminActionLog: AdminActionLogModel,
   OrganizationAdmin: OrganizationAdminModel,
   OrganizationSettings: OrganizationSettingsModel,
   BillingConfiguration: BillingConfigurationModel,
   PlatformConfiguration: PlatformConfigurationModel,
   SystemSettings: SystemSettingsModel,
+  Configuration: ConfigurationModel,
   MaintenanceSchedule: MaintenanceScheduleModel,
   AccessControl: AccessControlModel,
   SecurityPolicy: SecurityPolicyModel,
-  ComplianceRule: ComplianceRuleModel,
-  ThreatDetection: ThreatDetectionModel,
-  ReportModel: ReportModelClass,
+  SecurityIncidents: SecurityIncidentModels,
+//   ComplianceRule: ComplianceRuleModel,
+//   ThreatDetection: ThreatDetectionModel,
+  Report: ReportModel,
   AnalyticsConfiguration: AnalyticsConfigurationModel,
-  DataExport: DataExportModel,
+  Dashboard: DashboardModel,
+  EscalationRule: EscalationRuleModel,
   SupportTicket: SupportTicketModel,
-  KnowledgeBase: KnowledgeBaseModel,
+  KnowledgeArticle: KnowledgeArticleModel,
   SupportAgent: SupportAgentModel,
   SystemHealth: SystemHealthModel,
   PerformanceMetrics: PerformanceMetricsModel,
@@ -235,7 +241,6 @@ const models = {
   Tenant: TenantModel,
 
   // Core Configuration
-  Configuration: ConfigurationModel,
   SystemConfiguration: SystemConfigurationModel,
   FeatureFlag: FeatureFlagModel,
 
@@ -369,16 +374,16 @@ logger.info('Enhanced model registration completed with detailed debugging', {
   skippedModels,
   coreModels: Object.keys(models).filter(key => !key.startsWith('Admin') && 
     !['OrganizationAdmin', 'PlatformConfiguration', 'SystemSettings', 'MaintenanceSchedule',
-      'AccessControl', 'SecurityPolicy', 'ComplianceRule', 'ThreatDetection',
-      'ReportModel', 'AnalyticsConfiguration', 'DataExport',
-      'SupportTicket', 'KnowledgeBase', 'SupportAgent',
+      'AccessControl', 'SecurityPolicy', 'SecurityIncidents', 'ComplianceRule', 'ThreatDetection',
+      'Report', 'AnalyticsConfiguration', 'Dashboard',
+      'SupportTicket', 'KnowledgeArticle', 'SupportAgent',
       'SystemHealth', 'PerformanceMetrics', 'AlertConfiguration',
       'BillingAdmin', 'PaymentProcessor', 'SubscriptionAdmin'].includes(key)).length,
   adminModels: Object.keys(models).filter(key => key.startsWith('Admin') || 
     ['OrganizationAdmin', 'PlatformConfiguration', 'SystemSettings', 'MaintenanceSchedule',
-     'AccessControl', 'SecurityPolicy', 'ComplianceRule', 'ThreatDetection',
-     'ReportModel', 'AnalyticsConfiguration', 'DataExport',
-     'SupportTicket', 'KnowledgeBase', 'SupportAgent',
+     'AccessControl', 'SecurityPolicy', 'SecurityIncidents', 'ComplianceRule', 'ThreatDetection',
+     'Report', 'AnalyticsConfiguration', 'Dashboard',
+     'SupportTicket', 'KnowledgeArticle', 'SupportAgent',
      'SystemHealth', 'PerformanceMetrics', 'AlertConfiguration',
      'BillingAdmin', 'PaymentProcessor', 'SubscriptionAdmin'].includes(key)).length
 });
@@ -427,9 +432,9 @@ function getModelsByCategory(category) {
     adminUser: ['AdminUser', 'AdminSession', 'UserPermission', 'AdminActionLog'],
     adminOrganization: ['OrganizationAdmin', 'OrganizationSettings', 'BillingConfiguration'],
     adminPlatform: ['PlatformConfiguration', 'SystemSettings', 'MaintenanceSchedule'],
-    adminSecurity: ['AccessControl', 'SecurityPolicy', 'ComplianceRule', 'ThreatDetection'],
-    adminReports: ['ReportModel', 'AnalyticsConfiguration', 'DataExport'],
-    adminSupport: ['SupportTicket', 'KnowledgeBase', 'SupportAgent'],
+    adminSecurity: ['AccessControl', 'SecurityPolicy', 'SecurityIncidents', 'ComplianceRule', 'ThreatDetection'],
+    adminReports: ['Report', 'AnalyticsConfiguration', 'Dashboard'],
+    adminSupport: ['SupportTicket', 'KnowledgeArticle', 'SupportAgent'],
     adminMonitoring: ['SystemHealth', 'PerformanceMetrics', 'AlertConfiguration'],
     adminBilling: ['BillingAdmin', 'PaymentProcessor', 'SubscriptionAdmin']
   };
@@ -456,9 +461,9 @@ function getAdminModels() {
   Object.entries(registeredModels).forEach(([modelName, ModelClass]) => {
     if (modelName.startsWith('Admin') || 
         ['OrganizationAdmin', 'PlatformConfiguration', 'SystemSettings', 'MaintenanceSchedule',
-         'AccessControl', 'SecurityPolicy', 'ComplianceRule', 'ThreatDetection',
-         'ReportModel', 'AnalyticsConfiguration', 'DataExport',
-         'SupportTicket', 'KnowledgeBase', 'SupportAgent',
+         'AccessControl', 'SecurityPolicy', 'SecurityIncidents', 'ComplianceRule', 'ThreatDetection',
+         'Report', 'AnalyticsConfiguration', 'Dashboard',
+         'SupportTicket', 'KnowledgeArticle', 'SupportAgent',
          'SystemHealth', 'PerformanceMetrics', 'AlertConfiguration',
          'BillingAdmin', 'PaymentProcessor', 'SubscriptionAdmin'].includes(modelName)) {
       adminModels[modelName] = ModelClass;
@@ -478,9 +483,9 @@ function getCoreModels() {
   Object.entries(registeredModels).forEach(([modelName, ModelClass]) => {
     if (!modelName.startsWith('Admin') && 
         !['OrganizationAdmin', 'PlatformConfiguration', 'SystemSettings', 'MaintenanceSchedule',
-          'AccessControl', 'SecurityPolicy', 'ComplianceRule', 'ThreatDetection',
-          'ReportModel', 'AnalyticsConfiguration', 'DataExport',
-          'SupportTicket', 'KnowledgeBase', 'SupportAgent',
+          'AccessControl', 'SecurityPolicy', 'SecurityIncidents', 'ComplianceRule', 'ThreatDetection',
+          'Report', 'AnalyticsConfiguration', 'Dashboard',
+          'SupportTicket', 'KnowledgeArticle', 'SupportAgent',
           'SystemHealth', 'PerformanceMetrics', 'AlertConfiguration',
           'BillingAdmin', 'PaymentProcessor', 'SubscriptionAdmin'].includes(modelName)) {
       coreModels[modelName] = ModelClass;

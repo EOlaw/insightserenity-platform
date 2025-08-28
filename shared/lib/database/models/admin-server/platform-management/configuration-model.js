@@ -12,12 +12,11 @@
  */
 
 const mongoose = require('mongoose');
-const Schema = mongoose.Schema;
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const EncryptionService = require('../../../../security/encryption/encryption-service');
+const stringHelper = require('../../../../utils/helpers/string-helper');
 
 /**
  * @typedef {Object} ConfigurationItem
@@ -58,7 +57,7 @@ const stringHelper = require('../../../../../utils/helpers/string-helper');
 /**
  * Configuration management schema definition
  */
-const configurationSchema = new Schema({
+const configurationSchemaSchemaDefinition = {
   // Configuration Identity
   configId: {
     type: String,
@@ -739,7 +738,14 @@ const configurationSchema = new Schema({
       description: 'Last validation timestamp'
     }
   }
-});
+}
+
+const configurationSchema = BaseModel.createSchema(configurationSchemaSchemaDefinition, {
+  collection: 'configuration_management',
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // Indexes
 configurationSchema.index({ configId: 1 }, { unique: true });
@@ -1709,10 +1715,6 @@ configurationSchema.post('save', function(doc) {
 });
 
 // ==================== Create Model ====================
-const Configuration = BaseModel.createModel('Configuration', configurationSchema, {
-  collection: 'configuration_management', // This matches your existing collection name
-  enableTimestamps: true,
-  enableAudit: true
-});
+const ConfigurationModel = BaseModel.createModel('Configuration', configurationSchema);
 
-module.exports = Configuration;
+module.exports = ConfigurationModel;

@@ -16,22 +16,22 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../../../base-model');
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
-const dateHelper = require('../../../../../utils/helpers/date-helper');
-const cryptoHelper = require('../../../../../utils/helpers/crypto-helper');
-const NotificationService = require('../../../../../services/notification-service');
-const WebhookService = require('../../../../../services/webhook-service');
+const BaseModel = require('../../base-model');
+const logger = require('../../../../utils/logger');
+const { AppError } = require('../../../../utils/app-error');
+const CommonValidator = require('../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../utils/helpers/string-helper');
+const dateHelper = require('../../../../utils/helpers/date-helper');
+const cryptoHelper = require('../../../../utils/helpers/crypto-helper');
+const NotificationService = require('../../../../services/notification-service');
+const WebhookService = require('../../../../services/webhook-service');
 
 /**
  * @class EscalationRuleSchema
  * @description Comprehensive escalation rule schema for enterprise support escalation management
  * @extends mongoose.Schema
  */
-const escalationRuleSchema = new mongoose.Schema({
+const escalationRuleSchemaDefinition = {
   // ==================== Core Rule Identification ====================
   ruleId: {
     type: String,
@@ -800,12 +800,16 @@ const escalationRuleSchema = new mongoose.Schema({
       default: 'PRODUCTION'
     }
   }
-}, {
-  timestamps: true,
+}
+
+const escalationRuleSchema = BaseModel.createSchema(escalationRuleSchemaDefinition, {
   collection: 'escalation_rules',
+  timestamps: true,
   strict: true,
-  versionKey: '__v'
-});
+  versionKey: '__v',
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+})
 
 // ==================== Indexes ====================
 escalationRuleSchema.index({ 'ruleConfiguration.enabled': 1, 'ruleConfiguration.priority': -1 });
@@ -1739,6 +1743,6 @@ escalationRuleSchema.pre('save', async function(next) {
 });
 
 // ==================== Model Export ====================
-const EscalationRule = mongoose.model('EscalationRule', escalationRuleSchema);
+const EscalationRuleModel = mongoose.model('EscalationRule', escalationRuleSchema);
 
-module.exports = EscalationRule;
+module.exports = EscalationRuleModel;
