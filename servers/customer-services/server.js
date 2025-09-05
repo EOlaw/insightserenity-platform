@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * @file Customer Services Server Entry Point
  * @description Production-grade customer-facing services server with multi-tenant support,
@@ -16,8 +18,6 @@
  * @requires ../../../shared/lib/services/file-service
  * @requires ./app
  */
-
-'use strict';
 
 // =============================================================================
 // ENVIRONMENT LOADING - MUST BE FIRST

@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * @file API Versioning Middleware
  * @description Advanced API versioning middleware for customer services with backward compatibility,
@@ -10,7 +12,6 @@
  * @requires ../../../shared/lib/services/cache-service
  */
 
-'use strict';
 
 const logger = require('../../../shared/lib/utils/logger');
 const { AppError } = require('../../../shared/lib/utils/app-error');

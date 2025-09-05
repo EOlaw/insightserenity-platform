@@ -85,7 +85,7 @@ class BackupService {
    * @readonly
    * @type {Object}
    */
-  static #BACKUP_TYPES = {
+  static BACKUP_TYPES = {
     FULL: 'full',
     INCREMENTAL: 'incremental',
     DIFFERENTIAL: 'differential',
@@ -98,7 +98,7 @@ class BackupService {
    * @readonly
    * @type {Object}
    */
-  static #BACKUP_TARGETS = {
+  static BACKUP_TARGETS = {
     DATABASE: 'database',
     FILES: 'files',
     CACHE: 'cache',
@@ -267,23 +267,23 @@ class BackupService {
           logger.info(`Backing up ${target}`, { backupId });
           
           switch (target) {
-            case this.#BACKUP_TARGETS.DATABASE:
+            case this.BACKUP_TARGETS.DATABASE:
               backupResults.database = await this.#backupDatabase(backupDir);
               break;
               
-            case this.#BACKUP_TARGETS.FILES:
+            case this.BACKUP_TARGETS.FILES:
               backupResults.files = await this.#backupFiles(backupDir);
               break;
               
-            case this.#BACKUP_TARGETS.CACHE:
+            case this.BACKUP_TARGETS.CACHE:
               backupResults.cache = await this.#backupCache(backupDir);
               break;
               
-            case this.#BACKUP_TARGETS.LOGS:
+            case this.BACKUP_TARGETS.LOGS:
               backupResults.logs = await this.#backupLogs(backupDir);
               break;
               
-            case this.#BACKUP_TARGETS.CONFIG:
+            case this.BACKUP_TARGETS.CONFIG:
               backupResults.config = await this.#backupConfig(backupDir);
               break;
           }
@@ -464,23 +464,23 @@ class BackupService {
           logger.info(`Restoring ${target}`, { restoreId, backupId: options.backupId });
           
           switch (target) {
-            case this.#BACKUP_TARGETS.DATABASE:
+            case this.BACKUP_TARGETS.DATABASE:
               restoreResults.database = await this.#restoreDatabase(restoreDir);
               break;
               
-            case this.#BACKUP_TARGETS.FILES:
+            case this.BACKUP_TARGETS.FILES:
               restoreResults.files = await this.#restoreFiles(restoreDir);
               break;
               
-            case this.#BACKUP_TARGETS.CACHE:
+            case this.BACKUP_TARGETS.CACHE:
               restoreResults.cache = await this.#restoreCache(restoreDir);
               break;
               
-            case this.#BACKUP_TARGETS.LOGS:
+            case this.BACKUP_TARGETS.LOGS:
               restoreResults.logs = await this.#restoreLogs(restoreDir);
               break;
               
-            case this.#BACKUP_TARGETS.CONFIG:
+            case this.BACKUP_TARGETS.CONFIG:
               restoreResults.config = await this.#restoreConfig(restoreDir);
               break;
           }
@@ -678,8 +678,8 @@ class BackupService {
       time,
       dayOfWeek,
       dayOfMonth,
-      targets = [this.#BACKUP_TARGETS.ALL],
-      type = this.#BACKUP_TYPES.FULL
+      targets = [this.BACKUP_TARGETS.ALL],
+      type = this.BACKUP_TYPES.FULL
     } = options;
 
     const scheduleId = this.#generateScheduleId();
@@ -816,8 +816,8 @@ class BackupService {
    */
   static #validateBackupOptions(options) {
     const validated = {
-      type: options.type || this.#BACKUP_TYPES.FULL,
-      targets: options.targets || [this.#BACKUP_TARGETS.ALL],
+      type: options.type || this.BACKUP_TYPES.FULL,
+      targets: options.targets || [this.BACKUP_TARGETS.ALL],
       description: options.description,
       metadata: options.metadata || {},
       userId: options.userId,
@@ -825,18 +825,18 @@ class BackupService {
     };
 
     // Expand 'all' target
-    if (validated.targets.includes(this.#BACKUP_TARGETS.ALL)) {
+    if (validated.targets.includes(this.BACKUP_TARGETS.ALL)) {
       validated.targets = [
-        this.#BACKUP_TARGETS.DATABASE,
-        this.#BACKUP_TARGETS.FILES,
-        this.#BACKUP_TARGETS.CACHE,
-        this.#BACKUP_TARGETS.LOGS,
-        this.#BACKUP_TARGETS.CONFIG
+        this.BACKUP_TARGETS.DATABASE,
+        this.BACKUP_TARGETS.FILES,
+        this.BACKUP_TARGETS.CACHE,
+        this.BACKUP_TARGETS.LOGS,
+        this.BACKUP_TARGETS.CONFIG
       ];
     }
 
     // Validate backup type
-    if (!Object.values(this.#BACKUP_TYPES).includes(validated.type)) {
+    if (!Object.values(this.BACKUP_TYPES).includes(validated.type)) {
       throw new AppError(
         'Invalid backup type',
         400,
@@ -1433,7 +1433,7 @@ class BackupService {
       this.schedule({
         frequency: 'daily',
         time: daily,
-        targets: [this.#BACKUP_TARGETS.DATABASE, this.#BACKUP_TARGETS.FILES]
+        targets: [this.BACKUP_TARGETS.DATABASE, this.BACKUP_TARGETS.FILES]
       });
     }
 
@@ -1442,7 +1442,7 @@ class BackupService {
         frequency: 'weekly',
         time: weekly.time,
         dayOfWeek: weekly.day,
-        targets: [this.#BACKUP_TARGETS.ALL]
+        targets: [this.BACKUP_TARGETS.ALL]
       });
     }
 
@@ -1451,8 +1451,8 @@ class BackupService {
         frequency: 'monthly',
         time: monthly.time,
         dayOfMonth: monthly.date,
-        targets: [this.#BACKUP_TARGETS.ALL],
-        type: this.#BACKUP_TYPES.FULL
+        targets: [this.BACKUP_TARGETS.ALL],
+        type: this.BACKUP_TYPES.FULL
       });
     }
   }
@@ -1588,7 +1588,7 @@ class BackupService {
 }
 
 // Export backup types and targets
-BackupService.TYPES = BackupService.#BACKUP_TYPES;
-BackupService.TARGETS = BackupService.#BACKUP_TARGETS;
+BackupService.TYPES = BackupService.BACKUP_TYPES;
+BackupService.TARGETS = BackupService.BACKUP_TARGETS;
 
 module.exports = BackupService;

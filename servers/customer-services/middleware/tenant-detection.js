@@ -1,12 +1,17 @@
+'use strict';
+
 /**
  * @file Tenant Detection Middleware
  * @description Multi-tenant detection middleware for customer services
  *              Identifies tenant from various sources and sets tenant context
  * @version 2.1.0
  * @author InsightSerenity Platform Team
+ * @module insightserenity-platform/servers/customer-services/middleware/tenant-detection
+ * @requires ../../../shared/lib/utils/logger
+ * @requires ../../../shared/lib/utils/app-error
+ * @requires ../../../shared/lib/database
+ * @requires ../../../shared/lib/services/cache-service
  */
-
-'use strict';
 
 const logger = require('../../../shared/lib/utils/logger');
 const { AppError } = require('../../../shared/lib/utils/app-error');

@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * @file Subscription Validation Middleware
  * @description Comprehensive subscription and billing validation middleware for customer services
@@ -11,8 +13,6 @@
  * @requires ../../../shared/lib/services/cache-service
  * @requires ../../../shared/lib/services/payment-service
  */
-
-'use strict';
 
 const logger = require('../../../shared/lib/utils/logger');
 const { AppError } = require('../../../shared/lib/utils/app-error');

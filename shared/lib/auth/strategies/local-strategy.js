@@ -676,8 +676,8 @@ class LocalAuthStrategy {
   }
 }
 
-// Export factory function
-module.exports = (config) => {
+module.exports = LocalAuthStrategy;
+module.exports.createStrategy = (config) => {
   const strategy = new LocalAuthStrategy(config);
   return strategy.getStrategy();
 };

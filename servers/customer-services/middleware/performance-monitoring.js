@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * @file Performance Monitoring Middleware
  * @description Comprehensive performance monitoring middleware for customer services
@@ -9,8 +11,6 @@
  * @requires ../../../shared/lib/services/cache-service
  * @requires ../../../shared/lib/services/analytics-service
  */
-
-'use strict';
 
 const logger = require('../../../shared/lib/utils/logger');
 const CacheService = require('../../../shared/lib/services/cache-service');

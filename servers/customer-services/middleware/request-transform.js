@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * @file Request/Response Transformation Middleware
  * @description Advanced request/response transformation middleware for customer services with
@@ -9,8 +11,6 @@
  * @requires ../../../shared/lib/utils/app-error
  * @requires ../../../shared/lib/services/cache-service
  */
-
-'use strict';
 
 const logger = require('../../../shared/lib/utils/logger');
 const { AppError } = require('../../../shared/lib/utils/app-error');

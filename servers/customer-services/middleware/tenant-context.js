@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * @file Tenant Context Middleware
  * @description Multi-tenant context management middleware for customer services
@@ -10,8 +12,6 @@
  * @requires ../../../shared/lib/database
  * @requires ../../../shared/lib/services/cache-service
  */
-
-'use strict';
 
 const logger = require('../../../shared/lib/utils/logger');
 const { AppError } = require('../../../shared/lib/utils/app-error');

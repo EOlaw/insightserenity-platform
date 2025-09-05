@@ -1,0 +1,30 @@
+{
+  "watch": [
+    "server.js",
+    "app.js",
+    "middleware/",
+    "modules/",
+    "routes/",
+    "../../shared/"
+  ],
+  "ext": "js,json,env",
+  "ignore": [
+    "node_modules/",
+    "uploads/",
+    "public/",
+    "logs/",
+    "*.test.js",
+    "*.spec.js"
+  ],
+  "exec": "node server.js",
+  "env": {
+    "NODE_ENV": "development",
+    "DEBUG": "true",
+    "DEBUG_REQUESTS": "true",
+    "DEBUG_DATABASE": "true",
+    "DEBUG_WEBSOCKETS": "true"
+  },
+  "delay": "1000",
+  "verbose": true,
+  "restartable": "rs"
+}

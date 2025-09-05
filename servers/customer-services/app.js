@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * @file Customer Services Express Application
  * @description Production-grade Express application for customer-facing services with
@@ -52,8 +54,6 @@
  * @requires ../../../shared/lib/auth/strategies/github-strategy
  * @requires ../../../shared/lib/auth/strategies/linkedin-strategy
  */
-
-'use strict';
 
 require('dotenv').config();
 
@@ -964,7 +964,7 @@ class CustomerServicesApplication {
             }
 
             // JWT strategy for API authentication
-            passport.use('jwt', new JwtStrategy({
+            passport.use('jwt', JwtStrategy({
                 jwtFromRequest: req => {
                     let token = null;
                     if (req && req.headers) {
@@ -990,7 +990,7 @@ class CustomerServicesApplication {
 
             // Organization-based strategy for multi-tenant auth
             if (process.env.MULTI_TENANT_ENABLED === 'true') {
-                passport.use('organization', new OrganizationStrategy({
+                passport.use('organization', OrganizationStrategy({
                     organizationField: 'organizationId',
                     passReqToCallback: true
                 }));
@@ -999,7 +999,7 @@ class CustomerServicesApplication {
 
             // Passkey/WebAuthn strategy
             if (process.env.PASSKEY_ENABLED === 'true') {
-                passport.use('passkey', new PasskeyStrategy({
+                passport.use('passkey', PasskeyStrategy({
                     rpID: process.env.PASSKEY_RP_ID || 'localhost',
                     rpName: process.env.PASSKEY_RP_NAME || 'InsightSerenity Platform',
                     passReqToCallback: true
@@ -1009,7 +1009,7 @@ class CustomerServicesApplication {
 
             // OAuth strategies
             if (GoogleStrategy) {
-                passport.use('google', new GoogleStrategy({
+                passport.use('google', GoogleStrategy({
                     clientID: process.env.GOOGLE_CLIENT_ID,
                     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
                     callbackURL: '/auth/google/callback',
@@ -1019,7 +1019,7 @@ class CustomerServicesApplication {
             }
 
             if (GitHubStrategy) {
-                passport.use('github', new GitHubStrategy({
+                passport.use('github', GitHubStrategy({
                     clientID: process.env.GITHUB_CLIENT_ID,
                     clientSecret: process.env.GITHUB_CLIENT_SECRET,
                     callbackURL: '/auth/github/callback',
@@ -1029,7 +1029,7 @@ class CustomerServicesApplication {
             }
 
             if (LinkedInStrategy) {
-                passport.use('linkedin', new LinkedInStrategy({
+                passport.use('linkedin', LinkedInStrategy({
                     clientID: process.env.LINKEDIN_CLIENT_ID,
                     clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
                     callbackURL: '/auth/linkedin/callback',

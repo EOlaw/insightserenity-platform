@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * @file Feature Flags Middleware
  * @description Advanced feature flags middleware for customer services with A/B testing,
@@ -11,8 +13,6 @@
  * @requires ../../../shared/lib/services/cache-service
  * @requires ../../../shared/lib/services/analytics-service
  */
-
-'use strict';
 
 const logger = require('../../../shared/lib/utils/logger');
 const { AppError } = require('../../../shared/lib/utils/app-error');

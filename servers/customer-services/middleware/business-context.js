@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * @file Business Context Middleware
  * @description Business logic context middleware for customer services with domain-specific
@@ -11,8 +13,6 @@
  * @requires ../../../shared/lib/services/cache-service
  * @requires ../../../shared/lib/services/analytics-service
  */
-
-'use strict';
 
 const logger = require('../../../shared/lib/utils/logger');
 const { AppError } = require('../../../shared/lib/utils/app-error');
