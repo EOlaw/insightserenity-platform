@@ -25,10 +25,10 @@ const EmailService = require('../../../../../../shared/lib/services/email-servic
 const NotificationService = require('../../../../../../shared/lib/services/notification-service');
 const AuditService = require('../../../../../../shared/lib/security/audit/audit-service');
 const CalendarService = require('../../../../../../shared/lib/services/calendar-service');
-const ConsultantModel = require('../models/consultant-model');
-const ConsultantSkillModel = require('../models/consultant-skill-model');
-const ConsultantAvailabilityModel = require('../models/consultant-availability-model');
-const ConsultantProfileModel = require('../models/consultant-profile-model');
+const ConsultantModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/consultants/consultant-model');
+const ConsultantSkillModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/consultants/consultant-skill-model');
+const ConsultantAvailabilityModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/consultants/consultant-availability-model');
+const ConsultantProfileModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/consultants/consultant-profile-model');
 const ExcelJS = require('exceljs');
 const csv = require('csv-parse/sync');
 const crypto = require('crypto');
@@ -1274,6 +1274,212 @@ class ConsultantService {
     }
 
     // ==================== Private Helper Methods ====================
+
+    /**
+     * Analyze rate against market benchmarks
+     * @private
+     */
+    async #analyzeRateAgainstBenchmarks(consultant, rateData) {
+        try {
+            const currentRate = consultant.billing?.standardRate?.amount || 0;
+            const newRate = rateData.standardRate?.amount || rateData.amount || 0;
+            const level = consultant.profile?.level || 'mid';
+            const country = consultant.location?.country || 'US';
+
+            // Calculate rate increase percentage
+            const increasePercent = currentRate > 0 ? ((newRate - currentRate) / currentRate) * 100 : 0;
+
+            // Get market benchmarks for the consultant's level and location
+            const benchmarks = await this.#getBenchmarkRates(level, country);
+
+            // Calculate percentile position against benchmarks
+            const benchmarkPercentile = this.#calculateBenchmarkPercentile(newRate, benchmarks);
+
+            // Assess competitive position
+            const competitivePosition = this.#assessCompetitivePosition(newRate, benchmarks);
+
+            // Calculate variance from median
+            const medianVariance = ((newRate - benchmarks.median) / benchmarks.median) * 100;
+
+            // Assess overall risk
+            const riskLevel = this.#assessRateRisk(increasePercent, benchmarkPercentile);
+
+            // Determine if approval is required
+            const requiresApproval = this.#determineApprovalRequirement(increasePercent, benchmarkPercentile, riskLevel, newRate, benchmarks);
+
+            // Generate recommendations
+            const recommendations = this.#generateRateRecommendations({
+                currentRate,
+                newRate,
+                benchmarks,
+                increasePercent,
+                benchmarkPercentile,
+                competitivePosition,
+                riskLevel
+            });
+
+            const analysis = {
+                currentRate,
+                newRate,
+                increasePercent: Math.round(increasePercent * 100) / 100,
+                benchmarks,
+                benchmarkPercentile: Math.round(benchmarkPercentile * 100) / 100,
+                competitivePosition,
+                medianVariance: Math.round(medianVariance * 100) / 100,
+                riskLevel,
+                requiresApproval,
+                recommendations,
+                analysisDate: new Date(),
+                consultant: {
+                    level,
+                    country,
+                    experience: consultant.profile?.yearsOfExperience || 0
+                }
+            };
+
+            logger.info('Rate benchmark analysis completed', {
+                consultantId: consultant._id,
+                currentRate,
+                newRate,
+                increasePercent: analysis.increasePercent,
+                benchmarkPercentile: analysis.benchmarkPercentile,
+                requiresApproval
+            });
+
+            return analysis;
+        } catch (error) {
+            logger.error('Error analyzing rate against benchmarks', {
+                consultantId: consultant._id,
+                error: error.message
+            });
+
+            // Return default analysis in case of error
+            return {
+                currentRate: consultant.billing?.standardRate?.amount || 0,
+                newRate: rateData.standardRate?.amount || rateData.amount || 0,
+                increasePercent: 0,
+                benchmarks: { min: 100, median: 150, max: 200 },
+                benchmarkPercentile: 50,
+                competitivePosition: 'unknown',
+                medianVariance: 0,
+                riskLevel: 'high',
+                requiresApproval: true,
+                recommendations: ['Manual review required due to analysis error'],
+                analysisDate: new Date(),
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Calculate benchmark percentile position
+     * @private
+     */
+    #calculateBenchmarkPercentile(rate, benchmarks) {
+        if (rate <= benchmarks.min) return 0;
+        if (rate >= benchmarks.max) return 100;
+
+        if (rate <= benchmarks.median) {
+            // Between min and median (0-50th percentile)
+            return ((rate - benchmarks.min) / (benchmarks.median - benchmarks.min)) * 50;
+        } else {
+            // Between median and max (50-100th percentile)
+            return 50 + ((rate - benchmarks.median) / (benchmarks.max - benchmarks.median)) * 50;
+        }
+    }
+
+    /**
+     * Assess competitive position
+     * @private
+     */
+    #assessCompetitivePosition(rate, benchmarks) {
+        if (rate < benchmarks.min * 0.9) return 'below_market';
+        if (rate < benchmarks.min) return 'low_market';
+        if (rate < benchmarks.median) return 'below_median';
+        if (rate <= benchmarks.median * 1.1) return 'at_median';
+        if (rate < benchmarks.max) return 'above_median';
+        if (rate <= benchmarks.max * 1.1) return 'high_market';
+        return 'above_market';
+    }
+
+    /**
+     * Determine if approval is required
+     * @private
+     */
+    #determineApprovalRequirement(increasePercent, benchmarkPercentile, riskLevel, newRate, benchmarks) {
+        // Require approval for high-risk scenarios
+        if (riskLevel === 'high') return true;
+
+        // Require approval for large increases
+        if (increasePercent > 20) return true;
+
+        // Require approval for rates significantly above market
+        if (benchmarkPercentile > 85) return true;
+
+        // Require approval for rates above maximum benchmark
+        if (newRate > benchmarks.max) return true;
+
+        // Require approval for medium risk with significant increase
+        if (riskLevel === 'medium' && increasePercent > 15) return true;
+
+        return false;
+    }
+
+    /**
+     * Generate rate recommendations
+     * @private
+     */
+    #generateRateRecommendations(analysisData) {
+        const recommendations = [];
+        const { currentRate, newRate, benchmarks, increasePercent, benchmarkPercentile, competitivePosition, riskLevel } = analysisData;
+
+        // Rate positioning recommendations
+        if (competitivePosition === 'below_market') {
+            recommendations.push('Rate is below market standards - consider larger increase to improve competitiveness');
+        } else if (competitivePosition === 'above_market') {
+            recommendations.push('Rate is above market standards - ensure value proposition justifies premium pricing');
+        } else if (competitivePosition === 'at_median') {
+            recommendations.push('Rate is well-positioned at market median');
+        }
+
+        // Increase percentage recommendations
+        if (increasePercent > 30) {
+            recommendations.push('Large rate increase may require phased implementation or strong justification');
+        } else if (increasePercent > 15) {
+            recommendations.push('Moderate rate increase - ensure client communication and value demonstration');
+        } else if (increasePercent < 5 && currentRate > 0) {
+            recommendations.push('Small increase may not keep pace with market inflation');
+        }
+
+        // Risk-based recommendations
+        switch (riskLevel) {
+            case 'high':
+                recommendations.push('High risk rate change - recommend thorough review and approval process');
+                break;
+            case 'medium':
+                recommendations.push('Medium risk rate change - consider client impact and timing');
+                break;
+            case 'minimal':
+                recommendations.push('Low risk rate change - can likely proceed with standard approval');
+                break;
+        }
+
+        // Benchmarking recommendations
+        if (benchmarkPercentile < 25) {
+            recommendations.push('Consider skills assessment and performance review to justify rate positioning');
+        } else if (benchmarkPercentile > 75) {
+            recommendations.push('Premium rate positioning - ensure demonstrated value and client satisfaction');
+        }
+
+        // Specific rate recommendations
+        if (newRate < benchmarks.min) {
+            recommendations.push(`Consider minimum rate of $${benchmarks.min} based on market standards`);
+        } else if (newRate > benchmarks.max * 1.2) {
+            recommendations.push(`Rate significantly exceeds market maximum of $${benchmarks.max} - strong justification required`);
+        }
+
+        return recommendations;
+    }
 
     /**
      * Validate consultant data
