@@ -62,65 +62,6 @@ class BaseModel {
   static connectionManager = null;
 
   /**
-   * @static
-   * @private
-   * @type {Map<string, string>}
-   * @description Collection to database type mapping for routing
-   */
-  static collectionToDatabase = new Map([
-    // Admin database collections
-    ['users', 'admin'],
-    ['user_profiles', 'admin'],
-    ['user_activities', 'admin'],
-    ['login_history', 'admin'],
-    ['roles', 'admin'],
-    ['permissions', 'admin'],
-    ['organizations', 'admin'],
-    ['organization_members', 'admin'],
-    ['organization_invitations', 'admin'],
-    ['tenants', 'admin'],
-    ['system_configurations', 'admin'],
-    ['security_incidents', 'admin'],
-    ['sessions', 'admin'],
-    ['platforms', 'admin'],
-    ['platform_configurations', 'admin'],
-    ['rate_limits', 'admin'],
-    ['system_health', 'admin'],
-    ['configuration_management', 'admin'],
-    
-    // Shared database collections
-    ['subscription_plans', 'shared'],
-    ['subscriptions', 'shared'],
-    ['invoices', 'shared'],
-    ['payments', 'shared'],
-    ['features', 'shared'],
-    ['system_settings', 'shared'],
-    ['webhooks', 'shared'],
-    ['api_integrations', 'shared'],
-    ['notifications', 'shared'],
-    ['oauth_providers', 'shared'],
-    ['passkeys', 'shared'],
-    
-    // Audit database collections
-    ['audit_logs', 'audit'],
-    ['audit_alerts', 'audit'],
-    ['audit_exports', 'audit'],
-    ['compliance_mappings', 'audit'],
-    ['data_breaches', 'audit'],
-    ['erasure_logs', 'audit'],
-    ['processing_activities', 'audit'],
-    ['consents', 'audit'],
-    ['anonymized_users', 'audit'],
-    
-    // Analytics database collections
-    ['api_usage', 'analytics'],
-    ['usage_records', 'analytics'],
-    ['performance_metrics', 'analytics'],
-    ['user_analytics', 'analytics'],
-    ['system_metrics', 'analytics']
-  ]);
-
-  /**
    * Initialize BaseModel with ConnectionManager integration
    * @static
    * @param {Object} connectionManager - Connection manager instance
@@ -133,16 +74,32 @@ class BaseModel {
       BaseModel.connectionManager = connectionManager;
       console.log('✅ BaseModel ConnectionManager set successfully');
       
+      // Verify ConnectionManager is properly initialized
+      if (!connectionManager.isInitialized()) {
+        logger.warn('ConnectionManager not initialized during BaseModel setup');
+        console.log('⚠️  ConnectionManager not initialized during BaseModel setup');
+      }
+      
       // Test ConnectionManager integration
       try {
         const testConnection = connectionManager.getDatabaseConnection('admin');
         console.log('🧪 Test admin connection:', !!testConnection);
         console.log('🧪 Test connection readyState:', testConnection?.readyState);
+        
+        // Test collection routing capability
+        const testRouting = connectionManager.getDatabaseTypeForCollection('users');
+        console.log('🧪 Test collection routing (users -> admin):', testRouting);
+        
+        const businessRouting = connectionManager.getDatabaseTypeForCollection('clients');
+        console.log('🧪 Test business routing (clients -> business):', businessRouting);
+        
       } catch (error) {
-        console.log('❌ Test connection failed:', error.message);
+        console.log('❌ ConnectionManager integration test failed:', error.message);
+        logger.error('ConnectionManager integration test failed', { error: error.message });
       }
     } else {
       console.log('⚠️  No ConnectionManager provided to BaseModel.initialize()');
+      logger.warn('No ConnectionManager provided to BaseModel.initialize()');
     }
     
     BaseModel.initialized = true;
@@ -150,7 +107,7 @@ class BaseModel {
   }
 
   /**
-   * Determine the correct database connection for a collection
+   * Determine the correct database connection for a collection using ConnectionManager
    * @static
    * @private
    * @param {string} collectionName - Collection name
@@ -161,27 +118,56 @@ class BaseModel {
     
     if (!BaseModel.connectionManager) {
       console.log('❌ No ConnectionManager available');
+      logger.warn('No ConnectionManager available for collection routing', { collectionName });
       return null;
     }
 
-    // Get database type for collection
-    const dbType = BaseModel.collectionToDatabase.get(collectionName);
-    console.log(`🗂️  Collection '${collectionName}' mapped to database: '${dbType}'`);
+    try {
+      // FIXED: Use ConnectionManager's comprehensive routing instead of BaseModel's incomplete mapping
+      const dbType = BaseModel.connectionManager.getDatabaseTypeForCollection(collectionName);
+      console.log(`🗂️  Collection '${collectionName}' mapped to database: '${dbType}'`);
 
-    if (!dbType) {
-      console.log(`⚠️  Collection '${collectionName}' not mapped, defaulting to admin`);
+      if (dbType) {
+        // Get connection for the determined database type
+        const connection = BaseModel.connectionManager.getDatabaseConnection(dbType);
+        console.log(`🔗 Connection for '${dbType}' database:`, !!connection);
+        console.log(`🔗 Connection readyState:`, connection?.readyState);
+        console.log(`🔗 Connection database name:`, connection?.db?.databaseName);
+        return connection;
+      }
+
+      // FIXED: Enhanced fallback logic using ConnectionManager's getConnectionForCollection
+      console.log(`🔄 No explicit mapping found, using ConnectionManager fallback logic`);
+      const fallbackConnection = BaseModel.connectionManager.getConnectionForCollection(collectionName);
+      
+      if (fallbackConnection) {
+        console.log(`🔗 Fallback connection found:`, fallbackConnection.db?.databaseName);
+        return fallbackConnection;
+      }
+
+      // Final fallback to admin database
+      console.log(`⚠️  Using final fallback to admin database for collection: ${collectionName}`);
       const adminConnection = BaseModel.connectionManager.getDatabaseConnection('admin');
-      console.log(`🔗 Admin connection found:`, !!adminConnection);
+      console.log(`🔗 Admin fallback connection:`, !!adminConnection);
       return adminConnection;
+
+    } catch (error) {
+      console.log(`❌ Error in collection routing for '${collectionName}': ${error.message}`);
+      logger.error('Error in collection routing', { 
+        collectionName, 
+        error: error.message 
+      });
+
+      // Emergency fallback
+      try {
+        const emergencyConnection = BaseModel.connectionManager.getDatabaseConnection('admin');
+        console.log(`🚨 Emergency fallback to admin database`);
+        return emergencyConnection;
+      } catch (emergencyError) {
+        console.log(`❌ Emergency fallback failed: ${emergencyError.message}`);
+        return null;
+      }
     }
-
-    // Get connection for database type
-    const connection = BaseModel.connectionManager.getDatabaseConnection(dbType);
-    console.log(`🔗 Connection for '${dbType}' database:`, !!connection);
-    console.log(`🔗 Connection readyState:`, connection?.readyState);
-    console.log(`🔗 Connection database name:`, connection?.db?.databaseName);
-
-    return connection;
   }
 
   /**
@@ -819,6 +805,8 @@ class BaseModel {
     BaseModel.modelRegistry.clear();
     BaseModel.schemaCache.clear();
     BaseModel.initialized = false;
+    BaseModel.connectionManager = null;
+    BaseModel.auditService = null;
     
     console.log(`✅ BaseModel registries cleared`);
     logger.info('BaseModel registries cleared');
@@ -836,11 +824,78 @@ class BaseModel {
       initialized: BaseModel.initialized,
       auditEnabled: !!BaseModel.auditService,
       connectionManagerEnabled: !!BaseModel.connectionManager,
+      connectionManagerInitialized: BaseModel.connectionManager ? BaseModel.connectionManager.isInitialized() : false,
       models: Array.from(BaseModel.modelRegistry.keys())
     };
     
     console.log(`📊 BaseModel registry stats:`, stats);
     return stats;
+  }
+
+  /**
+   * Test ConnectionManager integration
+   * @static
+   * @returns {Object} Integration test results
+   */
+  static testConnectionManagerIntegration() {
+    console.log(`🧪 BaseModel.testConnectionManagerIntegration()`);
+    
+    const testResults = {
+      connectionManagerAvailable: !!BaseModel.connectionManager,
+      connectionManagerInitialized: false,
+      testCollectionRouting: {},
+      adminConnectionAvailable: false,
+      businessConnectionAvailable: false,
+      errors: []
+    };
+
+    if (!BaseModel.connectionManager) {
+      testResults.errors.push('ConnectionManager not available');
+      return testResults;
+    }
+
+    try {
+      testResults.connectionManagerInitialized = BaseModel.connectionManager.isInitialized();
+      
+      // Test collection routing
+      const testCollections = ['users', 'clients', 'projects', 'consultants'];
+      for (const collection of testCollections) {
+        try {
+          const dbType = BaseModel.connectionManager.getDatabaseTypeForCollection(collection);
+          const connection = BaseModel.connectionManager.getConnectionForCollection(collection);
+          testResults.testCollectionRouting[collection] = {
+            databaseType: dbType,
+            connectionAvailable: !!connection,
+            databaseName: connection?.db?.databaseName
+          };
+        } catch (error) {
+          testResults.testCollectionRouting[collection] = {
+            error: error.message
+          };
+        }
+      }
+
+      // Test specific database connections
+      try {
+        const adminConnection = BaseModel.connectionManager.getDatabaseConnection('admin');
+        testResults.adminConnectionAvailable = !!adminConnection;
+      } catch (error) {
+        testResults.errors.push(`Admin connection test failed: ${error.message}`);
+      }
+
+      try {
+        const businessConnection = BaseModel.connectionManager.getDatabaseConnection('business');
+        testResults.businessConnectionAvailable = !!businessConnection;
+      } catch (error) {
+        testResults.errors.push(`Business connection test failed: ${error.message}`);
+      }
+
+    } catch (error) {
+      testResults.errors.push(`Integration test failed: ${error.message}`);
+    }
+
+    console.log(`🧪 Integration test results:`, testResults);
+    return testResults;
   }
 }
 

@@ -10,8 +10,8 @@
   },
   "scripts": {
     "start": "cross-env NODE_ENV=production node server.js",
-    "dev": "cross-env NODE_ENV=development nodemon server.js",
-    "test": "NODE_ENV=test jest --detectOpenHandles --forceExit",
+    "start:dev": "cross-env NODE_ENV=development nodemon server.js",
+    "start:test": "NODE_ENV=test jest --detectOpenHandles --forceExit",
     "test:unit": "npm run test -- --testPathPattern=tests/unit",
     "test:integration": "npm run test -- --testPathPattern=tests/integration",
     "test:coverage": "npm run test -- --coverage",

@@ -943,7 +943,7 @@ class CustomerServicesApplication {
 
             passport.deserializeUser(async (id, done) => {
                 try {
-                    const User = await Database.getModel('User');
+                    const User = Database.getModel('User');
                     const user = await User.findById(id)
                         .populate('organization', 'name slug type')
                         .select('-password -__v');
@@ -1252,7 +1252,7 @@ class CustomerServicesApplication {
                             subscriptions: this.config.features.subscriptions
                         },
                         services: {
-                            database: Database.isConnected ? Database.isConnected() : 'unknown',
+                            database: Database.connect ? Database.connect() : 'unknown',
                             cache: CacheService ? 'available' : 'unavailable',
                             payment: PaymentService ? 'available' : 'unavailable',
                             email: EmailService ? 'available' : 'unavailable',

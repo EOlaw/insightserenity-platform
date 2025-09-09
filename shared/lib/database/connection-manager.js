@@ -202,6 +202,20 @@ class ConnectionManager {
             'third_party_services', 'service_configurations'
           ]
         },
+        business: {
+          purpose: 'Core business operations, client management, project management, consulting services',
+          priority: 'high',
+          collections: [
+            'clients', 'client_contacts', 'client_documents', 'client_notes',
+            'projects', 'project_resources', 'project_timelines', 'project_tasks',
+            'consultants', 'consultant_profiles', 'consultant_skills',
+            'engagements', 'engagement_resources', 'engagement_timelines',
+            'jobs', 'job_applications', 'job_requirements',
+            'candidates', 'candidate_profiles', 'candidate_assessments',
+            'applications', 'application_stages',
+            'partnerships', 'partner_contracts'
+          ]
+        },
         audit: {
           purpose: 'Audit trails, compliance logging, security monitoring, data governance',
           priority: 'critical',
@@ -261,7 +275,7 @@ class ConnectionManager {
     try {
       // Increase max listeners to prevent warnings
       process.setMaxListeners(20);
-      
+
       // Check if listeners are already configured
       if (process.listenerCount('SIGTERM') < 10) {
         // Only add if not already configured
@@ -312,7 +326,7 @@ class ConnectionManager {
       for (const [dbType, uri] of Object.entries(databaseUris)) {
         try {
           const connectionName = `${dbType}_connection`;
-          
+
           // Get database-specific options
           const dbOptions = {
             ...ConnectionManager.#DEFAULT_OPTIONS,
@@ -372,17 +386,17 @@ class ConnectionManager {
             `Failed to connect to ${dbType} database`,
             500,
             'MULTI_DATABASE_CONNECTION_ERROR',
-            { 
+            {
               databaseType: dbType,
               databaseName: databaseUris[dbType],
-              originalError: error.message 
+              originalError: error.message
             }
           );
         }
       }
 
       const connectedDatabases = Object.keys(connections);
-      
+
       // Ensure at least primary connection is available
       if (connectedDatabases.length === 0) {
         throw new AppError(
@@ -471,7 +485,7 @@ class ConnectionManager {
       // Verify collections exist or can be created
       const collections = await connection.db.listCollections().toArray();
       const existingCollections = collections.map(c => c.name);
-      
+
       const routingInfo = {
         dbType,
         connection: connection.name,
@@ -502,7 +516,7 @@ class ConnectionManager {
         collections: routingInfo.expected,
         existing: routingInfo.existing,
         missing: routingInfo.missing.length,
-        coverage: routingInfo.expected > 0 ? 
+        coverage: routingInfo.expected > 0 ?
           (routingInfo.existing / routingInfo.expected * 100).toFixed(1) + '%' : '100%'
       });
 
@@ -631,7 +645,7 @@ class ConnectionManager {
         'Database connection failed',
         500,
         'CONNECTION_ERROR',
-        { 
+        {
           connectionName,
           originalError: error.message,
           attempts: retryOptions.maxRetries + 1
@@ -685,14 +699,14 @@ class ConnectionManager {
             retryDelay * Math.pow(backoffMultiplier, attempt - 1),
             maxDelay
           );
-          
+
           logger.warn(`Connection attempt ${attempt} failed, retrying in ${delay}ms`, {
             connectionName,
             error: error.message,
             nextAttempt: attempt + 1,
             totalAttempts: maxRetries + 1
           });
-          
+
           await ConnectionManager.#sleep(delay);
         }
       }
@@ -825,7 +839,7 @@ class ConnectionManager {
 
     connection.on('close', () => {
       logger.info(`Database connection closed: ${connectionName}`);
-      
+
       const stats = ConnectionManager.#connectionStats.get(connectionName);
       if (stats) {
         stats.status = 'closed';
@@ -912,7 +926,7 @@ class ConnectionManager {
         .map(name => ConnectionManager.checkHealth(name));
 
       const healthResults = await Promise.allSettled(healthPromises);
-      const healthyConnections = healthResults.filter(r => 
+      const healthyConnections = healthResults.filter(r =>
         r.status === 'fulfilled' && r.value.status === 'healthy'
       ).length;
 
@@ -974,17 +988,17 @@ class ConnectionManager {
     try {
       // Parse the original URI to extract components
       const url = new URL(baseUri);
-      
+
       // Extract the base URI without the database name
       const protocol = url.protocol; // mongodb: or mongodb+srv:
       const auth = url.username && url.password ? `${url.username}:${url.password}@` : '';
       const hostname = url.hostname;
       const port = url.port ? `:${url.port}` : '';
       const queryParams = url.search; // Includes the ?
-      
+
       // Build base URI pattern
       const basePattern = `${protocol}//${auth}${hostname}${port}`;
-      
+
       logger.info('Generating database URIs from base pattern', {
         protocol,
         hostname,
@@ -996,6 +1010,7 @@ class ConnectionManager {
       const databaseUris = {
         admin: `${basePattern}/insightserenity_admin${queryParams}`,
         shared: `${basePattern}/insightserenity_shared${queryParams}`,
+        business: `${basePattern}/insightserenity_business${queryParams}`,
         audit: `${basePattern}/insightserenity_audit${queryParams}`,
         analytics: databaseConfig.analyticsUri || `${basePattern}/insightserenity_analytics${queryParams}`
       };
@@ -1032,7 +1047,7 @@ class ConnectionManager {
           audit: baseUri.replace(/\/([^/?]+)(\?.*)?$/, '/insightserenity_audit$2'),
           analytics: databaseConfig.analyticsUri || baseUri.replace(/\/([^/?]+)(\?.*)?$/, '/insightserenity_analytics$2')
         };
-        
+
         logger.warn('Using fallback URI generation method');
         return fallbackUris;
       }
@@ -1064,9 +1079,9 @@ class ConnectionManager {
    * @returns {mongoose.Connection|null} Primary database connection
    */
   static getPrimaryConnection() {
-    return ConnectionManager.getConnection('primary') || 
-           ConnectionManager.getConnection('primary_connection') ||
-           ConnectionManager.getDatabaseConnection('admin');
+    return ConnectionManager.getConnection('primary') ||
+      ConnectionManager.getConnection('primary_connection') ||
+      ConnectionManager.getDatabaseConnection('admin');
   }
 
   /**
@@ -1075,9 +1090,9 @@ class ConnectionManager {
    * @returns {mongoose.Connection|null} Analytics database connection
    */
   static getAnalyticsConnection() {
-    return ConnectionManager.getConnection('analytics') || 
-           ConnectionManager.getConnection('analytics_connection') ||
-           ConnectionManager.getDatabaseConnection('analytics');
+    return ConnectionManager.getConnection('analytics') ||
+      ConnectionManager.getConnection('analytics_connection') ||
+      ConnectionManager.getDatabaseConnection('analytics');
   }
 
   /**
@@ -1109,7 +1124,7 @@ class ConnectionManager {
     if (connectionName === 'default' || connectionName === 'primary') {
       const fallbackConnection = Array.from(ConnectionManager.#connections.values())
         .find(conn => conn.readyState === ConnectionManager.#CONNECTION_STATES.CONNECTED);
-      
+
       if (fallbackConnection) {
         logger.debug(`Using fallback connection for ${connectionName}`);
         return fallbackConnection;
@@ -1176,7 +1191,7 @@ class ConnectionManager {
   static getConnectionRouting() {
     try {
       const allConnections = ConnectionManager.getAllConnections();
-      
+
       // Database connections summary
       const databaseConnectionsSummary = {};
       for (const [dbType, connection] of ConnectionManager.#databaseConnections) {
@@ -1208,7 +1223,7 @@ class ConnectionManager {
       const collectionRoutingSummary = {
         databasePurposes: Object.fromEntries(
           Array.from(ConnectionManager.#databasePurposes.entries()).map(([dbType, config]) => [
-            dbType, 
+            dbType,
             {
               purpose: config.purpose,
               collections: config.collections,
@@ -1314,8 +1329,58 @@ class ConnectionManager {
    * @param {string} collectionName - Name of the collection
    * @returns {mongoose.Connection|null} Database connection for the collection
    */
+  // static getConnectionForCollection(collectionName) {
+  //   // Check routing cache first for performance
+  //   const cached = ConnectionManager.#routingCache.get(collectionName);
+  //   if (cached && cached.connection.readyState === ConnectionManager.#CONNECTION_STATES.CONNECTED) {
+  //     cached.lastAccessed = new Date().toISOString();
+  //     return cached.connection;
+  //   }
+
+  //   // Determine database type for collection
+  //   const dbType = ConnectionManager.#collectionToDatabase.get(collectionName);
+  //   if (dbType) {
+  //     const connection = ConnectionManager.getDatabaseConnection(dbType);
+  //     if (connection) {
+  //       // Update routing cache
+  //       ConnectionManager.#routingCache.set(collectionName, {
+  //         dbType,
+  //         connection,
+  //         lastAccessed: new Date().toISOString()
+  //       });
+  //       return connection;
+  //     }
+  //   }
+
+  //   // Default fallback to admin database for unmapped collections
+  //   logger.debug(`Collection ${collectionName} not mapped to specific database, using admin database`);
+  //   const adminConnection = ConnectionManager.getDatabaseConnection('admin');
+  //   if (adminConnection) {
+  //     // Cache the fallback routing
+  //     ConnectionManager.#routingCache.set(collectionName, {
+  //       dbType: 'admin',
+  //       connection: adminConnection,
+  //       lastAccessed: new Date().toISOString(),
+  //       fallback: true
+  //     });
+  //     return adminConnection;
+  //   }
+
+  //   // Final fallback to any available connection
+  //   const fallbackConnection = Array.from(ConnectionManager.#connections.values())
+  //     .find(conn => conn.readyState === ConnectionManager.#CONNECTION_STATES.CONNECTED);
+
+  //   if (fallbackConnection) {
+  //     logger.warn(`Using emergency fallback connection for collection: ${collectionName}`);
+  //     return fallbackConnection;
+  //   }
+
+  //   logger.error(`No available connection for collection: ${collectionName}`);
+  //   return null;
+  // }
+
   static getConnectionForCollection(collectionName) {
-    // Check routing cache first for performance
+    // Check routing cache first
     const cached = ConnectionManager.#routingCache.get(collectionName);
     if (cached && cached.connection.readyState === ConnectionManager.#CONNECTION_STATES.CONNECTED) {
       cached.lastAccessed = new Date().toISOString();
@@ -1327,7 +1392,6 @@ class ConnectionManager {
     if (dbType) {
       const connection = ConnectionManager.getDatabaseConnection(dbType);
       if (connection) {
-        // Update routing cache
         ConnectionManager.#routingCache.set(collectionName, {
           dbType,
           connection,
@@ -1337,27 +1401,26 @@ class ConnectionManager {
       }
     }
 
-    // Default fallback to admin database for unmapped collections
-    logger.debug(`Collection ${collectionName} not mapped to specific database, using admin database`);
-    const adminConnection = ConnectionManager.getDatabaseConnection('admin');
-    if (adminConnection) {
-      // Cache the fallback routing
-      ConnectionManager.#routingCache.set(collectionName, {
-        dbType: 'admin',
-        connection: adminConnection,
-        lastAccessed: new Date().toISOString(),
-        fallback: true
-      });
-      return adminConnection;
+    // Enhanced fallback logic - prefer business database for unmapped business collections
+    if (collectionName.match(/^(client|project|consultant|engagement|job|candidate|application|partnership)/)) {
+      const businessConnection = ConnectionManager.getDatabaseConnection('business');
+      if (businessConnection) {
+        logger.info(`Routing unmapped business collection '${collectionName}' to business database`);
+        ConnectionManager.#routingCache.set(collectionName, {
+          dbType: 'business',
+          connection: businessConnection,
+          lastAccessed: new Date().toISOString(),
+          fallback: true
+        });
+        return businessConnection;
+      }
     }
 
-    // Final fallback to any available connection
-    const fallbackConnection = Array.from(ConnectionManager.#connections.values())
-      .find(conn => conn.readyState === ConnectionManager.#CONNECTION_STATES.CONNECTED);
-    
-    if (fallbackConnection) {
-      logger.warn(`Using emergency fallback connection for collection: ${collectionName}`);
-      return fallbackConnection;
+    // Default fallback to admin database
+    const adminConnection = ConnectionManager.getDatabaseConnection('admin');
+    if (adminConnection) {
+      logger.warn(`Using admin database fallback for collection: ${collectionName}`);
+      return adminConnection;
     }
 
     logger.error(`No available connection for collection: ${collectionName}`);
@@ -1616,7 +1679,7 @@ class ConnectionManager {
       for (const [dbType, uri] of Object.entries(databaseUris)) {
         try {
           const connectionName = `${dbType}_connection`;
-          
+
           // Database-specific connection options
           const dbOptions = {
             ...ConnectionManager.#DEFAULT_OPTIONS,
@@ -1683,17 +1746,17 @@ class ConnectionManager {
             `Failed to connect to ${dbType} database`,
             500,
             'MULTI_DATABASE_CONNECTION_ERROR',
-            { 
+            {
               databaseType: dbType,
               databaseName: databaseUris[dbType],
-              originalError: error.message 
+              originalError: error.message
             }
           );
         }
       }
 
       const connectedDatabases = Object.keys(connections);
-      
+
       // Ensure at least one connection is available
       if (connectedDatabases.length === 0) {
         throw new AppError(
@@ -1966,7 +2029,7 @@ class ConnectionManager {
         if (stats) {
           stats.healthChecks.failed++;
         }
-        
+
         return {
           status: 'disconnected',
           connectionName,
@@ -1978,7 +2041,7 @@ class ConnectionManager {
 
       // Perform ping test with timeout
       const pingPromise = connection.db.admin().ping();
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Health check timeout')), 5000)
       );
 
@@ -1986,7 +2049,7 @@ class ConnectionManager {
 
       // Test basic operations
       const collections = await connection.db.listCollections({}, { nameOnly: true }).toArray();
-      
+
       if (stats) {
         stats.healthChecks.successful++;
       }
@@ -2103,7 +2166,7 @@ class ConnectionManager {
   static async executeTransaction(callback, options = {}) {
     try {
       const { database = 'admin', ...transactionOptions } = options;
-      
+
       const connection = ConnectionManager.getDatabaseConnection(database);
       if (!connection) {
         throw new AppError(
@@ -2143,9 +2206,9 @@ class ConnectionManager {
         'Transaction execution failed',
         500,
         'TRANSACTION_ERROR',
-        { 
+        {
           database: options.database,
-          originalError: error.message 
+          originalError: error.message
         }
       );
     }
@@ -2388,7 +2451,7 @@ class ConnectionManager {
           if (stats) {
             // Force disconnect first
             await ConnectionManager.disconnect(connectionName, true);
-            
+
             // Note: Would need original URI and options stored to properly reconnect
             // For now, mark as needing manual intervention
             reconnectionResults.set(connectionName, {
