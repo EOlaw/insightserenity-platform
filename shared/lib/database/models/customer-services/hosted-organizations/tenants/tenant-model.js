@@ -12,11 +12,11 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../base-model');
-const logger = require('../../../utils/logger');
-const { AppError } = require('../../../utils/app-error');
-const stringHelper = require('../../../utils/helpers/string-helper');
-const EncryptionService = require('../../../security/encryption/encryption-service');
+const BaseModel = require('../../../base-model');
+const logger = require('../../../../../utils/logger');
+const { AppError } = require('../../../../../utils/app-error');
+const stringHelper = require('../../../../../utils/helpers/string-helper');
+const EncryptionService = require('../../../../../security/encryption/encryption-service');
 
 /**
  * Tenant schema definition for multi-tenant architecture
