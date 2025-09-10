@@ -19,7 +19,7 @@
 const mongoose = require('mongoose');
 const logger = require('../../../../../../shared/lib/utils/logger');
 const { AppError, ValidationError, NotFoundError, ConflictError, ForbiddenError } = require('../../../../../../shared/lib/utils/app-error');
-const asyncHandler = require('../../../../../../shared/lib/utils/async-handler');
+const { asyncHandler } = require('../../../../../../shared/lib/utils/async-handler');
 const CacheService = require('../../../../../../shared/lib/services/cache-service');
 const EmailService = require('../../../../../../shared/lib/services/email-service');
 const NotificationService = require('../../../../../../shared/lib/services/notification-service');
