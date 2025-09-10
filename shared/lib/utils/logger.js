@@ -58,10 +58,10 @@ class Logger {
     };
 
     /**
-     * FIXED: Safe configuration access using existing baseConfig structure
+     * FIXED: Safe configuration access with proper fallbacks
      */
     static #getConfig() {
-        // FIXED: Try to get config, but fallback to safe defaults if not available
+        // Try to get config, but fallback to safe defaults if not available
         let config = null;
         try {
             config = require('../../config');
@@ -70,8 +70,8 @@ class Logger {
             console.log('Config module not available, using environment variables for logging');
         }
 
-        // Use existing baseConfig logging structure or environment variables
-        const loggingConfig = config?.logging || {
+        // Create default logging configuration with proper fallbacks
+        const defaultLoggingConfig = {
             level: process.env.LOG_LEVEL || 'info',
             consoleLevel: process.env.CONSOLE_LOG_LEVEL || 'info',
             enableFileLogging: process.env.ENABLE_FILE_LOGGING === 'true',
@@ -80,6 +80,32 @@ class Logger {
             maxFiles: parseInt(process.env.LOG_MAX_FILES, 10) || 10,
             separateLogFiles: process.env.SEPARATE_LOG_FILES === 'true'
         };
+
+        // Safely merge with config.logging, ensuring all required properties exist
+        let loggingConfig = defaultLoggingConfig;
+
+        if (config && config.logging) {
+            loggingConfig = {
+                ...defaultLoggingConfig,
+                ...config.logging
+            };
+
+            // Ensure directory is always a string
+            if (!loggingConfig.directory || typeof loggingConfig.directory !== 'string') {
+                loggingConfig.directory = defaultLoggingConfig.directory;
+            }
+        }
+
+        // Validate critical properties
+        if (!loggingConfig.directory) {
+            loggingConfig.directory = 'logs';
+            console.warn('Log directory was undefined, defaulting to "logs"');
+        }
+
+        if (typeof loggingConfig.directory !== 'string') {
+            loggingConfig.directory = String(loggingConfig.directory);
+            console.warn('Log directory was not a string, converting to string');
+        }
 
         return {
             logging: loggingConfig,
@@ -108,7 +134,7 @@ class Logger {
     static #createLogger() {
         const config = this.#getConfig();
         const logDir = config.logging.directory;
-        
+
         // Ensure log directory exists
         try {
             if (!fs.existsSync(logDir)) {
@@ -133,17 +159,17 @@ class Logger {
             winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
             winston.format.printf(({ timestamp, level, message, metadata, ...rest }) => {
                 let log = `${timestamp} [${level}]: ${message}`;
-                
+
                 // Add metadata if present
                 if (metadata && Object.keys(metadata).length > 0) {
                     log += ` ${JSON.stringify(metadata)}`;
                 }
-                
+
                 // Add additional fields
-                const additionalFields = Object.keys(rest).filter(key => 
+                const additionalFields = Object.keys(rest).filter(key =>
                     !['timestamp', 'level', 'message', 'metadata'].includes(key)
                 );
-                
+
                 if (additionalFields.length > 0) {
                     const additional = additionalFields.reduce((acc, key) => {
                         acc[key] = rest[key];
@@ -151,7 +177,7 @@ class Logger {
                     }, {});
                     log += ` ${JSON.stringify(additional)}`;
                 }
-                
+
                 return log;
             })
         );
@@ -243,7 +269,7 @@ class Logger {
     static error(message, error, meta = {}) {
         const logger = this.getInstance();
         const errorMeta = this.#parseError(error);
-        
+
         logger.error(message, {
             ...errorMeta,
             ...meta,
@@ -319,7 +345,7 @@ class Logger {
      */
     static child(defaultMeta) {
         const childLogger = this.getInstance().child(defaultMeta);
-        
+
         return {
             error: (message, error, meta = {}) => {
                 const errorMeta = this.#parseError(error);
@@ -343,7 +369,7 @@ class Logger {
      */
     static #parseError(error) {
         if (!error) return {};
-        
+
         if (error instanceof Error) {
             return {
                 error: {
@@ -356,11 +382,11 @@ class Logger {
                 }
             };
         }
-        
+
         if (typeof error === 'object') {
             return { error };
         }
-        
+
         return { error: { message: String(error) } };
     }
 
@@ -372,7 +398,7 @@ class Logger {
      */
     static stream(options = {}) {
         const logger = this.getInstance();
-        
+
         return {
             write: (message) => {
                 logger.info(message.trim(), { stream: true, ...options });
@@ -388,7 +414,7 @@ class Logger {
      */
     static async query(options = {}) {
         const logger = this.getInstance();
-        
+
         return new Promise((resolve, reject) => {
             const queryOptions = {
                 from: options.from || new Date(Date.now() - 24 * 60 * 60 * 1000),
@@ -398,7 +424,7 @@ class Logger {
                 order: options.order || 'desc',
                 fields: options.fields
             };
-            
+
             logger.query(queryOptions, (err, results) => {
                 if (err) reject(err);
                 else resolve(results);
@@ -425,7 +451,7 @@ class Logger {
      */
     static startTimer(label) {
         const start = Date.now();
-        
+
         return (meta = {}) => {
             const duration = Date.now() - start;
             this.info(`${label} completed`, {
@@ -478,15 +504,15 @@ class Logger {
      */
     static configure(options) {
         const logger = this.getInstance();
-        
+
         if (options.level) {
             logger.level = options.level;
         }
-        
+
         if (options.silent !== undefined) {
             logger.silent = options.silent;
         }
-        
+
         if (options.defaultMeta) {
             Object.assign(logger.defaultMeta, options.defaultMeta);
         }
@@ -515,7 +541,7 @@ class Logger {
     static async close() {
         try {
             const logger = this.getInstance();
-            
+
             return new Promise((resolve) => {
                 logger.end(() => {
                     this.#instance = null;

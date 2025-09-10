@@ -92,10 +92,10 @@ const { authorize } = require('../../shared/lib/auth/middleware/authorize');
 const SessionManager = require('../../shared/lib/security/session-manager');
 
 // Shared Services
-const { 
-    EmailService, 
-    CacheService, 
-    PaymentService, 
+const {
+    EmailService,
+    CacheService,
+    PaymentService,
     FileService,
     NotificationService,
     AnalyticsService,
@@ -159,16 +159,20 @@ try {
 // =============================================================================
 console.log('🔄 DEBUG: Loading business module routes...');
 
-// Core Business Module Routes
-let clientsRoutes, projectsRoutes, consultantsRoutes, engagementsRoutes, coreAnalyticsRoutes;
+const clientsRoutes = require('./modules/core-business/clients/routes');
+console.log('✅ DEBUG: Clients routes loaded', clientsRoutes.stack?.length);
 
-try {
-    clientsRoutes = require('./modules/core-business/clients/routes');
-    console.log('✅ DEBUG: Clients routes loaded');
-} catch (error) {
-    console.warn('⚠️  DEBUG: Clients routes not available:', error.message);
-    clientsRoutes = null;
-}
+
+// Core Business Module Routes
+let projectsRoutes, consultantsRoutes, engagementsRoutes, coreAnalyticsRoutes;
+
+// try {
+//     clientsRoutes = require('./modules/core-business/clients/routes');
+//     console.log('✅ DEBUG: Clients routes loaded');
+// } catch (error) {
+//     console.warn('⚠️  DEBUG: Clients routes not available:', error.message);
+//     clientsRoutes = null;
+// }
 
 try {
     projectsRoutes = require('./modules/core-business/projects/routes');
@@ -335,10 +339,10 @@ class CustomerServicesApplication {
             averageResponseTime: 0
         };
         this.performanceMetrics = new Map();
-        
+
         // Configuration
         this.config = this.createMergedConfiguration();
-        
+
         console.log('✅ DEBUG: CustomerServicesApplication instance created');
     }
 
@@ -349,7 +353,7 @@ class CustomerServicesApplication {
     createMergedConfiguration() {
         try {
             console.log('🔧 DEBUG: Creating merged configuration...');
-            
+
             const defaultConfig = {
                 app: {
                     env: process.env.NODE_ENV || 'development',
@@ -372,7 +376,7 @@ class CustomerServicesApplication {
                         credentials: true,
                         methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
                         allowedHeaders: [
-                            'Content-Type', 'Authorization', 'X-Tenant-ID', 
+                            'Content-Type', 'Authorization', 'X-Tenant-ID',
                             'X-Organization-ID', 'X-API-Key', 'X-Request-ID'
                         ]
                     },
@@ -440,7 +444,7 @@ class CustomerServicesApplication {
             this.setupFileUploadSupport();
             this.setupBusinessRoutes();
             this.setupErrorHandling();
-            
+
             console.log('✅ DEBUG: Customer Services Application initialization completed');
             return this.app;
         } catch (error) {
@@ -457,16 +461,16 @@ class CustomerServicesApplication {
     setupTrustProxy() {
         try {
             console.log('🔄 DEBUG: Setting up trust proxy...');
-            
+
             if (this.config.services.behindProxy || this.config.app.env === 'production') {
                 this.app.set('trust proxy', this.config.services.trustProxyLevel);
                 console.log(`✅ DEBUG: Trust proxy configured (level: ${this.config.services.trustProxyLevel})`);
             }
-            
+
             // View engine setup for any server-rendered pages
             this.app.set('view engine', 'ejs');
             this.app.set('views', path.join(__dirname, 'views'));
-            
+
         } catch (error) {
             console.error('❌ DEBUG: Trust proxy setup failed:', error.message);
             throw error;
@@ -520,10 +524,10 @@ class CustomerServicesApplication {
                 res.on('finish', () => {
                     clearTimeout(timeout);
                     const duration = Date.now() - startTime;
-                    
+
                     // Update performance metrics
                     this.updatePerformanceMetrics(duration, res.statusCode);
-                    
+
                     if (process.env.DEBUG_REQUESTS === 'true') {
                         console.log(`✅ [${requestId}] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms) (#${req.requestNumber})`);
                     }
@@ -583,22 +587,22 @@ class CustomerServicesApplication {
         try {
             // Update business metrics
             this.businessMetrics.averageResponseTime = this.calculateRollingAverage(
-                this.businessMetrics.averageResponseTime, 
-                duration, 
+                this.businessMetrics.averageResponseTime,
+                duration,
                 100
             );
 
             // Update error rate
             if (statusCode >= 400) {
                 this.businessMetrics.errorRate = this.calculateRollingAverage(
-                    this.businessMetrics.errorRate, 
-                    1, 
+                    this.businessMetrics.errorRate,
+                    1,
                     100
                 );
             } else {
                 this.businessMetrics.errorRate = this.calculateRollingAverage(
-                    this.businessMetrics.errorRate, 
-                    0, 
+                    this.businessMetrics.errorRate,
+                    0,
                     100
                 );
             }
@@ -606,7 +610,7 @@ class CustomerServicesApplication {
             // Store detailed metrics for the last hour
             const now = Date.now();
             const hourAgo = now - 3600000;
-            
+
             // Clean old metrics
             for (const [timestamp] of this.performanceMetrics) {
                 if (timestamp < hourAgo) {
@@ -683,7 +687,7 @@ class CustomerServicesApplication {
                         if (!origin) return callback(null, true);
 
                         const allowedOrigins = this.config.security.cors.origins;
-                        
+
                         // Development: allow all localhost and development origins
                         if (this.config.app.env === 'development') {
                             if (origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes('dev')) {
@@ -830,8 +834,8 @@ class CustomerServicesApplication {
 
             // Request logging
             if (this.config.app.env !== 'test') {
-                const morganFormat = this.config.app.env === 'development' 
-                    ? 'dev' 
+                const morganFormat = this.config.app.env === 'development'
+                    ? 'dev'
                     : ':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" :response-time ms';
 
                 this.app.use(morgan(morganFormat, {
@@ -1281,6 +1285,10 @@ class CustomerServicesApplication {
                 });
             });
 
+            // this.app.get('/api/clients/health', (req, res) => {
+            //     res.json({ status: 'healthy', message: 'test works' });
+            // });
+
             // Authentication routes
             this.setupAuthenticationRoutes();
 
@@ -1288,16 +1296,16 @@ class CustomerServicesApplication {
             const apiRouter = express.Router();
 
             // API-level middleware
-            apiRouter.use((req, res, next) => {
-                // Set API context
-                req.businessContext.module = req.path.split('/')[1] || 'unknown';
-                next();
-            });
+            // apiRouter.use((req, res, next) => {
+            //     // Set API context
+            //     req.businessContext.module = req.path.split('/')[1] || 'unknown';
+            //     next();
+            // });
 
             // Core Business Module Routes
             console.log('🏢 DEBUG: Setting up Core Business routes...');
             if (clientsRoutes) {
-                apiRouter.use('/clients', authenticate, clientsRoutes);
+                apiRouter.use('/clients', clientsRoutes);
                 console.log('✅ DEBUG: Clients routes mounted at /api/clients');
             }
 
@@ -1421,7 +1429,7 @@ class CustomerServicesApplication {
                             error: { message: 'Authentication error', code: 'AUTH_ERROR' }
                         });
                     }
-                    
+
                     if (!user) {
                         return res.status(401).json({
                             success: false,
@@ -1581,7 +1589,7 @@ class CustomerServicesApplication {
             // OAuth routes (if enabled)
             if (GoogleStrategy) {
                 authRouter.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-                authRouter.get('/google/callback', 
+                authRouter.get('/google/callback',
                     passport.authenticate('google', { failureRedirect: '/auth/login' }),
                     (req, res) => {
                         res.redirect(process.env.FRONTEND_URL || '/');
@@ -1656,7 +1664,7 @@ class CustomerServicesApplication {
             // Business metrics
             router.get('/metrics', authenticate, (req, res) => {
                 const tenantMetrics = this.getTenantMetrics(req.businessContext.tenantId);
-                
+
                 res.json({
                     success: true,
                     data: {
@@ -1742,14 +1750,14 @@ class CustomerServicesApplication {
     calculateRequestsPerMinute() {
         const now = Date.now();
         const oneMinuteAgo = now - 60000;
-        
+
         let requestsInLastMinute = 0;
         for (const [timestamp] of this.performanceMetrics) {
             if (timestamp >= oneMinuteAgo) {
                 requestsInLastMinute++;
             }
         }
-        
+
         return requestsInLastMinute;
     }
 
@@ -1963,7 +1971,7 @@ class CustomerServicesApplication {
      */
     getBusinessModules() {
         const modules = [];
-        
+
         if (clientsRoutes) modules.push('clients');
         if (projectsRoutes) modules.push('projects');
         if (consultantsRoutes) modules.push('consultants');
@@ -1976,7 +1984,7 @@ class CustomerServicesApplication {
         if (candidatesRoutes) modules.push('candidates');
         if (applicationsRoutes) modules.push('applications');
         if (partnershipsRoutes) modules.push('partnerships');
-        
+
         return modules;
     }
 }

@@ -93,7 +93,7 @@ console.log(`FILE_STORAGE_PROVIDER: ${process.env.FILE_STORAGE_PROVIDER}`);
 console.log(`Environment file loaded from: ${envPath}`);
 
 // =============================================================================
-// MODULE IMPORTS - AFTER ENVIRONMENT LOADING
+// SHARED MODULE IMPORTS - AFTER ENVIRONMENT LOADING
 // =============================================================================
 const http = require('http');
 const https = require('https');
@@ -101,16 +101,6 @@ const fs = require('fs');
 const WebSocket = require('ws');
 
 console.log('🔄 DEBUG: Loading core modules...');
-
-let app;
-try {
-    app = require('./app');
-    console.log('✅ DEBUG: Customer Services App module loaded successfully');
-} catch (error) {
-    console.error('❌ DEBUG: Failed to load app module:', error.message);
-    console.error('❌ Stack:', error.stack);
-    throw error;
-}
 
 let config;
 try {
@@ -254,8 +244,8 @@ class CustomerServicesServer extends EventEmitter {
 
             // Set up environment-specific configurations
             this.setupEnvironmentConfig();
-            
-            // Initialize database connection FIRST
+
+            // STEP 1: Initialize database connection FIRST
             console.log('🔄 DEBUG: Initializing database connection...');
             try {
                 await Database.initialize();
@@ -266,7 +256,19 @@ class CustomerServicesServer extends EventEmitter {
                 throw dbError;
             }
 
-            // Initialize multi-tenant architecture
+            // STEP 2: Load Express application AFTER database is initialized
+            console.log('🔄 DEBUG: Loading Express application...');
+            let app;
+            try {
+                app = require('./app');
+                console.log('✅ DEBUG: Customer Services App module loaded successfully');
+            } catch (error) {
+                console.error('❌ DEBUG: Failed to load app module:', error.message);
+                console.error('❌ Stack:', error.stack);
+                throw error;
+            }
+
+            // STEP 3: Initialize multi-tenant architecture
             console.log('🔄 DEBUG: Initializing multi-tenant architecture...');
             try {
                 await this.initializeMultiTenantArchitecture();
@@ -281,11 +283,11 @@ class CustomerServicesServer extends EventEmitter {
                 }
             }
 
-            // Initialize shared services
+            // STEP 4: Initialize shared services
             console.log('🔄 DEBUG: Initializing shared services...');
             await this.initializeSharedServices();
 
-            // Initialize session manager
+            // STEP 5: Initialize session manager
             console.log('🔄 DEBUG: Initializing session manager...');
             try {
                 this.sessionManager = new SessionManager({
@@ -314,7 +316,7 @@ class CustomerServicesServer extends EventEmitter {
                 this.sessionManager = null;
             }
 
-            // Initialize the Express application
+            // STEP 6: Start the Express application
             console.log('🔄 DEBUG: Starting Express application...');
             let expressApp;
             try {
@@ -330,7 +332,7 @@ class CustomerServicesServer extends EventEmitter {
                 throw new Error('Failed to initialize Customer Services Express application');
             }
 
-            // Create server with SSL support
+            // STEP 7: Create server with SSL support
             console.log('🔄 DEBUG: Creating server...');
             try {
                 if (this.shouldUseSSL()) {
@@ -346,7 +348,7 @@ class CustomerServicesServer extends EventEmitter {
                 throw serverError;
             }
 
-            // Initialize WebSocket server if enabled
+            // STEP 8: Initialize WebSocket server if enabled
             if (process.env.WEBSOCKET_ENABLED === 'true') {
                 console.log('🔄 DEBUG: Initializing WebSocket server...');
                 try {
@@ -358,12 +360,12 @@ class CustomerServicesServer extends EventEmitter {
                 }
             }
 
-            // Start listening
+            // STEP 9: Start listening
             console.log('🔄 DEBUG: Starting server listening...');
             await this.listen();
             console.log('✅ DEBUG: Server listening started');
 
-            // Setup handlers
+            // STEP 10: Setup handlers
             console.log('🔄 DEBUG: Setting up handlers...');
             this.setupConnectionHandlers();
             this.setupGracefulShutdown();
@@ -1439,6 +1441,7 @@ class CustomerServicesServer extends EventEmitter {
                 // Stop Express app
                 console.log('🔄 DEBUG: Stopping Express app...');
                 try {
+                    const app = require('./app');
                     if (app.stop && typeof app.stop === 'function') {
                         await app.stop();
                     }

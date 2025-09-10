@@ -9,7 +9,7 @@
 const Logger = require('./logger');
 const { AppError } = require('./app-error');
 const AsyncHandler = require('./async-handler');
-const ResponseFormatter = require('./response-formatter');
+const { ResponseFormatter } = require('./response-formatter');
 
 // Constants
 const ErrorCodes = require('./constants/error-codes');

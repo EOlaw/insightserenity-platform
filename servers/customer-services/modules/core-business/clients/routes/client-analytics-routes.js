@@ -332,37 +332,37 @@ router.get(
 );
 
 // Get engagement metrics
-router.get(
-  '/engagement',
-  // authorize(['admin', 'manager', 'analyst', 'viewer']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-engagement-metrics'),
-  ClientAnalyticsController.getEngagementMetrics
-);
+// router.get(
+//   '/engagement',
+//   // authorize(['admin', 'manager', 'analyst', 'viewer']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-engagement-metrics'),
+//   ClientAnalyticsController.getEngagementMetrics
+// );
 
-// Get financial metrics
-router.get(
-  '/financial',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-financial-metrics'),
-  ClientAnalyticsController.getFinancialMetrics
-);
+// // Get financial metrics
+// router.get(
+//   '/financial',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-financial-metrics'),
+//   ClientAnalyticsController.getFinancialMetrics
+// );
 
-// Get retention metrics
-router.get(
-  '/retention',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-retention-metrics'),
-  ClientAnalyticsController.getRetentionMetrics
-);
+// // Get retention metrics
+// router.get(
+//   '/retention',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-retention-metrics'),
+//   ClientAnalyticsController.getRetentionMetrics
+// );
 
 /**
  * ===============================================================================
@@ -382,36 +382,36 @@ router.get(
 );
 
 // Get churn analysis
-router.get(
-  '/churn-analysis',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.predictive),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-churn-analysis'),
-  ClientAnalyticsController.getChurnAnalysis
-);
+// router.get(
+//   '/churn-analysis',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.predictive),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-churn-analysis'),
+//   ClientAnalyticsController.getChurnAnalysis
+// );
 
-// Get growth predictions
-router.get(
-  '/growth-predictions',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.predictive),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-growth-predictions'),
-  ClientAnalyticsController.getGrowthPredictions
-);
+// // Get growth predictions
+// router.get(
+//   '/growth-predictions',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.predictive),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-growth-predictions'),
+//   ClientAnalyticsController.getGrowthPredictions
+// );
 
-// Get upsell opportunities
-router.get(
-  '/upsell-opportunities',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.predictive),
-  analyticsOperationLogger('get-upsell-opportunities'),
-  ClientAnalyticsController.getUpsellOpportunities
-);
+// // Get upsell opportunities
+// router.get(
+//   '/upsell-opportunities',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.predictive),
+//   analyticsOperationLogger('get-upsell-opportunities'),
+//   ClientAnalyticsController.getUpsellOpportunities
+// );
 
 /**
  * ===============================================================================
@@ -420,38 +420,38 @@ router.get(
  */
 
 // Get client comparisons
-router.get(
-  '/comparisons',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.default),
-  processAnalyticsParams,
-  // ClientAnalyticsValidators.validateComparison,
-  analyticsOperationLogger('get-comparisons'),
-  ClientAnalyticsController.getClientComparisons
-);
+// router.get(
+//   '/comparisons',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.default),
+//   processAnalyticsParams,
+//   // ClientAnalyticsValidators.validateComparison,
+//   analyticsOperationLogger('get-comparisons'),
+//   ClientAnalyticsController.getClientComparisons
+// );
 
-// Get industry benchmarks
-router.get(
-  '/benchmarks',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.default),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-benchmarks'),
-  ClientAnalyticsController.getIndustryBenchmarks
-);
+// // Get industry benchmarks
+// router.get(
+//   '/benchmarks',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.default),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-benchmarks'),
+//   ClientAnalyticsController.getIndustryBenchmarks
+// );
 
 // Get competitive analysis
-router.get(
-  '/competitive',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.default),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-competitive-analysis'),
-  ClientAnalyticsController.getCompetitiveAnalysis
-);
+// router.get(
+//   '/competitive',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.default),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-competitive-analysis'),
+//   ClientAnalyticsController.getCompetitiveAnalysis
+// );
 
 /**
  * ===============================================================================
@@ -460,15 +460,15 @@ router.get(
  */
 
 // Get trend analysis
-router.get(
-  '/trends',
-  // authorize(['admin', 'manager', 'analyst', 'viewer']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-trends'),
-  ClientAnalyticsController.getTrendAnalysis
-);
+// router.get(
+//   '/trends',
+//   // authorize(['admin', 'manager', 'analyst', 'viewer']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-trends'),
+//   ClientAnalyticsController.getTrendAnalysis
+// );
 
 // Get health score analytics
 router.get(
@@ -482,15 +482,15 @@ router.get(
 );
 
 // Get revenue analytics
-router.get(
-  '/revenue',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-revenue-analytics'),
-  ClientAnalyticsController.getRevenueAnalytics
-);
+// router.get(
+//   '/revenue',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-revenue-analytics'),
+//   ClientAnalyticsController.getRevenueAnalytics
+// );
 
 /**
  * ===============================================================================
@@ -499,37 +499,37 @@ router.get(
  */
 
 // Get portfolio analytics
-router.get(
-  '/portfolio',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.aggregation),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-portfolio-analytics'),
-  ClientAnalyticsController.getPortfolioAnalytics
-);
+// router.get(
+//   '/portfolio',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.aggregation),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-portfolio-analytics'),
+//   ClientAnalyticsController.getPortfolioAnalytics
+// );
 
-// Get client scorecard
-router.get(
-  '/scorecard',
-  // authorize(['admin', 'manager', 'analyst', 'viewer']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-scorecard'),
-  ClientAnalyticsController.getClientScorecard
-);
+// // Get client scorecard
+// router.get(
+//   '/scorecard',
+//   // authorize(['admin', 'manager', 'analyst', 'viewer']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-scorecard'),
+//   ClientAnalyticsController.getClientScorecard
+// );
 
-// Get risk assessment
-router.get(
-  '/risk-assessment',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.default),
-  processAnalyticsParams,
-  analyticsOperationLogger('get-risk-assessment'),
-  ClientAnalyticsController.getRiskAssessment
-);
+// // Get risk assessment
+// router.get(
+//   '/risk-assessment',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.default),
+//   processAnalyticsParams,
+//   analyticsOperationLogger('get-risk-assessment'),
+//   ClientAnalyticsController.getRiskAssessment
+// );
 
 /**
  * ===============================================================================
@@ -538,15 +538,15 @@ router.get(
  */
 
 // Get custom metrics
-router.post(
-  '/custom-metrics',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.default),
-  // ClientAnalyticsValidators.validateCustomMetrics,
-  analyticsOperationLogger('get-custom-metrics'),
-  ClientAnalyticsController.getCustomMetrics
-);
+// router.post(
+//   '/custom-metrics',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // costBasedLimit(calculateAnalyticsCost, RATE_LIMITS.default),
+//   // ClientAnalyticsValidators.validateCustomMetrics,
+//   analyticsOperationLogger('get-custom-metrics'),
+//   ClientAnalyticsController.getCustomMetrics
+// );
 
 // Create custom report
 router.post(
@@ -576,25 +576,25 @@ router.post(
   ClientAnalyticsController.generateAnalyticsReport
 );
 
-// Schedule report
-router.post(
-  '/report/schedule',
-  // authorize(['admin', 'manager']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  // ClientAnalyticsValidators.validateReportSchedule,
-  analyticsOperationLogger('schedule-report'),
-  ClientAnalyticsController.scheduleReport
-);
+// // Schedule report
+// router.post(
+//   '/report/schedule',
+//   // authorize(['admin', 'manager']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   // ClientAnalyticsValidators.validateReportSchedule,
+//   analyticsOperationLogger('schedule-report'),
+//   ClientAnalyticsController.scheduleReport
+// );
 
-// Get report history
-router.get(
-  '/report/history',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  ClientAnalyticsController.getReportHistory
-);
+// // Get report history
+// router.get(
+//   '/report/history',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   ClientAnalyticsController.getReportHistory
+// );
 
 /**
  * ===============================================================================
@@ -620,22 +620,22 @@ router.get(
  */
 
 // Get alert metrics
-router.get(
-  '/alerts',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  ClientAnalyticsController.getAlertMetrics
-);
+// router.get(
+//   '/alerts',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   ClientAnalyticsController.getAlertMetrics
+// );
 
-// Get notification metrics
-router.get(
-  '/notifications',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  ClientAnalyticsController.getContactNotifications
-);
+// // Get notification metrics
+// router.get(
+//   '/notifications',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   ClientAnalyticsController.getContactNotifications
+// );
 
 /**
  * ===============================================================================
@@ -643,45 +643,45 @@ router.get(
  * ===============================================================================
  */
 
-// Update analytics settings
-router.put(
-  '/settings',
-  // authorize(['admin', 'manager']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  // ClientAnalyticsValidators.validateSettings,
-  analyticsOperationLogger('update-settings'),
-  ClientAnalyticsController.updateAnalyticsSettings
-);
+// // Update analytics settings
+// router.put(
+//   '/settings',
+//   // authorize(['admin', 'manager']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   // ClientAnalyticsValidators.validateSettings,
+//   analyticsOperationLogger('update-settings'),
+//   ClientAnalyticsController.updateAnalyticsSettings
+// );
 
-// Refresh analytics cache
-router.post(
-  '/refresh',
-  // authorize(['admin', 'manager']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  analyticsOperationLogger('refresh-cache'),
-  ClientAnalyticsController.refreshAnalyticsCache
-);
+// // Refresh analytics cache
+// router.post(
+//   '/refresh',
+//   // authorize(['admin', 'manager']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   analyticsOperationLogger('refresh-cache'),
+//   ClientAnalyticsController.refreshAnalyticsCache
+// );
 
-// Get analytics metadata
-router.get(
-  '/metadata',
-  // authorize(['admin', 'manager', 'analyst', 'viewer']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  ClientAnalyticsController.getAnalyticsMetadata
-);
+// // Get analytics metadata
+// router.get(
+//   '/metadata',
+//   // authorize(['admin', 'manager', 'analyst', 'viewer']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   ClientAnalyticsController.getAnalyticsMetadata
+// );
 
-// Validate analytics data
-router.post(
-  '/validate',
-  // authorize(['admin', 'manager']),
-  validateAnalyticsAccess,
-  // limitByUser(RATE_LIMITS.default),
-  analyticsOperationLogger('validate-data'),
-  ClientAnalyticsController.validateAnalyticsData
-);
+// // Validate analytics data
+// router.post(
+//   '/validate',
+//   // authorize(['admin', 'manager']),
+//   validateAnalyticsAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   analyticsOperationLogger('validate-data'),
+//   ClientAnalyticsController.validateAnalyticsData
+// );
 
 /**
  * ===============================================================================

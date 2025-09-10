@@ -20,6 +20,13 @@ const stringHelper = require('../../utils/helpers/string-helper');
  * for all database models in the hybrid architecture with proper connection routing
  */
 class BaseModel {
+  /**
+   * @static
+   * @private
+   * @type {Object}
+   * @description Registry for schema definitions
+   */
+  static schemaDefinitions = new Map();
 
   /**
    * @static
@@ -60,6 +67,38 @@ class BaseModel {
    * @description Connection manager instance for routing
    */
   static connectionManager = null;
+
+  /**
+   * @static
+   * @private
+   * @type {Map<string, Object>}
+   * @description Deferred models waiting for ConnectionManager
+   */
+  static #deferredModels = new Map();
+
+  /**
+   * @static
+   * @private
+   * @type {Map<string, Array>}
+   * @description Deferred indexes waiting for model creation
+   */
+  static #deferredIndexes = new Map();
+
+  /**
+   * @static
+   * @private
+   * @type {number}
+   * @description Retry attempts for ConnectionManager availability
+   */
+  static #maxRetryAttempts = 3;
+
+  /**
+   * @static
+   * @private
+   * @type {number}
+   * @description Retry delay in milliseconds
+   */
+  static #retryDelay = 100;
 
   /**
    * Initialize BaseModel with ConnectionManager integration
@@ -107,18 +146,48 @@ class BaseModel {
   }
 
   /**
+   * FIXED: Wait for ConnectionManager with retry logic
+   * @static
+   * @private
+   * @param {number} [attempt=1] - Current attempt number
+   * @returns {Promise<Object|null>} ConnectionManager instance or null
+   */
+  static async #waitForConnectionManager(attempt = 1) {
+    if (BaseModel.connectionManager) {
+      return BaseModel.connectionManager;
+    }
+
+    if (attempt > BaseModel.#maxRetryAttempts) {
+      console.log(`❌ ConnectionManager not available after ${BaseModel.#maxRetryAttempts} attempts`);
+      return null;
+    }
+
+    console.log(`🔄 Waiting for ConnectionManager (attempt ${attempt}/${BaseModel.#maxRetryAttempts})`);
+    
+    // Wait before retry
+    await new Promise(resolve => setTimeout(resolve, BaseModel.#retryDelay * attempt));
+    
+    return BaseModel.#waitForConnectionManager(attempt + 1);
+  }
+
+  /**
    * Determine the correct database connection for a collection using ConnectionManager
    * @static
    * @private
    * @param {string} collectionName - Collection name
+   * @param {boolean} [useRetry=true] - Whether to retry if ConnectionManager not available
    * @returns {mongoose.Connection|null} Database connection
    */
-  static #getDatabaseConnectionForCollection(collectionName) {
+  static #getDatabaseConnectionForCollection(collectionName, useRetry = true) {
     console.log(`🔍 BaseModel.#getDatabaseConnectionForCollection('${collectionName}')`);
     
     if (!BaseModel.connectionManager) {
-      console.log('❌ No ConnectionManager available');
-      logger.warn('No ConnectionManager available for collection routing', { collectionName });
+      if (useRetry) {
+        console.log('🔄 ConnectionManager not available, will attempt retry during async operations');
+      } else {
+        console.log('❌ No ConnectionManager available');
+        logger.warn('No ConnectionManager available for collection routing', { collectionName });
+      }
       return null;
     }
 
@@ -168,6 +237,44 @@ class BaseModel {
         return null;
       }
     }
+  }
+
+  /**
+   * FIXED: Enhanced async connection retrieval with retry logic
+   * @static
+   * @private
+   * @param {string} collectionName - Collection name
+   * @returns {Promise<mongoose.Connection|null>} Database connection
+   */
+  static async #getDatabaseConnectionForCollectionAsync(collectionName) {
+    console.log(`🔍 BaseModel.#getDatabaseConnectionForCollectionAsync('${collectionName}')`);
+    
+    // First attempt without retry
+    let connection = BaseModel.#getDatabaseConnectionForCollection(collectionName, false);
+    
+    if (connection) {
+      return connection;
+    }
+
+    // If no ConnectionManager, wait for it
+    if (!BaseModel.connectionManager) {
+      console.log('🔄 Waiting for ConnectionManager to become available...');
+      const connectionManager = await BaseModel.#waitForConnectionManager();
+      
+      if (connectionManager) {
+        BaseModel.connectionManager = connectionManager;
+        console.log('✅ ConnectionManager now available, retrying connection');
+        connection = BaseModel.#getDatabaseConnectionForCollection(collectionName, false);
+      }
+    }
+
+    if (!connection) {
+      console.log(`⚠️  No database connection available for collection: ${collectionName}`);
+      // Return default mongoose connection as final fallback
+      return mongoose.connection.readyState === 1 ? mongoose.connection : null;
+    }
+
+    return connection;
   }
 
   /**
@@ -229,7 +336,7 @@ class BaseModel {
         BaseModel.addAuditFields(schema);
       }
 
-      // Get the correct database connection for this collection
+      // FIXED: Get the correct database connection with improved handling
       console.log(`🔗 Getting database connection for collection: '${collectionName}'`);
       const targetConnection = BaseModel.#getDatabaseConnectionForCollection(collectionName);
       
@@ -250,7 +357,35 @@ class BaseModel {
         }
       } else {
         console.log(`⚠️  No specific connection found, using default connection`);
-        model = mongoose.model(modelName, schema, collectionName);
+        
+        // FIXED: Check if default connection is available
+        if (mongoose.connection.readyState === 0) {
+          console.log(`🔄 Default connection not ready, creating model anyway for later connection`);
+        }
+        
+        try {
+          model = mongoose.model(modelName, schema, collectionName);
+          console.log(`✅ Model '${modelName}' created on default connection`);
+        } catch (modelError) {
+          console.log(`❌ Failed to create model on default connection: ${modelError.message}`);
+          
+          // FIXED: Store model information for later creation when connection is available
+          console.log(`📋 Storing model information for deferred creation`);
+          BaseModel.#storeModelForDeferredCreation(modelName, schema, options);
+          
+          // Return a placeholder that will be resolved later
+          const placeholder = function() {
+            throw new AppError(`Model ${modelName} not yet available - connection pending`, 503, 'MODEL_PENDING');
+          };
+          placeholder.modelName = modelName;
+          placeholder.isPending = true;
+          
+          BaseModel.modelRegistry.set(modelName, placeholder);
+          BaseModel.schemaCache.set(modelName, schema);
+          
+          console.log(`⏰ Model '${modelName}' stored for deferred creation`);
+          return placeholder;
+        }
       }
 
       // Enhance model with base functionality
@@ -262,7 +397,7 @@ class BaseModel {
       BaseModel.schemaCache.set(modelName, schema);
       console.log(`📝 Model '${modelName}' registered in BaseModel registry`);
 
-      // Test model creation by attempting to access the collection
+      // FIXED: Test model creation by attempting to access the collection
       if (targetConnection) {
         console.log(`🧪 Testing model '${modelName}' collection access...`);
         try {
@@ -310,6 +445,60 @@ class BaseModel {
         { modelName, originalError: error.message }
       );
     }
+  }
+
+  /**
+   * FIXED: Store model information for deferred creation
+   * @static
+   * @private
+   * @param {string} modelName - Model name
+   * @param {mongoose.Schema} schema - Schema
+   * @param {Object} options - Model options
+   */
+  static #storeModelForDeferredCreation(modelName, schema, options) {
+    if (!BaseModel.#deferredModels) {
+      BaseModel.#deferredModels = new Map();
+    }
+    
+    BaseModel.#deferredModels.set(modelName, {
+      schema,
+      options,
+      timestamp: Date.now()
+    });
+    
+    console.log(`📋 Model '${modelName}' stored for deferred creation`);
+  }
+
+  /**
+   * FIXED: Create deferred models when ConnectionManager becomes available
+   * @static
+   * @async
+   * @returns {Promise<void>}
+   */
+  static async createDeferredModels() {
+    if (!BaseModel.#deferredModels || BaseModel.#deferredModels.size === 0) {
+      console.log('📋 No deferred models to create');
+      return;
+    }
+
+    console.log(`🔄 Creating ${BaseModel.#deferredModels.size} deferred models...`);
+    
+    for (const [modelName, modelInfo] of BaseModel.#deferredModels) {
+      try {
+        console.log(`🏗️  Creating deferred model: ${modelName}`);
+        
+        const model = BaseModel.createModel(modelName, modelInfo.schema, modelInfo.options);
+        
+        if (model && !model.isPending) {
+          console.log(`✅ Deferred model '${modelName}' created successfully`);
+          BaseModel.#deferredModels.delete(modelName);
+        }
+      } catch (error) {
+        console.log(`❌ Failed to create deferred model '${modelName}': ${error.message}`);
+      }
+    }
+    
+    console.log(`✅ Deferred model creation completed. Remaining: ${BaseModel.#deferredModels.size}`);
   }
 
   /**
@@ -670,7 +859,7 @@ class BaseModel {
   }
 
   /**
-   * Gets a registered model by name
+   * FIXED: Gets a registered model by name with improved error handling
    * @static
    * @param {string} modelName - Model name
    * @returns {Function|null} Model constructor or null
@@ -678,6 +867,20 @@ class BaseModel {
   static getModel(modelName) {
     const model = BaseModel.modelRegistry.get(modelName);
     console.log(`🔍 BaseModel.getModel('${modelName}'): ${!!model ? 'Found' : 'Not found'}`);
+    
+    // FIXED: Handle pending models
+    if (model && model.isPending) {
+      console.log(`⏰ Model '${modelName}' is pending - attempting deferred creation`);
+      
+      // Try to create the deferred model
+      BaseModel.createDeferredModels().catch(error => {
+        console.log(`❌ Failed to create deferred models: ${error.message}`);
+      });
+      
+      // Return the pending model for now
+      return model;
+    }
+    
     return model || null;
   }
 
@@ -730,6 +933,21 @@ class BaseModel {
       const Model = BaseModel.getModel(modelName);
       if (!Model) {
         throw new AppError(`Model not found: ${modelName}`, 404, 'MODEL_NOT_FOUND');
+      }
+
+      if (Model.isPending) {
+        console.log(`⏰ Model '${modelName}' is pending, deferring index creation`);
+        // Store index creation for later
+        if (!BaseModel.#deferredIndexes) {
+          BaseModel.#deferredIndexes = new Map();
+        }
+        
+        if (!BaseModel.#deferredIndexes.has(modelName)) {
+          BaseModel.#deferredIndexes.set(modelName, []);
+        }
+        
+        BaseModel.#deferredIndexes.get(modelName).push({ indexSpec, options });
+        return;
       }
 
       await Model.collection.createIndex(indexSpec, options);
@@ -796,7 +1014,7 @@ class BaseModel {
   }
 
   /**
-   * Clears all registries (for testing)
+   * FIXED: Clears all registries with enhanced cleanup
    * @static
    */
   static clearRegistries() {
@@ -804,6 +1022,16 @@ class BaseModel {
     
     BaseModel.modelRegistry.clear();
     BaseModel.schemaCache.clear();
+    BaseModel.schemaDefinitions.clear();
+    
+    // Clear deferred models and indexes
+    if (BaseModel.#deferredModels) {
+      BaseModel.#deferredModels.clear();
+    }
+    if (BaseModel.#deferredIndexes) {
+      BaseModel.#deferredIndexes.clear();
+    }
+    
     BaseModel.initialized = false;
     BaseModel.connectionManager = null;
     BaseModel.auditService = null;
@@ -813,7 +1041,7 @@ class BaseModel {
   }
 
   /**
-   * Gets registry statistics
+   * FIXED: Gets registry statistics with enhanced information
    * @static
    * @returns {Object} Registry statistics
    */
@@ -821,11 +1049,17 @@ class BaseModel {
     const stats = {
       totalModels: BaseModel.modelRegistry.size,
       totalSchemas: BaseModel.schemaCache.size,
+      totalSchemaDefinitions: BaseModel.schemaDefinitions.size,
+      deferredModels: BaseModel.#deferredModels ? BaseModel.#deferredModels.size : 0,
+      deferredIndexes: BaseModel.#deferredIndexes ? BaseModel.#deferredIndexes.size : 0,
       initialized: BaseModel.initialized,
       auditEnabled: !!BaseModel.auditService,
       connectionManagerEnabled: !!BaseModel.connectionManager,
       connectionManagerInitialized: BaseModel.connectionManager ? BaseModel.connectionManager.isInitialized() : false,
-      models: Array.from(BaseModel.modelRegistry.keys())
+      models: Array.from(BaseModel.modelRegistry.keys()),
+      pendingModels: Array.from(BaseModel.modelRegistry.entries())
+        .filter(([name, model]) => model.isPending)
+        .map(([name]) => name)
     };
     
     console.log(`📊 BaseModel registry stats:`, stats);
@@ -896,6 +1130,82 @@ class BaseModel {
 
     console.log(`🧪 Integration test results:`, testResults);
     return testResults;
+  }
+
+  /**
+   * FIXED: Force refresh ConnectionManager reference
+   * @static
+   * @param {Object} connectionManager - New connection manager instance
+   */
+  static refreshConnectionManager(connectionManager) {
+    console.log('🔄 BaseModel.refreshConnectionManager() called');
+    
+    if (connectionManager) {
+      BaseModel.connectionManager = connectionManager;
+      console.log('✅ BaseModel ConnectionManager refreshed');
+      
+      // Attempt to create any deferred models
+      BaseModel.createDeferredModels().catch(error => {
+        console.log(`❌ Failed to create deferred models after refresh: ${error.message}`);
+      });
+      
+    } else {
+      console.log('⚠️  No ConnectionManager provided for refresh');
+    }
+  }
+
+  /**
+   * FIXED: Check and resolve pending models
+   * @static
+   * @returns {Object} Resolution status
+   */
+  static resolvePendingModels() {
+    console.log('🔄 BaseModel.resolvePendingModels() called');
+    
+    const pendingModels = Array.from(BaseModel.modelRegistry.entries())
+      .filter(([name, model]) => model && model.isPending);
+    
+    if (pendingModels.length === 0) {
+      console.log('✅ No pending models to resolve');
+      return { resolved: 0, pending: 0, errors: 0 };
+    }
+    
+    console.log(`🔄 Found ${pendingModels.length} pending models to resolve`);
+    
+    let resolved = 0;
+    let errors = 0;
+    
+    for (const [modelName, model] of pendingModels) {
+      try {
+        // Attempt to recreate the model
+        const schema = BaseModel.schemaCache.get(modelName);
+        if (schema) {
+          const collectionName = BaseModel.getCollectionName(modelName);
+          const connection = BaseModel.#getDatabaseConnectionForCollection(collectionName, false);
+          
+          if (connection) {
+            const newModel = connection.model(modelName, schema, collectionName);
+            BaseModel.enhanceModel(newModel);
+            BaseModel.modelRegistry.set(modelName, newModel);
+            resolved++;
+            console.log(`✅ Resolved pending model: ${modelName}`);
+          } else {
+            console.log(`⚠️  Still no connection available for: ${modelName}`);
+          }
+        } else {
+          console.log(`❌ No schema found for pending model: ${modelName}`);
+          errors++;
+        }
+      } catch (error) {
+        console.log(`❌ Error resolving pending model ${modelName}: ${error.message}`);
+        errors++;
+      }
+    }
+    
+    const remaining = pendingModels.length - resolved - errors;
+    console.log(`📊 Pending model resolution: ${resolved} resolved, ${remaining} pending, ${errors} errors`);
+    
+    return { resolved, pending: remaining, errors };
   }
 }
 

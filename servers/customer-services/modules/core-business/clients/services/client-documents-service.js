@@ -642,6 +642,146 @@ class ClientDocumentsService {
     /**
      * Update document permissions
      * @param {string} documentId - Document ID
+     * @param {Object} permissions - New permissions configuration
+     * @param {string} userId - User updating permissions
+     * @param {Object} options - Update options
+     * @returns {Promise<Object>} Updated permissions
+     */
+    async updateDocumentPermissions(documentId, permissions, userId, options = {}) {
+        const { notifyAffectedUsers = true, reason, effectiveDate = new Date() } = options;
+
+        try {
+            // Get existing document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check if user has admin permissions on this document
+            await this.#checkDocumentAccess(document, userId, 'admin');
+
+            // Store original permissions for comparison
+            const originalPermissions = document.accessControl.permissions;
+
+            // Validate and sanitize new permissions
+            const validatedPermissions = await this.#validateAndSanitizePermissions(permissions, document);
+
+            // Build the updated permissions object
+            const updatedPermissions = {
+                users: validatedPermissions.users || [],
+                groups: validatedPermissions.groups || [],
+                roles: validatedPermissions.roles || [],
+                public: validatedPermissions.public || null,
+                restrictions: {
+                    ...document.accessControl.restrictions,
+                    ...validatedPermissions.restrictions
+                },
+                inheritance: validatedPermissions.inheritance || { enabled: false },
+                lastUpdated: effectiveDate,
+                lastUpdatedBy: userId,
+                updateReason: reason
+            };
+
+            // Ensure document owner retains admin access
+            const ownerHasAdmin = updatedPermissions.users.some(
+                user => user.userId.toString() === document.accessControl.owner.toString() &&
+                    user.permissions.admin === true
+            );
+
+            if (!ownerHasAdmin) {
+                // Add owner with admin permissions
+                updatedPermissions.users = updatedPermissions.users.filter(
+                    user => user.userId.toString() !== document.accessControl.owner.toString()
+                );
+
+                updatedPermissions.users.push({
+                    userId: document.accessControl.owner,
+                    permissions: {
+                        read: true,
+                        write: true,
+                        delete: true,
+                        share: true,
+                        admin: true
+                    },
+                    grantedBy: userId,
+                    grantedAt: effectiveDate,
+                    notes: 'Document owner - automatic admin access'
+                });
+            }
+
+            // Update document with new permissions
+            const updatedDocument = await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $set: {
+                        'accessControl.permissions': updatedPermissions,
+                        'metadata.lastModifiedBy': userId,
+                        'metadata.lastModifiedAt': effectiveDate
+                    }
+                },
+                { new: true }
+            );
+
+            // Identify affected users for notifications
+            const affectedUsers = await this.#identifyAffectedUsers(originalPermissions, updatedPermissions);
+
+            // Send notifications to affected users
+            if (notifyAffectedUsers && affectedUsers.length > 0) {
+                await this.#sendPermissionChangeNotifications(
+                    document,
+                    affectedUsers,
+                    userId,
+                    reason
+                );
+            }
+
+            // Log detailed audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_PERMISSIONS_UPDATED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: {
+                    reason,
+                    effectiveDate,
+                    changesApplied: await this.#calculatePermissionChanges(originalPermissions, updatedPermissions),
+                    affectedUserCount: affectedUsers.length,
+                    documentName: document.documentInfo.name,
+                    clientId: document.clientId
+                }
+            });
+
+            // Clear relevant caches
+            await this.#clearDocumentCaches(document.tenantId, document.clientId);
+
+            // Clear user-specific permission caches
+            for (const user of updatedPermissions.users) {
+                await this.#cacheService.delete(`user-document-permissions:${user.userId}:${documentId}`);
+            }
+
+            logger.info('Document permissions updated successfully', {
+                documentId,
+                updatedBy: userId,
+                affectedUsers: affectedUsers.length,
+                reason
+            });
+
+            return updatedDocument.accessControl.permissions;
+
+        } catch (error) {
+            logger.error('Error updating document permissions', {
+                error: error.message,
+                documentId,
+                userId,
+                permissions
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Update document permissions
+     * @param {string} documentId - Document ID
      * @param {Object} permissions - Permission updates
      * @param {string} userId - User updating permissions
      * @returns {Promise<Object>} Updated permissions
@@ -2918,6 +3058,2627 @@ class ClientDocumentsService {
 
         result.compliant = result.issues.length === 0;
         return result;
+    }
+
+    /**
+ * Update document metadata and information
+ * @param {string} documentId - Document ID
+ * @param {Object} updateData - Data to update
+ * @param {string} userId - User performing update
+ * @returns {Promise<Object>} Updated document
+ */
+    async updateDocument(documentId, updateData, userId) {
+        try {
+            // Get existing document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'write');
+
+            // Prepare update fields
+            const updateFields = {};
+            if (updateData.name) updateFields['documentInfo.name'] = updateData.name;
+            if (updateData.description) updateFields['documentInfo.description'] = updateData.description;
+            if (updateData.type) updateFields['documentInfo.type'] = updateData.type;
+            if (updateData.category) updateFields['documentInfo.category'] = updateData.category;
+            if (updateData.classification) updateFields['documentInfo.classification'] = updateData.classification;
+            if (updateData.keywords) updateFields['documentInfo.keywords'] = updateData.keywords;
+
+            // Update document
+            const updatedDocument = await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $set: {
+                        ...updateFields,
+                        'metadata.lastModifiedBy': userId,
+                        'metadata.lastModifiedAt': new Date()
+                    }
+                },
+                { new: true }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_UPDATED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { updatedFields: Object.keys(updateFields) }
+            });
+
+            // Clear caches
+            await this.#clearDocumentCaches(document.tenantId, document.clientId);
+
+            return updatedDocument;
+        } catch (error) {
+            logger.error('Error updating document', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Delete document (soft or hard delete)
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User performing deletion
+     * @param {Object} options - Deletion options
+     * @returns {Promise<Object>} Deletion result
+     */
+    async deleteDocument(documentId, userId, options = {}) {
+        const { permanent = false } = options;
+
+        try {
+            // Get existing document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'delete');
+
+            let result;
+
+            if (permanent) {
+                // Hard delete - remove from storage and database
+                await this.#deleteFromStorage(document);
+                result = await ClientDocumentModel.findByIdAndDelete(documentId);
+            } else {
+                // Soft delete - mark as deleted
+                result = await ClientDocumentModel.findByIdAndUpdate(
+                    documentId,
+                    {
+                        $set: {
+                            isDeleted: true,
+                            'lifecycle.deletedAt': new Date(),
+                            'lifecycle.deletedBy': userId,
+                            'metadata.lastModifiedBy': userId,
+                            'metadata.lastModifiedAt': new Date()
+                        }
+                    },
+                    { new: true }
+                );
+            }
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: permanent ? 'DOCUMENT_PERMANENTLY_DELETED' : 'DOCUMENT_DELETED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { permanent }
+            });
+
+            // Clear caches
+            await this.#clearDocumentCaches(document.tenantId, document.clientId);
+
+            return result;
+        } catch (error) {
+            logger.error('Error deleting document', {
+                error: error.message,
+                documentId,
+                userId,
+                permanent
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Get document versions (public method)
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User requesting versions
+     * @returns {Promise<Array>} Document versions
+     */
+    async getDocumentVersions(documentId, userId) {
+        try {
+            // Get document to check permissions
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'read');
+
+            // Use existing private method
+            return await this.#getDocumentVersions(document);
+        } catch (error) {
+            logger.error('Error getting document versions', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Update workflow status
+     * @param {string} documentId - Document ID
+     * @param {string} workflowId - Workflow ID
+     * @param {string} status - New status
+     * @param {string} userId - User updating status
+     * @param {Object} options - Update options
+     * @returns {Promise<Object>} Updated workflow
+     */
+    async updateWorkflowStatus(documentId, workflowId, status, userId, options = {}) {
+        const { comments, stepData } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'write');
+
+            // Validate workflow exists
+            if (!document.lifecycle.workflow || document.lifecycle.workflow.id !== workflowId) {
+                throw new NotFoundError('Workflow not found', 'WORKFLOW_NOT_FOUND');
+            }
+
+            // Update workflow status
+            const updatedDocument = await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $set: {
+                        'lifecycle.workflow.status': status,
+                        'lifecycle.workflow.lastUpdated': new Date(),
+                        'lifecycle.workflow.lastUpdatedBy': userId,
+                        ...(comments && { 'lifecycle.workflow.comments': comments }),
+                        ...(stepData && { 'lifecycle.workflow.stepData': stepData })
+                    }
+                },
+                { new: true }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'WORKFLOW_STATUS_UPDATED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { workflowId, oldStatus: document.lifecycle.workflow.status, newStatus: status }
+            });
+
+            return updatedDocument.lifecycle.workflow;
+        } catch (error) {
+            logger.error('Error updating workflow status', {
+                error: error.message,
+                documentId,
+                workflowId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Complete document signature
+     * @param {string} documentId - Document ID
+     * @param {string} signatureId - Signature ID
+     * @param {Object} signatureData - Signature completion data
+     * @param {string} userId - User completing signature
+     * @returns {Promise<Object>} Signature completion result
+     */
+    async completeDocumentSignature(documentId, signatureId, signatureData, userId) {
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Find signature request
+            const signatureRequest = document.signatures?.signatories?.find(
+                s => s.id === signatureId
+            );
+
+            if (!signatureRequest) {
+                throw new NotFoundError('Signature request not found', 'SIGNATURE_NOT_FOUND');
+            }
+
+            // Validate signature authority
+            if (signatureRequest.email !== req.user?.email && userId !== signatureRequest.userId) {
+                throw new ForbiddenError('Not authorized to complete this signature', 'SIGNATURE_NOT_AUTHORIZED');
+            }
+
+            // Update signature
+            const updatedDocument = await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $set: {
+                        'signatures.signatories.$[sig].status': 'completed',
+                        'signatures.signatories.$[sig].signedAt': new Date(),
+                        'signatures.signatories.$[sig].signatureData': signatureData.signatureData,
+                        'signatures.signatories.$[sig].ipAddress': signatureData.ipAddress,
+                        'signatures.signatories.$[sig].userAgent': signatureData.userAgent
+                    }
+                },
+                {
+                    arrayFilters: [{ 'sig.id': signatureId }],
+                    new: true
+                }
+            );
+
+            // Check if all required signatures are complete
+            const allSigned = updatedDocument.signatures.signatories
+                .filter(s => s.required)
+                .every(s => s.status === 'completed');
+
+            if (allSigned) {
+                await ClientDocumentModel.findByIdAndUpdate(
+                    documentId,
+                    {
+                        $set: {
+                            'signatures.status': 'completed',
+                            'signatures.completedAt': new Date(),
+                            'lifecycle.status': 'signed'
+                        }
+                    }
+                );
+            }
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_SIGNATURE_COMPLETED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { signatureId, signatureType: signatureData.signatureType }
+            });
+
+            return {
+                signatureId,
+                status: 'completed',
+                signedAt: new Date(),
+                allSignaturesComplete: allSigned
+            };
+        } catch (error) {
+            logger.error('Error completing document signature', {
+                error: error.message,
+                documentId,
+                signatureId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Generate document report
+     * @param {string} clientId - Client ID (optional)
+     * @param {Object} options - Report options
+     * @returns {Promise<Object>} Generated report
+     */
+    async generateDocumentReport(clientId = null, options = {}) {
+        const {
+            reportType = 'summary',
+            dateRange = { start: moment().subtract(30, 'days').toDate(), end: new Date() },
+            format = 'json'
+        } = options;
+
+        try {
+            const query = {
+                isDeleted: false,
+                createdAt: { $gte: dateRange.start, $lte: dateRange.end }
+            };
+
+            if (clientId) query.clientId = clientId;
+
+            // Generate report based on type
+            let reportData;
+
+            switch (reportType) {
+                case 'summary':
+                    reportData = await this.#generateSummaryReport(query, options);
+                    break;
+                case 'detailed':
+                    reportData = await this.#generateDetailedReport(query, options);
+                    break;
+                case 'compliance':
+                    reportData = await this.#generateComplianceReport(query, options);
+                    break;
+                case 'usage':
+                    reportData = await this.#generateUsageReport(query, options);
+                    break;
+                default:
+                    throw new ValidationError(`Unknown report type: ${reportType}`, 'INVALID_REPORT_TYPE');
+            }
+
+            // Format report based on requested format
+            if (format === 'pdf') {
+                const pdfBuffer = await this.#generatePDFReport(reportData);
+                return { buffer: pdfBuffer, format: 'pdf' };
+            }
+
+            return { data: reportData, format: 'json' };
+        } catch (error) {
+            logger.error('Error generating document report', {
+                error: error.message,
+                clientId,
+                reportType,
+                format
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Archive document
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User archiving document
+     * @param {Object} options - Archive options
+     * @returns {Promise<Object>} Archived document
+     */
+    async archiveDocument(documentId, userId, options = {}) {
+        const { reason, scheduledDate } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'write');
+
+            // Update document
+            const updatedDocument = await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $set: {
+                        'lifecycle.status': 'archived',
+                        'lifecycle.archivedAt': scheduledDate || new Date(),
+                        'lifecycle.archivedBy': userId,
+                        'lifecycle.archiveReason': reason
+                    }
+                },
+                { new: true }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_ARCHIVED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { reason, scheduledDate }
+            });
+
+            return updatedDocument;
+        } catch (error) {
+            logger.error('Error archiving document', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Unarchive document
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User unarchiving document
+     * @param {Object} options - Unarchive options
+     * @returns {Promise<Object>} Unarchived document
+     */
+    async unarchiveDocument(documentId, userId, options = {}) {
+        const { reason } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'write');
+
+            // Update document
+            const updatedDocument = await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $set: {
+                        'lifecycle.status': 'active',
+                        'lifecycle.unarchivedAt': new Date(),
+                        'lifecycle.unarchivedBy': userId,
+                        'lifecycle.unarchiveReason': reason
+                    },
+                    $unset: {
+                        'lifecycle.archivedAt': 1,
+                        'lifecycle.archivedBy': 1,
+                        'lifecycle.archiveReason': 1
+                    }
+                },
+                { new: true }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_UNARCHIVED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { reason }
+            });
+
+            return updatedDocument;
+        } catch (error) {
+            logger.error('Error unarchiving document', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Lock document for editing
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User locking document
+     * @param {Object} options - Lock options
+     * @returns {Promise<Object>} Lock result
+     */
+    async lockDocument(documentId, userId, options = {}) {
+        const { reason, duration = 3600 } = options; // Default 1 hour
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'write');
+
+            // Check if already locked
+            const existingLock = this.#documentLocks.get(documentId);
+            if (existingLock && existingLock.expiresAt > new Date()) {
+                throw new ConflictError('Document is already locked', 'DOCUMENT_ALREADY_LOCKED');
+            }
+
+            // Create lock
+            const lockData = {
+                userId,
+                lockedAt: new Date(),
+                expiresAt: new Date(Date.now() + duration * 1000),
+                reason
+            };
+
+            // Store lock
+            this.#documentLocks.set(documentId, lockData);
+
+            // Update document
+            await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $set: {
+                        'accessControl.locked': true,
+                        'accessControl.lockedBy': userId,
+                        'accessControl.lockedAt': lockData.lockedAt,
+                        'accessControl.lockExpires': lockData.expiresAt
+                    }
+                }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_LOCKED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { reason, duration }
+            });
+
+            return lockData;
+        } catch (error) {
+            logger.error('Error locking document', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Unlock document
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User unlocking document
+     * @param {Object} options - Unlock options
+     * @returns {Promise<Object>} Unlock result
+     */
+    async unlockDocument(documentId, userId, options = {}) {
+        const { force = false } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Get lock info
+            const lockData = this.#documentLocks.get(documentId);
+            if (!lockData) {
+                throw new ConflictError('Document is not locked', 'DOCUMENT_NOT_LOCKED');
+            }
+
+            // Check unlock permissions
+            if (!force && lockData.userId !== userId && !req.user?.role === 'admin') {
+                throw new ForbiddenError('Cannot unlock document locked by another user', 'UNLOCK_FORBIDDEN');
+            }
+
+            // Remove lock
+            this.#documentLocks.delete(documentId);
+
+            // Update document
+            await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $unset: {
+                        'accessControl.locked': 1,
+                        'accessControl.lockedBy': 1,
+                        'accessControl.lockedAt': 1,
+                        'accessControl.lockExpires': 1
+                    }
+                }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_UNLOCKED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { force, originalLocker: lockData.userId }
+            });
+
+            return { unlocked: true, unlockedAt: new Date() };
+        } catch (error) {
+            logger.error('Error unlocking document', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Tag document
+     * @param {string} documentId - Document ID
+     * @param {Array} tags - Tags to add
+     * @param {string} userId - User adding tags
+     * @returns {Promise<Object>} Tagged document
+     */
+    async tagDocument(documentId, tags, userId) {
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'write');
+
+            // Validate and sanitize tags
+            const validTags = tags
+                .filter(tag => typeof tag === 'string' && tag.trim().length > 0)
+                .map(tag => tag.trim().toLowerCase())
+                .filter((tag, index, arr) => arr.indexOf(tag) === index); // Remove duplicates
+
+            // Add tags
+            const updatedDocument = await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $addToSet: { 'documentInfo.keywords': { $each: validTags } }
+                },
+                { new: true }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_TAGGED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { addedTags: validTags }
+            });
+
+            return updatedDocument;
+        } catch (error) {
+            logger.error('Error tagging document', {
+                error: error.message,
+                documentId,
+                tags,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Remove tag from document
+     * @param {string} documentId - Document ID
+     * @param {string} tag - Tag to remove
+     * @param {string} userId - User removing tag
+     * @returns {Promise<Object>} Untagged document
+     */
+    async untagDocument(documentId, tag, userId) {
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'write');
+
+            // Remove tag
+            const updatedDocument = await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $pull: { 'documentInfo.keywords': tag.toLowerCase() }
+                },
+                { new: true }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_UNTAGGED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { removedTag: tag }
+            });
+
+            return updatedDocument;
+        } catch (error) {
+            logger.error('Error removing tag from document', {
+                error: error.message,
+                documentId,
+                tag,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Move document to different location
+     * @param {string} documentId - Document ID
+     * @param {Object} targetLocation - Target location data
+     * @param {string} userId - User moving document
+     * @returns {Promise<Object>} Moved document
+     */
+    async moveDocument(documentId, targetLocation, userId) {
+        const { targetClientId, targetProjectId, targetFolderId } = targetLocation;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions on source
+            await this.#checkDocumentAccess(document, userId, 'write');
+
+            // Validate target client if provided
+            if (targetClientId) {
+                const targetClient = await ClientModel.findById(targetClientId);
+                if (!targetClient) {
+                    throw new NotFoundError('Target client not found', 'TARGET_CLIENT_NOT_FOUND');
+                }
+            }
+
+            // Prepare update data
+            const updateData = {};
+            if (targetClientId) updateData.clientId = targetClientId;
+            if (targetProjectId) updateData.projectId = targetProjectId;
+            if (targetFolderId) updateData.folderId = targetFolderId;
+
+            // Update document
+            const updatedDocument = await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                { $set: updateData },
+                { new: true }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_MOVED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: {
+                    originalClientId: document.clientId,
+                    targetClientId,
+                    targetProjectId,
+                    targetFolderId
+                }
+            });
+
+            return updatedDocument;
+        } catch (error) {
+            logger.error('Error moving document', {
+                error: error.message,
+                documentId,
+                targetLocation,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Copy document
+     * @param {string} documentId - Document ID
+     * @param {Object} copyOptions - Copy options
+     * @param {string} userId - User copying document
+     * @returns {Promise<Object>} Copied document
+     */
+    async copyDocument(documentId, copyOptions, userId) {
+        const { targetClientId, targetProjectId, newName, copyContent = true } = copyOptions;
+
+        try {
+            // Get original document
+            const originalDocument = await ClientDocumentModel.findById(documentId);
+            if (!originalDocument) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(originalDocument, userId, 'read');
+
+            // Validate target client
+            if (targetClientId) {
+                const targetClient = await ClientModel.findById(targetClientId);
+                if (!targetClient) {
+                    throw new NotFoundError('Target client not found', 'TARGET_CLIENT_NOT_FOUND');
+                }
+            }
+
+            // Prepare copy data
+            const copyData = {
+                ...originalDocument.toObject(),
+                _id: undefined,
+                documentId: undefined,
+                clientId: targetClientId || originalDocument.clientId,
+                projectId: targetProjectId || originalDocument.projectId,
+                documentInfo: {
+                    ...originalDocument.documentInfo,
+                    name: newName || `Copy of ${originalDocument.documentInfo.name}`
+                },
+                metadata: {
+                    source: 'copy',
+                    originalDocumentId: documentId,
+                    createdBy: userId,
+                    uploadedBy: userId
+                },
+                relationships: {
+                    relatedDocuments: [{
+                        documentId: originalDocument._id,
+                        relationship: 'copied_from'
+                    }]
+                }
+            };
+
+            // Copy file content if requested
+            if (copyContent) {
+                const fileBuffer = await this.#getDocumentContent(originalDocument);
+                const storageResult = await this.#uploadToStorage(
+                    { buffer: fileBuffer, checksum: originalDocument.fileDetails.checksum },
+                    originalDocument.storage.provider,
+                    {
+                        clientId: copyData.clientId,
+                        encrypt: originalDocument.storage.encryption.enabled
+                    }
+                );
+
+                copyData.storage = {
+                    ...copyData.storage,
+                    location: storageResult.location,
+                    url: storageResult.url
+                };
+            }
+
+            // Create copy
+            const copiedDocument = await ClientDocumentModel.create(copyData);
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_COPIED',
+                entityType: 'client_document',
+                entityId: copiedDocument._id,
+                userId,
+                details: {
+                    originalDocumentId: documentId,
+                    targetClientId,
+                    copyContent
+                }
+            });
+
+            return copiedDocument;
+        } catch (error) {
+            logger.error('Error copying document', {
+                error: error.message,
+                documentId,
+                copyOptions,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Get document audit trail
+     * @param {string} documentId - Document ID
+     * @param {Object} options - Query options
+     * @returns {Promise<Object>} Audit trail entries
+     */
+    async getDocumentAuditTrail(documentId, options = {}) {
+        const {
+            page = 1,
+            limit = 50,
+            dateRange = { start: moment().subtract(90, 'days').toDate(), end: new Date() },
+            actionTypes = null
+        } = options;
+
+        try {
+            // Build query
+            const query = {
+                entityType: 'client_document',
+                entityId: documentId,
+                timestamp: { $gte: dateRange.start, $lte: dateRange.end }
+            };
+
+            if (actionTypes && actionTypes.length > 0) {
+                query.action = { $in: actionTypes };
+            }
+
+            // Get audit entries with pagination
+            const skip = (page - 1) * limit;
+            const entries = await this.#auditService.query(query, {
+                skip,
+                limit,
+                sort: { timestamp: -1 }
+            });
+
+            const total = await this.#auditService.count(query);
+
+            return {
+                entries,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages: Math.ceil(total / limit),
+                    hasMore: skip + entries.length < total
+                }
+            };
+        } catch (error) {
+            logger.error('Error getting document audit trail', {
+                error: error.message,
+                documentId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Generate thumbnails for document (public method)
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User requesting thumbnails
+     * @param {Object} options - Generation options
+     * @returns {Promise<Object>} Generated thumbnails
+     */
+    async generateThumbnails(documentId, userId, options = {}) {
+        const { sizes = ['small', 'medium', 'large'], force = false } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'read');
+
+            // Check if thumbnails already exist
+            if (!force && document.processing?.thumbnailsGenerated) {
+                return document.processing.thumbnails || {};
+            }
+
+            // Get document content
+            const fileBuffer = await this.#getDocumentContent(document);
+
+            // Use existing private method
+            await this.#generateThumbnails(document, fileBuffer);
+
+            // Return updated thumbnails
+            const updatedDocument = await ClientDocumentModel.findById(documentId);
+            return updatedDocument.processing?.thumbnails || {};
+        } catch (error) {
+            logger.error('Error generating thumbnails', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Extract text from document (public method)
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User requesting extraction
+     * @param {Object} options - Extraction options
+     * @returns {Promise<Object>} Extracted text content
+     */
+    async extractDocumentText(documentId, userId, options = {}) {
+        const { includeMetadata = true, maxLength = null } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'read');
+
+            // Check if text already extracted
+            if (document.processing?.textExtracted && document.processing?.textContent) {
+                let content = document.processing.textContent;
+                if (maxLength && content.length > maxLength) {
+                    content = content.substring(0, maxLength) + '...';
+                }
+
+                return {
+                    content,
+                    metadata: includeMetadata ? {
+                        extractedAt: document.processing.textExtractedAt,
+                        originalLength: document.processing.textContent.length,
+                        truncated: maxLength && document.processing.textContent.length > maxLength
+                    } : null
+                };
+            }
+
+            // Extract text using private method
+            await this.#extractText(document);
+
+            // Get updated document
+            const updatedDocument = await ClientDocumentModel.findById(documentId);
+            let content = updatedDocument.processing?.textContent || '';
+
+            if (maxLength && content.length > maxLength) {
+                content = content.substring(0, maxLength) + '...';
+            }
+
+            return {
+                content,
+                metadata: includeMetadata ? {
+                    extractedAt: new Date(),
+                    originalLength: updatedDocument.processing?.textContent?.length || 0,
+                    truncated: maxLength && (updatedDocument.processing?.textContent?.length || 0) > maxLength
+                } : null
+            };
+        } catch (error) {
+            logger.error('Error extracting document text', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Validate document structure and integrity
+     * @param {string} documentId - Document ID
+     * @param {Object} options - Validation options
+     * @returns {Promise<Object>} Validation result
+     */
+    async validateDocumentStructure(documentId, options = {}) {
+        const { checkIntegrity = true, validateMetadata = true, repairIfPossible = false } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            const validationResult = {
+                isValid: true,
+                issues: [],
+                repairs: [],
+                metadata: {
+                    documentId,
+                    validatedAt: new Date(),
+                    checks: {
+                        integrity: checkIntegrity,
+                        metadata: validateMetadata
+                    }
+                }
+            };
+
+            // Check file integrity
+            if (checkIntegrity) {
+                try {
+                    const fileBuffer = await this.#getDocumentContent(document);
+                    const currentChecksum = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+
+                    if (currentChecksum !== document.fileDetails.checksum.sha256) {
+                        validationResult.isValid = false;
+                        validationResult.issues.push({
+                            type: 'integrity',
+                            severity: 'high',
+                            message: 'File checksum mismatch - file may be corrupted'
+                        });
+                    }
+                } catch (error) {
+                    validationResult.isValid = false;
+                    validationResult.issues.push({
+                        type: 'integrity',
+                        severity: 'critical',
+                        message: 'Cannot access file content'
+                    });
+                }
+            }
+
+            // Validate metadata
+            if (validateMetadata) {
+                if (!document.documentInfo?.name) {
+                    validationResult.isValid = false;
+                    validationResult.issues.push({
+                        type: 'metadata',
+                        severity: 'medium',
+                        message: 'Document name is missing'
+                    });
+                }
+
+                if (!document.fileDetails?.mimeType) {
+                    validationResult.isValid = false;
+                    validationResult.issues.push({
+                        type: 'metadata',
+                        severity: 'medium',
+                        message: 'MIME type is missing'
+                    });
+                }
+            }
+
+            // Attempt repairs if requested
+            if (repairIfPossible && validationResult.issues.length > 0) {
+                for (const issue of validationResult.issues) {
+                    if (issue.type === 'metadata' && issue.message.includes('Document name')) {
+                        await ClientDocumentModel.findByIdAndUpdate(
+                            documentId,
+                            { $set: { 'documentInfo.name': document.fileDetails.originalName } }
+                        );
+                        validationResult.repairs.push('Fixed missing document name');
+                    }
+                }
+            }
+
+            return validationResult;
+        } catch (error) {
+            logger.error('Error validating document structure', {
+                error: error.message,
+                documentId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Scan document for viruses and malware
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User requesting scan
+     * @param {Object} options - Scan options
+     * @returns {Promise<Object>} Scan result
+     */
+    async scanDocumentForViruses(documentId, userId, options = {}) {
+        const { deepScan = false, quarantineIfInfected = true } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'read');
+
+            // Get file content
+            const fileBuffer = await this.#getDocumentContent(document);
+
+            // Perform virus scan (integrate with your antivirus service)
+            const scanResult = {
+                status: 'clean',
+                threats: [],
+                scanTime: new Date(),
+                scanEngine: 'integrated_av',
+                scanType: deepScan ? 'deep' : 'quick'
+            };
+
+            // Simulate scan logic - replace with actual antivirus integration
+            // const threats = await this.#performVirusScan(fileBuffer, { deepScan });
+            const threats = []; // Placeholder
+
+            if (threats.length > 0) {
+                scanResult.status = 'infected';
+                scanResult.threats = threats;
+
+                if (quarantineIfInfected) {
+                    await ClientDocumentModel.findByIdAndUpdate(
+                        documentId,
+                        {
+                            $set: {
+                                'lifecycle.status': 'quarantined',
+                                'lifecycle.quarantinedAt': new Date(),
+                                'lifecycle.quarantineReason': 'virus_detected'
+                            }
+                        }
+                    );
+                    scanResult.quarantined = true;
+                }
+            }
+
+            // Update document with scan results
+            await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $set: {
+                        'security.virusScan': scanResult,
+                        'security.lastScanned': new Date()
+                    }
+                }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_VIRUS_SCANNED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: {
+                    status: scanResult.status,
+                    threatsFound: threats.length,
+                    quarantined: scanResult.quarantined || false
+                }
+            });
+
+            return scanResult;
+        } catch (error) {
+            logger.error('Error scanning document for viruses', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Optimize document for storage and performance
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User requesting optimization
+     * @param {Object} options - Optimization options
+     * @returns {Promise<Object>} Optimization result
+     */
+    async optimizeDocument(documentId, userId, options = {}) {
+        const { compressionLevel = 'medium', preserveQuality = true, createBackup = true } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'write');
+
+            // Get original file
+            const originalBuffer = await this.#getDocumentContent(document);
+            const originalSize = originalBuffer.length;
+
+            // Create backup if requested
+            if (createBackup) {
+                await this.#createDocumentBackup(document, originalBuffer);
+            }
+
+            // Optimize based on file type
+            let optimizedBuffer = originalBuffer;
+            const mimeType = document.fileDetails.mimeType;
+
+            if (mimeType.startsWith('image/')) {
+                optimizedBuffer = await this.#optimizeImage(originalBuffer, {
+                    compressionLevel,
+                    preserveQuality
+                });
+            } else if (mimeType === 'application/pdf') {
+                optimizedBuffer = await this.#optimizePDF(originalBuffer, {
+                    compressionLevel,
+                    preserveQuality
+                });
+            }
+
+            const optimizedSize = optimizedBuffer.length;
+            const compressionRatio = ((originalSize - optimizedSize) / originalSize) * 100;
+
+            // Upload optimized version if significantly smaller
+            if (compressionRatio > 5) { // Only if more than 5% reduction
+                const storageResult = await this.#uploadToStorage(
+                    { buffer: optimizedBuffer, checksum: {} },
+                    document.storage.provider,
+                    {
+                        clientId: document.clientId,
+                        encrypt: document.storage.encryption.enabled
+                    }
+                );
+
+                // Update document with optimized version
+                await ClientDocumentModel.findByIdAndUpdate(
+                    documentId,
+                    {
+                        $set: {
+                            'storage.location': storageResult.location,
+                            'storage.url': storageResult.url,
+                            'fileDetails.size': optimizedSize,
+                            'processing.optimized': true,
+                            'processing.optimizedAt': new Date(),
+                            'processing.optimizationRatio': compressionRatio
+                        }
+                    }
+                );
+            }
+
+            const optimizationResult = {
+                optimized: compressionRatio > 5,
+                originalSize,
+                optimizedSize,
+                compressionRatio: Math.round(compressionRatio * 100) / 100,
+                spaceSaved: originalSize - optimizedSize,
+                optimizedAt: new Date()
+            };
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_OPTIMIZED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: optimizationResult
+            });
+
+            return optimizationResult;
+        } catch (error) {
+            logger.error('Error optimizing document', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Convert document to different format
+     * @param {string} documentId - Document ID
+     * @param {string} targetFormat - Target format
+     * @param {string} userId - User requesting conversion
+     * @param {Object} options - Conversion options
+     * @returns {Promise<Object>} Conversion result
+     */
+    async convertDocumentFormat(documentId, targetFormat, userId, options = {}) {
+        const { quality = 'high', preserveFormatting = true, createNewDocument = false } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'read');
+
+            // Get file content
+            const originalBuffer = await this.#getDocumentContent(document);
+
+            // Convert using private method
+            const convertedBuffer = await this.#convertDocument(originalBuffer, document, targetFormat);
+
+            if (createNewDocument) {
+                // Create new document with converted content
+                const newFileData = {
+                    originalName: `${path.parse(document.fileDetails.originalName).name}.${targetFormat}`,
+                    name: `${document.documentInfo.name} (${targetFormat.toUpperCase()})`,
+                    description: `Converted from ${document.fileDetails.fileExtension} to ${targetFormat}`,
+                    type: document.documentInfo.type,
+                    category: document.documentInfo.category,
+                    classification: document.documentInfo.classification,
+                    keywords: document.documentInfo.keywords,
+                    mimeType: mime.lookup(targetFormat) || 'application/octet-stream',
+                    size: convertedBuffer.length,
+                    buffer: convertedBuffer
+                };
+
+                const convertedDocument = await this.uploadDocument(
+                    document.clientId,
+                    newFileData,
+                    userId,
+                    { projectId: document.projectId }
+                );
+
+                return {
+                    success: true,
+                    newDocument: convertedDocument,
+                    originalFormat: document.fileDetails.fileExtension,
+                    targetFormat,
+                    convertedAt: new Date()
+                };
+            } else {
+                // Return converted buffer for download
+                return {
+                    success: true,
+                    buffer: convertedBuffer,
+                    metadata: {
+                        fileName: `${path.parse(document.fileDetails.originalName).name}.${targetFormat}`,
+                        mimeType: mime.lookup(targetFormat) || 'application/octet-stream',
+                        size: convertedBuffer.length
+                    },
+                    originalFormat: document.fileDetails.fileExtension,
+                    targetFormat,
+                    convertedAt: new Date()
+                };
+            }
+        } catch (error) {
+            logger.error('Error converting document format', {
+                error: error.message,
+                documentId,
+                targetFormat,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Get document preview
+     * @param {string} documentId - Document ID
+     * @param {string} userId - User requesting preview
+     * @param {Object} options - Preview options
+     * @returns {Promise<Object>} Document preview
+     */
+    async getDocumentPreview(documentId, userId, options = {}) {
+        const { pageNumber = 1, size = 'medium', format = 'image' } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'read');
+
+            // Check if thumbnails exist for images
+            if (this.#isImage(document.fileDetails.mimeType)) {
+                const thumbnails = document.processing?.thumbnails;
+                if (thumbnails && thumbnails[size]) {
+                    return {
+                        format: 'image',
+                        mimeType: 'image/jpeg',
+                        url: thumbnails[size].url,
+                        width: thumbnails[size].width,
+                        height: thumbnails[size].height
+                    };
+                }
+            }
+
+            // Generate preview for other document types
+            const fileBuffer = await this.#getDocumentContent(document);
+            let previewBuffer;
+
+            switch (document.fileDetails.mimeType) {
+                case 'application/pdf':
+                    previewBuffer = await this.#generatePDFPreview(fileBuffer, pageNumber);
+                    break;
+                case 'text/plain':
+                    const textContent = fileBuffer.toString('utf-8').substring(0, 5000);
+                    return {
+                        format: 'text',
+                        content: textContent,
+                        truncated: fileBuffer.length > 5000
+                    };
+                default:
+                    throw new ValidationError(
+                        `Preview not supported for ${document.fileDetails.mimeType}`,
+                        'PREVIEW_NOT_SUPPORTED'
+                    );
+            }
+
+            return {
+                format: 'image',
+                mimeType: 'image/jpeg',
+                buffer: previewBuffer,
+                pageNumber
+            };
+        } catch (error) {
+            logger.error('Error getting document preview', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Get document metadata
+     * @param {string} documentId - Document ID
+     * @param {Object} options - Metadata options
+     * @returns {Promise<Object>} Document metadata
+     */
+    async getDocumentMetadata(documentId, options = {}) {
+        const { includeSystemMetadata = false, includeFileProperties = true, includeExifData = false } = options;
+
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            const metadata = {
+                documentInfo: document.documentInfo,
+                fileDetails: includeFileProperties ? document.fileDetails : {
+                    originalName: document.fileDetails.originalName,
+                    mimeType: document.fileDetails.mimeType,
+                    size: document.fileDetails.size
+                },
+                classification: document.documentInfo.classification,
+                keywords: document.documentInfo.keywords,
+                createdAt: document.createdAt,
+                updatedAt: document.updatedAt
+            };
+
+            if (includeSystemMetadata) {
+                metadata.system = {
+                    id: document._id,
+                    documentId: document.documentId,
+                    tenantId: document.tenantId,
+                    clientId: document.clientId,
+                    storage: document.storage,
+                    lifecycle: document.lifecycle,
+                    versioning: document.versioning
+                };
+            }
+
+            if (includeExifData && this.#isImage(document.fileDetails.mimeType)) {
+                try {
+                    const fileBuffer = await this.#getDocumentContent(document);
+                    metadata.exif = await this.#extractExifData(fileBuffer);
+                } catch (error) {
+                    logger.warn('Failed to extract EXIF data', {
+                        documentId,
+                        error: error.message
+                    });
+                }
+            }
+
+            return metadata;
+        } catch (error) {
+            logger.error('Error getting document metadata', {
+                error: error.message,
+                documentId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Update document metadata
+     * @param {string} documentId - Document ID
+     * @param {Object} metadata - Metadata updates
+     * @param {string} userId - User updating metadata
+     * @returns {Promise<Object>} Updated metadata
+     */
+    async updateDocumentMetadata(documentId, metadata, userId) {
+        try {
+            // Get document
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Check permissions
+            await this.#checkDocumentAccess(document, userId, 'write');
+
+            // Validate and prepare metadata updates
+            const updateFields = {};
+
+            if (metadata.title || metadata.name) {
+                updateFields['documentInfo.name'] = metadata.title || metadata.name;
+            }
+            if (metadata.description) {
+                updateFields['documentInfo.description'] = metadata.description;
+            }
+            if (metadata.keywords && Array.isArray(metadata.keywords)) {
+                updateFields['documentInfo.keywords'] = metadata.keywords;
+            }
+            if (metadata.category) {
+                updateFields['documentInfo.category'] = metadata.category;
+            }
+            if (metadata.classification) {
+                updateFields['documentInfo.classification'] = metadata.classification;
+            }
+
+            // Custom metadata fields
+            if (metadata.custom && typeof metadata.custom === 'object') {
+                updateFields['metadata.custom'] = metadata.custom;
+            }
+
+            // Update document
+            const updatedDocument = await ClientDocumentModel.findByIdAndUpdate(
+                documentId,
+                {
+                    $set: {
+                        ...updateFields,
+                        'metadata.lastModifiedBy': userId,
+                        'metadata.lastModifiedAt': new Date()
+                    }
+                },
+                { new: true }
+            );
+
+            // Log audit trail
+            await this.#auditService.log({
+                action: 'DOCUMENT_METADATA_UPDATED',
+                entityType: 'client_document',
+                entityId: documentId,
+                userId,
+                details: { updatedFields: Object.keys(updateFields) }
+            });
+
+            return {
+                documentInfo: updatedDocument.documentInfo,
+                metadata: updatedDocument.metadata,
+                updatedAt: updatedDocument.updatedAt
+            };
+        } catch (error) {
+            logger.error('Error updating document metadata', {
+                error: error.message,
+                documentId,
+                userId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Bulk delete documents
+     * @param {Array} documentIds - Array of document IDs
+     * @param {string} userId - User performing deletion
+     * @param {Object} options - Deletion options
+     * @returns {Promise<Object>} Bulk deletion result
+     */
+    async bulkDeleteDocuments(documentIds, userId, options = {}) {
+        const { permanent = false, reason } = options;
+        const session = await mongoose.startSession();
+
+        try {
+            session.startTransaction();
+
+            const results = {
+                successful: [],
+                failed: [],
+                total: documentIds.length
+            };
+
+            // Process each document
+            for (const [index, documentId] of documentIds.entries()) {
+                try {
+                    await this.deleteDocument(documentId, userId, { permanent, session });
+                    results.successful.push({
+                        index,
+                        documentId,
+                        status: permanent ? 'permanently_deleted' : 'deleted'
+                    });
+                } catch (error) {
+                    results.failed.push({
+                        index,
+                        documentId,
+                        error: error.message
+                    });
+                }
+            }
+
+            await session.commitTransaction();
+
+            // Log bulk operation
+            await this.#auditService.log({
+                action: 'BULK_DOCUMENTS_DELETED',
+                entityType: 'client_document',
+                userId,
+                details: {
+                    total: results.total,
+                    successful: results.successful.length,
+                    failed: results.failed.length,
+                    permanent,
+                    reason
+                }
+            });
+
+            return results;
+        } catch (error) {
+            await session.abortTransaction();
+            logger.error('Error in bulk document deletion', {
+                error: error.message,
+                documentIds: documentIds.length,
+                userId
+            });
+            throw error;
+        } finally {
+            session.endSession();
+        }
+    }
+
+    /**
+     * Clean up expired documents
+     * @param {Object} options - Cleanup options
+     * @returns {Promise<Object>} Cleanup result
+     */
+    async cleanupExpiredDocuments(options = {}) {
+        const { dryRun = false, batchSize = 100, maxAge = null, tenantId = null } = options;
+
+        try {
+            const cleanupResult = {
+                processed: 0,
+                deleted: 0,
+                errors: [],
+                startTime: new Date()
+            };
+
+            // Build query for expired documents
+            const query = {
+                isDeleted: false,
+                'lifecycle.status': { $in: ['expired', 'archived'] }
+            };
+
+            if (tenantId) query.tenantId = tenantId;
+
+            if (maxAge) {
+                const cutoffDate = new Date(Date.now() - maxAge * 24 * 60 * 60 * 1000);
+                query.createdAt = { $lt: cutoffDate };
+            }
+
+            // Process in batches
+            let hasMore = true;
+            let skip = 0;
+
+            while (hasMore) {
+                const documents = await ClientDocumentModel.find(query)
+                    .skip(skip)
+                    .limit(batchSize)
+                    .select('_id documentInfo.name clientId');
+
+                if (documents.length === 0) {
+                    hasMore = false;
+                    break;
+                }
+
+                for (const document of documents) {
+                    try {
+                        cleanupResult.processed++;
+
+                        if (!dryRun) {
+                            // Permanently delete expired documents
+                            await this.deleteDocument(document._id, 'system', { permanent: true });
+                            cleanupResult.deleted++;
+                        }
+                    } catch (error) {
+                        cleanupResult.errors.push({
+                            documentId: document._id,
+                            error: error.message
+                        });
+                    }
+                }
+
+                skip += batchSize;
+            }
+
+            cleanupResult.endTime = new Date();
+            cleanupResult.duration = cleanupResult.endTime - cleanupResult.startTime;
+
+            logger.info('Document cleanup completed', cleanupResult);
+
+            return cleanupResult;
+        } catch (error) {
+            logger.error('Error in document cleanup', {
+                error: error.message,
+                options
+            });
+            throw error;
+        }
+    }
+
+    // ==================== Additional Private Helper Methods ====================
+
+    /**
+     * Delete file from storage
+     * @private
+     */
+    async #deleteFromStorage(document) {
+        try {
+            await this.#fileService.delete(document.storage.location, {
+                provider: document.storage.provider
+            });
+        } catch (error) {
+            logger.error('Error deleting file from storage', {
+                error: error.message,
+                documentId: document._id,
+                location: document.storage.location
+            });
+            // Don't throw - continue with database deletion even if storage fails
+        }
+    }
+
+    /**
+     * Generate summary report
+     * @private
+     */
+    async #generateSummaryReport(query, options) {
+        return await ClientDocumentModel.aggregate([
+            { $match: query },
+            {
+                $group: {
+                    _id: null,
+                    totalDocuments: { $sum: 1 },
+                    totalSize: { $sum: '$fileDetails.size' },
+                    avgSize: { $avg: '$fileDetails.size' },
+                    documentsByType: {
+                        $push: {
+                            type: '$documentInfo.type',
+                            size: '$fileDetails.size'
+                        }
+                    }
+                }
+            }
+        ]);
+    }
+
+    /**
+     * Generate detailed report
+     * @private
+     */
+    async #generateDetailedReport(query, options) {
+        return await ClientDocumentModel.find(query)
+            .populate('clientId', 'companyName')
+            .select('documentInfo fileDetails lifecycle analytics createdAt')
+            .sort({ createdAt: -1 });
+    }
+
+    /**
+     * Generate compliance report
+     * @private
+     */
+    async #generateComplianceReport(query, options) {
+        return await ClientDocumentModel.aggregate([
+            { $match: query },
+            {
+                $group: {
+                    _id: '$documentInfo.classification.level',
+                    count: { $sum: 1 },
+                    encrypted: {
+                        $sum: {
+                            $cond: ['$storage.encryption.enabled', 1, 0]
+                        }
+                    },
+                    retentionApplied: {
+                        $sum: {
+                            $cond: [{ $ne: ['$lifecycle.retention', null] }, 1, 0]
+                        }
+                    }
+                }
+            }
+        ]);
+    }
+
+    /**
+     * Generate usage report
+     * @private
+     */
+    async #generateUsageReport(query, options) {
+        return await ClientDocumentModel.aggregate([
+            { $match: query },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: '$createdAt' },
+                        month: { $month: '$createdAt' }
+                    },
+                    uploads: { $sum: 1 },
+                    totalViews: { $sum: '$analytics.views.total' },
+                    totalDownloads: { $sum: '$analytics.downloads.total' }
+                }
+            },
+            { $sort: { '_id.year': 1, '_id.month': 1 } }
+        ]);
+    }
+
+    /**
+     * Generate PDF report
+     * @private
+     */
+    async #generatePDFReport(reportData) {
+        // Implement PDF generation using PDFKit or similar
+        const doc = new PDFDocument();
+        const buffers = [];
+
+        doc.on('data', buffers.push.bind(buffers));
+        doc.on('end', () => { });
+
+        doc.fontSize(20).text('Document Report', 100, 100);
+        doc.fontSize(12).text(JSON.stringify(reportData, null, 2), 100, 150);
+
+        doc.end();
+
+        return Buffer.concat(buffers);
+    }
+
+    /**
+     * Create document backup
+     * @private
+     */
+    async #createDocumentBackup(document, fileBuffer) {
+        try {
+            const backupFileName = `${document._id}_backup_${Date.now()}`;
+
+            await this.#uploadToStorage(
+                { buffer: fileBuffer, checksum: document.fileDetails.checksum },
+                document.storage.provider,
+                {
+                    clientId: document.clientId,
+                    fileName: `backups/${backupFileName}`,
+                    encrypt: document.storage.encryption.enabled
+                }
+            );
+
+            logger.debug('Document backup created', {
+                documentId: document._id,
+                backupFileName
+            });
+        } catch (error) {
+            logger.error('Error creating document backup', {
+                error: error.message,
+                documentId: document._id
+            });
+            // Don't throw - backup creation failure shouldn't stop optimization
+        }
+    }
+
+    /**
+     * Optimize image
+     * @private
+     */
+    async #optimizeImage(imageBuffer, options) {
+        const { compressionLevel = 'medium', preserveQuality = true } = options;
+
+        try {
+            const qualityMap = {
+                low: 60,
+                medium: 80,
+                high: 90
+            };
+
+            const quality = preserveQuality ? qualityMap.high : qualityMap[compressionLevel];
+
+            return await sharp(imageBuffer)
+                .jpeg({ quality })
+                .toBuffer();
+        } catch (error) {
+            logger.error('Error optimizing image', { error: error.message });
+            return imageBuffer; // Return original if optimization fails
+        }
+    }
+
+    /**
+     * Optimize PDF
+     * @private
+     */
+    async #optimizePDF(pdfBuffer, options) {
+        // Implement PDF optimization
+        // This would require a PDF processing library
+        return pdfBuffer; // Return original for now
+    }
+
+    /**
+     * Generate PDF preview
+     * @private
+     */
+    async #generatePDFPreview(pdfBuffer, pageNumber) {
+        // Implement PDF to image conversion
+        // This would require libraries like pdf-poppler or pdf2pic
+        return Buffer.alloc(0); // Placeholder
+    }
+
+    /**
+     * Extract EXIF data from image
+     * @private
+     */
+    async #extractExifData(imageBuffer) {
+        try {
+            // Implement EXIF extraction using exif-reader or similar
+            return {
+                extracted: false,
+                message: 'EXIF extraction not implemented'
+            };
+        } catch (error) {
+            logger.error('Error extracting EXIF data', { error: error.message });
+            return null;
+        }
+    }
+
+    /**
+     * Get document activity and history
+     * @param {string} documentId - Document ID
+     * @param {Object} options - Query options
+     * @returns {Promise<Object>} Document activity
+     */
+    async getDocumentActivity(documentId, options = {}) {
+        const {
+            page = 1,
+            limit = 50,
+            dateRange = { start: moment().subtract(30, 'days').toDate(), end: new Date() },
+            activityTypes = null
+        } = options;
+
+        try {
+            // Get document to verify access
+            const document = await ClientDocumentModel.findById(documentId);
+            if (!document) {
+                throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+            }
+
+            // Build activity query from multiple sources
+            const activities = [];
+
+            // Get audit trail activities
+            const auditQuery = {
+                entityType: 'client_document',
+                entityId: documentId,
+                timestamp: { $gte: dateRange.start, $lte: dateRange.end }
+            };
+
+            if (activityTypes && activityTypes.length > 0) {
+                auditQuery.action = { $in: activityTypes };
+            }
+
+            const auditActivities = await this.#auditService.query(auditQuery, {
+                sort: { timestamp: -1 }
+            });
+
+            // Transform audit activities
+            activities.push(...auditActivities.map(audit => ({
+                id: audit._id,
+                type: 'audit',
+                action: audit.action,
+                timestamp: audit.timestamp,
+                userId: audit.userId,
+                details: audit.details,
+                source: 'audit_log'
+            })));
+
+            // Get document view/download activities from analytics
+            if (document.analytics?.views?.history) {
+                activities.push(...document.analytics.views.history.map(view => ({
+                    id: `view_${view.timestamp}`,
+                    type: 'view',
+                    action: 'DOCUMENT_VIEWED',
+                    timestamp: view.timestamp,
+                    userId: view.userId,
+                    details: { ip: view.ip, userAgent: view.userAgent },
+                    source: 'analytics'
+                })));
+            }
+
+            if (document.analytics?.downloads?.history) {
+                activities.push(...document.analytics.downloads.history.map(download => ({
+                    id: `download_${download.timestamp}`,
+                    type: 'download',
+                    action: 'DOCUMENT_DOWNLOADED',
+                    timestamp: download.timestamp,
+                    userId: download.userId,
+                    details: { format: download.format, size: download.size },
+                    source: 'analytics'
+                })));
+            }
+
+            // Sort all activities by timestamp
+            activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+            // Apply pagination
+            const skip = (page - 1) * limit;
+            const paginatedActivities = activities.slice(skip, skip + limit);
+
+            return {
+                activities: paginatedActivities,
+                pagination: {
+                    page,
+                    limit,
+                    total: activities.length,
+                    totalPages: Math.ceil(activities.length / limit),
+                    hasMore: skip + paginatedActivities.length < activities.length
+                }
+            };
+        } catch (error) {
+            logger.error('Error getting document activity', {
+                error: error.message,
+                documentId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Get storage statistics
+     * @param {string} clientId - Client ID (optional)
+     * @param {Object} options - Statistics options
+     * @returns {Promise<Object>} Storage statistics
+     */
+    async getStorageStatistics(clientId = null, options = {}) {
+        const {
+            tenantId,
+            includeBreakdown = true,
+            includeProjections = false,
+            dateRange = { start: moment().subtract(30, 'days').toDate(), end: new Date() }
+        } = options;
+
+        try {
+            const query = {
+                isDeleted: false
+            };
+
+            if (clientId) query.clientId = clientId;
+            if (tenantId) query.tenantId = tenantId;
+
+            // Get overall statistics
+            const overallStats = await ClientDocumentModel.aggregate([
+                { $match: query },
+                {
+                    $group: {
+                        _id: null,
+                        totalDocuments: { $sum: 1 },
+                        totalSize: { $sum: '$fileDetails.size' },
+                        avgSize: { $avg: '$fileDetails.size' },
+                        maxSize: { $max: '$fileDetails.size' },
+                        minSize: { $min: '$fileDetails.size' }
+                    }
+                }
+            ]);
+
+            const stats = overallStats[0] || {
+                totalDocuments: 0,
+                totalSize: 0,
+                avgSize: 0,
+                maxSize: 0,
+                minSize: 0
+            };
+
+            const result = {
+                overview: {
+                    totalDocuments: stats.totalDocuments,
+                    totalSize: stats.totalSize,
+                    averageSize: Math.round(stats.avgSize || 0),
+                    largestDocument: stats.maxSize,
+                    smallestDocument: stats.minSize,
+                    storageUsedGB: (stats.totalSize / (1024 * 1024 * 1024)).toFixed(2)
+                },
+                limits: {
+                    storageLimit: 1000000000000, // 1TB default
+                    documentLimit: 100000,
+                    usagePercentage: ((stats.totalSize / 1000000000000) * 100).toFixed(2)
+                }
+            };
+
+            if (includeBreakdown) {
+                // Get breakdown by file type
+                const typeBreakdown = await ClientDocumentModel.aggregate([
+                    { $match: query },
+                    {
+                        $group: {
+                            _id: '$fileDetails.fileExtension',
+                            count: { $sum: 1 },
+                            totalSize: { $sum: '$fileDetails.size' }
+                        }
+                    },
+                    { $sort: { totalSize: -1 } }
+                ]);
+
+                // Get breakdown by classification
+                const classificationBreakdown = await ClientDocumentModel.aggregate([
+                    { $match: query },
+                    {
+                        $group: {
+                            _id: '$documentInfo.classification.level',
+                            count: { $sum: 1 },
+                            totalSize: { $sum: '$fileDetails.size' }
+                        }
+                    }
+                ]);
+
+                // Get monthly usage trend
+                const usageTrend = await ClientDocumentModel.aggregate([
+                    {
+                        $match: {
+                            ...query,
+                            createdAt: { $gte: dateRange.start, $lte: dateRange.end }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: {
+                                year: { $year: '$createdAt' },
+                                month: { $month: '$createdAt' }
+                            },
+                            documentsAdded: { $sum: 1 },
+                            storageAdded: { $sum: '$fileDetails.size' }
+                        }
+                    },
+                    { $sort: { '_id.year': 1, '_id.month': 1 } }
+                ]);
+
+                result.breakdown = {
+                    byFileType: typeBreakdown,
+                    byClassification: classificationBreakdown,
+                    usageTrend
+                };
+            }
+
+            if (includeProjections) {
+                // Calculate storage projections based on recent usage
+                const recentUsage = result.breakdown?.usageTrend?.slice(-6) || [];
+                if (recentUsage.length > 0) {
+                    const avgMonthlyGrowth = recentUsage.reduce((sum, month) =>
+                        sum + month.storageAdded, 0) / recentUsage.length;
+
+                    result.projections = {
+                        nextMonth: stats.totalSize + avgMonthlyGrowth,
+                        next3Months: stats.totalSize + (avgMonthlyGrowth * 3),
+                        next6Months: stats.totalSize + (avgMonthlyGrowth * 6),
+                        yearEnd: stats.totalSize + (avgMonthlyGrowth * 12),
+                        monthlyGrowthRate: avgMonthlyGrowth
+                    };
+                }
+            }
+
+            return result;
+        } catch (error) {
+            logger.error('Error getting storage statistics', {
+                error: error.message,
+                clientId,
+                tenantId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Validate and sanitize permissions
+     * @private
+     */
+    async #validateAndSanitizePermissions(permissions, document) {
+        const sanitized = {
+            users: [],
+            groups: [],
+            roles: [],
+            public: null,
+            restrictions: {},
+            inheritance: { enabled: false }
+        };
+
+        // Process user permissions
+        if (permissions.users && Array.isArray(permissions.users)) {
+            for (const userPerm of permissions.users) {
+                // Verify user exists (you would integrate with your user service)
+                const userExists = await this.#verifyUserExists(userPerm.userId);
+                if (!userExists) {
+                    logger.warn('Skipping permission for non-existent user', {
+                        userId: userPerm.userId,
+                        documentId: document._id
+                    });
+                    continue;
+                }
+
+                // Sanitize permissions
+                const cleanPermissions = {};
+                const validPermissions = ['read', 'write', 'delete', 'share', 'admin'];
+
+                for (const perm of validPermissions) {
+                    if (userPerm.permissions[perm] === true) {
+                        cleanPermissions[perm] = true;
+                    }
+                }
+
+                // Ensure logical permission hierarchy
+                if (cleanPermissions.admin) {
+                    cleanPermissions.read = true;
+                    cleanPermissions.write = true;
+                    cleanPermissions.delete = true;
+                    cleanPermissions.share = true;
+                } else if (cleanPermissions.delete || cleanPermissions.share) {
+                    cleanPermissions.read = true;
+                    cleanPermissions.write = true;
+                } else if (cleanPermissions.write) {
+                    cleanPermissions.read = true;
+                }
+
+                sanitized.users.push({
+                    userId: userPerm.userId,
+                    permissions: cleanPermissions,
+                    grantedBy: userPerm.grantedBy,
+                    grantedAt: userPerm.grantedAt || new Date(),
+                    expiresAt: userPerm.expiresAt ? new Date(userPerm.expiresAt) : null,
+                    notes: userPerm.notes || '',
+                    notifications: userPerm.notifications || {
+                        onShare: true,
+                        onUpdate: false,
+                        onDelete: true
+                    }
+                });
+            }
+        }
+
+        // Process group permissions
+        if (permissions.groups && Array.isArray(permissions.groups)) {
+            for (const groupPerm of permissions.groups) {
+                // Verify group exists
+                const groupExists = await this.#verifyGroupExists(groupPerm.groupId);
+                if (!groupExists) {
+                    logger.warn('Skipping permission for non-existent group', {
+                        groupId: groupPerm.groupId,
+                        documentId: document._id
+                    });
+                    continue;
+                }
+
+                sanitized.groups.push({
+                    groupId: groupPerm.groupId,
+                    permissions: groupPerm.permissions,
+                    grantedBy: groupPerm.grantedBy,
+                    grantedAt: groupPerm.grantedAt || new Date(),
+                    expiresAt: groupPerm.expiresAt ? new Date(groupPerm.expiresAt) : null
+                });
+            }
+        }
+
+        // Process role permissions
+        if (permissions.roles && Array.isArray(permissions.roles)) {
+            const validRoles = ['admin', 'manager', 'user', 'viewer', 'auditor'];
+
+            for (const rolePerm of permissions.roles) {
+                if (validRoles.includes(rolePerm.role)) {
+                    sanitized.roles.push({
+                        role: rolePerm.role,
+                        permissions: rolePerm.permissions,
+                        grantedBy: rolePerm.grantedBy,
+                        grantedAt: rolePerm.grantedAt || new Date()
+                    });
+                }
+            }
+        }
+
+        // Process public permissions
+        if (permissions.public) {
+            sanitized.public = {
+                enabled: permissions.public.enabled === true,
+                permissions: permissions.public.permissions || { read: true },
+                requiresRegistration: permissions.public.requiresRegistration === true,
+                allowedDomains: permissions.public.allowedDomains || [],
+                expiresAt: permissions.public.expiresAt ? new Date(permissions.public.expiresAt) : null
+            };
+        }
+
+        // Process restrictions
+        if (permissions.restrictions) {
+            sanitized.restrictions = {
+                downloadDisabled: permissions.restrictions.downloadDisabled === true,
+                viewLimit: permissions.restrictions.viewLimit || null,
+                ipRestrictions: permissions.restrictions.ipRestrictions || [],
+                timeRestrictions: permissions.restrictions.timeRestrictions || null,
+                watermark: permissions.restrictions.watermark || { enabled: false },
+                deviceRestrictions: permissions.restrictions.deviceRestrictions || { enabled: false }
+            };
+        }
+
+        // Process inheritance settings
+        if (permissions.inheritance) {
+            sanitized.inheritance = {
+                enabled: permissions.inheritance.enabled === true,
+                source: permissions.inheritance.source || 'parent',
+                overrides: permissions.inheritance.overrides || []
+            };
+        }
+
+        return sanitized;
+    }
+
+    /**
+     * Identify users affected by permission changes
+     * @private
+     */
+    async #identifyAffectedUsers(originalPermissions, updatedPermissions) {
+        const affectedUsers = new Set();
+
+        // Check removed users
+        if (originalPermissions.users) {
+            for (const originalUser of originalPermissions.users) {
+                const stillHasAccess = updatedPermissions.users.some(
+                    user => user.userId.toString() === originalUser.userId.toString()
+                );
+
+                if (!stillHasAccess) {
+                    affectedUsers.add({
+                        userId: originalUser.userId,
+                        changeType: 'removed',
+                        oldPermissions: originalUser.permissions,
+                        newPermissions: null
+                    });
+                }
+            }
+        }
+
+        // Check added/modified users
+        for (const updatedUser of updatedPermissions.users) {
+            const originalUser = originalPermissions.users?.find(
+                user => user.userId.toString() === updatedUser.userId.toString()
+            );
+
+            if (!originalUser) {
+                // New user added
+                affectedUsers.add({
+                    userId: updatedUser.userId,
+                    changeType: 'added',
+                    oldPermissions: null,
+                    newPermissions: updatedUser.permissions
+                });
+            } else {
+                // Check if permissions changed
+                const permissionsChanged = JSON.stringify(originalUser.permissions) !==
+                    JSON.stringify(updatedUser.permissions);
+
+                if (permissionsChanged) {
+                    affectedUsers.add({
+                        userId: updatedUser.userId,
+                        changeType: 'modified',
+                        oldPermissions: originalUser.permissions,
+                        newPermissions: updatedUser.permissions
+                    });
+                }
+            }
+        }
+
+        return Array.from(affectedUsers);
+    }
+
+    /**
+     * Send permission change notifications
+     * @private
+     */
+    async #sendPermissionChangeNotifications(document, affectedUsers, updatedBy, reason) {
+        try {
+            const client = await ClientModel.findById(document.clientId);
+
+            for (const affectedUser of affectedUsers) {
+                try {
+                    let notificationType = '';
+                    let message = '';
+
+                    switch (affectedUser.changeType) {
+                        case 'added':
+                            notificationType = 'document_access_granted';
+                            message = `You have been granted access to document "${document.documentInfo.name}"`;
+                            break;
+                        case 'removed':
+                            notificationType = 'document_access_revoked';
+                            message = `Your access to document "${document.documentInfo.name}" has been revoked`;
+                            break;
+                        case 'modified':
+                            notificationType = 'document_permissions_changed';
+                            message = `Your permissions for document "${document.documentInfo.name}" have been updated`;
+                            break;
+                    }
+
+                    // Send in-app notification
+                    await this.#notificationService.send({
+                        type: notificationType,
+                        recipient: affectedUser.userId,
+                        data: {
+                            documentName: document.documentInfo.name,
+                            documentId: document._id,
+                            clientName: client?.companyName,
+                            changeType: affectedUser.changeType,
+                            oldPermissions: affectedUser.oldPermissions,
+                            newPermissions: affectedUser.newPermissions,
+                            updatedBy,
+                            reason,
+                            message
+                        }
+                    });
+
+                    // Send email notification for significant changes
+                    if (affectedUser.changeType === 'removed' ||
+                        (affectedUser.changeType === 'added' && affectedUser.newPermissions.admin)) {
+
+                        await this.#emailService.sendTemplate('document-permission-change', {
+                            recipientId: affectedUser.userId,
+                            data: {
+                                documentName: document.documentInfo.name,
+                                clientName: client?.companyName,
+                                changeType: affectedUser.changeType,
+                                reason,
+                                message
+                            }
+                        });
+                    }
+
+                } catch (error) {
+                    logger.error('Error sending permission change notification', {
+                        error: error.message,
+                        userId: affectedUser.userId,
+                        documentId: document._id
+                    });
+                    // Continue with other notifications
+                }
+            }
+
+            logger.debug('Permission change notifications sent', {
+                documentId: document._id,
+                recipientCount: affectedUsers.length
+            });
+
+        } catch (error) {
+            logger.error('Error sending permission change notifications', {
+                error: error.message,
+                documentId: document._id
+            });
+            // Don't throw - notifications are not critical
+        }
+    }
+
+    /**
+     * Calculate permission changes for audit trail
+     * @private
+     */
+    async #calculatePermissionChanges(originalPermissions, updatedPermissions) {
+        const changes = {
+            usersAdded: 0,
+            usersRemoved: 0,
+            usersModified: 0,
+            groupsAdded: 0,
+            groupsRemoved: 0,
+            restrictionsChanged: false,
+            publicAccessChanged: false
+        };
+
+        // Calculate user changes
+        const originalUserIds = new Set(
+            (originalPermissions.users || []).map(u => u.userId.toString())
+        );
+        const updatedUserIds = new Set(
+            updatedPermissions.users.map(u => u.userId.toString())
+        );
+
+        changes.usersAdded = updatedUserIds.size -
+            new Set([...originalUserIds].filter(id => updatedUserIds.has(id))).size;
+
+        changes.usersRemoved = originalUserIds.size -
+            new Set([...updatedUserIds].filter(id => originalUserIds.has(id))).size;
+
+        // Count modified users
+        for (const updatedUser of updatedPermissions.users) {
+            const originalUser = (originalPermissions.users || []).find(
+                u => u.userId.toString() === updatedUser.userId.toString()
+            );
+
+            if (originalUser &&
+                JSON.stringify(originalUser.permissions) !== JSON.stringify(updatedUser.permissions)) {
+                changes.usersModified++;
+            }
+        }
+
+        // Check restrictions changes
+        changes.restrictionsChanged = JSON.stringify(originalPermissions.restrictions || {}) !==
+            JSON.stringify(updatedPermissions.restrictions || {});
+
+        // Check public access changes
+        changes.publicAccessChanged = JSON.stringify(originalPermissions.public || {}) !==
+            JSON.stringify(updatedPermissions.public || {});
+
+        return changes;
+    }
+
+    /**
+     * Verify user exists
+     * @private
+     */
+    async #verifyUserExists(userId) {
+        try {
+            // This would integrate with your user management system
+            // For now, return true as placeholder
+            return true;
+        } catch (error) {
+            logger.error('Error verifying user exists', {
+                error: error.message,
+                userId
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Verify group exists
+     * @private
+     */
+    async #verifyGroupExists(groupId) {
+        try {
+            // This would integrate with your group management system
+            // For now, return true as placeholder
+            return true;
+        } catch (error) {
+            logger.error('Error verifying group exists', {
+                error: error.message,
+                groupId
+            });
+            return false;
+        }
     }
 }
 

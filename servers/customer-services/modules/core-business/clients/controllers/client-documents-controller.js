@@ -9,8 +9,8 @@ const ClientDocumentsService = require('../services/client-documents-service');
 const ClientService = require('../services/client-service');
 const logger = require('../../../../../../shared/lib/utils/logger');
 const { AppError, ValidationError, NotFoundError, ConflictError, ForbiddenError } = require('../../../../../../shared/lib/utils/app-error');
-const ResponseFormatter = require('../../../../../../shared/lib/utils/response-formatter');
-const asyncHandler = require('../../../../../../shared/lib/utils/async-handler');
+const { ResponseFormatter } = require('../../../../../../shared/lib/utils/response-formatter');
+const { asyncHandler } = require('../../../../../../shared/lib/utils/async-handler');
 const CommonValidator = require('../../../../../../shared/lib/utils/validators/common-validators');
 const { STATUS_CODES } = require('../../../../../../shared/lib/utils/constants/status-codes');
 const { body, param, query, validationResult } = require('express-validator');
@@ -51,7 +51,7 @@ class ClientDocumentsController {
     this.#clientService = new ClientService();
     this.#responseFormatter = new ResponseFormatter();
     this.#initializeConfigurations();
-    
+
     // Bind all methods to preserve context
     this.uploadDocument = this.uploadDocument.bind(this);
     this.getDocumentById = this.getDocumentById.bind(this);
@@ -95,7 +95,7 @@ class ClientDocumentsController {
     this.getDocumentActivity = this.getDocumentActivity.bind(this);
     this.getStorageStatistics = this.getStorageStatistics.bind(this);
     this.cleanupExpiredDocuments = this.cleanupExpiredDocuments.bind(this);
-    
+
     logger.info('ClientDocumentsController initialized');
   }
 
@@ -612,6 +612,95 @@ class ClientDocumentsController {
   }
 
   /**
+ * Update document permissions
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware
+ */
+  async updateDocumentPermissions(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Updating permissions for document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions - user must have admin rights on document
+      await this.#checkPermission(req, 'documents.permissions');
+
+      // Validate request body
+      if (!req.body.permissions || typeof req.body.permissions !== 'object') {
+        throw new ValidationError('Permissions object is required', 'PERMISSIONS_REQUIRED');
+      }
+
+      // Get existing document to verify access
+      const existingDocument = await this.#documentsService.getDocumentById(
+        documentId,
+        userId,
+        { checkPermissions: true }
+      );
+
+      if (!existingDocument) {
+        throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+      }
+
+      // Check if user has admin permissions on this specific document
+      await this.#checkDocumentAccess(existingDocument, req.user, 'admin');
+
+      // Prepare permission updates
+      const permissionUpdates = {
+        users: req.body.permissions.users || [],
+        groups: req.body.permissions.groups || [],
+        roles: req.body.permissions.roles || [],
+        public: req.body.permissions.public || null,
+        restrictions: req.body.permissions.restrictions || {},
+        inheritance: req.body.permissions.inheritance || { enabled: false }
+      };
+
+      // Validate permissions structure
+      await this.#validatePermissionUpdates(permissionUpdates);
+
+      // Update document permissions
+      const updatedPermissions = await this.#documentsService.updateDocumentPermissions(
+        documentId,
+        permissionUpdates,
+        userId,
+        {
+          notifyAffectedUsers: req.body.notifyUsers !== false,
+          reason: req.body.reason,
+          effectiveDate: req.body.effectiveDate ? new Date(req.body.effectiveDate) : new Date()
+        }
+      );
+
+      // Log permission update
+      await this.#logControllerAction('DOCUMENT_PERMISSIONS_UPDATED', {
+        documentId,
+        updatedBy: userId,
+        affectedUsers: permissionUpdates.users.length,
+        affectedGroups: permissionUpdates.groups.length,
+        reason: req.body.reason
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        {
+          documentId,
+          permissions: updatedPermissions,
+          updatedAt: new Date(),
+          updatedBy: userId
+        },
+        'Document permissions updated successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
    * Start document workflow
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
@@ -823,8 +912,8 @@ class ClientDocumentsController {
       await this.#checkPermission(req, 'documents.compliance');
 
       // Parse regulations to check
-      const regulations = req.query.regulations ? 
-        req.query.regulations.split(',') : 
+      const regulations = req.query.regulations ?
+        req.query.regulations.split(',') :
         ['GDPR', 'HIPAA', 'SOX', 'PCI_DSS'];
 
       // Check compliance
@@ -997,7 +1086,7 @@ class ClientDocumentsController {
   /**
    * Private helper methods
    */
-  
+
   #initializeConfigurations() {
     this.#validationConfig = {
       maxFileSize: 100 * 1024 * 1024, // 100MB
@@ -1095,9 +1184,9 @@ class ClientDocumentsController {
   }
 
   async #checkPermission(req, permission) {
-    const hasPermission = req.user?.permissions?.includes(permission) || 
-                         req.user?.role === 'admin';
-    
+    const hasPermission = req.user?.permissions?.includes(permission) ||
+      req.user?.role === 'admin';
+
     if (!hasPermission) {
       throw new ForbiddenError(`Insufficient permissions: ${permission}`, 'PERMISSION_DENIED');
     }
@@ -1107,8 +1196,8 @@ class ClientDocumentsController {
 
   async #checkDocumentAccess(document, user, action) {
     const hasAccess = document.tenantId?.toString() === user.tenantId?.toString() ||
-                     document.accessControl?.owner?.toString() === user.id?.toString() ||
-                     user.role === 'admin';
+      document.accessControl?.owner?.toString() === user.id?.toString() ||
+      user.role === 'admin';
 
     if (!hasAccess) {
       throw new ForbiddenError('Access denied to this document', 'DOCUMENT_ACCESS_DENIED');
@@ -1214,7 +1303,7 @@ class ClientDocumentsController {
   async #filterDocumentsByPermissions(documents, user) {
     return documents.filter(doc => {
       return doc.tenantId?.toString() === user.tenantId?.toString() ||
-             user.role === 'admin';
+        user.role === 'admin';
     });
   }
 
@@ -1329,88 +1418,1460 @@ class ClientDocumentsController {
       logger.error('Error sending document notification:', error);
     }
   }
-}
 
-// Validation middleware
-const validateDocumentUpload = [
-  body('name')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 255 })
-    .withMessage('Document name must be 1-255 characters'),
+  /**
+ * Update document metadata and basic information
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware
+ */
+  async updateDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
 
-  body('type')
-    .optional()
-    .isIn(['contract', 'proposal', 'invoice', 'report', 'presentation', 'image', 'other'])
-    .withMessage('Invalid document type'),
+      logger.info(`Updating document: ${documentId}`);
 
-  body('classification.level')
-    .optional()
-    .isIn(['public', 'internal', 'confidential', 'restricted'])
-    .withMessage('Invalid classification level')
-];
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
 
-const validateDocumentShare = [
-  body('type')
-    .isIn(['internal', 'external', 'public_link'])
-    .withMessage('Invalid share type'),
+      // Check permissions
+      await this.#checkPermission(req, 'documents.update');
 
-  body('permissions')
-    .isArray({ min: 1 })
-    .withMessage('At least one permission must be specified'),
+      // Get existing document
+      const existingDocument = await this.#documentsService.getDocumentById(
+        documentId,
+        userId,
+        { checkPermissions: true }
+      );
 
-  body('permissions.*')
-    .isIn(['read', 'write', 'delete', 'share'])
-    .withMessage('Invalid permission')
-];
+      if (!existingDocument) {
+        throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+      }
 
-const validateWorkflowStart = [
-  body('workflowType')
-    .isIn(['approval', 'review', 'signature'])
-    .withMessage('Invalid workflow type'),
+      // Check document-level access
+      await this.#checkDocumentAccess(existingDocument, req.user, 'write');
 
-  body('assignees')
-    .optional()
-    .isObject()
-    .withMessage('Assignees must be an object')
-];
+      // Prepare update data
+      const updateData = {
+        name: req.body.name,
+        description: req.body.description,
+        type: req.body.type,
+        category: req.body.category,
+        classification: req.body.classification,
+        keywords: req.body.keywords
+      };
 
-// Rate limiting middleware
-const uploadRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50,
-  message: 'Too many upload requests, please try again later'
-});
+      // Update document
+      const updatedDocument = await this.#documentsService.updateDocument(
+        documentId,
+        updateData,
+        userId
+      );
 
-const downloadRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 100,
-  message: 'Too many download requests, please try again later'
-});
+      // Log document update
+      await this.#logControllerAction('DOCUMENT_UPDATED', {
+        documentId,
+        changes: updateData,
+        userId
+      });
 
-// File upload middleware
-const uploadConfig = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB
-    files: 10 // Max 10 files for bulk upload
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedMimes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'image/jpeg',
-      'image/png'
-    ];
-    
-    if (allowedMimes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('File type not allowed'), false);
-    }
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        this.#formatDocumentResponse(updatedDocument),
+        'Document updated successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
   }
-});
+
+  /**
+   * Delete document
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async deleteDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Deleting document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.delete');
+
+      // Get existing document
+      const existingDocument = await this.#documentsService.getDocumentById(
+        documentId,
+        userId,
+        { checkPermissions: true }
+      );
+
+      if (!existingDocument) {
+        throw new NotFoundError('Document not found', 'DOCUMENT_NOT_FOUND');
+      }
+
+      // Check document-level access
+      await this.#checkDocumentAccess(existingDocument, req.user, 'delete');
+
+      // Delete document
+      await this.#documentsService.deleteDocument(documentId, userId, {
+        permanent: req.query.permanent === 'true'
+      });
+
+      // Log document deletion
+      await this.#logControllerAction('DOCUMENT_DELETED', {
+        documentId,
+        documentName: existingDocument.documentInfo.name,
+        permanent: req.query.permanent === 'true',
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        null,
+        'Document deleted successfully',
+        STATUS_CODES.NO_CONTENT
+      );
+
+      res.status(STATUS_CODES.NO_CONTENT).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Get document versions
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async getDocumentVersions(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Fetching versions for document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.read');
+
+      // Get document versions
+      const versions = await this.#documentsService.getDocumentVersions(documentId, userId);
+
+      // Log access
+      await this.#logControllerAction('DOCUMENT_VERSIONS_ACCESSED', {
+        documentId,
+        versionCount: versions.length,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        versions,
+        'Document versions retrieved successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Update workflow status
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async updateWorkflowStatus(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId, workflowId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Updating workflow status for document: ${documentId}, workflow: ${workflowId}`);
+
+      // Validate IDs
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.workflow');
+
+      // Update workflow status
+      const updatedWorkflow = await this.#documentsService.updateWorkflowStatus(
+        documentId,
+        workflowId,
+        req.body.status,
+        userId,
+        {
+          comments: req.body.comments,
+          stepData: req.body.stepData
+        }
+      );
+
+      // Log workflow update
+      await this.#logControllerAction('WORKFLOW_STATUS_UPDATED', {
+        documentId,
+        workflowId,
+        newStatus: req.body.status,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        updatedWorkflow,
+        'Workflow status updated successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Complete document signature
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async completeDocumentSignature(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId, signatureId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Completing signature for document: ${documentId}, signature: ${signatureId}`);
+
+      // Validate IDs
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.signatures');
+
+      // Complete signature
+      const signatureResult = await this.#documentsService.completeDocumentSignature(
+        documentId,
+        signatureId,
+        {
+          signatureData: req.body.signatureData,
+          signatureType: req.body.signatureType,
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent')
+        },
+        userId
+      );
+
+      // Log signature completion
+      await this.#logControllerAction('DOCUMENT_SIGNATURE_COMPLETED', {
+        documentId,
+        signatureId,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        signatureResult,
+        'Document signature completed successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Generate document report
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async generateDocumentReport(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { clientId } = req.params;
+      logger.info(`Generating document report${clientId ? ` for client: ${clientId}` : ''}`);
+
+      // Validate client ID if provided
+      if (clientId && !CommonValidator.isValidObjectId(clientId)) {
+        throw new ValidationError('Invalid client ID format', 'INVALID_CLIENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.reports');
+
+      // Parse report options
+      const options = {
+        reportType: req.body.reportType || 'summary',
+        dateRange: this.#parseDateRange(req.body),
+        includeAnalytics: req.body.includeAnalytics !== 'false',
+        includeCompliance: req.body.includeCompliance === 'true',
+        format: req.body.format || 'json'
+      };
+
+      // Generate report
+      const report = await this.#documentsService.generateDocumentReport(clientId, options);
+
+      // Log report generation
+      await this.#logControllerAction('DOCUMENT_REPORT_GENERATED', {
+        clientId,
+        reportType: options.reportType,
+        format: options.format,
+        userId: req.user?.id
+      });
+
+      // Format response based on requested format
+      if (options.format === 'pdf') {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="document-report-${Date.now()}.pdf"`);
+        res.status(STATUS_CODES.OK).send(report.buffer);
+      } else {
+        const response = this.#responseFormatter.formatSuccess(
+          report,
+          'Document report generated successfully'
+        );
+        res.status(STATUS_CODES.OK).json(response);
+      }
+    })(req, res, next);
+  }
+
+  /**
+   * Archive document
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async archiveDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Archiving document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.archive');
+
+      // Archive document
+      const archivedDocument = await this.#documentsService.archiveDocument(documentId, userId, {
+        reason: req.body.reason,
+        scheduledDate: req.body.scheduledDate ? new Date(req.body.scheduledDate) : null
+      });
+
+      // Log archival
+      await this.#logControllerAction('DOCUMENT_ARCHIVED', {
+        documentId,
+        reason: req.body.reason,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        this.#formatDocumentResponse(archivedDocument),
+        'Document archived successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Unarchive document
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async unarchiveDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Unarchiving document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.archive');
+
+      // Unarchive document
+      const unarchivedDocument = await this.#documentsService.unarchiveDocument(documentId, userId, {
+        reason: req.body.reason
+      });
+
+      // Log unarchival
+      await this.#logControllerAction('DOCUMENT_UNARCHIVED', {
+        documentId,
+        reason: req.body.reason,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        this.#formatDocumentResponse(unarchivedDocument),
+        'Document unarchived successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Lock document for editing
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async lockDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Locking document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.lock');
+
+      // Lock document
+      const lockResult = await this.#documentsService.lockDocument(documentId, userId, {
+        reason: req.body.reason,
+        duration: req.body.duration
+      });
+
+      // Log lock
+      await this.#logControllerAction('DOCUMENT_LOCKED', {
+        documentId,
+        reason: req.body.reason,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        lockResult,
+        'Document locked successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Unlock document
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async unlockDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Unlocking document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.lock');
+
+      // Unlock document
+      const unlockResult = await this.#documentsService.unlockDocument(documentId, userId, {
+        force: req.body.force === true
+      });
+
+      // Log unlock
+      await this.#logControllerAction('DOCUMENT_UNLOCKED', {
+        documentId,
+        force: req.body.force,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        unlockResult,
+        'Document unlocked successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Tag document
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async tagDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Tagging document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.tag');
+
+      // Validate tags
+      if (!req.body.tags || !Array.isArray(req.body.tags)) {
+        throw new ValidationError('Tags array is required', 'TAGS_REQUIRED');
+      }
+
+      // Tag document
+      const taggedDocument = await this.#documentsService.tagDocument(
+        documentId,
+        req.body.tags,
+        userId
+      );
+
+      // Log tagging
+      await this.#logControllerAction('DOCUMENT_TAGGED', {
+        documentId,
+        tags: req.body.tags,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        this.#formatDocumentResponse(taggedDocument),
+        'Document tagged successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Remove tag from document
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async untagDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId, tag } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Removing tag from document: ${documentId}, tag: ${tag}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.tag');
+
+      // Remove tag
+      const untaggedDocument = await this.#documentsService.untagDocument(
+        documentId,
+        tag,
+        userId
+      );
+
+      // Log tag removal
+      await this.#logControllerAction('DOCUMENT_UNTAGGED', {
+        documentId,
+        tag,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        this.#formatDocumentResponse(untaggedDocument),
+        'Tag removed successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Move document to different location
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async moveDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Moving document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.move');
+
+      // Move document
+      const movedDocument = await this.#documentsService.moveDocument(
+        documentId,
+        {
+          targetClientId: req.body.targetClientId,
+          targetProjectId: req.body.targetProjectId,
+          targetFolderId: req.body.targetFolderId
+        },
+        userId
+      );
+
+      // Log move
+      await this.#logControllerAction('DOCUMENT_MOVED', {
+        documentId,
+        targetClientId: req.body.targetClientId,
+        targetProjectId: req.body.targetProjectId,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        this.#formatDocumentResponse(movedDocument),
+        'Document moved successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Copy document
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async copyDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Copying document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.copy');
+
+      // Copy document
+      const copiedDocument = await this.#documentsService.copyDocument(
+        documentId,
+        {
+          targetClientId: req.body.targetClientId,
+          targetProjectId: req.body.targetProjectId,
+          newName: req.body.newName,
+          copyContent: req.body.copyContent !== 'false'
+        },
+        userId
+      );
+
+      // Log copy
+      await this.#logControllerAction('DOCUMENT_COPIED', {
+        originalDocumentId: documentId,
+        copiedDocumentId: copiedDocument._id,
+        targetClientId: req.body.targetClientId,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        this.#formatDocumentResponse(copiedDocument),
+        'Document copied successfully',
+        STATUS_CODES.CREATED
+      );
+
+      res.status(STATUS_CODES.CREATED).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Get document audit trail
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async getDocumentAuditTrail(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      logger.info(`Fetching audit trail for document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.audit');
+
+      // Parse options
+      const options = {
+        page: parseInt(req.query.page) || 1,
+        limit: Math.min(parseInt(req.query.limit) || 50, this.#paginationConfig.maxLimit),
+        dateRange: this.#parseDateRange(req.query),
+        actionTypes: req.query.actionTypes ? req.query.actionTypes.split(',') : null
+      };
+
+      // Get audit trail
+      const auditTrail = await this.#documentsService.getDocumentAuditTrail(documentId, options);
+
+      // Log audit access
+      await this.#logControllerAction('DOCUMENT_AUDIT_ACCESSED', {
+        documentId,
+        userId: req.user?.id
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatPaginatedSuccess(
+        auditTrail.entries,
+        auditTrail.pagination,
+        'Document audit trail retrieved successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Generate document thumbnails
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async generateThumbnails(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Generating thumbnails for document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.process');
+
+      // Generate thumbnails
+      const thumbnails = await this.#documentsService.generateThumbnails(documentId, userId, {
+        sizes: req.body.sizes || ['small', 'medium', 'large'],
+        force: req.body.force === true
+      });
+
+      // Log thumbnail generation
+      await this.#logControllerAction('DOCUMENT_THUMBNAILS_GENERATED', {
+        documentId,
+        thumbnailCount: Object.keys(thumbnails).length,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        thumbnails,
+        'Document thumbnails generated successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Extract text from document
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async extractDocumentText(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Extracting text from document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.process');
+
+      // Extract text
+      const textContent = await this.#documentsService.extractDocumentText(documentId, userId, {
+        includeMetadata: req.body.includeMetadata !== 'false',
+        maxLength: req.body.maxLength ? parseInt(req.body.maxLength) : null
+      });
+
+      // Log text extraction
+      await this.#logControllerAction('DOCUMENT_TEXT_EXTRACTED', {
+        documentId,
+        textLength: textContent.content?.length || 0,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        textContent,
+        'Document text extracted successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Validate document structure
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async validateDocumentStructure(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      logger.info(`Validating structure for document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.validate');
+
+      // Validate structure
+      const validationResult = await this.#documentsService.validateDocumentStructure(
+        documentId,
+        {
+          checkIntegrity: req.body.checkIntegrity !== 'false',
+          validateMetadata: req.body.validateMetadata !== 'false',
+          repairIfPossible: req.body.repairIfPossible === 'true'
+        }
+      );
+
+      // Log validation
+      await this.#logControllerAction('DOCUMENT_STRUCTURE_VALIDATED', {
+        documentId,
+        isValid: validationResult.isValid,
+        issuesFound: validationResult.issues?.length || 0,
+        userId: req.user?.id
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        validationResult,
+        'Document structure validation completed'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Scan document for viruses
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async scanDocumentForViruses(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Scanning document for viruses: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.scan');
+
+      // Scan document
+      const scanResult = await this.#documentsService.scanDocumentForViruses(documentId, userId, {
+        deepScan: req.body.deepScan === true,
+        quarantineIfInfected: req.body.quarantineIfInfected !== 'false'
+      });
+
+      // Log scan
+      await this.#logControllerAction('DOCUMENT_VIRUS_SCANNED', {
+        documentId,
+        scanResult: scanResult.status,
+        threatsFound: scanResult.threats?.length || 0,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        scanResult,
+        'Document virus scan completed'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Optimize document
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async optimizeDocument(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Optimizing document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.optimize');
+
+      // Optimize document
+      const optimizationResult = await this.#documentsService.optimizeDocument(documentId, userId, {
+        compressionLevel: req.body.compressionLevel || 'medium',
+        preserveQuality: req.body.preserveQuality !== 'false',
+        createBackup: req.body.createBackup !== 'false'
+      });
+
+      // Log optimization
+      await this.#logControllerAction('DOCUMENT_OPTIMIZED', {
+        documentId,
+        originalSize: optimizationResult.originalSize,
+        optimizedSize: optimizationResult.optimizedSize,
+        compressionRatio: optimizationResult.compressionRatio,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        optimizationResult,
+        'Document optimized successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Convert document format
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async convertDocumentFormat(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Converting document format: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Validate target format
+      if (!req.body.targetFormat) {
+        throw new ValidationError('Target format is required', 'TARGET_FORMAT_REQUIRED');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.convert');
+
+      // Convert document
+      const conversionResult = await this.#documentsService.convertDocumentFormat(
+        documentId,
+        req.body.targetFormat,
+        userId,
+        {
+          quality: req.body.quality || 'high',
+          preserveFormatting: req.body.preserveFormatting !== 'false',
+          createNewDocument: req.body.createNewDocument === 'true'
+        }
+      );
+
+      // Log conversion
+      await this.#logControllerAction('DOCUMENT_FORMAT_CONVERTED', {
+        documentId,
+        targetFormat: req.body.targetFormat,
+        success: conversionResult.success,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        conversionResult,
+        'Document format converted successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Get document preview
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async getDocumentPreview(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Getting document preview: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.read');
+
+      // Get preview
+      const preview = await this.#documentsService.getDocumentPreview(documentId, userId, {
+        pageNumber: req.query.page ? parseInt(req.query.page) : 1,
+        size: req.query.size || 'medium',
+        format: req.query.format || 'image'
+      });
+
+      // Log preview access
+      await this.#logControllerAction('DOCUMENT_PREVIEW_ACCESSED', {
+        documentId,
+        pageNumber: req.query.page,
+        userId
+      });
+
+      // Send preview based on format
+      if (preview.format === 'image') {
+        res.setHeader('Content-Type', preview.mimeType);
+        res.setHeader('Content-Length', preview.buffer.length);
+        res.status(STATUS_CODES.OK).send(preview.buffer);
+      } else {
+        const response = this.#responseFormatter.formatSuccess(
+          preview,
+          'Document preview retrieved successfully'
+        );
+        res.status(STATUS_CODES.OK).json(response);
+      }
+    })(req, res, next);
+  }
+
+  /**
+   * Get document metadata
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async getDocumentMetadata(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      logger.info(`Getting document metadata: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.read');
+
+      // Get metadata
+      const metadata = await this.#documentsService.getDocumentMetadata(documentId, {
+        includeSystemMetadata: req.query.includeSystemMetadata === 'true',
+        includeFileProperties: req.query.includeFileProperties !== 'false',
+        includeExifData: req.query.includeExifData === 'true'
+      });
+
+      // Log metadata access
+      await this.#logControllerAction('DOCUMENT_METADATA_ACCESSED', {
+        documentId,
+        userId: req.user?.id
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        metadata,
+        'Document metadata retrieved successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Update document metadata
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async updateDocumentMetadata(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Updating document metadata: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.update');
+
+      // Update metadata
+      const updatedMetadata = await this.#documentsService.updateDocumentMetadata(
+        documentId,
+        req.body.metadata,
+        userId
+      );
+
+      // Log metadata update
+      await this.#logControllerAction('DOCUMENT_METADATA_UPDATED', {
+        documentId,
+        updatedFields: Object.keys(req.body.metadata || {}),
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        updatedMetadata,
+        'Document metadata updated successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Bulk delete documents
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async bulkDeleteDocuments(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { clientId } = req.params;
+      const userId = req.user?.id || req.user?.adminId;
+
+      logger.info(`Bulk deleting documents for client: ${clientId}`);
+
+      // Validate client ID
+      if (!CommonValidator.isValidObjectId(clientId)) {
+        throw new ValidationError('Invalid client ID format', 'INVALID_CLIENT_ID');
+      }
+
+      // Validate document IDs
+      if (!req.body.documentIds || !Array.isArray(req.body.documentIds)) {
+        throw new ValidationError('Document IDs array is required', 'DOCUMENT_IDS_REQUIRED');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.bulkDelete');
+
+      // Validate bulk size
+      if (req.body.documentIds.length > this.#bulkConfig.maxOperationSize) {
+        throw new ValidationError(
+          `Bulk operation size exceeds maximum of ${this.#bulkConfig.maxOperationSize}`,
+          'BULK_SIZE_EXCEEDED'
+        );
+      }
+
+      // Execute bulk delete
+      const results = await this.#documentsService.bulkDeleteDocuments(
+        req.body.documentIds,
+        userId,
+        {
+          permanent: req.body.permanent === true,
+          reason: req.body.reason
+        }
+      );
+
+      // Log bulk operation
+      await this.#logControllerAction('BULK_DOCUMENTS_DELETED', {
+        clientId,
+        total: results.total,
+        successful: results.successful.length,
+        failed: results.failed.length,
+        permanent: req.body.permanent,
+        userId
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        results,
+        `Bulk delete completed: ${results.successful.length} deleted, ${results.failed.length} failed`
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Clean up expired documents
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async cleanupExpiredDocuments(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      logger.info('Starting cleanup of expired documents');
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.cleanup');
+
+      // Parse cleanup options
+      const options = {
+        dryRun: req.body.dryRun === true,
+        batchSize: req.body.batchSize || 100,
+        maxAge: req.body.maxAge ? parseInt(req.body.maxAge) : null,
+        tenantId: req.tenant?.id
+      };
+
+      // Execute cleanup
+      const cleanupResult = await this.#documentsService.cleanupExpiredDocuments(options);
+
+      // Log cleanup
+      await this.#logControllerAction('EXPIRED_DOCUMENTS_CLEANUP', {
+        processed: cleanupResult.processed,
+        deleted: cleanupResult.deleted,
+        errors: cleanupResult.errors.length,
+        dryRun: options.dryRun,
+        userId: req.user?.id
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        cleanupResult,
+        'Document cleanup completed successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Get document activity/history
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async getDocumentActivity(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { documentId } = req.params;
+      logger.info(`Fetching activity for document: ${documentId}`);
+
+      // Validate document ID
+      if (!CommonValidator.isValidObjectId(documentId)) {
+        throw new ValidationError('Invalid document ID format', 'INVALID_DOCUMENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.read');
+
+      // Parse options
+      const options = {
+        page: parseInt(req.query.page) || 1,
+        limit: Math.min(parseInt(req.query.limit) || 50, this.#paginationConfig.maxLimit),
+        dateRange: this.#parseDateRange(req.query),
+        activityTypes: req.query.activityTypes ? req.query.activityTypes.split(',') : null
+      };
+
+      // Get document activity
+      const activity = await this.#documentsService.getDocumentActivity(documentId, options);
+
+      // Log activity access
+      await this.#logControllerAction('DOCUMENT_ACTIVITY_ACCESSED', {
+        documentId,
+        userId: req.user?.id
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatPaginatedSuccess(
+        activity.activities,
+        activity.pagination,
+        'Document activity retrieved successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+   * Get storage statistics
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async getStorageStatistics(req, res, next) {
+    return asyncHandler(async (req, res, next) => {
+      const { clientId } = req.params;
+      logger.info(`Fetching storage statistics${clientId ? ` for client: ${clientId}` : ''}`);
+
+      // Validate client ID if provided
+      if (clientId && !CommonValidator.isValidObjectId(clientId)) {
+        throw new ValidationError('Invalid client ID format', 'INVALID_CLIENT_ID');
+      }
+
+      // Check permissions
+      await this.#checkPermission(req, 'documents.read');
+
+      // Parse options
+      const options = {
+        tenantId: req.tenant?.id,
+        includeBreakdown: req.query.includeBreakdown !== 'false',
+        includeProjections: req.query.includeProjections === 'true',
+        dateRange: this.#parseDateRange(req.query)
+      };
+
+      // Get storage statistics
+      const statistics = await this.#documentsService.getStorageStatistics(clientId, options);
+
+      // Log statistics access
+      await this.#logControllerAction('STORAGE_STATISTICS_ACCESSED', {
+        clientId,
+        userId: req.user?.id
+      });
+
+      // Format response
+      const response = this.#responseFormatter.formatSuccess(
+        statistics,
+        'Storage statistics retrieved successfully'
+      );
+
+      res.status(STATUS_CODES.OK).json(response);
+    })(req, res, next);
+  }
+
+  /**
+ * Validate permission updates structure
+ * @private
+ */
+  async #validatePermissionUpdates(permissions) {
+    const errors = [];
+
+    // Validate users array
+    if (permissions.users && Array.isArray(permissions.users)) {
+      for (const [index, userPerm] of permissions.users.entries()) {
+        if (!userPerm.userId) {
+          errors.push(`User permission ${index + 1}: userId is required`);
+        } else if (!CommonValidator.isValidObjectId(userPerm.userId)) {
+          errors.push(`User permission ${index + 1}: Invalid userId format`);
+        }
+
+        if (!userPerm.permissions || typeof userPerm.permissions !== 'object') {
+          errors.push(`User permission ${index + 1}: permissions object is required`);
+        } else {
+          const validPermissions = ['read', 'write', 'delete', 'share', 'admin'];
+          const providedPermissions = Object.keys(userPerm.permissions);
+
+          if (providedPermissions.length === 0) {
+            errors.push(`User permission ${index + 1}: At least one permission must be specified`);
+          }
+
+          for (const perm of providedPermissions) {
+            if (!validPermissions.includes(perm)) {
+              errors.push(`User permission ${index + 1}: Invalid permission '${perm}'`);
+            }
+            if (typeof userPerm.permissions[perm] !== 'boolean') {
+              errors.push(`User permission ${index + 1}: Permission '${perm}' must be boolean`);
+            }
+          }
+        }
+
+        if (userPerm.expiresAt && isNaN(new Date(userPerm.expiresAt))) {
+          errors.push(`User permission ${index + 1}: Invalid expiration date`);
+        }
+
+        if (userPerm.expiresAt && new Date(userPerm.expiresAt) <= new Date()) {
+          errors.push(`User permission ${index + 1}: Expiration date must be in the future`);
+        }
+      }
+    }
+
+    // Validate groups array
+    if (permissions.groups && Array.isArray(permissions.groups)) {
+      for (const [index, groupPerm] of permissions.groups.entries()) {
+        if (!groupPerm.groupId) {
+          errors.push(`Group permission ${index + 1}: groupId is required`);
+        }
+
+        if (!groupPerm.permissions || typeof groupPerm.permissions !== 'object') {
+          errors.push(`Group permission ${index + 1}: permissions object is required`);
+        }
+      }
+    }
+
+    // Validate public permissions
+    if (permissions.public && typeof permissions.public !== 'object') {
+      errors.push('Public permissions must be an object');
+    }
+
+    // Validate restrictions
+    if (permissions.restrictions) {
+      if (permissions.restrictions.downloadDisabled !== undefined &&
+        typeof permissions.restrictions.downloadDisabled !== 'boolean') {
+        errors.push('Download restriction must be boolean');
+      }
+
+      if (permissions.restrictions.viewLimit !== undefined &&
+        (!Number.isInteger(permissions.restrictions.viewLimit) || permissions.restrictions.viewLimit < 0)) {
+        errors.push('View limit must be a non-negative integer');
+      }
+
+      if (permissions.restrictions.watermark &&
+        typeof permissions.restrictions.watermark !== 'object') {
+        errors.push('Watermark restriction must be an object');
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new ValidationError(errors.join('; '), 'PERMISSIONS_VALIDATION_FAILED');
+    }
+
+    return true;
+  }
+
+}
 
 // Export controller and middleware
 module.exports = new ClientDocumentsController();

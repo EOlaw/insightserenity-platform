@@ -402,34 +402,34 @@ router.get(
   ClientContactsController.getContactHierarchy
 );
 
-// Map contact relationships
-router.get(
-  '/relationships/map',
-  // authorize(['admin', 'manager', 'user', 'viewer']),
-  validateContactAccess,
-  // costBasedLimit(calculateContactCost, RATE_LIMITS.default),
-  ClientContactsController.mapContactRelationships
-);
+// // Map contact relationships
+// router.get(
+//   '/relationships/map',
+//   // authorize(['admin', 'manager', 'user', 'viewer']),
+//   validateContactAccess,
+//   // costBasedLimit(calculateContactCost, RATE_LIMITS.default),
+//   ClientContactsController.mapContactRelationships
+// );
 
-// Set primary contact
-router.post(
-  '/:contactId/primary',
-  // authorize(['admin', 'manager']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('set-primary-contact'),
-  ClientContactsController.setPrimaryContact
-);
+// // Set primary contact
+// router.post(
+//   '/:contactId/primary',
+//   // authorize(['admin', 'manager']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('set-primary-contact'),
+//   ClientContactsController.setPrimaryContact
+// );
 
-// Transfer contact ownership
-router.post(
-  '/:contactId/transfer',
-  // authorize(['admin', 'manager']),
-  validateContactAccess,
-  // combinedLimit(['ip', 'user'], RATE_LIMITS.write),
-  contactOperationLogger('contact-transfer'),
-  ClientContactsController.transferContactOwnership
-);
+// // Transfer contact ownership
+// router.post(
+//   '/:contactId/transfer',
+//   // authorize(['admin', 'manager']),
+//   validateContactAccess,
+//   // combinedLimit(['ip', 'user'], RATE_LIMITS.write),
+//   contactOperationLogger('contact-transfer'),
+//   ClientContactsController.transferContactOwnership
+// );
 
 /**
  * ===============================================================================
@@ -460,33 +460,33 @@ router.post(
 );
 
 // Update communication preferences
-router.put(
-  '/:contactId/preferences',
-  // authorize(['admin', 'manager', 'user']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('update-preferences'),
-  ClientContactsController.updateCommunicationPreferences
-);
+// router.put(
+//   '/:contactId/preferences',
+//   // authorize(['admin', 'manager', 'user']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('update-preferences'),
+//   ClientContactsController.updateCommunicationPreferences
+// );
 
-// Schedule follow-up
-router.post(
-  '/:contactId/follow-up',
-  // authorize(['admin', 'manager', 'user']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('schedule-followup'),
-  ClientContactsController.scheduleFollowUp
-);
+// // Schedule follow-up
+// router.post(
+//   '/:contactId/follow-up',
+//   // authorize(['admin', 'manager', 'user']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('schedule-followup'),
+//   ClientContactsController.scheduleFollowUp
+// );
 
-// Get contact notifications
-router.get(
-  '/:contactId/notifications',
-  // authorize(['admin', 'manager', 'user']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.read),
-  ClientContactsController.getContactNotifications
-);
+// // Get contact notifications
+// router.get(
+//   '/:contactId/notifications',
+//   // authorize(['admin', 'manager', 'user']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.read),
+//   ClientContactsController.getContactNotifications
+// );
 
 /**
  * ===============================================================================
@@ -505,40 +505,40 @@ router.post(
 );
 
 // Get contact activity timeline
-router.get(
-  '/:contactId/timeline',
-  // authorize(['admin', 'manager', 'user', 'viewer']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.read),
-  ClientContactsController.getContactActivityTimeline
-);
+// router.get(
+//   '/:contactId/timeline',
+//   // authorize(['admin', 'manager', 'user', 'viewer']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.read),
+//   ClientContactsController.getContactActivityTimeline
+// );
 
 // Get contact insights
-router.get(
-  '/:contactId/insights',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateContactAccess,
-  // costBasedLimit(calculateContactCost, RATE_LIMITS.engagement),
-  ClientContactsController.getContactInsights
-);
+// router.get(
+//   '/:contactId/insights',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateContactAccess,
+//   // costBasedLimit(calculateContactCost, RATE_LIMITS.engagement),
+//   ClientContactsController.getContactInsights
+// );
 
-// Get contact metrics
-router.get(
-  '/:contactId/metrics',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.read),
-  ClientContactsController.getContactMetrics
-);
+// // Get contact metrics
+// router.get(
+//   '/:contactId/metrics',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.read),
+//   ClientContactsController.getContactMetrics
+// );
 
-// Get contact analytics
-router.get(
-  '/:contactId/analytics',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateContactAccess,
-  // costBasedLimit(calculateContactCost, RATE_LIMITS.engagement),
-  ClientContactsController.getContactAnalytics
-);
+// // Get contact analytics
+// router.get(
+//   '/:contactId/analytics',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateContactAccess,
+//   // costBasedLimit(calculateContactCost, RATE_LIMITS.engagement),
+//   ClientContactsController.getContactAnalytics
+// );
 
 /**
  * ===============================================================================
@@ -547,54 +547,54 @@ router.get(
  */
 
 // Update contact status
-router.patch(
-  '/:contactId/status',
-  // authorize(['admin', 'manager', 'user']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('update-status'),
-  ClientContactsController.updateContactStatus
-);
+// router.patch(
+//   '/:contactId/status',
+//   // authorize(['admin', 'manager', 'user']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('update-status'),
+//   ClientContactsController.updateContactStatus
+// );
 
-// Archive contact
-router.post(
-  '/:contactId/archive',
-  // authorize(['admin', 'manager']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('archive-contact'),
-  ClientContactsController.archiveContact
-);
+// // Archive contact
+// router.post(
+//   '/:contactId/archive',
+//   // authorize(['admin', 'manager']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('archive-contact'),
+//   ClientContactsController.archiveContact
+// );
 
-// Unarchive contact
-router.post(
-  '/:contactId/unarchive',
-  // authorize(['admin', 'manager']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('unarchive-contact'),
-  ClientContactsController.unarchiveContact
-);
+// // Unarchive contact
+// router.post(
+//   '/:contactId/unarchive',
+//   // authorize(['admin', 'manager']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('unarchive-contact'),
+//   ClientContactsController.unarchiveContact
+// );
 
 // Tag contact
-router.post(
-  '/:contactId/tags',
-  // authorize(['admin', 'manager', 'user']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('tag-contact'),
-  ClientContactsController.tagContact
-);
+// router.post(
+//   '/:contactId/tags',
+//   // authorize(['admin', 'manager', 'user']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('tag-contact'),
+//   ClientContactsController.tagContact
+// );
 
-// Untag contact
-router.delete(
-  '/:contactId/tags/:tag',
-  // authorize(['admin', 'manager', 'user']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('untag-contact'),
-  ClientContactsController.untagContact
-);
+// // Untag contact
+// router.delete(
+//   '/:contactId/tags/:tag',
+//   // authorize(['admin', 'manager', 'user']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('untag-contact'),
+//   ClientContactsController.untagContact
+// );
 
 /**
  * ===============================================================================
@@ -603,33 +603,33 @@ router.delete(
  */
 
 // Add contact to group
-router.post(
-  '/:contactId/groups',
-  // authorize(['admin', 'manager', 'user']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('add-to-group'),
-  ClientContactsController.addContactToGroup
-);
+// router.post(
+//   '/:contactId/groups',
+//   // authorize(['admin', 'manager', 'user']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('add-to-group'),
+//   ClientContactsController.addContactToGroup
+// );
 
-// Remove contact from group
-router.delete(
-  '/:contactId/groups/:groupId',
-  // authorize(['admin', 'manager', 'user']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('remove-from-group'),
-  ClientContactsController.removeContactFromGroup
-);
+// // Remove contact from group
+// router.delete(
+//   '/:contactId/groups/:groupId',
+//   // authorize(['admin', 'manager', 'user']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('remove-from-group'),
+//   ClientContactsController.removeContactFromGroup
+// );
 
-// Get contacts by role
-router.get(
-  '/by-role/:role',
-  // authorize(['admin', 'manager', 'user', 'viewer']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.read),
-  ClientContactsController.getContactsByRole
-);
+// // Get contacts by role
+// router.get(
+//   '/by-role/:role',
+//   // authorize(['admin', 'manager', 'user', 'viewer']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.read),
+//   ClientContactsController.getContactsByRole
+// );
 
 /**
  * ===============================================================================
@@ -649,24 +649,24 @@ router.post(
 );
 
 // Bulk update contacts
-router.patch(
-  '/bulk/update',
-  // authorize(['admin', 'manager']),
-  validateContactAccess,
-  // costBasedLimit(calculateContactCost, RATE_LIMITS.bulk),
-  contactOperationLogger('bulk-update'),
-  ClientContactsController.bulkUpdateContacts
-);
+// router.patch(
+//   '/bulk/update',
+//   // authorize(['admin', 'manager']),
+//   validateContactAccess,
+//   // costBasedLimit(calculateContactCost, RATE_LIMITS.bulk),
+//   contactOperationLogger('bulk-update'),
+//   ClientContactsController.bulkUpdateContacts
+// );
 
-// Bulk delete contacts
-router.post(
-  '/bulk/delete',
-  // authorize(['admin', 'manager']),
-  validateContactAccess,
-  // costBasedLimit(calculateContactCost, RATE_LIMITS.bulk),
-  contactOperationLogger('bulk-delete'),
-  ClientContactsController.bulkDeleteContacts
-);
+// // Bulk delete contacts
+// router.post(
+//   '/bulk/delete',
+//   // authorize(['admin', 'manager']),
+//   validateContactAccess,
+//   // costBasedLimit(calculateContactCost, RATE_LIMITS.bulk),
+//   contactOperationLogger('bulk-delete'),
+//   ClientContactsController.bulkDeleteContacts
+// );
 
 /**
  * ===============================================================================
@@ -685,19 +685,19 @@ router.get(
 );
 
 // Import contacts
-router.post(
-  '/import',
-  // authorize(['admin', 'manager']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.import),
-  upload.single('file'),
-  // fileValidator({
-  //   maxSize: 10 * 1024 * 1024, // 10MB
-  //   allowedTypes: ['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/vcard']
-  // }),
-  contactOperationLogger('import-contacts'),
-  ClientContactsController.importContacts
-);
+// router.post(
+//   '/import',
+//   // authorize(['admin', 'manager']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.import),
+//   upload.single('file'),
+//   // fileValidator({
+//   //   maxSize: 10 * 1024 * 1024, // 10MB
+//   //   allowedTypes: ['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/vcard']
+//   // }),
+//   contactOperationLogger('import-contacts'),
+//   ClientContactsController.importContacts
+// );
 
 /**
  * ===============================================================================
@@ -706,25 +706,25 @@ router.post(
  */
 
 // Merge contacts
-router.post(
-  '/merge',
-  // authorize(['admin', 'manager']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  // ClientContactsValidators.validateMerge,
-  contactOperationLogger('merge-contacts'),
-  ClientContactsController.mergeContacts
-);
+// router.post(
+//   '/merge',
+//   // authorize(['admin', 'manager']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   // ClientContactsValidators.validateMerge,
+//   contactOperationLogger('merge-contacts'),
+//   ClientContactsController.mergeContacts
+// );
 
-// Duplicate contact
-router.post(
-  '/:contactId/duplicate',
-  // authorize(['admin', 'manager']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('duplicate-contact'),
-  ClientContactsController.duplicateContact
-);
+// // Duplicate contact
+// router.post(
+//   '/:contactId/duplicate',
+//   // authorize(['admin', 'manager']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('duplicate-contact'),
+//   ClientContactsController.duplicateContact
+// );
 
 /**
  * ===============================================================================
@@ -733,14 +733,14 @@ router.post(
  */
 
 // Generate contact report
-router.post(
-  '/report',
-  // authorize(['admin', 'manager', 'analyst']),
-  validateContactAccess,
-  // costBasedLimit(calculateContactCost, RATE_LIMITS.default),
-  contactOperationLogger('generate-report'),
-  ClientContactsController.generateContactReport
-);
+// router.post(
+//   '/report',
+//   // authorize(['admin', 'manager', 'analyst']),
+//   validateContactAccess,
+//   // costBasedLimit(calculateContactCost, RATE_LIMITS.default),
+//   contactOperationLogger('generate-report'),
+//   ClientContactsController.generateContactReport
+// );
 
 /**
  * ===============================================================================
@@ -749,23 +749,23 @@ router.post(
  */
 
 // Validate contact data
-router.post(
-  '/:contactId/validate',
-  // authorize(['admin', 'manager', 'user']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.default),
-  ClientContactsController.validateContactData
-);
+// router.post(
+//   '/:contactId/validate',
+//   // authorize(['admin', 'manager', 'user']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.default),
+//   ClientContactsController.validateContactData
+// );
 
-// Sync contact data
-router.post(
-  '/:contactId/sync',
-  // authorize(['admin', 'manager']),
-  validateContactAccess,
-  // limitByUser(RATE_LIMITS.write),
-  contactOperationLogger('sync-contact'),
-  ClientContactsController.syncContactData
-);
+// // Sync contact data
+// router.post(
+//   '/:contactId/sync',
+//   // authorize(['admin', 'manager']),
+//   validateContactAccess,
+//   // limitByUser(RATE_LIMITS.write),
+//   contactOperationLogger('sync-contact'),
+//   ClientContactsController.syncContactData
+// );
 
 /**
  * ===============================================================================

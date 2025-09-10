@@ -22,7 +22,7 @@
 
 const User = require('../../database/models/users/user-model');
 const OrganizationModel = require('../../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model');
-const SessionModel = require('../../database/models/session-model');
+const SessionModel = require('../../database/models/auth/session-model');
 const AuditLogModel = require('../../database/models/security/audit-log-model');
 const TokenService = require('./token-service');
 const SessionService = require('./session-service');

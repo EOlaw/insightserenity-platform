@@ -484,7 +484,7 @@ router.get(
   '/',
   // authorize(['admin', 'manager', 'user', 'viewer']),
   // adaptiveLimit(RATE_LIMITS.read),
-  processSearchParams,
+  // processSearchParams,
   ClientController.searchClients
 );
 

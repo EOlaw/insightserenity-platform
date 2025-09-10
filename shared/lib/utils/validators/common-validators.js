@@ -34,6 +34,14 @@ class CommonValidator {
   static #IPV6_REGEX = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
 
   /**
+ * @private
+ * @static
+ * @readonly
+ * MongoDB ObjectId regex pattern - 24 character hexadecimal string
+ */
+  static #OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
+
+  /**
    * Validates if a value is defined and not null
    * @static
    * @param {*} value - Value to validate
@@ -71,14 +79,14 @@ class CommonValidator {
   static isValidLength(value, options = {}) {
     if (typeof value !== 'string') return false;
     const { min, max, exact } = options;
-    
+
     if (exact !== undefined) {
       return value.length === exact;
     }
-    
+
     if (min !== undefined && value.length < min) return false;
     if (max !== undefined && value.length > max) return false;
-    
+
     return true;
   }
 
@@ -108,14 +116,14 @@ class CommonValidator {
   static isValidNumber(value, options = {}) {
     const num = Number(value);
     if (isNaN(num) || !isFinite(num)) return false;
-    
+
     const { min, max, integer = false, positive = false } = options;
-    
+
     if (integer && !Number.isInteger(num)) return false;
     if (positive && num <= 0) return false;
     if (min !== undefined && num < min) return false;
     if (max !== undefined && num > max) return false;
-    
+
     return true;
   }
 
@@ -129,15 +137,15 @@ class CommonValidator {
    */
   static isValidBoolean(value, options = {}) {
     const { strict = false } = options;
-    
+
     if (strict) {
       return typeof value === 'boolean';
     }
-    
-    return value === true || value === false || 
-           value === 'true' || value === 'false' ||
-           value === 1 || value === 0 ||
-           value === '1' || value === '0';
+
+    return value === true || value === false ||
+      value === 'true' || value === 'false' ||
+      value === 1 || value === 0 ||
+      value === '1' || value === '0';
   }
 
   /**
@@ -152,16 +160,16 @@ class CommonValidator {
    */
   static isValidArray(value, options = {}) {
     if (!Array.isArray(value)) return false;
-    
+
     const { minLength, maxLength, itemValidator } = options;
-    
+
     if (minLength !== undefined && value.length < minLength) return false;
     if (maxLength !== undefined && value.length > maxLength) return false;
-    
+
     if (itemValidator && typeof itemValidator === 'function') {
       return value.every(item => itemValidator(item));
     }
-    
+
     return true;
   }
 
@@ -178,22 +186,45 @@ class CommonValidator {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return false;
     }
-    
+
     const { requiredKeys = [], schema = {} } = options;
-    
+
     // Check required keys
     for (const key of requiredKeys) {
       if (!(key in value)) return false;
     }
-    
+
     // Validate against schema if provided
     for (const [key, validator] of Object.entries(schema)) {
       if (typeof validator === 'function' && !validator(value[key])) {
         return false;
       }
     }
-    
+
     return true;
+  }
+
+  /**
+ * Validates if a value is a valid MongoDB ObjectId
+ * @static
+ * @param {string} value - Value to validate
+ * @param {Object} [options={}] - Validation options
+ * @param {boolean} [options.strict=true] - Strict validation (24 hex chars)
+ * @returns {boolean} True if value is a valid ObjectId
+ */
+  static isValidObjectId(value, options = {}) {
+    if (typeof value !== 'string') return false;
+
+    const { strict = true } = options;
+
+    if (strict) {
+      // MongoDB ObjectId must be exactly 24 hexadecimal characters
+      return this.#OBJECT_ID_REGEX.test(value);
+    }
+
+    // Less strict validation - just check if it's hexadecimal and reasonable length
+    const hexRegex = /^[0-9a-fA-F]+$/;
+    return hexRegex.test(value) && value.length >= 12 && value.length <= 24;
   }
 
   /**
@@ -206,16 +237,16 @@ class CommonValidator {
    */
   static isValidUUID(value, options = {}) {
     if (typeof value !== 'string') return false;
-    
+
     const { version } = options;
-    
+
     if (!this.#UUID_REGEX.test(value)) return false;
-    
+
     if (version && version >= 1 && version <= 5) {
       const versionChar = value.charAt(14);
       return versionChar === version.toString();
     }
-    
+
     return true;
   }
 
@@ -230,16 +261,16 @@ class CommonValidator {
    */
   static isValidURL(value, options = {}) {
     if (typeof value !== 'string') return false;
-    
+
     const { protocols = ['http', 'https'], requireProtocol = true } = options;
-    
+
     try {
       const url = new URL(value);
-      
+
       if (requireProtocol && !protocols.includes(url.protocol.slice(0, -1))) {
         return false;
       }
-      
+
       return this.#URL_REGEX.test(value);
     } catch {
       return false;
@@ -256,7 +287,7 @@ class CommonValidator {
    */
   static isValidPhone(value, options = {}) {
     if (typeof value !== 'string') return false;
-    
+
     const cleaned = value.replace(/[\s\-\(\)]/g, '');
     return this.#PHONE_REGEX.test(cleaned);
   }
@@ -280,7 +311,7 @@ class CommonValidator {
    */
   static matchesPattern(value, pattern) {
     if (typeof value !== 'string') return false;
-    
+
     const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern);
     return regex.test(value);
   }
@@ -297,15 +328,15 @@ class CommonValidator {
    */
   static isAlphanumeric(value, options = {}) {
     if (typeof value !== 'string') return false;
-    
+
     const { allowSpaces = false, allowUnderscore = false, allowDash = false } = options;
-    
+
     let pattern = '^[a-zA-Z0-9';
     if (allowSpaces) pattern += '\\s';
     if (allowUnderscore) pattern += '_';
     if (allowDash) pattern += '-';
     pattern += ']+$';
-    
+
     return new RegExp(pattern).test(value);
   }
 
@@ -319,10 +350,10 @@ class CommonValidator {
    */
   static isAlpha(value, options = {}) {
     if (typeof value !== 'string') return false;
-    
+
     const { allowSpaces = false } = options;
     const pattern = allowSpaces ? /^[a-zA-Z\s]+$/ : this.#ALPHA_REGEX;
-    
+
     return pattern.test(value);
   }
 
@@ -347,10 +378,10 @@ class CommonValidator {
    */
   static isDecimal(value, options = {}) {
     if (typeof value !== 'string' && typeof value !== 'number') return false;
-    
+
     const str = value.toString();
     if (!this.#DECIMAL_REGEX.test(str)) return false;
-    
+
     const { precision } = options;
     if (precision !== undefined) {
       const parts = str.split('.');
@@ -358,7 +389,7 @@ class CommonValidator {
         return false;
       }
     }
-    
+
     return true;
   }
 
@@ -383,15 +414,15 @@ class CommonValidator {
    */
   static isValidIP(value, options = {}) {
     if (typeof value !== 'string') return false;
-    
+
     const { version } = options;
-    
+
     if (version === 4) {
       return this.#IPV4_REGEX.test(value);
     } else if (version === 6) {
       return this.#IPV6_REGEX.test(value);
     }
-    
+
     return this.#IPV4_REGEX.test(value) || this.#IPV6_REGEX.test(value);
   }
 
@@ -406,16 +437,16 @@ class CommonValidator {
    */
   static isInList(value, allowedValues, options = {}) {
     if (!Array.isArray(allowedValues)) return false;
-    
+
     const { caseSensitive = true } = options;
-    
+
     if (!caseSensitive && typeof value === 'string') {
       const lowerValue = value.toLowerCase();
-      return allowedValues.some(allowed => 
+      return allowedValues.some(allowed =>
         typeof allowed === 'string' && allowed.toLowerCase() === lowerValue
       );
     }
-    
+
     return allowedValues.includes(value);
   }
 
@@ -432,18 +463,18 @@ class CommonValidator {
    */
   static isValidDate(value, options = {}) {
     const date = value instanceof Date ? value : new Date(value);
-    
+
     if (isNaN(date.getTime())) return false;
-    
+
     const { minDate, maxDate, allowFuture = true, allowPast = true } = options;
     const now = new Date();
-    
+
     if (!allowFuture && date > now) return false;
     if (!allowPast && date < now) return false;
-    
+
     if (minDate && date < new Date(minDate)) return false;
     if (maxDate && date > new Date(maxDate)) return false;
-    
+
     return true;
   }
 
@@ -455,7 +486,7 @@ class CommonValidator {
    */
   static isValidJSON(value) {
     if (typeof value !== 'string') return false;
-    
+
     try {
       JSON.parse(value);
       return true;
@@ -472,15 +503,15 @@ class CommonValidator {
    */
   static isBase64(value) {
     if (typeof value !== 'string') return false;
-    
+
     const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-    
+
     // Check if string matches base64 pattern
     if (!base64Regex.test(value)) return false;
-    
+
     // Check if length is multiple of 4
     if (value.length % 4 !== 0) return false;
-    
+
     try {
       return btoa(atob(value)) === value;
     } catch {
@@ -497,7 +528,7 @@ class CommonValidator {
   static validateMultiple(validations) {
     const errors = {};
     let isValid = true;
-    
+
     for (const [field, validator] of Object.entries(validations)) {
       if (typeof validator === 'function') {
         const result = validator();
@@ -507,7 +538,7 @@ class CommonValidator {
         }
       }
     }
-    
+
     return { isValid, errors };
   }
 
@@ -520,53 +551,53 @@ class CommonValidator {
   static validate(value) {
     const errors = [];
     let currentValue = value;
-    
+
     const chain = {
       value: currentValue,
       errors,
-      
+
       required(message = 'Value is required') {
         if (!CommonValidator.isDefined(currentValue)) {
           errors.push(message);
         }
         return chain;
       },
-      
+
       string(message = 'Value must be a string') {
         if (typeof currentValue !== 'string') {
           errors.push(message);
         }
         return chain;
       },
-      
+
       minLength(min, message) {
         if (typeof currentValue === 'string' && currentValue.length < min) {
           errors.push(message || `Minimum length is ${min}`);
         }
         return chain;
       },
-      
+
       maxLength(max, message) {
         if (typeof currentValue === 'string' && currentValue.length > max) {
           errors.push(message || `Maximum length is ${max}`);
         }
         return chain;
       },
-      
+
       pattern(regex, message = 'Value does not match pattern') {
         if (!CommonValidator.matchesPattern(currentValue, regex)) {
           errors.push(message);
         }
         return chain;
       },
-      
+
       custom(validator, message = 'Custom validation failed') {
         if (typeof validator === 'function' && !validator(currentValue)) {
           errors.push(message);
         }
         return chain;
       },
-      
+
       transform(transformer) {
         if (typeof transformer === 'function') {
           currentValue = transformer(currentValue);
@@ -574,20 +605,20 @@ class CommonValidator {
         }
         return chain;
       },
-      
+
       isValid() {
         return errors.length === 0;
       },
-      
+
       getErrors() {
         return errors.length > 0 ? errors : null;
       },
-      
+
       getFirstError() {
         return errors.length > 0 ? errors[0] : null;
       }
     };
-    
+
     return chain;
   }
 }

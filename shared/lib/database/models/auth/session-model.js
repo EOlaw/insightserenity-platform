@@ -12,11 +12,11 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('./base-model');
-const logger = require('../../utils/logger');
-const { AppError } = require('../../utils/app-error');
-const stringHelper = require('../../utils/helpers/string-helper');
-const cryptoUtils = require('../../security/encryption/crypto-utils');
+const BaseModel = require('../base-model');
+const logger = require('../../../utils/logger');
+const { AppError } = require('../../../utils/app-error');
+const stringHelper = require('../../../utils/helpers/string-helper');
+const cryptoUtils = require('../../../security/encryption/crypto-utils');
 
 /**
  * Session schema definition
@@ -817,7 +817,9 @@ sessionSchema.statics.getSessionStatistics = async function(filters = {}) {
 // Create and export model
 const SessionModel = BaseModel.createModel('Session', sessionSchema);
 
-module.exports = {
-  schema: sessionSchema,
-  model: SessionModel
-};
+module.exports = SessionModel;
+
+// module.exports = {
+//   schema: sessionSchema,
+//   model: SessionModel
+// };

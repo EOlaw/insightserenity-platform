@@ -21,7 +21,7 @@ const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const CacheService = require('../../services/cache-service');
 const AuditService = require('../../security/audit/audit-service');
-const SessionModel = require('../../database/models/session-model');
+const SessionModel = require('../../database/models/auth/session-model');
 const config = require('../../../config');
 
 /**
