@@ -198,7 +198,7 @@ class AuthService {
    */
   constructor(authConfig, dependencies = {}) {
     this.#config = authConfig;
-    
+
     // Initialize service dependencies
     this.#tokenService = dependencies.tokenService || new TokenService();
     this.#sessionService = dependencies.sessionService || new SessionService();
@@ -330,8 +330,8 @@ class AuthService {
       await this.#updateLastLogin(user, context);
 
       // Enterprise security processing
-      if (this.#isEnterpriseFeatureEnabled('enableSecurityAlerts') && 
-          riskScore > this.#config.security.riskThresholds.high) {
+      if (this.#isEnterpriseFeatureEnabled('enableSecurityAlerts') &&
+        riskScore > this.#config.security.riskThresholds.high) {
         await this.#sendSecurityAlert(user, context, riskScore, riskFactors);
       }
 
@@ -432,7 +432,7 @@ class AuthService {
 
       if (allDevices) {
         await this.#sessionService.terminateAllUserSessions(session.userId);
-        
+
         const userSessions = await this.#sessionService.getActiveUserSessions(session.userId);
         for (const userSession of userSessions) {
           if (userSession.accessToken) {
@@ -808,7 +808,7 @@ class AuthService {
       user.password = hashedPassword;
       user.security.passwordReset = undefined;
       user.passwordChangedAt = new Date();
-      
+
       user.passwordHistory = user.passwordHistory || [];
       user.passwordHistory.unshift({
         hash: hashedPassword,
@@ -1168,7 +1168,7 @@ class AuthService {
 
     const {
       label,
-      issuer = this.#config.mfa.totp.issuer,
+      issuer = this.#config.mfa.totp.issuer || 'Enterprise App',
       deviceInfo,
       phoneNumber,
       email,
@@ -1181,6 +1181,7 @@ class AuthService {
         throw new NotFoundError('User not found', 'USER_NOT_FOUND');
       }
 
+      // Initialize MFA structure if not present
       if (!user.mfa) {
         user.mfa = {
           enabled: false,
@@ -1191,6 +1192,7 @@ class AuthService {
         };
       }
 
+      // Check if method already exists and is enabled
       const existingMethod = user.mfa.methods.find(m => m.type === method);
       if (existingMethod && existingMethod.enabled) {
         throw new ConflictError('MFA method already enabled', 'MFA_METHOD_EXISTS');
@@ -1221,6 +1223,7 @@ class AuthService {
           throw new ValidationError('Unsupported MFA method', 'UNSUPPORTED_MFA_METHOD');
       }
 
+      // Add new method to user's MFA methods
       await this.#auditEvent(
         'MFA_SETUP_INITIATED',
         user,
@@ -1821,7 +1824,7 @@ class AuthService {
       };
     } catch (error) {
       logger.error('Unified auth service health check failed', { error: error.message });
-      
+
       return {
         healthy: false,
         service: 'UnifiedAuthService',
@@ -1968,17 +1971,17 @@ class AuthService {
    * Find user for login
    */
   async #findUserForLogin(email, organizationId) {
-    const query = { 
+    const query = {
       email: email.toLowerCase(),
       'accountStatus.status': { $in: ['active', 'pending'] }
     };
-    
+
     if (organizationId) {
       query.organizationId = organizationId;
     }
 
     const user = await User.findOne(query).select('+password +mfa.secret +security');
-    
+
     if (!user) {
       throw new AppError(
         'Invalid credentials',
@@ -2080,7 +2083,7 @@ class AuthService {
 
     if (user.security.loginAttempts.count >= this.#config.core.maxLoginAttempts) {
       user.security.loginAttempts.lockedUntil = new Date(Date.now() + this.#config.core.lockoutDuration);
-      
+
       await this.#auditEvent(
         UnifiedAuthService.#AUTH_EVENTS.ACCOUNT_LOCKED,
         user,
@@ -2111,7 +2114,7 @@ class AuthService {
 
     const activeSessions = await this.#sessionService.getActiveUserSessions(userId);
     if (activeSessions.length >= this.#config.core.maxConcurrentSessions) {
-      const oldestSession = activeSessions.sort((a, b) => 
+      const oldestSession = activeSessions.sort((a, b) =>
         new Date(a.createdAt) - new Date(b.createdAt)
       )[0];
       await this.#sessionService.terminateSession(oldestSession._id);
@@ -2296,7 +2299,7 @@ class AuthService {
 
     const expiryDate = new Date(user.passwordChangedAt);
     expiryDate.setDate(expiryDate.getDate() + this.#config.passwordPolicy.expiryDays);
-    
+
     return new Date() > expiryDate;
   }
 
@@ -2372,7 +2375,7 @@ class AuthService {
    */
   async #validateInvitationCode(invitationCode, email) {
     const invitation = await this.#cacheService.get(`invitation:${invitationCode}`);
-    
+
     if (!invitation) {
       throw new AppError(
         'Invalid or expired invitation code',
@@ -2398,7 +2401,7 @@ class AuthService {
    */
   async #markInvitationUsed(invitationCode, userId) {
     await this.#cacheService.delete(`invitation:${invitationCode}`);
-    
+
     logger.info('Invitation code used', {
       invitationCode,
       userId
@@ -2413,7 +2416,7 @@ class AuthService {
     if (!this.#config.notifications.email.verificationEmail) return;
 
     const verificationUrl = `${this.#config.core.appUrl}/auth/verify-email?token=${token}`;
-    
+
     try {
       await this.#emailService.sendEmail({
         to: user.email,
@@ -2463,7 +2466,7 @@ class AuthService {
    */
   async #sendPasswordResetEmail(user, token) {
     const resetUrl = `${this.#config.core.appUrl}/auth/reset-password?token=${token}`;
-    
+
     try {
       await this.#emailService.sendEmail({
         to: user.email,
@@ -2593,7 +2596,7 @@ class AuthService {
    */
   #getAvailable2FAMethods(user) {
     const methods = [];
-    
+
     if (user.mfa?.methods) {
       user.mfa.methods.forEach(method => {
         if (method.enabled) {
@@ -2757,7 +2760,7 @@ class AuthService {
 
       user.mfa.enabled = true;
       user.mfa.enabledAt = new Date();
-      
+
       // Generate backup codes
       const backupCodes = [];
       for (let i = 0; i < 8; i++) {
@@ -3053,7 +3056,7 @@ class AuthService {
     await user.save();
 
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    
+
     if (this.#config.notifications.push.enabled) {
       await this.#sendPushNotification(deviceInfo.pushToken, {
         title: 'Verify Push Notifications',
@@ -4085,7 +4088,7 @@ class AuthService {
    */
   #isTrustedDevice(userId, deviceId) {
     if (!deviceId) return false;
-    
+
     const key = `${userId}:${deviceId}`;
     const trustedDevice = this.#trustedDevices.get(key);
     return trustedDevice && trustedDevice.expiresAt > Date.now();
