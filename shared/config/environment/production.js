@@ -181,6 +181,308 @@ class ProductionConfig {
       }
     };
 
+    // Authentication configuration for production
+    this.auth = {
+      // Core authentication settings optimized for production security
+      core: {
+        sessionDuration: 28800000, // 8 hours for security
+        refreshTokenDuration: 604800000, // 7 days
+        allowMultipleSessions: true,
+        maxConcurrentSessions: 3, // Restrict concurrent sessions
+        maxLoginAttempts: 5, // Strict limit
+        lockoutDuration: 1800000, // 30 minutes lockout
+        requireEmailVerification: true, // Always required in production
+        passwordResetTokenDuration: 3600000, // 1 hour only
+        verificationTokenDuration: 86400000, // 24 hours
+        appUrl: 'https://app.insightserenity.com',
+        apiUrl: 'https://api.insightserenity.com'
+      },
+
+      // All enterprise features enabled in production
+      enterprise: {
+        enableRiskAssessment: true,
+        enableAdvancedMFA: true,
+        enableDeviceManagement: true,
+        enableSecurityAlerts: true,
+        enableAdvancedAudit: true,
+        enableSSO: true,
+        enableSAML: true,
+        enableOIDC: true,
+        enableOAuth: true,
+        oauthProviders: ['google', 'github', 'linkedin', 'microsoft'],
+        enableSessionAnalytics: true,
+        enableGeolocationTracking: true,
+        enableDeviceFingerprinting: true
+      },
+
+      // All production features enabled
+      features: {
+        registration: true,
+        passwordReset: true,
+        emailVerification: true,
+        basicMFA: true,
+        riskAssessment: true,
+        advancedMFA: true,
+        oauth: true,
+        sso: true,
+        deviceTrust: true,
+        securityAnalytics: true,
+        complianceReporting: true,
+        biometric: true,
+        webauthn: true,
+        faceId: true,
+        touchId: true
+      },
+
+      // Strong password policy for production
+      passwordPolicy: {
+        minLength: 12, // Strong minimum length
+        maxLength: 128,
+        requireUppercase: true,
+        requireLowercase: true,
+        requireNumbers: true,
+        requireSpecial: true,
+        preventReuse: 10, // Prevent reuse of last 10 passwords
+        expiryDays: 90, // Password expires after 90 days
+        complexityChecking: true,
+        dictionaryCheck: true,
+        compromisedCheck: true
+      },
+
+      // Production MFA configuration
+      mfa: {
+        require2FA: true, // Mandatory in production
+        defaultMethod: 'totp',
+        codeExpiry: 300000, // 5 minutes only
+        maxAttempts: 3, // Strict limit
+        availableMethods: {
+          totp: true,
+          sms: true,
+          email: true,
+          push: true,
+          webauthn: true,
+          backup_codes: true
+        },
+        totp: {
+          issuer: 'InsightSerenity Platform',
+          algorithm: 'SHA256', // Stronger algorithm
+          digits: 6,
+          period: 30,
+          window: 1 // Strict window
+        },
+        backupCodes: {
+          count: 10,
+          length: 8,
+          regenerateThreshold: 3
+        },
+        deviceTrust: {
+          enabled: true,
+          duration: 2592000000, // 30 days
+          maxDevices: 5 // Limited trusted devices
+        }
+      },
+
+      // OAuth providers for production
+      oauth: {
+        google: {
+          enabled: true,
+          clientId: process.env.GOOGLE_CLIENT_ID,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          redirectUri: 'https://app.insightserenity.com/auth/google/callback',
+          scope: 'openid email profile',
+          allowRegistration: true,
+          allowLinking: true
+        },
+        github: {
+          enabled: true,
+          clientId: process.env.GITHUB_CLIENT_ID,
+          clientSecret: process.env.GITHUB_CLIENT_SECRET,
+          redirectUri: 'https://app.insightserenity.com/auth/github/callback',
+          scope: 'user:email',
+          allowRegistration: true,
+          allowLinking: true
+        },
+        linkedin: {
+          enabled: true,
+          clientId: process.env.LINKEDIN_CLIENT_ID,
+          clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
+          redirectUri: 'https://app.insightserenity.com/auth/linkedin/callback',
+          scope: 'r_liteprofile r_emailaddress',
+          allowRegistration: true,
+          allowLinking: true
+        },
+        microsoft: {
+          enabled: true,
+          clientId: process.env.MICROSOFT_CLIENT_ID,
+          clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+          redirectUri: 'https://app.insightserenity.com/auth/microsoft/callback',
+          scope: 'openid email profile',
+          allowRegistration: true,
+          allowLinking: true
+        }
+      },
+
+      // SSO configuration for production
+      sso: {
+        saml: {
+          enabled: true,
+          entityId: process.env.SAML_ENTITY_ID || 'https://api.insightserenity.com',
+          ssoUrl: process.env.SAML_SSO_URL,
+          sloUrl: process.env.SAML_SLO_URL,
+          certificate: process.env.SAML_CERTIFICATE,
+          privateKey: process.env.SAML_PRIVATE_KEY,
+          allowProvisioning: true,
+          roleMapping: true,
+          attributeMapping: {
+            email: process.env.SAML_ATTR_EMAIL || 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
+            firstName: process.env.SAML_ATTR_FIRST_NAME || 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname',
+            lastName: process.env.SAML_ATTR_LAST_NAME || 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname',
+            groups: process.env.SAML_ATTR_GROUPS || 'http://schemas.microsoft.com/ws/2008/06/identity/claims/groups',
+            roles: process.env.SAML_ATTR_ROLES || 'http://schemas.microsoft.com/ws/2008/06/identity/claims/role',
+            department: process.env.SAML_ATTR_DEPARTMENT || 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/department',
+            employeeId: process.env.SAML_ATTR_EMPLOYEE_ID || 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/employeeid'
+          }
+        },
+        oidc: {
+          enabled: true,
+          issuer: process.env.OIDC_ISSUER,
+          clientId: process.env.OIDC_CLIENT_ID,
+          clientSecret: process.env.OIDC_CLIENT_SECRET,
+          redirectUri: 'https://app.insightserenity.com/auth/oidc/callback',
+          allowProvisioning: true,
+          roleMapping: true
+        }
+      },
+
+      // Registration settings for production
+      registration: {
+        enabled: true,
+        requireInvitation: false, // Allow public registration
+        allowPublicRegistration: true,
+        defaultRole: 'user',
+        autoActivate: false, // Require email verification
+        domainWhitelist: [], // Allow all domains or configure as needed
+        domainBlacklist: [
+          '10minutemail.com',
+          'tempmail.org',
+          'guerrillamail.com',
+          'mailinator.com'
+        ], // Block disposable email providers
+        requireOrganization: false
+      },
+
+      // Strict security settings for production
+      security: {
+        ipWhitelist: [], // Configure if needed for admin access
+        ipBlacklist: [], // Managed by security team
+        enableRateLimiting: true,
+        rateLimitWindow: 900000, // 15 minutes
+        rateLimitMaxAttempts: 100,
+        enableAuditLog: true,
+        auditRetentionDays: 2555, // 7 years for compliance
+        riskThresholds: {
+          low: 15, // Lower thresholds for production
+          medium: 30,
+          high: 50,
+          critical: 70
+        },
+        enableSecurityHeaders: true,
+        enableCSRF: true,
+        enableCORS: true,
+        encryptionAlgorithm: 'aes-256-gcm',
+        hashingAlgorithm: 'argon2id', // Strongest hashing
+        saltRounds: 14 // High cost for production
+      },
+
+      // Biometric configuration for production
+      biometric: {
+        enabled: true,
+        timeout: 60000,
+        allowFallback: true,
+        requireLiveness: true, // Enable liveness detection
+        webauthn: {
+          enabled: true,
+          rpName: 'InsightSerenity Platform',
+          rpId: 'insightserenity.com',
+          timeout: 60000,
+          attestation: 'direct', // Strong attestation
+          userVerification: 'required', // Always require user verification
+          authenticatorAttachment: 'cross-platform'
+        }
+      },
+
+      // Production notification settings
+      notifications: {
+        email: {
+          welcomeEmail: true,
+          verificationEmail: true,
+          passwordResetEmail: true,
+          securityAlerts: true,
+          mfaAlerts: true,
+          loginAlerts: true
+        },
+        push: {
+          enabled: true,
+          securityAlerts: true,
+          mfaRequests: true
+        },
+        sms: {
+          enabled: true,
+          provider: process.env.SMS_PROVIDER || 'twilio',
+          mfaCodes: true,
+          securityAlerts: true
+        }
+      },
+
+      // Full compliance enabled for production
+      compliance: {
+        gdpr: {
+          enabled: true,
+          dataRetentionDays: 2555, // 7 years
+          rightToErasure: true,
+          dataPortability: true,
+          consentTracking: true
+        },
+        hipaa: {
+          enabled: true,
+          auditLogging: true,
+          accessControls: true,
+          dataEncryption: true
+        },
+        sox: {
+          enabled: true,
+          auditTrails: true,
+          accessReviews: true,
+          controlTesting: true
+        }
+      },
+
+      // Production API integrations
+      integrations: {
+        threatIntelligence: {
+          enabled: true,
+          provider: process.env.THREAT_INTELLIGENCE_PROVIDER || 'crowdstrike',
+          apiKey: process.env.THREAT_INTELLIGENCE_API_KEY,
+          checkInterval: 3600000 // Check hourly in production
+        },
+        geoip: {
+          enabled: true,
+          provider: process.env.GEOIP_PROVIDER || 'maxmind',
+          apiKey: process.env.GEOIP_API_KEY,
+          databasePath: process.env.GEOIP_DATABASE_PATH || '/data/geoip/GeoLite2-City.mmdb'
+        },
+        ldap: {
+          enabled: process.env.LDAP_ENABLED === 'true',
+          server: process.env.LDAP_SERVER,
+          bindDN: process.env.LDAP_BIND_DN,
+          bindPassword: process.env.LDAP_BIND_PASSWORD,
+          baseDN: process.env.LDAP_BASE_DN,
+          userFilter: process.env.LDAP_USER_FILTER || '(uid={{username}})',
+          allowProvisioning: process.env.LDAP_ALLOW_PROVISIONING === 'true'
+        }
+      }
+    };
+
     // Database configuration overrides
     this.database = {
       uri: process.env.DB_URI,
@@ -718,6 +1020,45 @@ class ProductionConfig {
   }
 
   /**
+   * Check if auth feature is enabled
+   * @param {string} feature - The auth feature name
+   * @returns {boolean} Whether the auth feature is enabled
+   */
+  isAuthFeatureEnabled(feature) {
+    return this.getSetting(`auth.features.${feature}`, false);
+  }
+
+  /**
+   * Get auth configuration section
+   * @param {string} section - The auth section (core, mfa, oauth, etc.)
+   * @returns {Object} Auth section configuration
+   */
+  getAuthConfig(section = null) {
+    if (section) {
+      return this.auth[section] || {};
+    }
+    return this.auth;
+  }
+
+  /**
+   * Get OAuth provider configuration
+   * @param {string} provider - The OAuth provider name
+   * @returns {Object} OAuth provider configuration
+   */
+  getOAuthConfig(provider) {
+    return this.auth.oauth[provider] || null;
+  }
+
+  /**
+   * Get SSO provider configuration
+   * @param {string} provider - The SSO provider name (saml, oidc)
+   * @returns {Object} SSO provider configuration
+   */
+  getSSOConfig(provider) {
+    return this.auth.sso[provider] || null;
+  }
+
+  /**
    * Get database connection string for a specific database
    * @param {string} dbName - The database name (admin, shared, tenant)
    * @returns {string} The database connection string
@@ -846,6 +1187,20 @@ class ProductionConfig {
   }
 
   /**
+   * Get compliance configuration
+   * @returns {Object} Compliance configuration summary
+   */
+  getComplianceConfig() {
+    return {
+      gdpr: this.auth.compliance.gdpr,
+      hipaa: this.auth.compliance.hipaa,
+      sox: this.auth.compliance.sox,
+      auditRetention: this.auth.security.auditRetentionDays,
+      dataRetention: this.auth.compliance.gdpr.dataRetentionDays
+    };
+  }
+
+  /**
    * Get environment information
    * @returns {Object} Environment information summary
    */
@@ -861,7 +1216,22 @@ class ProductionConfig {
           .map(([k]) => k),
         security: Object.entries(this.security.features)
           .filter(([_, v]) => v === true)
+          .map(([k]) => k),
+        auth: Object.entries(this.auth.features)
+          .filter(([_, v]) => v === true)
           .map(([k]) => k)
+      },
+      auth: {
+        requireEmailVerification: this.auth.core.requireEmailVerification,
+        require2FA: this.auth.mfa.require2FA,
+        enabledOAuthProviders: Object.keys(this.auth.oauth)
+          .filter(provider => this.auth.oauth[provider].enabled),
+        enabledSSOProviders: Object.keys(this.auth.sso)
+          .filter(provider => this.auth.sso[provider].enabled),
+        enterpriseFeatures: Object.keys(this.auth.enterprise)
+          .filter(feature => this.auth.enterprise[feature]),
+        compliance: Object.keys(this.auth.compliance)
+          .filter(standard => this.auth.compliance[standard].enabled)
       },
       database: {
         uri: this.database.uri ? '***HIDDEN***' : 'Not configured',
@@ -891,7 +1261,9 @@ class ProductionConfig {
       security: {
         waf: this.environment.security.waf.enabled,
         ssl: this.environment.security.ssl.enforced,
-        twoFactor: this.security.twoFactor.enabled
+        twoFactor: this.security.twoFactor.enabled,
+        biometric: this.auth.biometric.enabled,
+        riskAssessment: this.auth.enterprise.enableRiskAssessment
       }
     };
   }
@@ -927,6 +1299,42 @@ class ProductionConfig {
       errors.push(`Missing required environment variables: ${missing.join(', ')}`);
     }
 
+    // Validate OAuth configuration if enabled
+    if (this.auth.features.oauth) {
+      const enabledProviders = Object.keys(this.auth.oauth)
+        .filter(provider => this.auth.oauth[provider].enabled);
+      
+      enabledProviders.forEach(provider => {
+        const config = this.auth.oauth[provider];
+        if (!config.clientId) {
+          errors.push(`OAuth ${provider}: clientId is required`);
+        }
+        if (!config.clientSecret) {
+          errors.push(`OAuth ${provider}: clientSecret is required`);
+        }
+      });
+    }
+
+    // Validate SSO configuration if enabled
+    if (this.auth.features.sso) {
+      if (this.auth.sso.saml.enabled) {
+        if (!this.auth.sso.saml.certificate) {
+          errors.push('SAML SSO: certificate is required');
+        }
+        if (!this.auth.sso.saml.entityId) {
+          errors.push('SAML SSO: entityId is required');
+        }
+      }
+      if (this.auth.sso.oidc.enabled) {
+        if (!this.auth.sso.oidc.issuer) {
+          errors.push('OIDC SSO: issuer is required');
+        }
+        if (!this.auth.sso.oidc.clientId) {
+          errors.push('OIDC SSO: clientId is required');
+        }
+      }
+    }
+
     // Validate URLs
     Object.entries(this.environment.urls).forEach(([service, url]) => {
       try {
@@ -947,6 +1355,19 @@ class ProductionConfig {
     // Validate encryption key
     if (!this.security.encryption.key || this.security.encryption.key.length !== 32) {
       errors.push('Encryption key must be exactly 32 characters');
+    }
+
+    // Validate auth configuration
+    if (!this.auth.core.requireEmailVerification) {
+      errors.push('Email verification must be required in production');
+    }
+
+    if (!this.auth.mfa.require2FA) {
+      console.warn('Warning: 2FA is not required in production. Consider enabling for enhanced security.');
+    }
+
+    if (this.auth.passwordPolicy.minLength < 8) {
+      errors.push('Minimum password length should be at least 8 characters in production');
     }
 
     // Validate secrets are not defaults
@@ -990,6 +1411,11 @@ class ProductionConfig {
       errors.push('Database backups must be enabled in production');
     }
 
+    // Validate compliance settings
+    if (!this.auth.compliance.gdpr.enabled) {
+      console.warn('Warning: GDPR compliance should be enabled in production');
+    }
+
     // Validate monitoring
     if (!this.environment.monitoring.prometheus.enabled) {
       console.warn('Warning: Prometheus monitoring should be enabled in production');
@@ -1013,6 +1439,7 @@ class ProductionConfig {
     return {
       environment: this.environment,
       base: this.base,
+      auth: this.auth,
       database: this.database,
       security: this.security,
       redis: this.redis,

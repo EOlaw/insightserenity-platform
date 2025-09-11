@@ -8,6 +8,7 @@
 const baseConfig = require('./base-config');
 const databaseConfig = require('./database-config');
 const securityConfig = require('./security-config');
+const authConfig = require('./auth-config');  // Add this line
 const redisConfig = require('./redis-config');
 const emailConfig = require('./email-config');
 const paymentConfig = require('./payment-config');
@@ -62,6 +63,12 @@ const mergeConfigs = () => {
         // Base configuration
         base: { ...baseConfig.app, ...environmentConfig.base },
         app: { ...baseConfig.app, ...environmentConfig.app },
+
+        // Authentication configuration - Add this section
+        auth: {
+            ...authConfig,
+            ...environmentConfig.auth
+        },
 
         // Database configuration
         database: {
@@ -217,6 +224,7 @@ const exportObject = {
     // Individual configs for specific imports
     base: config.base,
     app: config.app,
+    auth: config.auth,
     database: config.database,
     security: config.security,
     redis: config.redis,
@@ -257,6 +265,12 @@ if (environment !== 'test') {
         multiTenant: config.isMultiTenant,
         database: config.database.uri ? 'Configured' : 'Default',
         redis: config.redis.enabled ? 'Enabled' : 'Disabled',
+        auth: {
+            coreFeatures: 'Enabled',
+            enterpriseFeatures: config.auth.enterprise.enableRiskAssessment ? 'Enabled' : 'Disabled',
+            mfaRequired: config.auth.mfa.require2FA,
+            oauthProviders: Object.keys(config.auth.oauth).filter(p => config.auth.oauth[p].enabled)
+        },
         logging: config.logging.level
     });
 }

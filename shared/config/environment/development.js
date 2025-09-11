@@ -92,6 +92,295 @@ class DevelopmentConfig {
       }
     };
 
+    // Authentication configuration overrides for development
+    this.auth = {
+      // Core authentication settings optimized for development
+      core: {
+        sessionDuration: 3600000, // 1 hour for easier testing
+        refreshTokenDuration: 86400000, // 24 hours 
+        allowMultipleSessions: true,
+        maxConcurrentSessions: 10, // Higher for testing multiple browsers
+        maxLoginAttempts: 10, // More lenient for development
+        lockoutDuration: 300000, // 5 minutes instead of 15
+        requireEmailVerification: false, // Skip for faster development
+        passwordResetTokenDuration: 7200000, // 2 hours for testing
+        verificationTokenDuration: 172800000, // 48 hours for testing
+        appUrl: 'http://localhost:4200',
+        apiUrl: 'http://localhost:3000'
+      },
+
+      // Enterprise features disabled for simpler development
+      enterprise: {
+        enableRiskAssessment: false,
+        enableAdvancedMFA: false,
+        enableDeviceManagement: false,
+        enableSecurityAlerts: false,
+        enableAdvancedAudit: false,
+        enableSSO: false,
+        enableSAML: false,
+        enableOIDC: false,
+        enableOAuth: true, // Keep OAuth for testing
+        oauthProviders: ['google'], // Limit to one provider for simplicity
+        enableSessionAnalytics: false,
+        enableGeolocationTracking: false,
+        enableDeviceFingerprinting: false
+      },
+
+      // Feature flags for development
+      features: {
+        registration: true,
+        passwordReset: true,
+        emailVerification: false, // Disabled for faster development
+        basicMFA: true,
+        riskAssessment: false,
+        advancedMFA: false,
+        oauth: true,
+        sso: false,
+        deviceTrust: false,
+        securityAnalytics: false,
+        complianceReporting: false,
+        biometric: false,
+        webauthn: false,
+        faceId: false,
+        touchId: false
+      },
+
+      // Relaxed password policy for development
+      passwordPolicy: {
+        minLength: 6, // Shorter for easier testing
+        maxLength: 128,
+        requireUppercase: false,
+        requireLowercase: false,
+        requireNumbers: false,
+        requireSpecial: false,
+        preventReuse: 2, // Fewer restrictions
+        expiryDays: 0, // Never expires in development
+        complexityChecking: false,
+        dictionaryCheck: false,
+        compromisedCheck: false
+      },
+
+      // MFA configuration for development
+      mfa: {
+        require2FA: false, // Optional in development
+        defaultMethod: 'totp',
+        codeExpiry: 600000, // 10 minutes for easier testing
+        maxAttempts: 5,
+        availableMethods: {
+          totp: true,
+          sms: false, // Disable to avoid SMS costs
+          email: true,
+          push: false,
+          webauthn: false,
+          backup_codes: true
+        },
+        totp: {
+          issuer: 'InsightSerenity Dev',
+          algorithm: 'SHA1',
+          digits: 6,
+          period: 30,
+          window: 3 // More lenient window
+        },
+        backupCodes: {
+          count: 5, // Fewer codes for testing
+          length: 6, // Shorter codes
+          regenerateThreshold: 2
+        },
+        deviceTrust: {
+          enabled: false,
+          duration: 86400000, // 1 day
+          maxDevices: 5
+        }
+      },
+
+      // OAuth providers for development
+      oauth: {
+        google: {
+          enabled: true,
+          clientId: process.env.GOOGLE_CLIENT_ID || 'dev_google_client_id',
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'dev_google_client_secret',
+          redirectUri: 'http://localhost:4200/auth/google/callback',
+          scope: 'openid email profile',
+          allowRegistration: true,
+          allowLinking: true
+        },
+        github: {
+          enabled: false, // Disabled to simplify development
+          clientId: process.env.GITHUB_CLIENT_ID,
+          clientSecret: process.env.GITHUB_CLIENT_SECRET,
+          redirectUri: 'http://localhost:4200/auth/github/callback',
+          scope: 'user:email',
+          allowRegistration: true,
+          allowLinking: true
+        },
+        linkedin: {
+          enabled: false,
+          clientId: process.env.LINKEDIN_CLIENT_ID,
+          clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
+          redirectUri: 'http://localhost:4200/auth/linkedin/callback',
+          scope: 'r_liteprofile r_emailaddress',
+          allowRegistration: true,
+          allowLinking: true
+        },
+        microsoft: {
+          enabled: false,
+          clientId: process.env.MICROSOFT_CLIENT_ID,
+          clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+          redirectUri: 'http://localhost:4200/auth/microsoft/callback',
+          scope: 'openid email profile',
+          allowRegistration: true,
+          allowLinking: true
+        }
+      },
+
+      // SSO configuration (disabled for development)
+      sso: {
+        saml: {
+          enabled: false,
+          entityId: '',
+          ssoUrl: '',
+          sloUrl: '',
+          certificate: '',
+          privateKey: '',
+          allowProvisioning: false,
+          roleMapping: false,
+          attributeMapping: {}
+        },
+        oidc: {
+          enabled: false,
+          issuer: '',
+          clientId: '',
+          clientSecret: '',
+          redirectUri: '',
+          allowProvisioning: false,
+          roleMapping: false
+        }
+      },
+
+      // Registration settings for development
+      registration: {
+        enabled: true,
+        requireInvitation: false,
+        allowPublicRegistration: true,
+        defaultRole: 'user',
+        autoActivate: true, // Skip activation step
+        domainWhitelist: [],
+        domainBlacklist: [],
+        requireOrganization: false
+      },
+
+      // Security settings for development
+      security: {
+        ipWhitelist: [],
+        ipBlacklist: [],
+        enableRateLimiting: false, // Disabled for development
+        rateLimitWindow: 900000,
+        rateLimitMaxAttempts: 1000, // Very high limit
+        enableAuditLog: true, // Keep for debugging
+        auditRetentionDays: 30, // Shorter retention
+        riskThresholds: {
+          low: 30, // Higher thresholds for development
+          medium: 50,
+          high: 70,
+          critical: 90
+        },
+        enableSecurityHeaders: false, // Disabled for easier development
+        enableCSRF: false, // Disabled for API testing
+        enableCORS: true,
+        encryptionAlgorithm: 'aes-256-gcm',
+        hashingAlgorithm: 'bcrypt', // Faster than argon2id
+        saltRounds: 10 // Lower for faster hashing
+      },
+
+      // Biometric configuration (disabled for development)
+      biometric: {
+        enabled: false,
+        timeout: 60000,
+        allowFallback: true,
+        requireLiveness: false,
+        webauthn: {
+          enabled: false,
+          rpName: 'InsightSerenity Dev',
+          rpId: 'localhost',
+          timeout: 60000,
+          attestation: 'none', // Simplified for development
+          userVerification: 'discouraged',
+          authenticatorAttachment: 'cross-platform'
+        }
+      },
+
+      // Notification settings for development
+      notifications: {
+        email: {
+          welcomeEmail: true,
+          verificationEmail: false, // Disabled since verification is off
+          passwordResetEmail: true,
+          securityAlerts: false,
+          mfaAlerts: false,
+          loginAlerts: false
+        },
+        push: {
+          enabled: false,
+          securityAlerts: false,
+          mfaRequests: false
+        },
+        sms: {
+          enabled: false,
+          provider: 'console', // Log to console instead
+          mfaCodes: false,
+          securityAlerts: false
+        }
+      },
+
+      // Compliance settings (disabled for development)
+      compliance: {
+        gdpr: {
+          enabled: false,
+          dataRetentionDays: 30,
+          rightToErasure: false,
+          dataPortability: false,
+          consentTracking: false
+        },
+        hipaa: {
+          enabled: false,
+          auditLogging: false,
+          accessControls: false,
+          dataEncryption: false
+        },
+        sox: {
+          enabled: false,
+          auditTrails: false,
+          accessReviews: false,
+          controlTesting: false
+        }
+      },
+
+      // API integration settings for development
+      integrations: {
+        threatIntelligence: {
+          enabled: false,
+          provider: 'mock',
+          apiKey: '',
+          checkInterval: 86400000
+        },
+        geoip: {
+          enabled: false,
+          provider: 'mock',
+          apiKey: '',
+          databasePath: ''
+        },
+        ldap: {
+          enabled: false,
+          server: '',
+          bindDN: '',
+          bindPassword: '',
+          baseDN: '',
+          userFilter: '(uid={{username}})',
+          allowProvisioning: false
+        }
+      }
+    };
+
     // Database configuration overrides
     this.database = {
       uri: process.env.DB_URI || process.env.MONGODB_URI || 'mongodb+srv://EOlaw146:Olawalee_.146@cluster0.4wv68hn.mongodb.net?retryWrites=true&w=majority',
@@ -371,6 +660,36 @@ class DevelopmentConfig {
   }
 
   /**
+   * Check if auth feature is enabled
+   * @param {string} feature - The auth feature name
+   * @returns {boolean} Whether the auth feature is enabled
+   */
+  isAuthFeatureEnabled(feature) {
+    return this.getSetting(`auth.features.${feature}`, false);
+  }
+
+  /**
+   * Get auth configuration section
+   * @param {string} section - The auth section (core, mfa, oauth, etc.)
+   * @returns {Object} Auth section configuration
+   */
+  getAuthConfig(section = null) {
+    if (section) {
+      return this.auth[section] || {};
+    }
+    return this.auth;
+  }
+
+  /**
+   * Get OAuth provider configuration
+   * @param {string} provider - The OAuth provider name
+   * @returns {Object} OAuth provider configuration
+   */
+  getOAuthConfig(provider) {
+    return this.auth.oauth[provider] || null;
+  }
+
+  /**
    * Get database connection string for a specific database
    * @param {string} dbName - The database name (admin, shared, tenant)
    * @returns {string} The database connection string
@@ -436,6 +755,14 @@ class DevelopmentConfig {
       features: Object.entries(this.environment.features)
         .filter(([_, v]) => v === true)
         .map(([k]) => k),
+      auth: {
+        requireEmailVerification: this.auth.core.requireEmailVerification,
+        require2FA: this.auth.mfa.require2FA,
+        enabledOAuthProviders: Object.keys(this.auth.oauth)
+          .filter(provider => this.auth.oauth[provider].enabled),
+        enabledFeatures: Object.keys(this.auth.features)
+          .filter(feature => this.auth.features[feature])
+      },
       database: {
         uri: this.database.uri.replace(/\/\/.*@/, '//***:***@'), // Hide credentials
         databases: Object.keys(this.database.databases)
@@ -464,7 +791,7 @@ class DevelopmentConfig {
   validate() {
     const errors = [];
     
-    // Check required environment variables
+    // Check required environment variables (minimal for development)
     const requiredEnvVars = [];
     const missing = requiredEnvVars.filter(varName => !process.env[varName]);
     
@@ -486,9 +813,26 @@ class DevelopmentConfig {
       errors.push('Database URI is required');
     }
 
-    // Validate encryption key
-    if (this.security.encryption.key.length !== 32) {
-      errors.push('Encryption key must be exactly 32 characters');
+    // Validate auth configuration
+    if (this.auth.core.sessionDuration < 60000) {
+      errors.push('Session duration should be at least 1 minute');
+    }
+
+    if (this.auth.passwordPolicy.minLength < 4) {
+      errors.push('Minimum password length should be at least 4 characters');
+    }
+
+    // Check OAuth configuration if enabled
+    if (this.auth.features.oauth) {
+      const enabledProviders = Object.keys(this.auth.oauth)
+        .filter(provider => this.auth.oauth[provider].enabled);
+      
+      enabledProviders.forEach(provider => {
+        const config = this.auth.oauth[provider];
+        if (!config.clientId && !config.clientId.includes('dev_')) {
+          console.warn(`Warning: OAuth ${provider} clientId appears to be a placeholder`);
+        }
+      });
     }
 
     // Check for default secrets (warning only in development)
@@ -523,6 +867,7 @@ class DevelopmentConfig {
     return {
       environment: this.environment,
       base: this.base,
+      auth: this.auth,
       database: this.database,
       security: this.security,
       redis: this.redis,

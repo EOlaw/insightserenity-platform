@@ -89,7 +89,7 @@ class ClientController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next middleware
      */
-    async createClient(req, res, next) {
+    static async createClient(req, res, next) {
         return asyncHandler(async (req, res, next) => {
             logger.info('Creating new client - Controller');
 
