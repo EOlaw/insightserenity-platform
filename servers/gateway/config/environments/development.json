@@ -261,7 +261,7 @@
   },
   "database": {
     "mongodb": {
-      "uri": "mongodb://localhost:27017/insightserenity_dev",
+      "uri": "mongodb+srv://EOlaw146:Olawalee_.146@cluster0.4wv68hn.mongodb.net/?retryWrites=true&w=majority",
       "options": {
         "useNewUrlParser": true,
         "useUnifiedTopology": true,

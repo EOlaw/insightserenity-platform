@@ -13,12 +13,12 @@
  */
 
 const UserProfileService = require('../services/user-profile-service');
-const logger = require('../../../../../shared/lib/utils/logger');
-const { AppError, ValidationError } = require('../../../../../shared/lib/utils/app-error');
-const responseFormatter = require('../../../../../shared/lib/utils/response-formatter');
-const { StatusCodes } = require('../../../../../shared/lib/utils/constants/status-codes');
-const stringHelper = require('../../../../../shared/lib/utils/helpers/string-helper');
-const dateHelper = require('../../../../../shared/lib/utils/helpers/date-helper');
+const logger = require('../../../../../../shared/lib/utils/logger');
+const { AppError, ValidationError } = require('../../../../../../shared/lib/utils/app-error');
+const responseFormatter = require('../../../../../../shared/lib/utils/response-formatter');
+const { StatusCodes } = require('../../../../../../shared/lib/utils/constants/status-codes');
+const stringHelper = require('../../../../../../shared/lib/utils/helpers/string-helper');
+const dateHelper = require('../../../../../../shared/lib/utils/helpers/date-helper');
 
 /**
  * @class UserProfileController

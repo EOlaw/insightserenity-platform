@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @fileoverview Production-ready logger implementation - FIXED VERSION
+ * @fileoverview Production-ready logger implementation with BigInt serialization support
  * @module shared/lib/utils/logger
  */
 
@@ -10,7 +10,7 @@ const path = require('path');
 const fs = require('fs');
 
 /**
- * FIXED: Logger implementation using existing config structure
+ * Logger implementation with comprehensive BigInt and complex object serialization support
  */
 class Logger {
     /**
@@ -58,19 +58,116 @@ class Logger {
     };
 
     /**
-     * FIXED: Safe configuration access with proper fallbacks
+     * Safe JSON stringification that handles BigInt, circular references, and complex objects
+     * @private
+     * @static
+     * @param {*} obj - Object to stringify
+     * @param {number} [maxDepth=10] - Maximum recursion depth
+     * @returns {string} Safe JSON string
+     */
+    static #safeJsonStringify(obj, maxDepth = 10) {
+        const seen = new WeakSet();
+        let depth = 0;
+
+        try {
+            return JSON.stringify(obj, (key, value) => {
+                // Handle depth limitation to prevent stack overflow
+                if (depth > maxDepth) {
+                    return '[Max Depth Exceeded]';
+                }
+
+                // Handle circular references
+                if (typeof value === 'object' && value !== null) {
+                    if (seen.has(value)) {
+                        return '[Circular Reference]';
+                    }
+                    seen.add(value);
+                }
+
+                // Handle BigInt conversion
+                if (typeof value === 'bigint') {
+                    return value.toString();
+                }
+
+                // Handle functions
+                if (typeof value === 'function') {
+                    return `[Function: ${value.name || 'anonymous'}]`;
+                }
+
+                // Handle undefined
+                if (value === undefined) {
+                    return '[undefined]';
+                }
+
+                // Handle symbols
+                if (typeof value === 'symbol') {
+                    return value.toString();
+                }
+
+                // Handle Dates
+                if (value instanceof Date) {
+                    return value.toISOString();
+                }
+
+                // Handle RegExp
+                if (value instanceof RegExp) {
+                    return value.toString();
+                }
+
+                // Handle Error objects
+                if (value instanceof Error) {
+                    return {
+                        name: value.name,
+                        message: value.message,
+                        stack: value.stack,
+                        code: value.code,
+                        statusCode: value.statusCode
+                    };
+                }
+
+                // Handle Buffer objects
+                if (Buffer.isBuffer(value)) {
+                    return `[Buffer: ${value.length} bytes]`;
+                }
+
+                // Handle very large objects/arrays
+                if (Array.isArray(value) && value.length > 100) {
+                    return `[Array: ${value.length} items - truncated]`;
+                }
+
+                if (typeof value === 'object' && value !== null) {
+                    const keys = Object.keys(value);
+                    if (keys.length > 100) {
+                        return `[Object: ${keys.length} properties - truncated]`;
+                    }
+                }
+
+                depth++;
+                return value;
+            }, 2);
+        } catch (error) {
+            // Fallback for any serialization failures
+            if (error.message.includes('Converting circular structure')) {
+                return '[Circular Structure - Serialization Failed]';
+            }
+            return `[Serialization Error: ${error.message}]`;
+        }
+    }
+
+    /**
+     * Safe configuration access with proper fallbacks
+     * @private
+     * @static
+     * @returns {Object} Configuration object
      */
     static #getConfig() {
-        // Try to get config, but fallback to safe defaults if not available
         let config = null;
         try {
             config = require('../../config');
         } catch (error) {
-            // Config not available, use environment variables directly
             console.log('Config module not available, using environment variables for logging');
         }
 
-        // Create default logging configuration with proper fallbacks
         const defaultLoggingConfig = {
             level: process.env.LOG_LEVEL || 'info',
             consoleLevel: process.env.CONSOLE_LOG_LEVEL || 'info',
@@ -81,7 +178,6 @@ class Logger {
             separateLogFiles: process.env.SEPARATE_LOG_FILES === 'true'
         };
 
-        // Safely merge with config.logging, ensuring all required properties exist
         let loggingConfig = defaultLoggingConfig;
 
         if (config && config.logging) {
@@ -90,13 +186,11 @@ class Logger {
                 ...config.logging
             };
 
-            // Ensure directory is always a string
             if (!loggingConfig.directory || typeof loggingConfig.directory !== 'string') {
                 loggingConfig.directory = defaultLoggingConfig.directory;
             }
         }
 
-        // Validate critical properties
         if (!loggingConfig.directory) {
             loggingConfig.directory = 'logs';
             console.warn('Log directory was undefined, defaulting to "logs"');
@@ -126,7 +220,7 @@ class Logger {
     }
 
     /**
-     * FIXED: Creates Winston logger with safe configuration
+     * Creates Winston logger with safe configuration and BigInt handling
      * @private
      * @static
      * @returns {winston.Logger} Configured logger instance
@@ -144,28 +238,56 @@ class Logger {
             console.warn('Failed to create log directory, using console only:', error.message);
         }
 
-        // Define log format
+        // Define log format with BigInt-safe JSON serialization
         const logFormat = winston.format.combine(
             winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
             winston.format.errors({ stack: true }),
             winston.format.splat(),
-            winston.format.json(),
+            winston.format.json({
+                replacer: (key, value) => {
+                    if (typeof value === 'bigint') {
+                        return value.toString();
+                    }
+                    if (typeof value === 'function') {
+                        return `[Function: ${value.name || 'anonymous'}]`;
+                    }
+                    if (typeof value === 'symbol') {
+                        return value.toString();
+                    }
+                    if (value instanceof Date) {
+                        return value.toISOString();
+                    }
+                    if (value instanceof Error) {
+                        return {
+                            name: value.name,
+                            message: value.message,
+                            stack: value.stack,
+                            code: value.code,
+                            statusCode: value.statusCode
+                        };
+                    }
+                    if (Buffer.isBuffer(value)) {
+                        return `[Buffer: ${value.length} bytes]`;
+                    }
+                    return value;
+                }
+            }),
             winston.format.metadata({ fillExcept: ['message', 'level', 'timestamp', 'label'] })
         );
 
-        // Console format for development
+        // Console format for development with safe serialization
         const consoleFormat = winston.format.combine(
             winston.format.colorize({ all: true }),
             winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
             winston.format.printf(({ timestamp, level, message, metadata, ...rest }) => {
                 let log = `${timestamp} [${level}]: ${message}`;
 
-                // Add metadata if present
+                // Add metadata if present using safe serialization
                 if (metadata && Object.keys(metadata).length > 0) {
-                    log += ` ${JSON.stringify(metadata)}`;
+                    log += ` ${this.#safeJsonStringify(metadata)}`;
                 }
 
-                // Add additional fields
+                // Add additional fields using safe serialization
                 const additionalFields = Object.keys(rest).filter(key =>
                     !['timestamp', 'level', 'message', 'metadata'].includes(key)
                 );
@@ -175,7 +297,7 @@ class Logger {
                         acc[key] = rest[key];
                         return acc;
                     }, {});
-                    log += ` ${JSON.stringify(additional)}`;
+                    log += ` ${this.#safeJsonStringify(additional)}`;
                 }
 
                 return log;
@@ -260,7 +382,7 @@ class Logger {
     }
 
     /**
-     * Log error with context
+     * Log error with context and safe serialization
      * @static
      * @param {string} message - Error message
      * @param {Error|Object} [error] - Error object or metadata
@@ -278,7 +400,7 @@ class Logger {
     }
 
     /**
-     * Log warning
+     * Log warning with safe serialization
      * @static
      * @param {string} message - Warning message
      * @param {Object} [meta={}] - Additional metadata
@@ -288,7 +410,7 @@ class Logger {
     }
 
     /**
-     * Log info
+     * Log info with safe serialization
      * @static
      * @param {string} message - Info message
      * @param {Object} [meta={}] - Additional metadata
@@ -298,7 +420,7 @@ class Logger {
     }
 
     /**
-     * Log HTTP request/response
+     * Log HTTP request/response with safe serialization
      * @static
      * @param {string} message - HTTP message
      * @param {Object} [meta={}] - Request/response metadata
@@ -308,7 +430,7 @@ class Logger {
     }
 
     /**
-     * Log verbose information
+     * Log verbose information with safe serialization
      * @static
      * @param {string} message - Verbose message
      * @param {Object} [meta={}] - Additional metadata
@@ -318,7 +440,7 @@ class Logger {
     }
 
     /**
-     * Log debug information
+     * Log debug information with safe serialization
      * @static
      * @param {string} message - Debug message
      * @param {Object} [meta={}] - Additional metadata
@@ -328,7 +450,7 @@ class Logger {
     }
 
     /**
-     * Log silly/trace level information
+     * Log silly/trace level information with safe serialization
      * @static
      * @param {string} message - Silly message
      * @param {Object} [meta={}] - Additional metadata
@@ -361,7 +483,7 @@ class Logger {
     }
 
     /**
-     * Parse error object for logging
+     * Parse error object for logging with enhanced handling
      * @private
      * @static
      * @param {Error|Object} error - Error to parse
@@ -391,7 +513,7 @@ class Logger {
     }
 
     /**
-     * Stream logs for real-time monitoring
+     * Stream logs for real-time monitoring with safe serialization
      * @static
      * @param {Object} options - Stream options
      * @returns {Object} Log stream
@@ -407,7 +529,7 @@ class Logger {
     }
 
     /**
-     * Query logs
+     * Query logs with safe handling
      * @static
      * @param {Object} options - Query options
      * @returns {Promise<Array>} Log entries
@@ -433,7 +555,7 @@ class Logger {
     }
 
     /**
-     * Profile performance
+     * Profile performance with safe timing handling
      * @static
      * @param {string} id - Profile ID
      * @param {Object} [meta={}] - Additional metadata
@@ -444,27 +566,31 @@ class Logger {
     }
 
     /**
-     * Start timer for performance measurement
+     * Start timer for performance measurement with BigInt-safe handling
      * @static
      * @param {string} label - Timer label
      * @returns {Function} End timer function
      */
     static startTimer(label) {
-        const start = Date.now();
+        const start = process.hrtime.bigint();
 
         return (meta = {}) => {
-            const duration = Date.now() - start;
+            const end = process.hrtime.bigint();
+            const durationNs = end - start;
+            const durationMs = Number(durationNs) / 1000000; // Convert to milliseconds
+
             this.info(`${label} completed`, {
-                duration,
-                durationMs: duration,
-                durationFormatted: `${duration}ms`,
+                duration: durationMs,
+                durationMs: durationMs,
+                durationFormatted: `${durationMs.toFixed(2)}ms`,
+                durationNanoseconds: durationNs.toString(), // Safe BigInt conversion
                 ...meta
             });
         };
     }
 
     /**
-     * Log method execution
+     * Log method execution with safe timing
      * @static
      * @param {string} className - Class name
      * @param {string} methodName - Method name
@@ -483,7 +609,7 @@ class Logger {
             end: (result = null, duration = null) => {
                 this.debug(`${className}.${methodName} completed`, {
                     method: `${className}.${methodName}`,
-                    duration,
+                    duration: typeof duration === 'bigint' ? duration.toString() : duration,
                     hasResult: result !== null,
                     ...meta
                 });

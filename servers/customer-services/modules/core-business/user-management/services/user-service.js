@@ -32,6 +32,7 @@ const AuthService = require('../../../../../../shared/lib/auth/services/auth-ser
 const logger = require('../../../../../../shared/lib/utils/logger');
 const { AppError, ValidationError, NotFoundError, ConflictError, ForbiddenError } = require('../../../../../../shared/lib/utils/app-error');
 const { asyncHandler } = require('../../../../../../shared/lib/utils/async-handler');
+const config = require('../../../../../../shared/config');
 
 // Service dependencies
 const CacheService = require('../../../../../../shared/lib/services/cache-service');
@@ -183,7 +184,7 @@ class UserService {
         saml: { enabled: false, priority: 6 },
         oidc: { enabled: false, priority: 7 },
         ldap: { enabled: false, priority: 8 },
-        jwt: { enabled: true, priority: 9 }
+        jwt: { enabled: false, priority: 9 }
     };
 
     /**
@@ -225,7 +226,15 @@ class UserService {
         this.#auditService = dependencies.auditService || new AuditService();
 
         // Initialize auth service with configuration
-        this.#authService = dependencies.authService || new AuthService(this.#serviceConfig, {
+        // this.#authService = dependencies.authService || new AuthService(this.#serviceConfig, {
+        //     cacheService: this.#cacheService,
+        //     emailService: this.#emailService,
+        //     notificationService: this.#notificationService,
+        //     auditService: this.#auditService
+        // });
+
+        // Initialize auth service with proper authentication configuration
+        this.#authService = dependencies.authService || new AuthService(config.auth, {
             cacheService: this.#cacheService,
             emailService: this.#emailService,
             notificationService: this.#notificationService,
@@ -346,7 +355,7 @@ class UserService {
 
         } catch (error) {
             const duration = Date.now() - startTime;
-            
+
             // Record failed authentication attempt
             await this.#recordFailedAuthentication(credentials.email || credentials.username, strategy, context, error);
 
@@ -684,7 +693,7 @@ class UserService {
             if (processedUpdate.password) {
                 processedUpdate.password = await this.#authService.passwordService.hashPassword(processedUpdate.password);
                 processedUpdate.passwordChangedAt = new Date();
-                
+
                 // Add to password history
                 if (!processedUpdate.passwordHistory) processedUpdate.passwordHistory = existingUser.passwordHistory || [];
                 processedUpdate.passwordHistory.unshift({
@@ -957,7 +966,7 @@ class UserService {
                     user.mfa.methods[methodIndex].disabledAt = new Date();
                     user.mfa.methods[methodIndex].disabledBy = disabledBy;
                     user.mfa.methods[methodIndex].disableReason = options.reason || 'User requested';
-                    
+
                     await user.save();
                 }
             }
@@ -3052,7 +3061,7 @@ class UserService {
 
             if (session) {
                 this.#userMetricsCache.delete(`metrics:${session.userId}`);
-                
+
                 // Clear user-specific caches
                 await this.#clearUserCaches(null, session.userId);
             }
@@ -3136,7 +3145,7 @@ class UserService {
     async #getAuthenticationData(userId) {
         try {
             const user = await UserModel.findById(userId);
-            
+
             return {
                 mfaEnabled: user.mfa?.enabled || false,
                 enabledMethods: user.mfa?.methods?.filter(m => m.enabled).map(m => m.type) || [],
@@ -3309,7 +3318,7 @@ class UserService {
             const user = await UserModel.findById(userId);
             if (user) {
                 if (!user.mfa) user.mfa = { enabled: false, methods: [] };
-                
+
                 let methodObj = user.mfa.methods.find(m => m.type === method);
                 if (!methodObj) {
                     methodObj = { type: method, enabled: false };
@@ -3322,7 +3331,7 @@ class UserService {
                 if (status === 'enabled') {
                     methodObj.enabled = true;
                     methodObj.enabledAt = new Date();
-                    
+
                     // Check if this is the first enabled method
                     if (!user.mfa.enabled) {
                         user.mfa.enabled = true;
@@ -3350,10 +3359,10 @@ class UserService {
     async #checkMFACompliance(userId) {
         try {
             const user = await UserModel.findById(userId);
-            
+
             const required = await this.#isMFARequiredForUser(user);
             const compliant = required ? (user.mfa?.enabled || false) : true;
-            
+
             return {
                 required,
                 compliant,
@@ -3376,7 +3385,7 @@ class UserService {
      */
     #isMFAGracePeriodExpired(user) {
         if (!user.mfa?.gracePeriodStart) return false;
-        
+
         const gracePeriodMs = this.#serviceConfig.mfaPolicy.gracePeriod * 24 * 60 * 60 * 1000;
         return Date.now() - user.mfa.gracePeriodStart.getTime() > gracePeriodMs;
     }
@@ -3411,7 +3420,7 @@ class UserService {
     async #handleMFAComplianceLoss(userId) {
         try {
             const user = await UserModel.findById(userId);
-            
+
             // Start grace period if not already started
             if (!user.mfa?.gracePeriodStart) {
                 if (!user.mfa) user.mfa = {};
@@ -3443,7 +3452,7 @@ class UserService {
      */
     async #validateMFADisable(userId, method, disabledBy) {
         const user = await UserModel.findById(userId);
-        
+
         // Check if method exists and is enabled
         const methodObj = user.mfa?.methods?.find(m => m.type === method && m.enabled);
         if (!methodObj) {
@@ -4026,7 +4035,7 @@ class UserService {
      */
     async #getUserSecurityMetrics(userId) {
         const user = await UserModel.findById(userId);
-        
+
         return {
             riskScore: user.security?.riskScore || 0,
             threatLevel: user.security?.threatLevel || 'none',

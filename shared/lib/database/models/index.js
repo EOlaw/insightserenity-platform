@@ -55,6 +55,22 @@ console.log('\n🏢 === LOADING CUSTOMER-SERVICES MODELS ===\n');
 
 // Core Business Models
 console.log('\n💼 Loading Customer Services - Core Business Models...');
+// User Management Models
+console.log('\n👤 Loading User Management Models...');
+const UserModel = safeImport('User', './customer-services/core-business/user-management/user-model', 'user');
+const UserPerferencesModel = safeImport('UserPreferences', './customer-services/core-business/user-management/user-preferences-model', 'user');
+const UserProfileModel = safeImport('UserProfile', './customer-services/core-business/user-management/user-profile-model', 'user');
+const UserSessionModel = safeImport('UserSession', './customer-services/core-business/user-management/user-session-model', 'user');
+const UserSettingModel = safeImport('UserSetting', './customer-services/core-business/user-management/user-setting-model', 'user');
+
+// Organization Models
+console.log('\n🏢 Loading Organization Models...');
+const OrganizationModel = safeImport('Organization', './organizations/organization-model', 'organization');
+const OrganizationMemberModel = safeImport('OrganizationMember', './organizations/organization-member-model', 'organization');
+const OrganizationInvitationModel = safeImport('OrganizationInvitation', './organizations/organization-invitation-model', 'organization');
+const TenantModel = safeImport('Tenant', './organizations/tenant-model', 'organization');
+
+console.log('\n💼 Loading Customer Services - Core Business Models...');
 const ClientModel = safeImport('Client', './customer-services/core-business/clients/client-model', 'customer-core');
 const ClientDocumentModel = safeImport('ClientDocument', './customer-services/core-business/clients/client-document-model', 'customer-core');
 const ProjectModel = safeImport('Project', './customer-services/core-business/projects/project-model', 'customer-core');
@@ -158,17 +174,8 @@ console.log('\n📋 === LOADING CORE BUSINESS MODELS ===\n');
 
 // User Management Models
 console.log('\n👤 Loading User Management Models...');
-const UserModel = safeImport('User', './users/user-model', 'user');
-const UserProfileModel = safeImport('UserProfile', './users/user-profile-model', 'user');
 const RoleModel = safeImport('Role', './users/role-model', 'user');
-const PermissionModel = safeImport('Permission', './users/permission-model', 'user');
-
-// Organization Models
-console.log('\n🏢 Loading Organization Models...');
-const OrganizationModel = safeImport('Organization', './organizations/organization-model', 'organization');
-const OrganizationMemberModel = safeImport('OrganizationMember', './organizations/organization-member-model', 'organization');
-const OrganizationInvitationModel = safeImport('OrganizationInvitation', './organizations/organization-invitation-model', 'organization');
-const TenantModel = safeImport('Tenant', './organizations/tenant-model', 'organization');
+const PermissionModel = safeImport('Permission', './users/user-permission-model', 'user');
 
 // Configuration Models
 console.log('\n⚙️ Loading Configuration Models...');
@@ -242,6 +249,11 @@ console.log('\n📦 === COLLECTING AND REGISTERING MODELS ===\n');
 
 const models = {
   // Customer-Services Models (Priority registration)
+  User: UserModel,
+  UserPreferences: UserPerferencesModel,
+  UserProfile: UserProfileModel,
+  UserSession: UserSessionModel,
+  UserSetting: UserSettingModel,
   // Core Business
   Client: ClientModel,
   ClientDocument: ClientDocumentModel,
@@ -309,8 +321,6 @@ const models = {
   SubscriptionAdmin: SubscriptionAdminModel,
 
   // Core User Management
-  User: UserModel,
-  UserProfile: UserProfileModel,
   Role: RoleModel,
   Permission: PermissionModel,
 
@@ -435,7 +445,8 @@ Object.entries(models).forEach(([modelName, ModelClass]) => {
 
 function isCustomerServicesModel(modelName) {
   const customerServicesModels = [
-    'Client', 'ClientDocument', 'Project', 'ProjectResource', 'ProjectTask', 'ProjectTimeline',
+    'User', 'UserPreferences', 'UserProfile', 'UserSession', 'UserSetting', 'Client', 'ClientDocument', 
+    'Project', 'ProjectResource', 'ProjectTask', 'ProjectTimeline',
     'Consultant', 'ConsultantProfile', 'ConsultantSkill', 'Engagement', 'EngagementResource', 'EngagementTimeline',
     'CustomerOrganization', 'CustomerTenant', 'TenantConfiguration', 'CustomerSubscription', 'SubscriptionPlan',
     'WhiteLabel', 'WhiteLabelConfiguration', 'Job', 'JobApplication', 'JobRequirement',
@@ -536,7 +547,7 @@ function getAllModels() {
 function getModelsByCategory(category) {
   const categories = {
     // Core categories
-    user: ['User', 'UserProfile', 'Role', 'Permission'],
+    user: ['Role', 'Permission'],
     organization: ['Organization', 'OrganizationMember', 'OrganizationInvitation', 'Tenant'],
     configuration: ['Configuration', 'SystemConfiguration', 'FeatureFlag'],
     auth: ['Session', 'LoginHistory', 'SecurityIncident', 'ApiKey'],
@@ -548,7 +559,7 @@ function getModelsByCategory(category) {
     content: ['Content', 'Template', 'Workflow', 'Task'],
     
     // Customer-Services categories
-    customerCore: ['Client', 'ClientDocument', 'Project', 'ProjectResource', 'ProjectTask', 'ProjectTimeline', 
+    customerCore: ['User', 'UserPreferences', 'UserProfile', 'UserSession', 'UserSetting', 'Client', 'ClientDocument', 'Project', 'ProjectResource', 'ProjectTask', 'ProjectTimeline', 
                    'Consultant', 'ConsultantProfile', 'ConsultantSkill', 'Engagement', 'EngagementResource', 'EngagementTimeline'],
     customerHosted: ['CustomerOrganization', 'CustomerTenant', 'TenantConfiguration', 'CustomerSubscription', 
                      'SubscriptionPlan', 'WhiteLabel', 'WhiteLabelConfiguration'],

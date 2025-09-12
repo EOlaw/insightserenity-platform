@@ -15,14 +15,14 @@
  */
 
 const UserSettingsService = require('../services/user-settings-service');
-const logger = require('../../../../../shared/lib/utils/logger');
-const { AppError, ValidationError, NotFoundError, ConflictError, ForbiddenError } = require('../../../../../shared/lib/utils/app-error');
-const responseFormatter = require('../../../../../shared/lib/utils/response-formatter');
-const { StatusCodes } = require('../../../../../shared/lib/utils/constants/status-codes');
-const stringHelper = require('../../../../../shared/lib/utils/helpers/string-helper');
-const dateHelper = require('../../../../../shared/lib/utils/helpers/date-helper');
-const validationHelper = require('../../../../../shared/lib/utils/helpers/validation-helper');
-const sanitizationHelper = require('../../../../../shared/lib/utils/helpers/sanitization-helper');
+const logger = require('../../../../../../shared/lib/utils/logger');
+const { AppError, ValidationError, NotFoundError, ConflictError, ForbiddenError } = require('../../../../../../shared/lib/utils/app-error');
+const responseFormatter = require('../../../../../../shared/lib/utils/response-formatter');
+const { StatusCodes } = require('../../../../../../shared/lib/utils/constants/status-codes');
+const stringHelper = require('../../../../../../shared/lib/utils/helpers/string-helper');
+const dateHelper = require('../../../../../../shared/lib/utils/helpers/date-helper');
+const validationHelper = require('../../../../../../shared/lib/utils/helpers/validation-helper');
+const sanitizationHelper = require('../../../../../../shared/lib/utils/helpers/sanitization-helper');
 
 /**
  * Enterprise user settings controller for comprehensive settings management

@@ -13,12 +13,12 @@
  */
 
 const UserService = require('../services/user-service');
-const logger = require('../../../../../shared/lib/utils/logger');
-const { AppError, ValidationError } = require('../../../../../shared/lib/utils/app-error');
-const responseFormatter = require('../../../../../shared/lib/utils/response-formatter');
-const { StatusCodes } = require('../../../../../shared/lib/utils/constants/status-codes');
-const stringHelper = require('../../../../../shared/lib/utils/helpers/string-helper');
-const dateHelper = require('../../../../../shared/lib/utils/helpers/date-helper');
+const logger = require('../../../../../../shared/lib/utils/logger');
+const { AppError, ValidationError } = require('../../../../../../shared/lib/utils/app-error');
+const responseFormatter = require('../../../../../../shared/lib/utils/response-formatter');
+const { StatusCodes } = require('../../../../../../shared/lib/utils/constants/status-codes');
+const stringHelper = require('../../../../../../shared/lib/utils/helpers/string-helper');
+const dateHelper = require('../../../../../../shared/lib/utils/helpers/date-helper');
 
 /**
  * @class UserController
@@ -189,47 +189,92 @@ class UserController {
             const missingFields = requiredFields.filter(field => !userData?.[field]);
 
             if (missingFields.length > 0) {
-                throw new ValidationError(`Missing required fields: ${missingFields.join(', ')}`, 'MISSING_REQUIRED_FIELDS');
+                throw new ValidationError(
+                    `Missing required fields: ${missingFields.join(', ')}`,
+                    { missingFields },
+                    'MISSING_REQUIRED_FIELDS'
+                );
             }
 
             // Validate profile structure
             if (!userData.profile.firstName || !userData.profile.lastName) {
-                throw new ValidationError('First name and last name are required in profile', 'INCOMPLETE_PROFILE');
+                throw new ValidationError(
+                    'First name and last name are required in profile',
+                    { firstName: !userData.profile.firstName, lastName: !userData.profile.lastName },
+                    'INCOMPLETE_PROFILE'
+                );
             }
 
             // Email validation
             if (!stringHelper.isValidEmail(userData.email)) {
-                throw new ValidationError('Invalid email format', 'INVALID_EMAIL');
+                throw new ValidationError(
+                    'Invalid email format',
+                    { email: userData.email },
+                    'INVALID_EMAIL'
+                );
             }
 
             // Password validation for local strategy
             if (strategy === 'local') {
                 if (!userData.password) {
-                    throw new ValidationError('Password is required for local registration', 'PASSWORD_REQUIRED');
+                    throw new ValidationError(
+                        'Password is required for local registration',
+                        { password: 'required' },
+                        'PASSWORD_REQUIRED'
+                    );
                 }
                 if (userData.password.length < 8) {
-                    throw new ValidationError('Password must be at least 8 characters', 'PASSWORD_TOO_SHORT');
+                    throw new ValidationError(
+                        'Password must be at least 8 characters',
+                        { password: 'too_short' },
+                        'PASSWORD_TOO_SHORT'
+                    );
                 }
                 if (!stringHelper.isStrongPassword(userData.password)) {
-                    throw new ValidationError('Password must contain uppercase, lowercase, numbers, and special characters', 'WEAK_PASSWORD');
+                    throw new ValidationError(
+                        'Password must contain uppercase, lowercase, numbers, and special characters',
+                        { password: 'weak' },
+                        'WEAK_PASSWORD'
+                    );
                 }
             }
 
             // Phone number validation if provided
-            if (userData.phoneNumber && !stringHelper.isValidPhoneNumber(userData.phoneNumber)) {
-                throw new ValidationError('Invalid phone number format', 'INVALID_PHONE');
+            // if (userData.phoneNumber && !stringHelper.isValidPhoneNumber(userData.phoneNumber)) {
+            //     throw new ValidationError(
+            //         'Invalid phone number format',
+            //         { phoneNumber: userData.phoneNumber },
+            //         'INVALID_PHONE'
+            //     );
+            // }
+
+            // Phone number validation if provided
+            if (userData.phoneNumber && userData.phoneNumber.trim() !== '') {
+                // More lenient phone number validation
+                const phoneRegex = /^[\+]?[\d\s\-\(\)\.]{10,}$/;
+                if (!phoneRegex.test(userData.phoneNumber.trim())) {
+                    throw new ValidationError(
+                        'Invalid phone number format. Please use a valid international or domestic format.',
+                        { phoneNumber: userData.phoneNumber },
+                        'INVALID_PHONE'
+                    );
+                }
             }
 
             // Organization validation if provided
             if (userData.organizationId && !stringHelper.isValidObjectId(userData.organizationId)) {
-                throw new ValidationError('Invalid organization ID', 'INVALID_ORGANIZATION_ID');
+                throw new ValidationError(
+                    'Invalid organization ID',
+                    { organizationId: userData.organizationId },
+                    'INVALID_ORGANIZATION_ID'
+                );
             }
 
             const registrationResult = await UserController.#userService.registerUser(
                 userData,
                 strategy,
                 context,
-                { 
+                {
                     autoActivate,
                     skipWelcomeEmail: req.body.skipWelcomeEmail || false,
                     notifyAdmins: req.body.notifyAdmins || false
@@ -279,9 +324,9 @@ class UserController {
      */
     static async logoutUser(req, res, next) {
         try {
-            const sessionIdentifier = req.headers.authorization?.replace('Bearer ', '') || 
-                                    req.cookies?.refreshToken || 
-                                    req.body?.sessionId;
+            const sessionIdentifier = req.headers.authorization?.replace('Bearer ', '') ||
+                req.cookies?.refreshToken ||
+                req.body?.sessionId;
             const { allDevices = false, reason = 'user_request' } = req.body;
             const context = {
                 ipAddress: req.ip,
@@ -402,7 +447,7 @@ class UserController {
             const user = await UserController.#userService.createUser(
                 userData,
                 createdBy,
-                { 
+                {
                     autoActivate,
                     skipNotifications: !sendWelcomeEmail,
                     session: req.session
@@ -449,11 +494,11 @@ class UserController {
     static async getUserById(req, res, next) {
         try {
             const { userId } = req.params;
-            const { 
-                populate = [], 
-                includeDeleted = false, 
+            const {
+                populate = [],
+                includeDeleted = false,
                 includeAuthData = false,
-                organizationId 
+                organizationId
             } = req.query;
             const requesterId = req.user.id;
 
@@ -470,13 +515,13 @@ class UserController {
             }
 
             // Parse populate array
-            const populateArray = Array.isArray(populate) ? populate : 
-                                typeof populate === 'string' ? populate.split(',') : [];
+            const populateArray = Array.isArray(populate) ? populate :
+                typeof populate === 'string' ? populate.split(',') : [];
 
             // Validate populate options
             const validPopulateOptions = ['organizations', 'profile', 'settings', 'preferences', 'sessions'];
             const invalidPopulate = populateArray.filter(option => !validPopulateOptions.includes(option));
-            
+
             if (invalidPopulate.length > 0) {
                 throw new ValidationError(`Invalid populate options: ${invalidPopulate.join(', ')}`, 'INVALID_POPULATE_OPTIONS');
             }
@@ -582,7 +627,7 @@ class UserController {
                 if (!Array.isArray(cleanUpdateData.organizations)) {
                     throw new ValidationError('Organizations must be an array', 'INVALID_ORGANIZATIONS_FORMAT');
                 }
-                
+
                 for (const org of cleanUpdateData.organizations) {
                     if (!stringHelper.isValidObjectId(org.organizationId)) {
                         throw new ValidationError(`Invalid organization ID: ${org.organizationId}`, 'INVALID_ORGANIZATION_ID');
@@ -594,7 +639,7 @@ class UserController {
                 userId,
                 cleanUpdateData,
                 updatedBy,
-                { 
+                {
                     session: req.session,
                     skipNotifications,
                     reason
@@ -637,11 +682,11 @@ class UserController {
         try {
             const { userId } = req.params;
             const deletedBy = req.user.id;
-            const { 
-                hardDelete = false, 
-                reason, 
-                transferOwnership, 
-                gracePeriod = 30 
+            const {
+                hardDelete = false,
+                reason,
+                transferOwnership,
+                gracePeriod = 30
             } = req.body;
 
             logger.info('User deletion attempt', {
@@ -690,8 +735,8 @@ class UserController {
                 }
             );
 
-            const responseMessage = hardDelete ? 
-                'User permanently deleted' : 
+            const responseMessage = hardDelete ?
+                'User permanently deleted' :
                 `User scheduled for deletion in ${gracePeriod} days`;
 
             return res.status(StatusCodes.OK).json(
@@ -1023,7 +1068,7 @@ class UserController {
 
             const validRoles = ['super_admin', 'admin', 'manager', 'member', 'guest'];
             const invalidRoles = roles.filter(role => !validRoles.includes(role));
-            
+
             if (invalidRoles.length > 0) {
                 throw new ValidationError(`Invalid roles: ${invalidRoles.join(', ')}. Valid roles: ${validRoles.join(', ')}`, 'INVALID_ROLES');
             }
@@ -1146,8 +1191,8 @@ class UserController {
                 }
             );
 
-            const responseMessage = gracePeriod > 0 ? 
-                `User removal scheduled in ${gracePeriod} days` : 
+            const responseMessage = gracePeriod > 0 ?
+                `User removal scheduled in ${gracePeriod} days` :
                 'User removed from organization successfully';
 
             return res.status(StatusCodes.OK).json(
@@ -1247,7 +1292,7 @@ class UserController {
 
             // Build search parameters
             const searchParams = {};
-            
+
             if (query) searchParams.textSearch = query;
             if (email) searchParams.email = email;
             if (name) searchParams.name = name;
@@ -1255,11 +1300,11 @@ class UserController {
                 const statusArray = Array.isArray(status) ? status : status.split(',');
                 const validStatuses = ['active', 'pending', 'suspended', 'inactive', 'deleted'];
                 const invalidStatuses = statusArray.filter(s => !validStatuses.includes(s));
-                
+
                 if (invalidStatuses.length > 0) {
                     throw new ValidationError(`Invalid status values: ${invalidStatuses.join(', ')}`, 'INVALID_STATUS');
                 }
-                
+
                 searchParams.status = statusArray;
             }
             if (roles) {
@@ -1456,12 +1501,12 @@ class UserController {
     static async getUserActivityTimeline(req, res, next) {
         try {
             const { userId } = req.params;
-            const { 
-                limit = 50, 
-                startDate, 
-                endDate, 
+            const {
+                limit = 50,
+                startDate,
+                endDate,
                 includeAuthEvents = true,
-                eventTypes 
+                eventTypes
             } = req.query;
             const requesterId = req.user.id;
 
@@ -1504,7 +1549,7 @@ class UserController {
                 eventTypesArray = Array.isArray(eventTypes) ? eventTypes : eventTypes.split(',');
                 const validEventTypes = ['authentication', 'logout', 'profile_update', 'settings_change', 'security_event'];
                 const invalidEventTypes = eventTypesArray.filter(type => !validEventTypes.includes(type));
-                
+
                 if (invalidEventTypes.length > 0) {
                     throw new ValidationError(`Invalid event types: ${invalidEventTypes.join(', ')}`, 'INVALID_EVENT_TYPES');
                 }

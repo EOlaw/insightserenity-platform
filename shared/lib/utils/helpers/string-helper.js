@@ -5,6 +5,8 @@
  * @module shared/lib/utils/helpers/string-helper
  */
 
+const crypto = require('crypto');
+
 /**
  * @class StringHelper
  * @description Comprehensive string manipulation utilities for the platform
@@ -213,6 +215,198 @@ class StringHelper {
   }
 
   /**
+   * Generate UUID v4
+   * @static
+   * @param {boolean} [secure=true] - Use crypto.randomUUID if available
+   * @returns {string} UUID v4
+   */
+  static generateUUID(secure = true) {
+    try {
+      // Use native randomUUID if available (Node.js 14.17+)
+      if (secure && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+
+      // Fallback to manual UUID v4 generation
+      const bytes = crypto.randomBytes(16);
+
+      // Set version (4) and variant bits
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+      const hex = bytes.toString('hex');
+
+      return [
+        hex.slice(0, 8),
+        hex.slice(8, 12),
+        hex.slice(12, 16),
+        hex.slice(16, 20),
+        hex.slice(20, 32)
+      ].join('-');
+
+    } catch (error) {
+      // Fallback to timestamp-based UUID if crypto fails
+      const timestamp = Date.now().toString(16);
+      const random = Math.random().toString(16).substr(2);
+      return `${timestamp}-${random}-4xxx-yxxx-xxxxxxxxxxxx`.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+  }
+
+  /**
+   * Check if string is valid email format
+   * @static
+   * @param {string} email - Email to validate
+   * @returns {boolean} True if valid email format
+   */
+  static isValidEmail(email) {
+    if (!email || typeof email !== 'string') return false;
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    return emailRegex.test(email.trim());
+  }
+
+  /**
+   * Check if string is valid phone number format
+   * @static
+   * @param {string} phone - Phone number to validate
+   * @returns {boolean} True if valid phone format
+   */
+  static isValidPhoneNumber(phone) {
+    if (!phone || typeof phone !== 'string') return false;
+
+    // Remove all non-digit characters except + at the start
+    const cleanPhone = phone.replace(/[\s\-\(\)\.]/g, '');
+
+    // Check if it's empty after cleaning
+    if (!cleanPhone) return false;
+
+    // Handle international format (starts with +)
+    if (cleanPhone.startsWith('+')) {
+      const digitsOnly = cleanPhone.substring(1);
+      // International numbers: country code + national number (7-15 digits total)
+      return /^\d{7,15}$/.test(digitsOnly);
+    }
+
+    // Handle domestic formats
+    const digitsOnly = cleanPhone.replace(/[^\d]/g, '');
+
+    // Must have at least 10 digits for most valid phone numbers
+    // Maximum of 15 digits per ITU-T E.164 recommendation
+    if (digitsOnly.length < 10 || digitsOnly.length > 15) {
+      return false;
+    }
+
+    // Additional validation: first digit should not be 0 or 1 for US domestic numbers
+    // but we'll be more lenient for international support
+    return /^\d+$/.test(digitsOnly);
+  }
+
+  /**
+   * Check if string is valid ObjectId format (MongoDB)
+   * @static
+   * @param {string} id - ID to validate
+   * @returns {boolean} True if valid ObjectId format
+   */
+  static isValidObjectId(id) {
+    if (!id || typeof id !== 'string') return false;
+    const objectIdRegex = /^[0-9a-fA-F]{24}$/;
+    return objectIdRegex.test(id);
+  }
+
+  /**
+   * Check if password meets strength requirements
+   * @static
+   * @param {string} password - Password to validate
+   * @param {Object} [options={}] - Options
+   * @param {number} [options.minLength=8] - Minimum length
+   * @param {boolean} [options.requireUppercase=true] - Require uppercase
+   * @param {boolean} [options.requireLowercase=true] - Require lowercase
+   * @param {boolean} [options.requireNumbers=true] - Require numbers
+   * @param {boolean} [options.requireSpecial=true] - Require special characters
+   * @returns {boolean} True if password is strong
+   */
+  static isStrongPassword(password, options = {}) {
+    const {
+      minLength = 8,
+      requireUppercase = true,
+      requireLowercase = true,
+      requireNumbers = true,
+      requireSpecial = true
+    } = options;
+
+    if (!password || typeof password !== 'string') return false;
+    if (password.length < minLength) return false;
+    if (requireUppercase && !/[A-Z]/.test(password)) return false;
+    if (requireLowercase && !/[a-z]/.test(password)) return false;
+    if (requireNumbers && !/\d/.test(password)) return false;
+    if (requireSpecial && !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) return false;
+
+    return true;
+  }
+
+  /**
+   * Generate a secure password
+   * @static
+   * @param {number} [length=12] - Password length
+   * @param {Object} [options={}] - Options
+   * @param {boolean} [options.includeUppercase=true] - Include uppercase letters
+   * @param {boolean} [options.includeLowercase=true] - Include lowercase letters
+   * @param {boolean} [options.includeNumbers=true] - Include numbers
+   * @param {boolean} [options.includeSpecial=true] - Include special characters
+   * @returns {string} Generated secure password
+   */
+  static generateSecurePassword(length = 12, options = {}) {
+    const {
+      includeUppercase = true,
+      includeLowercase = true,
+      includeNumbers = true,
+      includeSpecial = true
+    } = options;
+
+    let charset = '';
+    const required = [];
+
+    if (includeUppercase) {
+      charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      required.push('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+    }
+    if (includeLowercase) {
+      charset += 'abcdefghijklmnopqrstuvwxyz';
+      required.push('abcdefghijklmnopqrstuvwxyz');
+    }
+    if (includeNumbers) {
+      charset += '0123456789';
+      required.push('0123456789');
+    }
+    if (includeSpecial) {
+      charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+      required.push('!@#$%^&*()_+-=[]{}|;:,.<>?');
+    }
+
+    if (!charset) return '';
+
+    let password = '';
+
+    // Ensure at least one character from each required set
+    for (const charSet of required) {
+      const randomIndex = Math.floor(Math.random() * charSet.length);
+      password += charSet[randomIndex];
+    }
+
+    // Fill remaining length with random characters from full charset
+    for (let i = password.length; i < length; i++) {
+      const randomIndex = Math.floor(Math.random() * charset.length);
+      password += charset[randomIndex];
+    }
+
+    // Shuffle the password to avoid predictable patterns
+    return password.split('').sort(() => Math.random() - 0.5).join('');
+  }
+
+  /**
    * Pad string to specified length
    * @static
    * @param {string} str - String to pad
@@ -414,11 +608,11 @@ class StringHelper {
   }
 
   /**
- * Pluralize string
- * @static
- * @param {string} str - String to pluralize
- * @returns {string} Pluralized string
- */
+   * Pluralize string
+   * @static
+   * @param {string} str - String to pluralize
+   * @returns {string} Pluralized string
+   */
   static pluralize(str) {
     if (!str || typeof str !== 'string') return '';
 

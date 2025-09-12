@@ -11,7 +11,8 @@
  * @requires module:shared/lib/services/cache-service
  */
 
-const SamlStrategy = require('passport-saml').Strategy;
+// const SamlStrategy = require('@node-saml/passport-saml').Strategy;
+const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');

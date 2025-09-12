@@ -49,7 +49,7 @@ const userPreferencesRoutes = require('./user-preferences-routes');
 // const auditLogger = require('../../../shared/middleware/compliance/audit-logger');
 
 // Import utilities
-const logger = require('../../../shared/lib/utils/logger');
+const logger = require('../../../../../../shared/lib/utils/logger');
 
 /**
  * Module-level rate limiting configuration
@@ -411,7 +411,7 @@ router.get('/health', (req, res) => {
  * Detailed health check with module information
  * GET /health/detailed
  */
-router.get('/health/detailed', (req, res) => {
+router.get('/health-detailed', (req, res) => {
     const memoryUsage = process.memoryUsage();
     
     res.status(200).json({
@@ -441,7 +441,7 @@ router.get('/health/detailed', (req, res) => {
  * Readiness probe for container orchestration
  * GET /health/ready
  */
-router.get('/health/ready', (req, res) => {
+router.get('/health-ready', (req, res) => {
     // Add any readiness checks here (database connections, external services, etc.)
     const isReady = true; // Implement actual readiness logic
     
@@ -466,7 +466,7 @@ router.get('/health/ready', (req, res) => {
  * Liveness probe for container orchestration
  * GET /health/live
  */
-router.get('/health/live', (req, res) => {
+router.get('/health-live', (req, res) => {
     res.status(200).json({
         success: true,
         status: 'alive',

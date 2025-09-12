@@ -16,15 +16,15 @@
  */
 
 const mongoose = require('mongoose');
-const logger = require('../../utils/logger');
-const { AppError, ValidationError, NotFoundError, ConflictError, ForbiddenError } = require('../../utils/app-error');
-const { asyncHandler } = require('../../utils/async-handler');
-const CacheService = require('../cache-service');
-const EmailService = require('../email-service');
-const NotificationService = require('../notification-service');
-const AuditService = require('../../security/audit/audit-service');
-const UserSettingsModel = require('../../database/models/customer-services/core-business/user-management/user-settings-model');
-const UserModel = require('../../database/models/customer-services/core-business/user-management/user-model');
+const logger = require('../../../../../../shared/lib/utils/logger');
+const { AppError, ValidationError, NotFoundError, ConflictError, ForbiddenError } = require('../../../../../../shared/lib/utils/app-error');
+const { asyncHandler } = require('../../../../../../shared/lib/utils/async-handler');
+const CacheService = require('../../../../../../shared/lib/services/cache-service');
+const EmailService = require('../../../../../../shared/lib/services/email-service');
+const NotificationService = require('../../../../../../shared/lib/services/notification-service');
+const AuditService = require('../../../../../../shared/lib/security/audit/audit-service');
+const UserModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/user-management/user-model');
+const UserSettingsModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/user-management/user-settings-model');
 const crypto = require('crypto');
 const validator = require('validator');
 const speakeasy = require('speakeasy');

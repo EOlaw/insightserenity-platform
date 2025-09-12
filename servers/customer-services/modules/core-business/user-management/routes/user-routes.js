@@ -435,8 +435,8 @@ router.post(
     '/auth/register',
     // rateLimiter(RATE_LIMITS.write),
     // UserValidator.validateRegistrationRequest,
-    validateUserData('create'),
-    operationLogger('auth_register'),
+    // validateUserData('create'),
+    // operationLogger('auth_register'),
     UserController.registerUser
 );
 
