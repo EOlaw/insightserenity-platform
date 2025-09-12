@@ -14,13 +14,13 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../base-model');
-const logger = require('../../../utils/logger');
-const { AppError } = require('../../../utils/app-error');
-const HashService = require('../../../security/encryption/hash-service');
-const CommonValidator = require('../../../utils/validators/common-validators');
-const stringHelper = require('../../../utils/helpers/string-helper');
-const TwoFactorService = require('../../../auth/services/two-factor-service');
+const BaseModel = require('../../../base-model');
+const logger = require('../../../../../utils/logger');
+const { AppError } = require('../../../../../utils/app-error');
+const HashService = require('../../../../../security/encryption/hash-service');
+const CommonValidator = require('../../../../../utils/validators/common-validators');
+const stringHelper = require('../../../../../utils/helpers/string-helper');
+const TwoFactorService = require('../../../../../auth/services/two-factor-service');
 
 /**
  * Enhanced user schema definition
@@ -1629,11 +1629,3 @@ const UserModel = BaseModel.createModel('User', userSchema, {
 });
 
 module.exports = UserModel;
-
-// Create and export model
-// const User = BaseModel.createModel('User', userSchema);
-
-// module.exports = {
-//   schema: userSchema,
-//   model: User
-// };

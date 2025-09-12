@@ -28,34 +28,34 @@ const ExcelJS = require('exceljs');
 const csv = require('csv-parse/sync');
 
 // Core dependencies
-const AuthService = require('../../auth/services/auth-service');
-const logger = require('../../utils/logger');
-const { AppError, ValidationError, NotFoundError, ConflictError, ForbiddenError } = require('../../utils/app-error');
-const { asyncHandler } = require('../../utils/async-handler');
+const AuthService = require('../../../../../../shared/lib/auth/services/auth-service');
+const logger = require('../../../../../../shared/lib/utils/logger');
+const { AppError, ValidationError, NotFoundError, ConflictError, ForbiddenError } = require('../../../../../../shared/lib/utils/app-error');
+const { asyncHandler } = require('../../../../../../shared/lib/utils/async-handler');
 
 // Service dependencies
-const CacheService = require('../cache-service');
-const EmailService = require('../email-service');
-const NotificationService = require('../notification-service');
-const AuditService = require('../../security/audit/audit-service');
+const CacheService = require('../../../../../../shared/lib/services/cache-service');
+const EmailService = require('../../../../../../shared/lib/services/email-service');
+const NotificationService = require('../../../../../../shared/lib/services/notification-service');
+const AuditService = require('../../../../../../shared/lib/security/audit/audit-service');
 
 // Model dependencies
-const UserModel = require('../../database/models/users/user-model');
-const UserProfileModel = require('../../database/models/users/user-profile-model');
-const UserSettingsModel = require('../../database/models/users/user-settings-model');
-const UserPreferencesModel = require('../../database/models/users/user-preferences-model');
-const UserSessionModel = require('../../database/models/users/user-session-model');
+const UserModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/user-management/user-model');
+const UserProfileModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/user-management/user-profile-model');
+const UserSettingsModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/user-management/user-settings-model');
+const UserPreferencesModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/user-management/user-preference-model');
+const UserSessionModel = require('../../../../../../shared/lib/database/models/customer-services/core-business/user-management/user-session-model');
 
 // Passport strategies
-const LocalStrategy = require('../../../auth/strategies/local-strategy');
-const GoogleStrategy = require('../../../auth/strategies/google-strategy');
-const GitHubStrategy = require('../../../auth/strategies/github-strategy');
-const LinkedInStrategy = require('../../../auth/strategies/linkedin-strategy');
-const MicrosoftStrategy = require('../../../auth/strategies/microsoft-strategy');
-const SAMLStrategy = require('../../../auth/strategies/saml-strategy');
-const OIDCStrategy = require('../../../auth/strategies/oidc-strategy');
-const LDAPStrategy = require('../../../auth/strategies/ldap-strategy');
-const JWTStrategy = require('../../../auth/strategies/jwt-strategy');
+const LocalAuthStrategy = require('../../../../../../shared/lib/auth/strategies/local-strategy');
+const GoogleAuthStrategy = require('../../../../../../shared/lib/auth/strategies/google-strategy');
+const GitHubAuthStrategy = require('../../../../../../shared/lib/auth/strategies/github-strategy');
+const LinkedInAuthStrategy = require('../../../../../../shared/lib/auth/strategies/linkedin-strategy');
+const MicrosoftAuthStrategy = require('../../../../../../shared/lib/auth/strategies/microsoft-strategy');
+const SAMLAuthStrategy = require('../../../../../../shared/lib/auth/strategies/saml-strategy');
+const OIDCAuthStrategy = require('../../../../../../shared/lib/auth/strategies/oidc-strategy');
+const LDAPAuthStrategy = require('../../../../../../shared/lib/auth/strategies/ldap-strategy');
+const JWTAuthStrategy = require('../../../../../../shared/lib/auth/strategies/jwt-strategy');
 
 /**
  * Enterprise user service with comprehensive authentication integration and user lifecycle management
@@ -1543,7 +1543,7 @@ class UserService {
 
         // Local Strategy
         if (this.#strategyConfigs.local.enabled) {
-            const localStrategy = new LocalStrategy(this.#serviceConfig, {
+            const localStrategy = new LocalAuthStrategy(this.#serviceConfig, {
                 authService: this.#authService,
                 userService: this
             });
@@ -1553,7 +1553,7 @@ class UserService {
 
         // OAuth Strategies
         if (this.#strategyConfigs.google.enabled) {
-            const googleStrategy = new GoogleStrategy(this.#serviceConfig.oauth?.google, {
+            const googleStrategy = new GoogleAuthStrategy(this.#serviceConfig.oauth?.google, {
                 authService: this.#authService
             });
             passport.use('google', googleStrategy);
@@ -1561,7 +1561,7 @@ class UserService {
         }
 
         if (this.#strategyConfigs.github.enabled) {
-            const githubStrategy = new GitHubStrategy(this.#serviceConfig.oauth?.github, {
+            const githubStrategy = new GitHubAuthStrategy(this.#serviceConfig.oauth?.github, {
                 authService: this.#authService
             });
             passport.use('github', githubStrategy);
@@ -1569,7 +1569,7 @@ class UserService {
         }
 
         if (this.#strategyConfigs.linkedin.enabled) {
-            const linkedinStrategy = new LinkedInStrategy(this.#serviceConfig.oauth?.linkedin, {
+            const linkedinStrategy = new LinkedInAuthStrategy(this.#serviceConfig.oauth?.linkedin, {
                 authService: this.#authService
             });
             passport.use('linkedin', linkedinStrategy);
@@ -1577,7 +1577,7 @@ class UserService {
         }
 
         if (this.#strategyConfigs.microsoft.enabled) {
-            const microsoftStrategy = new MicrosoftStrategy(this.#serviceConfig.oauth?.microsoft, {
+            const microsoftStrategy = new MicrosoftAuthStrategy(this.#serviceConfig.oauth?.microsoft, {
                 authService: this.#authService
             });
             passport.use('microsoft', microsoftStrategy);
@@ -1586,7 +1586,7 @@ class UserService {
 
         // SSO Strategies
         if (this.#strategyConfigs.saml.enabled) {
-            const samlStrategy = new SAMLStrategy(this.#serviceConfig.sso?.saml, {
+            const samlStrategy = new SAMLAuthStrategy(this.#serviceConfig.sso?.saml, {
                 authService: this.#authService
             });
             passport.use('saml', samlStrategy);
@@ -1594,7 +1594,7 @@ class UserService {
         }
 
         if (this.#strategyConfigs.oidc.enabled) {
-            const oidcStrategy = new OIDCStrategy(this.#serviceConfig.sso?.oidc, {
+            const oidcStrategy = new OIDCAuthStrategy(this.#serviceConfig.sso?.oidc, {
                 authService: this.#authService
             });
             passport.use('oidc', oidcStrategy);
@@ -1603,7 +1603,7 @@ class UserService {
 
         // Enterprise Strategies
         if (this.#strategyConfigs.ldap.enabled) {
-            const ldapStrategy = new LDAPStrategy(this.#serviceConfig.ldap, {
+            const ldapStrategy = new LDAPAuthStrategy(this.#serviceConfig.ldap, {
                 authService: this.#authService
             });
             passport.use('ldap', ldapStrategy);
@@ -1612,7 +1612,7 @@ class UserService {
 
         // JWT Strategy (always enabled)
         if (this.#strategyConfigs.jwt.enabled) {
-            const jwtStrategy = new JWTStrategy(this.#serviceConfig.jwt, {
+            const jwtStrategy = new JWTAuthStrategy(this.#serviceConfig.jwt, {
                 authService: this.#authService
             });
             passport.use('jwt', jwtStrategy);

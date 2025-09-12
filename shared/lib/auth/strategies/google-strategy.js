@@ -466,6 +466,7 @@ class GoogleAuthStrategy extends BaseOAuthStrategy {
   }
 }
 
+module.exports = GoogleAuthStrategy;
 // Export factory function
 module.exports = (config) => {
   const strategy = new GoogleAuthStrategy(config);

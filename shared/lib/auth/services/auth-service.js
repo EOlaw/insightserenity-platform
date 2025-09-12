@@ -30,9 +30,9 @@ const bcrypt = require('bcrypt');
 const geoip = require('geoip-lite');
 const UAParser = require('ua-parser-js');
 
-const User = require('../../database/models/users/user-model');
-const OrganizationModel = require('../../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model');
-const SessionModel = require('../../database/models/auth/session-model');
+const User = require('../../database/models/customer-services/core-business/user-management/user-model');
+const OrganizationModel = require('../../database/models/customer-services/hosted-organizations/organizations/organization-model');
+const SessionModel = require('../../database/models/customer-services/core-business/user-management/user-session-model');
 const AuditLogModel = require('../../database/models/security/audit-log-model');
 
 const TokenService = require('./token-service');
@@ -197,7 +197,29 @@ class AuthService {
    * @param {Object} [dependencies] - Service dependencies for dependency injection
    */
   constructor(authConfig, dependencies = {}) {
-    this.#config = authConfig;
+    this.#config = authConfig || {
+      enterprise: {
+        enableRiskAssessment: false,
+        enableAdvancedMFA: false,
+        enableDeviceManagement: false,
+        enableSecurityAlerts: false,
+        enableAdvancedAudit: false
+      },
+      features: {
+        oauth: false,
+        sso: false,
+        mfa: { require2FA: false }
+      },
+      mfa: { require2FA: false },
+      security: {
+        riskThresholds: {
+          low: 20,
+          medium: 40,
+          high: 60,
+          critical: 80
+        }
+      }
+    };
 
     // Initialize service dependencies
     this.#tokenService = dependencies.tokenService || new TokenService();

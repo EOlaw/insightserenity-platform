@@ -13,7 +13,7 @@ const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/app-error');
 const EncryptionService = require('../encryption/encryption-service');
 const AuditService = require('../audit/audit-service');
-const UserModel = require('../../database/models/users/user-model');
+const UserModel = require('../../database/models/customer-services/core-business/user-management/user-model');
 
 const ConsentModel = require('../../database/models/users/consent-model');
 const AnonymizedUserModel = require('../../database/models/users/anonymized-user-model');
@@ -1500,7 +1500,7 @@ class GDPRCompliance {
   #getModelForCategory(category) {
     try {
       const modelMap = {
-        [GDPRCompliance.#DATA_CATEGORIES.PERSONAL]: require('../../database/models/users/user-model'),
+        [GDPRCompliance.#DATA_CATEGORIES.PERSONAL]: require('../../database/models/customer-services/core-business/user-management/user-model'),
         [GDPRCompliance.#DATA_CATEGORIES.SENSITIVE]: require('../../database/models/sensitive-data-model'),
         [GDPRCompliance.#DATA_CATEGORIES.HEALTH]: require('../../database/models/health-data-model')
       };

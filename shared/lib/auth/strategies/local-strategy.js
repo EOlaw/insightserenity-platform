@@ -21,7 +21,7 @@ const { Strategy: LocalStrategy } = require('passport-local');
 const PasswordService = require('../services/password-service');
 const AuthService = require('../services/auth-service');
 const TwoFactorService = require('../services/two-factor-service');
-const UserModel = require('../../database/models/users/user-model');
+const UserModel = require('../../database/models/customer-services/core-business/user-management/user-model');
 const OrganizationModel = require('../../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model');
 const CacheService = require('../../services/cache-service');
 const AuditService = require('../../security/audit/audit-service');
@@ -138,7 +138,9 @@ class LocalAuthStrategy {
   ) {
     this.#config = { ...LocalAuthStrategy.#DEFAULT_CONFIG, ...config };
     this.#passwordService = passwordService || new PasswordService();
-    this.#authService = authService || new AuthService();
+    // Pass the auth config when creating AuthService
+    const authConfig = config.authConfig || require('../../../config/auth-config');
+    this.#authService = authService || new AuthService(authConfig);
     this.#twoFactorService = twoFactorService || new TwoFactorService();
     this.#cacheService = cacheService || new CacheService();
     this.#auditService = auditService || new AuditService();

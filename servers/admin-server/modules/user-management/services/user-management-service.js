@@ -21,8 +21,8 @@
  * @requires module:shared/lib/utils/helpers/date-helper
  */
 
-const User = require('../../../../../shared/lib/database/models/users/user-model');
-const Organization = require('../../../../../shared/lib/database/models/organizations/organization-model');
+const User = require('../../../../../shared/lib/database/models/customer-services/core-business/user-management/user-model');
+const Organization = require('../../../../../shared/lib/database/models/customer-services/hosted-organizations/organizations/organization-model');
 const AdminUser = require('../models/admin-user-model');
 const UserPermission = require('../models/user-permission-model');
 const AdminSession = require('../models/admin-session-model');

@@ -575,6 +575,7 @@ class LinkedInAuthStrategy extends BaseOAuthStrategy {
   }
 }
 
+module.exports = LinkedInAuthStrategy;
 // Export factory function
 module.exports = (config) => {
   const strategy = new LinkedInAuthStrategy(config);

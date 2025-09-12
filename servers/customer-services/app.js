@@ -162,6 +162,9 @@ console.log('🔄 DEBUG: Loading business module routes...');
 const clientsRoutes = require('./modules/core-business/clients/routes');
 console.log('✅ DEBUG: Clients routes loaded', clientsRoutes.stack?.length);
 
+const userManagementRoutes = require('./modules/core-business/user-management/routes');
+console.log('✅ DEBUG: User Management routes loaded', userManagementRoutes.stack?.length);
+
 
 // Core Business Module Routes
 let projectsRoutes, consultantsRoutes, engagementsRoutes, coreAnalyticsRoutes;
@@ -1285,10 +1288,6 @@ class CustomerServicesApplication {
                 });
             });
 
-            // this.app.get('/api/clients/health', (req, res) => {
-            //     res.json({ status: 'healthy', message: 'test works' });
-            // });
-
             // Authentication routes
             this.setupAuthenticationRoutes();
 
@@ -1303,6 +1302,12 @@ class CustomerServicesApplication {
             // });
 
             // Core Business Module Routes
+            if (userManagementRoutes && userManagementRoutes.router) {
+                apiRouter.use('/users', userManagementRoutes.router);
+                console.log('✅ DEBUG: User Management routes mounted at /api/user-management');
+                console.log(`✅ DEBUG: User Management module info: ${userManagementRoutes.name} v${userManagementRoutes.version}`);
+            }
+
             console.log('🏢 DEBUG: Setting up Core Business routes...');
             if (clientsRoutes) {
                 apiRouter.use('/clients', clientsRoutes);

@@ -13,16 +13,16 @@
 
 // const crypto = require('crypto');
 const mongoose = require('mongoose');
-const BaseModel = require('../base-model');
-const logger = require('../../../utils/logger');
-const { AppError } = require('../../../utils/app-error');
-const stringHelper = require('../../../utils/helpers/string-helper');
-// const HashService = require('../../../security/encryption/hash-service');
+const BaseModel = require('../../../base-model');
+const logger = require('../../../../../utils/logger');
+const { AppError } = require('../../../../../utils/app-error');
+const stringHelper = require('../../../../../utils/helpers/string-helper');
+// const HashService = require('../../../../../security/encryption/hash-service');
 
 // Fallback hash service if not available
 let HashService;
 try {
-  HashService = require('../../../security/encryption/hash-service');
+  HashService = require('../../../../../security/encryption/hash-service');
 } catch (error) {
   logger.warn('HashService not available, using fallback crypto functions');
   const crypto = require('crypto');

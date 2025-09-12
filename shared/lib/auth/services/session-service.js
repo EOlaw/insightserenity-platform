@@ -13,8 +13,8 @@
  * @requires module:shared/lib/utils/helpers/date-helper
  */
 
-const SessionModel = require('../../database/models/auth/session-model');
-const UserModel = require('../../database/models/users/user-model');
+const SessionModel = require('../../database/models/customer-services/core-business/user-management/user-session-model');
+const UserModel = require('../../database/models/customer-services/core-business/user-management/user-model');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/app-error');
 const { ERROR_CODES } = require('../../utils/constants/error-codes');

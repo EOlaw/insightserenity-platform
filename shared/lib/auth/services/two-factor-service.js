@@ -27,7 +27,7 @@ const EncryptionService = require('../../security/encryption/encryption-service'
 const CacheService = require('../../services/cache-service');
 const EmailService = require('../../services/email-service');
 const SMSService = require('../../services/sms-service');
-const UserModel = require('../../database/models/users/user-model');
+const UserModel = require('../../database/models/customer-services/core-business/user-management/user-model');
 const AuditLogModel = require('../../database/models/security/audit-log-model').model;
 
 /**

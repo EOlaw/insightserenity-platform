@@ -372,6 +372,7 @@ class GitHubAuthStrategy extends BaseOAuthStrategy {
   }
 }
 
+module.exports = GitHubAuthStrategy;
 // Export factory function
 module.exports = (config) => {
   const strategy = new GitHubAuthStrategy(config);

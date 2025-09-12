@@ -10,14 +10,14 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../base-model');
-const logger = require('../../../utils/logger');
-const { AppError } = require('../../../utils/app-error');
+const BaseModel = require('../../../base-model');
+const logger = require('../../../../../utils/logger');
+const { AppError } = require('../../../../../utils/app-error');
 
 // Enhanced fallback validators with proper function definitions
 let validators;
 try {
-  validators = require('../../../utils/validators/common-validators');
+  validators = require('../../../../../utils/validators/common-validators');
 } catch (error) {
   logger.warn('Common validators not available, using fallback validators');
   

@@ -29,8 +29,8 @@ const { ERROR_CODES } = require('../../utils/constants/error-codes');
 const commonValidators = require('../../utils/validators/common-validators');
 const AuditService = require('../../security/audit/audit-service');
 const CacheService = require('../../services/cache-service');
-const UserModel = require('../../database/models/users/user-model');
-const OrganizationModel = require('../../../../servers/customer-services/modules/hosted-organizations/organizations/models/organization-model');
+const UserModel = require('../../database/models/customer-services/core-business/user-management/user-model');
+const OrganizationModel = require('../../database/models/customer-services/hosted-organizations/organizations/organization-model');
 const config = require('../../../config');
 
 /**

@@ -133,6 +133,7 @@
     "jsdom": "^26.1.0",
     "next": "15.4.2",
     "node-cron": "^4.2.1",
+    "passport-azure-ad-oauth2": "^0.0.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "sanitize-html": "^2.17.0",

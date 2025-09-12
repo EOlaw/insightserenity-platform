@@ -22,7 +22,7 @@ const {
   generateAuthenticationOptions,
   verifyAuthenticationResponse
 } = require('@simplewebauthn/server');
-const UserModel = require('../../database/models/users/user-model');
+const UserModel = require('../../database/models/customer-services/core-business/user-management/user-model');
 const PasskeyModel = require('../../database/models/users/passkey-model');
 const CacheService = require('../../services/cache-service');
 const AuditService = require('../../security/audit/audit-service');

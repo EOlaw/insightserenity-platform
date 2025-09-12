@@ -42,7 +42,7 @@ function getCacheService() {
 
 function getUserModel() {
   if (!UserModel) {
-    UserModel = require('../../database/models/users/user-model');
+    UserModel = require('../../database/models/customer-services/core-business/user-management/user-model');
   }
   return UserModel;
 }

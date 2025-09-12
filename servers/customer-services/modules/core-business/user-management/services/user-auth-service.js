@@ -1923,20 +1923,17 @@ class UserAuthService {
         return session;
     }
 
-    // ==================== OAUTH PROVIDER METHODS ====================
+    // ==================== OAUTH PRIVATE METHODS ====================
 
     /**
-     * Exchange OAuth authorization code for tokens with enhanced security
+     * Exchange OAuth authorization code for tokens
      * @private
      * @param {string} provider - OAuth provider
      * @param {string} authorizationCode - Authorization code
-     * @returns {Promise<Object>} Token response with enhanced validation
+     * @returns {Promise<Object>} Token response
      */
     async #exchangeOAuthCode(provider, authorizationCode) {
         const providerConfig = this.#oauthProviders.get(provider);
-        if (!providerConfig) {
-            throw new ValidationError('Provider configuration not found', 'PROVIDER_CONFIG_MISSING');
-        }
 
         const tokenRequest = {
             method: 'POST',
@@ -1955,7 +1952,6 @@ class UserAuthService {
         };
 
         try {
-            const fetch = (await import('node-fetch')).default;
             const response = await fetch(providerConfig.tokenUrl, tokenRequest);
 
             if (!response.ok) {
@@ -1964,19 +1960,16 @@ class UserAuthService {
 
             const tokenData = await response.json();
 
-            // Validate required fields
-            if (!tokenData.access_token) {
-                throw new Error('Access token not received from provider');
+            if (tokenData.error) {
+                throw new Error(`OAuth error: ${tokenData.error_description || tokenData.error}`);
             }
 
-            // Enhanced token validation
             return {
                 access_token: tokenData.access_token,
                 refresh_token: tokenData.refresh_token,
                 expires_in: tokenData.expires_in || 3600,
                 token_type: tokenData.token_type || 'Bearer',
-                scope: tokenData.scope,
-                id_token: tokenData.id_token
+                scope: tokenData.scope
             };
 
         } catch (error) {
@@ -1999,11 +1992,11 @@ class UserAuthService {
         const providerConfig = this.#oauthProviders.get(provider);
 
         try {
-            const fetch = (await import('node-fetch')).default;
             const response = await fetch(providerConfig.userInfoUrl, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    'User-Agent': 'Enterprise-Auth-Service/1.0'
                 }
             });
 
@@ -2011,59 +2004,36 @@ class UserAuthService {
                 throw new Error(`User info request failed: ${response.status}`);
             }
 
-            const userInfo = await response.json();
+            const userData = await response.json();
 
-            // Provider-specific user info processing
+            // Standardize user data across providers
+            const standardizedData = {
+                id: userData.id || userData.sub,
+                email: userData.email,
+                name: userData.name || userData.login || `${userData.given_name || ''} ${userData.family_name || ''}`.trim(),
+                firstName: userData.given_name || userData.first_name,
+                lastName: userData.family_name || userData.last_name,
+                picture: userData.picture || userData.avatar_url,
+                verified_email: userData.verified_email !== false,
+                locale: userData.locale,
+                provider: provider,
+                raw: userData
+            };
+
+            // Provider-specific enhancements
             switch (provider) {
-                case 'google':
-                    return {
-                        id: userInfo.id,
-                        email: userInfo.email,
-                        name: userInfo.name,
-                        firstName: userInfo.given_name,
-                        lastName: userInfo.family_name,
-                        picture: userInfo.picture,
-                        verified_email: userInfo.verified_email,
-                        locale: userInfo.locale
-                    };
-
                 case 'github':
-                    // GitHub requires additional call for email if not public
-                    let email = userInfo.email;
-                    if (!email) {
-                        const emailResponse = await fetch('https://api.github.com/user/emails', {
-                            headers: { 'Authorization': `Bearer ${accessToken}` }
-                        });
-                        const emails = await emailResponse.json();
-                        const primaryEmail = emails.find(e => e.primary);
-                        email = primaryEmail ? primaryEmail.email : null;
-                    }
-
-                    return {
-                        id: userInfo.id.toString(),
-                        email: email,
-                        name: userInfo.name || userInfo.login,
-                        firstName: userInfo.name ? userInfo.name.split(' ')[0] : '',
-                        lastName: userInfo.name ? userInfo.name.split(' ').slice(1).join(' ') : '',
-                        picture: userInfo.avatar_url,
-                        verified_email: true,
-                        username: userInfo.login
-                    };
-
+                    standardizedData.username = userData.login;
+                    standardizedData.company = userData.company;
+                    standardizedData.blog = userData.blog;
+                    break;
                 case 'linkedin':
-                    return {
-                        id: userInfo.id,
-                        email: userInfo.emailAddress,
-                        name: `${userInfo.firstName?.localized?.en_US || ''} ${userInfo.lastName?.localized?.en_US || ''}`.trim(),
-                        firstName: userInfo.firstName?.localized?.en_US || '',
-                        lastName: userInfo.lastName?.localized?.en_US || '',
-                        picture: userInfo.profilePicture?.['displayImage~']?.elements?.[0]?.identifiers?.[0]?.identifier,
-                        verified_email: true
-                    };
-
-                default:
-                    return userInfo;
+                    standardizedData.headline = userData.headline;
+                    standardizedData.industry = userData.industry;
+                    break;
             }
+
+            return standardizedData;
 
         } catch (error) {
             logger.error('OAuth user info retrieval failed', {
@@ -2086,8 +2056,8 @@ class UserAuthService {
     async #linkOAuthAccountAdvanced(user, provider, userInfo, tokenResponse, securityContext) {
         const { riskScore, deviceInfo } = securityContext;
 
-        // Security check for account linking
-        if (riskScore > this.#securityConfig.riskThresholds.medium) {
+        // Security check for high-risk linking
+        if (riskScore > this.#securityConfig.riskThresholds.high) {
             await this.#sendSecurityAlert(user, deviceInfo, riskScore, ['oauth_account_linking']);
         }
 
@@ -2097,50 +2067,48 @@ class UserAuthService {
         // Check if provider already linked
         const existingProvider = user.authProviders.find(p => p.provider === provider);
         if (existingProvider) {
-            throw new ConflictError('OAuth provider already linked to this account', 'OAUTH_PROVIDER_EXISTS');
-        }
-
-        // Add OAuth account with enhanced data
-        user.authProviders.push({
-            provider,
-            providerId: userInfo.id,
-            providerData: {
+            // Update existing provider
+            existingProvider.providerId = userInfo.id;
+            existingProvider.providerData = {
                 email: userInfo.email,
                 name: userInfo.name,
                 picture: userInfo.picture,
-                profile: userInfo
-            },
-            tokens: {
-                accessToken: tokenResponse.access_token,
-                refreshToken: tokenResponse.refresh_token,
-                tokenExpiresAt: new Date(Date.now() + (tokenResponse.expires_in * 1000))
-            },
-            linkedAt: new Date(),
-            linkingContext: {
-                ipAddress: deviceInfo.ipAddress,
-                userAgent: deviceInfo.userAgent,
-                riskScore
-            }
-        });
+                profile: userInfo.raw
+            };
+            existingProvider.tokens.accessToken = tokenResponse.access_token;
+            existingProvider.tokens.refreshToken = tokenResponse.refresh_token;
+            existingProvider.tokens.expiresAt = new Date(Date.now() + (tokenResponse.expires_in * 1000));
+            existingProvider.lastUsedAt = new Date();
+        } else {
+            // Add new provider
+            user.authProviders.push({
+                provider,
+                providerId: userInfo.id,
+                providerData: {
+                    email: userInfo.email,
+                    name: userInfo.name,
+                    picture: userInfo.picture,
+                    profile: userInfo.raw
+                },
+                tokens: {
+                    accessToken: tokenResponse.access_token,
+                    refreshToken: tokenResponse.refresh_token,
+                    expiresAt: new Date(Date.now() + (tokenResponse.expires_in * 1000))
+                },
+                linkedAt: new Date(),
+                lastUsedAt: new Date(),
+                securityContext: {
+                    linkingRiskScore: riskScore,
+                    linkingDeviceInfo: deviceInfo ? {
+                        deviceId: deviceInfo.deviceId,
+                        ipAddress: deviceInfo.ipAddress,
+                        userAgent: deviceInfo.userAgent
+                    } : null
+                }
+            });
+        }
 
         await user.save();
-
-        // Audit OAuth linking
-        await this.#auditService.log({
-            action: 'OAUTH_ACCOUNT_LINKED',
-            entityType: 'authentication',
-            entityId: user._id,
-            userId: user._id,
-            details: {
-                provider,
-                providerEmail: userInfo.email,
-                riskScore,
-                deviceInfo: {
-                    deviceId: deviceInfo.deviceId,
-                    ipAddress: deviceInfo.ipAddress
-                }
-            }
-        });
 
         logger.info('OAuth account linked with enhanced security', {
             userId: user._id,
@@ -2151,22 +2119,24 @@ class UserAuthService {
     }
 
     /**
-     * Create new user from OAuth data with enhanced profile and security
+     * Create new user from OAuth data with enhanced profile
      * @private
      * @param {string} provider - OAuth provider
      * @param {Object} userInfo - OAuth user information
      * @param {Object} tokenResponse - OAuth token response
      * @param {Object} options - Creation options
-     * @returns {Promise<Object>} Created user with enhanced data
+     * @returns {Promise<Object>} Created user
      */
     async #createUserFromOAuthAdvanced(provider, userInfo, tokenResponse, options = {}) {
         const { organizationId, deviceInfo, riskScore } = options;
 
         // Generate unique username
-        const baseUsername = userInfo.username || userInfo.email.split('@')[0];
-        let username = baseUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
-        let counter = 1;
+        const baseUsername = (userInfo.username || userInfo.email.split('@')[0])
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '');
 
+        let username = baseUsername;
+        let counter = 1;
         while (await UserModel.findOne({ username })) {
             username = `${baseUsername}${counter}`;
             counter++;
@@ -2178,8 +2148,11 @@ class UserAuthService {
             profile: {
                 firstName: userInfo.firstName || '',
                 lastName: userInfo.lastName || '',
-                displayName: userInfo.name || `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim(),
-                avatar: userInfo.picture ? { url: userInfo.picture } : undefined
+                displayName: userInfo.name || '',
+                avatar: userInfo.picture ? { url: userInfo.picture } : undefined,
+                bio: userInfo.bio || userInfo.headline || '',
+                company: userInfo.company || '',
+                website: userInfo.blog || userInfo.website || ''
             },
             organizationId,
             verification: {
@@ -2192,7 +2165,7 @@ class UserAuthService {
                 status: 'active',
                 statusHistory: [{
                     status: 'active',
-                    reason: 'OAuth registration',
+                    reason: `OAuth registration via ${provider}`,
                     changedAt: new Date()
                 }]
             },
@@ -2203,31 +2176,38 @@ class UserAuthService {
                     email: userInfo.email,
                     name: userInfo.name,
                     picture: userInfo.picture,
-                    profile: userInfo
+                    profile: userInfo.raw
                 },
                 tokens: {
                     accessToken: tokenResponse.access_token,
                     refreshToken: tokenResponse.refresh_token,
-                    tokenExpiresAt: new Date(Date.now() + (tokenResponse.expires_in * 1000))
+                    expiresAt: new Date(Date.now() + (tokenResponse.expires_in * 1000))
                 },
-                linkedAt: new Date()
+                linkedAt: new Date(),
+                lastUsedAt: new Date(),
+                securityContext: {
+                    registrationRiskScore: riskScore,
+                    registrationDeviceInfo: deviceInfo ? {
+                        deviceId: deviceInfo.deviceId,
+                        ipAddress: deviceInfo.ipAddress,
+                        userAgent: deviceInfo.userAgent
+                    } : null
+                }
             }],
             metadata: {
                 source: 'oauth',
                 provider,
-                registrationContext: {
-                    ipAddress: deviceInfo?.ipAddress,
-                    userAgent: deviceInfo?.userAgent,
-                    riskScore
-                }
+                registrationMethod: 'oauth',
+                initialRiskScore: riskScore
             },
             registeredAt: new Date(),
+            registrationIP: deviceInfo?.ipAddress,
             lastActivity: new Date()
         };
 
         const user = await UserModel.create(userData);
 
-        logger.info('User created from OAuth with enhanced security', {
+        logger.info('User created from OAuth with enhanced profile', {
             userId: user._id,
             provider,
             email: userInfo.email,
@@ -2238,47 +2218,52 @@ class UserAuthService {
     }
 
     /**
-     * Update OAuth tokens with rotation and enhanced security
+     * Update OAuth tokens with rotation and security
      * @private
      * @param {Object} user - User object
      * @param {string} provider - OAuth provider
      * @param {Object} tokenResponse - Token response
      */
     async #updateOAuthTokensAdvanced(user, provider, tokenResponse) {
-        const oauthAccount = user.authProviders?.find(account => account.provider === provider);
+        const providerAccount = user.authProviders?.find(account => account.provider === provider);
 
-        if (oauthAccount) {
-            // Store previous token for audit trail
-            const previousToken = {
-                accessToken: oauthAccount.tokens.accessToken,
-                rotatedAt: new Date()
-            };
+        if (providerAccount) {
+            // Store previous token for potential revocation
+            const previousToken = providerAccount.tokens.accessToken;
 
-            // Update with new tokens
-            oauthAccount.tokens.accessToken = tokenResponse.access_token;
-            oauthAccount.tokens.refreshToken = tokenResponse.refresh_token;
-            oauthAccount.tokens.tokenExpiresAt = new Date(Date.now() + (tokenResponse.expires_in * 1000));
-            oauthAccount.lastUsedAt = new Date();
+            // Update tokens
+            providerAccount.tokens.accessToken = tokenResponse.access_token;
+            providerAccount.tokens.refreshToken = tokenResponse.refresh_token;
+            providerAccount.tokens.expiresAt = new Date(Date.now() + (tokenResponse.expires_in * 1000));
+            providerAccount.lastUsedAt = new Date();
 
-            // Track token rotation for security
-            if (!oauthAccount.tokenHistory) oauthAccount.tokenHistory = [];
-            oauthAccount.tokenHistory.push(previousToken);
+            // Track token rotation
+            if (!providerAccount.tokenHistory) providerAccount.tokenHistory = [];
+            providerAccount.tokenHistory.unshift({
+                rotatedAt: new Date(),
+                previousTokenHash: previousToken ? crypto.createHash('sha256').update(previousToken).digest('hex').substring(0, 16) : null,
+                reason: 'authentication'
+            });
 
             // Keep only last 5 token rotations
-            oauthAccount.tokenHistory = oauthAccount.tokenHistory.slice(-5);
+            providerAccount.tokenHistory = providerAccount.tokenHistory.slice(0, 5);
 
             await user.save();
 
-            logger.info('OAuth tokens rotated', {
-                userId: user._id,
-                provider,
-                tokenExpiresAt: oauthAccount.tokens.tokenExpiresAt
-            });
+            // Optionally revoke previous token with provider
+            if (previousToken) {
+                await this.#revokeOAuthToken(provider, previousToken).catch(error => {
+                    logger.warn('Failed to revoke previous OAuth token', {
+                        provider,
+                        error: error.message
+                    });
+                });
+            }
         }
     }
 
     /**
-     * Calculate risk score for OAuth authentication attempt
+     * Calculate risk score for OAuth authentication
      * @private
      * @param {string} provider - OAuth provider
      * @param {Object} deviceInfo - Device information
@@ -2287,51 +2272,62 @@ class UserAuthService {
     async #calculateOAuthRiskScore(provider, deviceInfo) {
         let riskScore = 0;
 
+        // Base risk factors
+        const baseRisk = await this.#calculateRiskScore(null, deviceInfo);
+        riskScore += baseRisk.score * 0.7; // OAuth is generally safer, so reduce base risk
+
+        // Provider-specific risk factors
+        const trustedProviders = ['google', 'microsoft', 'github'];
+        if (!trustedProviders.includes(provider)) {
+            riskScore += 15;
+        }
+
+        // Check if provider has known security issues
+        const providerAlerts = await this.#cacheService.get(`provider_alerts:${provider}`) || [];
+        if (providerAlerts.length > 0) {
+            riskScore += 25;
+        }
+
+        return Math.min(riskScore, 100);
+    }
+
+    /**
+     * Revoke OAuth token with provider
+     * @private
+     * @param {string} provider - OAuth provider
+     * @param {string} token - Token to revoke
+     */
+    async #revokeOAuthToken(provider, token) {
+        const providerConfig = this.#oauthProviders.get(provider);
+
+        if (!providerConfig.revokeUrl) {
+            return; // Provider doesn't support token revocation
+        }
+
         try {
-            // Check provider reputation
-            const trustedProviders = ['google', 'github', 'microsoft', 'linkedin'];
-            if (!trustedProviders.includes(provider)) {
-                riskScore += 20;
-            }
-
-            // Check for suspicious device patterns
-            if (this.#isSuspiciousUserAgent(deviceInfo.userAgent)) {
-                riskScore += 15;
-            }
-
-            // Check for VPN/proxy usage during OAuth
-            if (await this.#isVPNOrProxy(deviceInfo.ipAddress)) {
-                riskScore += 25;
-            }
-
-            // Check for rapid OAuth attempts from same IP
-            const recentAttempts = await this.#cacheService.get(`oauth_attempts:${deviceInfo.ipAddress}`) || 0;
-            if (recentAttempts > 5) {
-                riskScore += 30;
-            }
-
-            // Increment attempt counter
-            await this.#cacheService.set(
-                `oauth_attempts:${deviceInfo.ipAddress}`,
-                recentAttempts + 1,
-                3600 // 1 hour expiry
-            );
-
-            return Math.min(riskScore, 100);
-
+            await fetch(providerConfig.revokeUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({
+                    token,
+                    client_id: providerConfig.clientId,
+                    client_secret: providerConfig.clientSecret
+                })
+            });
         } catch (error) {
-            logger.warn('OAuth risk calculation failed', {
+            logger.warn('OAuth token revocation failed', {
                 provider,
                 error: error.message
             });
-            return 50; // Medium risk on failure
         }
     }
 
-    // ==================== SSO PROVIDER METHODS ====================
+    // ==================== SSO PRIVATE METHODS ====================
 
     /**
-     * Validate SSO signature with enhanced security checks
+     * Validate SSO signature with enhanced security
      * @private
      * @param {string} provider - SSO provider
      * @param {Object} ssoResponse - SSO response data
@@ -2339,53 +2335,54 @@ class UserAuthService {
      */
     async #validateSSOSignatureAdvanced(provider, ssoResponse) {
         const providerConfig = this.#ssoProviders.get(provider);
-        if (!providerConfig) {
-            throw new ValidationError('SSO provider configuration not found', 'SSO_PROVIDER_CONFIG_MISSING');
-        }
 
         try {
-            // In production, implement proper SAML signature validation
-            const crypto = require('crypto');
-
-            // Mock SAML signature validation
-            if (ssoResponse.signature && providerConfig.certificate) {
-                // Extract signature and signed data
-                const signatureData = ssoResponse.signature;
-                const signedData = ssoResponse.signedData || ssoResponse.assertion;
-
-                // Verify signature using provider certificate
-                const verify = crypto.createVerify('RSA-SHA256');
-                verify.update(signedData);
-
-                // In production, properly parse and validate X.509 certificate
-                const publicKey = providerConfig.certificate;
-                const isValid = verify.verify(publicKey, signatureData, 'base64');
-
-                if (!isValid) {
-                    throw new ValidationError('SSO signature validation failed', 'INVALID_SSO_SIGNATURE');
-                }
-
-                // Additional timestamp validation
-                if (ssoResponse.notBefore && new Date(ssoResponse.notBefore) > new Date()) {
-                    throw new ValidationError('SSO assertion not yet valid', 'SSO_ASSERTION_TOO_EARLY');
-                }
-
-                if (ssoResponse.notOnOrAfter && new Date(ssoResponse.notOnOrAfter) < new Date()) {
-                    throw new ValidationError('SSO assertion expired', 'SSO_ASSERTION_EXPIRED');
-                }
-
-                return true;
+            // Load the provider's certificate
+            const certificate = providerConfig.certificate;
+            if (!certificate) {
+                throw new Error('Provider certificate not configured');
             }
 
-            // If no signature required in config, allow pass-through
-            return !providerConfig.security.signatureRequired;
+            // Validate SAML signature using xmldsig
+            // This is a simplified implementation - production would use proper SAML libraries
+            const crypto = require('crypto');
+
+            // Extract signature and signed info from SAML response
+            const signatureValue = ssoResponse.signature;
+            const signedInfo = ssoResponse.signedInfo;
+
+            // Verify signature
+            const verifier = crypto.createVerify('RSA-SHA256');
+            verifier.update(signedInfo);
+
+            const isValid = verifier.verify(certificate, signatureValue, 'base64');
+
+            if (!isValid) {
+                throw new Error('SSO signature validation failed');
+            }
+
+            // Additional security checks
+            const now = new Date();
+            const notBefore = new Date(ssoResponse.notBefore);
+            const notOnOrAfter = new Date(ssoResponse.notOnOrAfter);
+
+            if (now < notBefore || now >= notOnOrAfter) {
+                throw new Error('SSO assertion time bounds invalid');
+            }
+
+            // Check audience restriction
+            if (ssoResponse.audience !== providerConfig.entityId) {
+                throw new Error('SSO audience restriction failed');
+            }
+
+            return true;
 
         } catch (error) {
             logger.error('SSO signature validation failed', {
                 provider,
                 error: error.message
             });
-            throw error;
+            throw new ValidationError('Invalid SSO signature', 'INVALID_SSO_SIGNATURE');
         }
     }
 
@@ -2394,41 +2391,50 @@ class UserAuthService {
      * @private
      * @param {string} provider - SSO provider
      * @param {Object} ssoResponse - SSO response data
-     * @returns {Promise<Object>} Extracted and mapped user attributes
+     * @returns {Promise<Object>} Enhanced user attributes
      */
     async #extractSSOAttributesAdvanced(provider, ssoResponse) {
         const providerConfig = this.#ssoProviders.get(provider);
-        const attributeMapping = providerConfig.attributeMapping || {};
+        const attributeMapping = providerConfig.attributeMapping;
 
         try {
             const attributes = {};
-            const assertions = ssoResponse.assertions || ssoResponse.attributes || {};
 
-            // Map standard attributes
-            Object.entries(attributeMapping).forEach(([localAttr, ssoAttr]) => {
-                if (assertions[ssoAttr]) {
-                    attributes[localAttr] = Array.isArray(assertions[ssoAttr])
-                        ? assertions[ssoAttr][0]
-                        : assertions[ssoAttr];
+            // Extract standard attributes
+            Object.keys(attributeMapping).forEach(localAttribute => {
+                const ssoAttributeName = attributeMapping[localAttribute];
+                const value = ssoResponse.attributes[ssoAttributeName];
+
+                if (value !== undefined) {
+                    // Handle array values (common in SAML)
+                    attributes[localAttribute] = Array.isArray(value) ? value[0] : value;
                 }
             });
 
             // Enhanced attribute processing
-            return {
-                email: attributes.email?.toLowerCase(),
-                firstName: attributes.firstName || '',
-                lastName: attributes.lastName || '',
-                employeeId: attributes.employeeId,
-                department: attributes.department,
-                roles: this.#parseSSORoles(attributes.roles),
-                groups: this.#parseSSO Groups(attributes.groups),
-                organizationId: attributes.organizationId,
-                metadata: {
-                    ssoProvider: provider,
-                    extractedAt: new Date(),
-                    rawAttributes: Object.keys(assertions)
-                }
+            attributes.email = attributes.email?.toLowerCase();
+            attributes.groups = this.#extractGroups(ssoResponse.attributes);
+            attributes.roles = this.#mapSSOGroups(attributes.groups, provider);
+            attributes.department = attributes.department || this.#extractDepartment(attributes.groups);
+            attributes.permissions = this.#mapSSOPermissions(attributes.roles, attributes.groups);
+
+            // Provider-specific enhancements
+            if (provider === 'enterprise_saml') {
+                attributes.employeeId = ssoResponse.attributes['urn:oid:2.16.840.1.113730.3.1.3'];
+                attributes.costCenter = ssoResponse.attributes['urn:oid:1.3.6.1.4.1.5923.1.1.1.8'];
+                attributes.manager = ssoResponse.attributes['urn:oid:0.9.2342.19200300.100.1.10'];
+            }
+
+            // Security context
+            attributes.ssoMetadata = {
+                provider,
+                sessionIndex: ssoResponse.sessionIndex,
+                authInstant: ssoResponse.authInstant,
+                nameId: ssoResponse.nameId,
+                issuer: ssoResponse.issuer
             };
+
+            return attributes;
 
         } catch (error) {
             logger.error('SSO attribute extraction failed', {
@@ -2437,47 +2443,6 @@ class UserAuthService {
             });
             throw new ValidationError('Failed to extract SSO attributes', 'SSO_ATTRIBUTE_EXTRACTION_FAILED');
         }
-    }
-
-    /**
-     * Parse SSO roles from assertion
-     * @private
-     * @param {string|Array} roles - Roles from SSO
-     * @returns {Array} Parsed roles array
-     */
-    #parseSSORoles(roles) {
-        if (!roles) return [];
-
-        if (Array.isArray(roles)) {
-            return roles;
-        }
-
-        if (typeof roles === 'string') {
-            // Handle comma-separated or semicolon-separated roles
-            return roles.split(/[,;]/).map(role => role.trim()).filter(Boolean);
-        }
-
-        return [];
-    }
-
-    /**
-     * Parse SSO groups from assertion
-     * @private
-     * @param {string|Array} groups - Groups from SSO
-     * @returns {Array} Parsed groups array
-     */
-    #parseSSO Groups(groups) {
-        if (!groups) return [];
-
-        if (Array.isArray(groups)) {
-            return groups;
-        }
-
-        if (typeof groups === 'string') {
-            return groups.split(/[,;]/).map(group => group.trim()).filter(Boolean);
-        }
-
-        return [];
     }
 
     /**
@@ -2492,25 +2457,35 @@ class UserAuthService {
         const { allowProvisioning, organizationId, roleMapping, deviceInfo } = options;
 
         try {
-            // Try to find existing user by email and organization
+            // Primary lookup by email and organization
             let user = await UserModel.findOne({
                 email: userAttributes.email,
-                organizationId: organizationId || userAttributes.organizationId
+                organizationId: organizationId || null
             });
+
+            // Secondary lookup by employee ID if available
+            if (!user && userAttributes.employeeId) {
+                user = await UserModel.findOne({
+                    'profile.employeeId': userAttributes.employeeId,
+                    organizationId: organizationId || null
+                });
+            }
 
             if (!user && allowProvisioning) {
                 // Create new user from SSO attributes
                 const userData = {
                     email: userAttributes.email,
-                    username: await this.#generateUniqueUsername(userAttributes.email),
+                    username: await this.#generateUsernameFromSSO(userAttributes),
                     profile: {
-                        firstName: userAttributes.firstName,
-                        lastName: userAttributes.lastName,
-                        displayName: `${userAttributes.firstName} ${userAttributes.lastName}`.trim(),
+                        firstName: userAttributes.firstName || '',
+                        lastName: userAttributes.lastName || '',
+                        displayName: `${userAttributes.firstName || ''} ${userAttributes.lastName || ''}`.trim(),
                         employeeId: userAttributes.employeeId,
-                        department: userAttributes.department
+                        department: userAttributes.department,
+                        manager: userAttributes.manager,
+                        costCenter: userAttributes.costCenter
                     },
-                    organizationId: organizationId || userAttributes.organizationId,
+                    organizationId,
                     verification: {
                         email: { verified: true, verifiedAt: new Date() }
                     },
@@ -2518,40 +2493,36 @@ class UserAuthService {
                         status: 'active',
                         statusHistory: [{
                             status: 'active',
-                            reason: 'SSO provisioning',
+                            reason: `SSO provisioning via ${provider}`,
                             changedAt: new Date()
                         }]
                     },
+                    roles: userAttributes.roles || ['user'],
                     ssoAccounts: [{
                         provider,
+                        nameId: userAttributes.ssoMetadata.nameId,
+                        sessionIndex: userAttributes.ssoMetadata.sessionIndex,
                         attributes: userAttributes,
                         linkedAt: new Date(),
-                        provisionedAt: new Date()
+                        lastUsedAt: new Date()
                     }],
                     metadata: {
                         source: 'sso',
                         provider,
-                        provisioningContext: {
-                            ipAddress: deviceInfo?.ipAddress,
-                            userAgent: deviceInfo?.userAgent
-                        }
+                        provisioningMethod: 'automatic'
                     },
                     registeredAt: new Date(),
+                    registrationIP: deviceInfo?.ipAddress,
                     lastActivity: new Date()
                 };
 
-                // Apply role mapping if enabled
-                if (roleMapping && userAttributes.roles?.length > 0) {
-                    userData.roles = this.#mapSSORolesToLocalRoles(userAttributes.roles);
-                }
-
                 user = await UserModel.create(userData);
 
-                logger.info('User provisioned from SSO', {
+                logger.info('User provisioned from SSO with enhanced attributes', {
                     userId: user._id,
                     provider,
                     email: userAttributes.email,
-                    roles: userData.roles
+                    employeeId: userAttributes.employeeId
                 });
             }
 
@@ -2572,7 +2543,7 @@ class UserAuthService {
     }
 
     /**
-     * Update user attributes from SSO data
+     * Update user from SSO attributes
      * @private
      * @param {Object} user - User object
      * @param {Object} userAttributes - SSO attributes
@@ -2582,78 +2553,65 @@ class UserAuthService {
         const { roleMapping } = options;
 
         try {
-            let updated = false;
+            let hasChanges = false;
 
-            // Update profile information if changed
-            if (userAttributes.firstName && user.profile.firstName !== userAttributes.firstName) {
-                user.profile.firstName = userAttributes.firstName;
-                updated = true;
-            }
+            // Update profile information
+            const profileUpdates = {
+                department: userAttributes.department,
+                manager: userAttributes.manager,
+                costCenter: userAttributes.costCenter
+            };
 
-            if (userAttributes.lastName && user.profile.lastName !== userAttributes.lastName) {
-                user.profile.lastName = userAttributes.lastName;
-                updated = true;
-            }
-
-            if (userAttributes.department && user.profile.department !== userAttributes.department) {
-                user.profile.department = userAttributes.department;
-                updated = true;
-            }
+            Object.keys(profileUpdates).forEach(key => {
+                if (profileUpdates[key] && user.profile[key] !== profileUpdates[key]) {
+                    user.profile[key] = profileUpdates[key];
+                    hasChanges = true;
+                }
+            });
 
             // Update roles if role mapping is enabled
-            if (roleMapping && userAttributes.roles?.length > 0) {
-                const mappedRoles = this.#mapSSORolesToLocalRoles(userAttributes.roles);
-                if (JSON.stringify(user.roles) !== JSON.stringify(mappedRoles)) {
-                    user.roles = mappedRoles;
-                    updated = true;
+            if (roleMapping && userAttributes.roles) {
+                const currentRoles = user.roles || [];
+                const newRoles = userAttributes.roles;
+
+                if (JSON.stringify(currentRoles.sort()) !== JSON.stringify(newRoles.sort())) {
+                    user.roles = newRoles;
+                    hasChanges = true;
                 }
             }
 
             // Update SSO account information
             if (!user.ssoAccounts) user.ssoAccounts = [];
 
-            const existingSSO = user.ssoAccounts.find(account => account.provider === userAttributes.metadata.ssoProvider);
-            if (existingSSO) {
-                existingSSO.attributes = userAttributes;
-                existingSSO.lastUsedAt = new Date();
-                updated = true;
+            const ssoAccount = user.ssoAccounts.find(account =>
+                account.provider === userAttributes.ssoMetadata.provider
+            );
+
+            if (ssoAccount) {
+                ssoAccount.attributes = userAttributes;
+                ssoAccount.lastUsedAt = new Date();
+                ssoAccount.sessionIndex = userAttributes.ssoMetadata.sessionIndex;
+                hasChanges = true;
             }
 
-            if (updated) {
+            if (hasChanges) {
+                user.lastActivity = new Date();
                 await user.save();
-                logger.info('User updated from SSO', {
+
+                logger.info('User updated from SSO attributes', {
                     userId: user._id,
-                    provider: userAttributes.metadata.ssoProvider
+                    provider: userAttributes.ssoMetadata.provider,
+                    changes: Object.keys(profileUpdates).filter(key => profileUpdates[key])
                 });
             }
 
         } catch (error) {
-            logger.error('Failed to update user from SSO', {
+            logger.error('SSO user update failed', {
                 userId: user._id,
+                provider: userAttributes.ssoMetadata?.provider,
                 error: error.message
             });
-            throw error;
         }
-    }
-
-    /**
-     * Map SSO roles to local system roles
-     * @private
-     * @param {Array} ssoRoles - Roles from SSO provider
-     * @returns {Array} Mapped local roles
-     */
-    #mapSSORolesToLocalRoles(ssoRoles) {
-        const roleMapping = {
-            'Administrator': 'admin',
-            'Manager': 'manager',
-            'Employee': 'user',
-            'Contractor': 'contractor',
-            'Guest': 'guest'
-        };
-
-        return ssoRoles
-            .map(role => roleMapping[role] || role.toLowerCase())
-            .filter(Boolean);
     }
 
     /**
@@ -2667,128 +2625,405 @@ class UserAuthService {
     async #calculateSSORequestRiskScore(provider, ssoResponse, deviceInfo) {
         let riskScore = 0;
 
+        // Base device risk
+        const baseRisk = await this.#calculateRiskScore(null, deviceInfo);
+        riskScore += baseRisk.score * 0.5; // SSO is generally lower risk
+
+        // Check SSO-specific risk factors
+        const authAge = Date.now() - new Date(ssoResponse.authInstant).getTime();
+        if (authAge > 3600000) { // Authentication older than 1 hour
+            riskScore += 20;
+        }
+
+        // Check for suspicious attributes
+        if (!ssoResponse.attributes || Object.keys(ssoResponse.attributes).length < 3) {
+            riskScore += 15; // Minimal attributes might indicate compromise
+        }
+
+        // Provider trust level
+        const trustedProviders = ['enterprise_saml', 'azure_ad', 'okta'];
+        if (!trustedProviders.includes(provider)) {
+            riskScore += 10;
+        }
+
+        return Math.min(riskScore, 100);
+    }
+
+    // ==================== MFA PRIVATE METHODS ====================
+
+    /**
+     * Setup SMS MFA with enhanced security
+     * @private
+     * @param {Object} user - User object
+     * @param {Object} options - SMS options
+     * @returns {Promise<Object>} Enhanced SMS setup result
+     */
+    async #setupSMS(user, options = {}) {
+        const { phoneNumber } = options;
+
+        if (!phoneNumber) {
+            throw new ValidationError('Phone number is required for SMS MFA', 'PHONE_NUMBER_REQUIRED');
+        }
+
+        // Enhanced phone number validation
+        const cleanPhone = phoneNumber.replace(/[\s\-\(\)\.]/g, '');
+        if (!/^[\+]?[1-9][\d]{7,15}$/.test(cleanPhone)) {
+            throw new ValidationError('Invalid phone number format', 'INVALID_PHONE_NUMBER');
+        }
+
+        // Check if phone number is already in use
+        const existingUser = await UserModel.findOne({
+            'mfa.methods.phoneNumber': cleanPhone,
+            _id: { $ne: user._id }
+        });
+
+        if (existingUser) {
+            throw new ConflictError('Phone number already in use', 'PHONE_NUMBER_IN_USE');
+        }
+
+        // Generate verification code
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const codeKey = `sms_setup:${user._id}:${verificationCode}`;
+
+        // Store code temporarily with enhanced security
+        this.#mfaCodes.set(codeKey, {
+            userId: user._id,
+            code: verificationCode,
+            phoneNumber: cleanPhone,
+            attempts: 0,
+            maxAttempts: 3,
+            expiresAt: Date.now() + this.#securityConfig.mfaCodeExpiry
+        });
+
+        // Add SMS method to user (not enabled yet)
+        const mfaMethod = {
+            type: 'sms',
+            enabled: false,
+            phoneNumber: cleanPhone,
+            verifiedAt: null,
+            createdAt: new Date()
+        };
+
+        if (!user.mfa.methods) user.mfa.methods = [];
+        user.mfa.methods.push(mfaMethod);
+        await user.save();
+
+        // Send SMS with verification code (integrate with SMS service)
+        await this.#sendSMSCode(cleanPhone, verificationCode, 'setup');
+
+        return {
+            phoneNumber: this.#maskPhoneNumber(cleanPhone),
+            message: 'Verification code sent to your phone',
+            expiresIn: this.#securityConfig.mfaCodeExpiry / 1000,
+            method: 'sms'
+        };
+    }
+
+    /**
+     * Setup email MFA with enhanced validation
+     * @private
+     * @param {Object} user - User object
+     * @param {Object} options - Email options
+     * @returns {Promise<Object>} Enhanced email MFA setup result
+     */
+    async #setupEmailMFA(user, options = {}) {
+        const { email = user.email } = options;
+
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            throw new ValidationError('Invalid email format', 'INVALID_EMAIL_FORMAT');
+        }
+
+        // Generate verification code
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const codeKey = `email_setup:${user._id}:${verificationCode}`;
+
+        // Store code temporarily
+        this.#mfaCodes.set(codeKey, {
+            userId: user._id,
+            code: verificationCode,
+            email,
+            attempts: 0,
+            maxAttempts: 3,
+            expiresAt: Date.now() + this.#securityConfig.mfaCodeExpiry
+        });
+
+        // Add email method to user (not enabled yet)
+        const mfaMethod = {
+            type: 'email',
+            enabled: false,
+            email,
+            verifiedAt: null,
+            createdAt: new Date()
+        };
+
+        if (!user.mfa.methods) user.mfa.methods = [];
+        user.mfa.methods.push(mfaMethod);
+        await user.save();
+
+        // Send email with verification code
+        await this.#emailService.sendMFAVerificationCode(email, {
+            firstName: user.profile?.firstName,
+            verificationCode,
+            expiresIn: this.#securityConfig.mfaCodeExpiry / 60000 // Convert to minutes
+        });
+
+        return {
+            email: this.#maskEmail(email),
+            message: 'Verification code sent to your email',
+            expiresIn: this.#securityConfig.mfaCodeExpiry / 1000,
+            method: 'email'
+        };
+    }
+
+    /**
+     * Setup WebAuthn MFA with enhanced configuration
+     * @private
+     * @param {Object} user - User object
+     * @param {Object} options - WebAuthn options
+     * @returns {Promise<Object>} Enhanced WebAuthn setup result
+     */
+    async #setupWebAuthn(user, options = {}) {
+        const { authenticatorName = 'Security Key' } = options;
+
+        // Generate challenge for WebAuthn registration
+        const challenge = crypto.randomBytes(32);
+        const challengeB64 = challenge.toString('base64url');
+
+        // Store challenge temporarily
+        const challengeKey = `webauthn_challenge:${user._id}`;
+        await this.#cacheService.set(challengeKey, {
+            challenge: challengeB64,
+            userId: user._id,
+            authenticatorName,
+            createdAt: Date.now()
+        }, 300); // 5 minutes
+
+        // Add WebAuthn method to user (not enabled yet)
+        const mfaMethod = {
+            type: 'webauthn',
+            enabled: false,
+            authenticatorName,
+            credentialId: null,
+            publicKey: null,
+            counter: 0,
+            verifiedAt: null,
+            createdAt: new Date()
+        };
+
+        if (!user.mfa.methods) user.mfa.methods = [];
+        user.mfa.methods.push(mfaMethod);
+        await user.save();
+
+        // Return WebAuthn registration options
+        return {
+            challenge: challengeB64,
+            rp: {
+                name: 'Enterprise Application',
+                id: process.env.WEBAUTHN_RP_ID || 'localhost'
+            },
+            user: {
+                id: Buffer.from(user._id.toString()).toString('base64url'),
+                name: user.email,
+                displayName: user.profile?.displayName || user.email
+            },
+            pubKeyCredParams: [
+                { alg: -7, type: 'public-key' }, // ES256
+                { alg: -257, type: 'public-key' } // RS256
+            ],
+            authenticatorSelection: {
+                authenticatorAttachment: 'cross-platform',
+                userVerification: 'preferred',
+                requireResidentKey: false
+            },
+            timeout: this.#biometricConfig.timeout,
+            attestation: 'direct'
+        };
+    }
+
+    /**
+     * Setup backup codes with enhanced generation
+     * @private
+     * @param {Object} user - User object
+     * @returns {Promise<Object>} Enhanced backup codes setup result
+     */
+    async #setupBackupCodes(user) {
+        const backupCodes = await this.#generateBackupCodes(user);
+
+        return {
+            codes: backupCodes,
+            message: 'Store these backup codes securely. Each code can only be used once.',
+            warning: 'These codes will not be shown again. Save them in a secure location.',
+            format: 'Each code is 8 characters long and can be used once',
+            totalCodes: backupCodes.length
+        };
+    }
+
+    /**
+     * Generate backup codes for user with enhanced security
+     * @private
+     * @param {Object} user - User object
+     * @returns {Promise<Array>} Generated backup codes
+     */
+    async #generateBackupCodes(user) {
+        const codes = [];
+        for (let i = 0; i < 10; i++) {
+            // Generate 8-character alphanumeric codes
+            const code = crypto.randomBytes(4).toString('hex').toUpperCase();
+            codes.push(code);
+        }
+
+        // Hash and store codes
+        const hashedCodes = await Promise.all(
+            codes.map(async (code, index) => ({
+                code: await bcrypt.hash(code, 10),
+                used: false,
+                createdAt: new Date(),
+                index: index + 1
+            }))
+        );
+
+        // Update user with backup codes
+        if (!user.mfa.backupCodes) user.mfa.backupCodes = [];
+        user.mfa.backupCodes = hashedCodes;
+        user.mfa.backupCodesGeneratedAt = new Date();
+        await user.save();
+
+        // Audit backup code generation
+        await this.#auditService.log({
+            action: 'BACKUP_CODES_GENERATED',
+            entityType: 'authentication',
+            entityId: user._id,
+            userId: user._id,
+            details: {
+                codeCount: codes.length,
+                generatedAt: new Date()
+            }
+        });
+
+        return codes;
+    }
+
+    /**
+     * Verify WebAuthn assertion
+     * @private
+     * @param {Object} mfaMethod - MFA method object
+     * @param {string} assertion - WebAuthn assertion
+     * @param {Object} context - Verification context
+     * @returns {Promise<boolean>} Verification result
+     */
+    async #verifyWebAuthnAssertion(mfaMethod, assertion, context = {}) {
         try {
-            // Check if assertion is too old
-            const assertionAge = Date.now() - new Date(ssoResponse.issuedAt || Date.now()).getTime();
-            if (assertionAge > 300000) { // 5 minutes
-                riskScore += 20;
+            // This would integrate with a WebAuthn library like @simplewebauthn/server
+            // For now, return mock verification
+
+            const assertionData = JSON.parse(assertion);
+
+            // Verify assertion components
+            if (!assertionData.id || !assertionData.response) {
+                return false;
             }
 
-            // Check for replay attacks
-            const assertionId = ssoResponse.id || ssoResponse.assertionId;
-            if (assertionId) {
-                const replayKey = `sso_assertion:${assertionId}`;
-                const alreadyUsed = await this.#cacheService.get(replayKey);
-                if (alreadyUsed) {
-                    riskScore += 100; // Critical - replay attack
-                } else {
-                    // Store assertion ID to prevent replay
-                    await this.#cacheService.set(replayKey, true, 3600); // 1 hour
-                }
-            }
+            // In production, perform full WebAuthn verification:
+            // 1. Verify challenge matches stored challenge
+            // 2. Verify signature against stored public key
+            // 3. Verify authenticator data
+            // 4. Update counter to prevent replay attacks
 
-            // Check device consistency
-            if (this.#isSuspiciousUserAgent(deviceInfo.userAgent)) {
-                riskScore += 15;
-            }
-
-            // Check for VPN usage during SSO
-            if (await this.#isVPNOrProxy(deviceInfo.ipAddress)) {
-                riskScore += 30;
-            }
-
-            return Math.min(riskScore, 100);
+            // Mock verification - replace with actual implementation
+            return assertionData.id === mfaMethod.credentialId;
 
         } catch (error) {
-            logger.warn('SSO risk calculation failed', {
-                provider,
+            logger.error('WebAuthn verification failed', {
+                error: error.message,
+                method: mfaMethod.type
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Send SMS code with provider integration
+     * @private
+     * @param {string} phoneNumber - Phone number
+     * @param {string} code - Verification code
+     * @param {string} purpose - Purpose (setup, verification, etc.)
+     */
+    async #sendSMSCode(phoneNumber, code, purpose) {
+        try {
+            // In production, integrate with SMS providers like Twilio, AWS SNS, etc.
+
+            const message = purpose === 'setup'
+                ? `Your MFA setup code is: ${code}. This code expires in 5 minutes.`
+                : `Your verification code is: ${code}. This code expires in 5 minutes.`;
+
+            // Mock SMS sending - replace with actual provider integration
+            logger.info('SMS code sent', {
+                phoneNumber: this.#maskPhoneNumber(phoneNumber),
+                purpose,
+                codeLength: code.length
+            });
+
+            // Example Twilio integration:
+            // const twilio = require('twilio');
+            // const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
+            // await client.messages.create({
+            //     body: message,
+            //     from: process.env.TWILIO_PHONE_NUMBER,
+            //     to: phoneNumber
+            // });
+
+        } catch (error) {
+            logger.error('SMS sending failed', {
+                phoneNumber: this.#maskPhoneNumber(phoneNumber),
+                purpose,
                 error: error.message
             });
-            return 40; // Medium risk on failure
+            throw new AppError('Failed to send SMS code', 500, 'SMS_SEND_FAILED');
         }
     }
 
-    // ==================== PERMISSION CHECK METHODS ====================
-
     /**
-     * Check session access permission
+     * Send push notification
      * @private
-     * @param {string} requesterId - ID of user requesting access
-     * @param {string} targetUserId - ID of target user
+     * @param {string} pushToken - Push notification token
+     * @param {Object} payload - Notification payload
      */
-    async #checkSessionAccessPermission(requesterId, targetUserId) {
-        if (requesterId === targetUserId) {
-            return; // Self-access always allowed
-        }
+    async #sendPushNotification(pushToken, payload) {
+        try {
+            // In production, integrate with push notification services
+            // like Firebase Cloud Messaging, Apple Push Notification Service, etc.
 
-        const requester = await UserModel.findById(requesterId);
-        if (!requester) {
-            throw new ForbiddenError('Requester not found', 'REQUESTER_NOT_FOUND');
-        }
+            logger.info('Push notification sent', {
+                pushToken: pushToken.substring(0, 10) + '...',
+                title: payload.title,
+                type: payload.data?.type
+            });
 
-        // Check if requester has admin privileges
-        const hasAdminRole = requester.roles?.includes('admin') || requester.roles?.includes('super-admin');
-        if (!hasAdminRole) {
-            throw new ForbiddenError('Insufficient permissions to access user sessions', 'INSUFFICIENT_PERMISSIONS');
+            // Example Firebase integration:
+            // const admin = require('firebase-admin');
+            // await admin.messaging().send({
+            //     token: pushToken,
+            //     notification: {
+            //         title: payload.title,
+            //         body: payload.body
+            //     },
+            //     data: payload.data
+            // });
+
+        } catch (error) {
+            logger.error('Push notification sending failed', {
+                error: error.message
+            });
+            throw new AppError('Failed to send push notification', 500, 'PUSH_SEND_FAILED');
         }
     }
 
-    /**
-     * Check session revoke permission
-     * @private
-     * @param {string} requesterId - ID of user requesting revocation
-     * @param {string} targetUserId - ID of target user
-     */
-    async #checkSessionRevokePermission(requesterId, targetUserId) {
-        if (requesterId === targetUserId) {
-            return; // Self-revoke always allowed
-        }
-
-        const requester = await UserModel.findById(requesterId);
-        if (!requester) {
-            throw new ForbiddenError('Requester not found', 'REQUESTER_NOT_FOUND');
-        }
-
-        // Check if requester has admin privileges or security role
-        const hasPermission = requester.roles?.some(role =>
-            ['admin', 'super-admin', 'security-admin'].includes(role)
-        );
-
-        if (!hasPermission) {
-            throw new ForbiddenError('Insufficient permissions to revoke user sessions', 'INSUFFICIENT_PERMISSIONS');
-        }
-    }
+    // ==================== DEVICE MANAGEMENT PRIVATE METHODS ====================
 
     /**
-     * Check device management permission
-     * @private
-     * @param {string} requesterId - ID of user requesting device management
-     * @param {string} targetUserId - ID of target user
-     */
-    async #checkDeviceManagementPermission(requesterId, targetUserId) {
-        if (requesterId === targetUserId) {
-            return; // Self-management always allowed
-        }
-
-        const requester = await UserModel.findById(requesterId);
-        if (!requester) {
-            throw new ForbiddenError('Requester not found', 'REQUESTER_NOT_FOUND');
-        }
-
-        // Check if requester has appropriate admin privileges
-        const hasPermission = requester.roles?.some(role =>
-            ['admin', 'super-admin', 'security-admin', 'user-admin'].includes(role)
-        );
-
-        if (!hasPermission) {
-            throw new ForbiddenError('Insufficient permissions to manage user devices', 'INSUFFICIENT_PERMISSIONS');
-        }
-    }
-
-    // ==================== DEVICE MANAGEMENT METHODS ====================
-
-    /**
-     * Untrust a specific device
+     * Untrust a device
      * @private
      * @param {string} userId - User ID
      * @param {string} deviceId - Device ID to untrust
@@ -2796,115 +3031,79 @@ class UserAuthService {
      * @returns {Promise<Object>} Untrust result
      */
     async #untrustDevice(userId, deviceId, options = {}) {
-        const { reason = 'manual_untrust', terminateSessions = true } = options;
+        const key = `${userId}:${deviceId}`;
 
-        try {
-            // Remove from memory cache
-            const key = `${userId}:${deviceId}`;
-            this.#trustedDevices.delete(key);
+        // Remove from memory cache
+        this.#trustedDevices.delete(key);
 
-            // Remove from database
-            const user = await UserModel.findById(userId);
-            if (user && user.mfa?.trustedDevices) {
-                user.mfa.trustedDevices = user.mfa.trustedDevices.filter(
-                    device => device.deviceId !== deviceId
-                );
+        // Remove from database
+        const user = await UserModel.findById(userId);
+        if (user && user.mfa?.trustedDevices) {
+            const initialLength = user.mfa.trustedDevices.length;
+            user.mfa.trustedDevices = user.mfa.trustedDevices.filter(
+                device => device.deviceId !== deviceId
+            );
+
+            if (user.mfa.trustedDevices.length < initialLength) {
                 await user.save();
+
+                logger.info('Device untrusted', {
+                    userId,
+                    deviceId,
+                    requesterId: options.requesterId
+                });
+
+                return {
+                    success: true,
+                    deviceId,
+                    message: 'Device untrusted successfully'
+                };
             }
-
-            // Terminate sessions for this device if requested
-            if (terminateSessions) {
-                await UserSessionModel.updateMany(
-                    {
-                        userId,
-                        'deviceInfo.deviceId': deviceId,
-                        status: 'active'
-                    },
-                    {
-                        status: 'terminated',
-                        terminatedAt: new Date(),
-                        terminationReason: 'device_untrusted'
-                    }
-                );
-            }
-
-            logger.info('Device untrusted', {
-                userId,
-                deviceId,
-                reason,
-                sessionsTerminated: terminateSessions
-            });
-
-            return {
-                success: true,
-                deviceId,
-                untrustedAt: new Date(),
-                sessionsTerminated: terminateSessions,
-                message: 'Device untrusted successfully'
-            };
-
-        } catch (error) {
-            logger.error('Failed to untrust device', {
-                error: error.message,
-                userId,
-                deviceId
-            });
-            throw error;
         }
+
+        return {
+            success: false,
+            deviceId,
+            message: 'Device not found in trusted devices'
+        };
     }
 
     /**
-     * List all trusted devices for user
+     * List trusted devices for user
      * @private
      * @param {string} userId - User ID
      * @param {Object} options - List options
      * @returns {Promise<Object>} Trusted devices list
      */
     async #listTrustedDevices(userId, options = {}) {
-        const { includeExpired = false } = options;
+        const user = await UserModel.findById(userId);
 
-        try {
-            const user = await UserModel.findById(userId);
-            if (!user) {
-                throw new NotFoundError('User not found', 'USER_NOT_FOUND');
-            }
-
-            let trustedDevices = user.mfa?.trustedDevices || [];
-
-            // Filter expired devices if not requested
-            if (!includeExpired) {
-                const now = Date.now();
-                trustedDevices = trustedDevices.filter(device =>
-                    device.expiresAt > now
-                );
-            }
-
-            // Process devices for response
-            const processedDevices = trustedDevices.map(device => ({
-                deviceId: device.deviceId,
-                deviceName: device.deviceName,
-                trustedAt: device.trustedAt,
-                expiresAt: device.expiresAt,
-                location: device.location,
-                ipAddress: device.ipAddress,
-                isExpired: device.expiresAt <= Date.now(),
-                userAgent: device.userAgent
-            }));
-
+        if (!user || !user.mfa?.trustedDevices) {
             return {
-                devices: processedDevices,
-                totalCount: processedDevices.length,
-                activeCount: processedDevices.filter(d => !d.isExpired).length,
-                expiredCount: processedDevices.filter(d => d.isExpired).length
+                devices: [],
+                totalCount: 0
             };
-
-        } catch (error) {
-            logger.error('Failed to list trusted devices', {
-                error: error.message,
-                userId
-            });
-            throw error;
         }
+
+        const devices = user.mfa.trustedDevices.map(device => ({
+            deviceId: device.deviceId,
+            deviceName: device.deviceName,
+            trustedAt: device.trustedAt,
+            expiresAt: device.expiresAt,
+            lastUsed: device.lastUsed || device.trustedAt,
+            location: device.location,
+            isActive: device.expiresAt > Date.now(),
+            userAgent: device.userAgent ? {
+                browser: this.#parseUserAgent(device.userAgent).browser,
+                os: this.#parseUserAgent(device.userAgent).os
+            } : null
+        }));
+
+        return {
+            devices: devices.sort((a, b) => new Date(b.trustedAt) - new Date(a.trustedAt)),
+            totalCount: devices.length,
+            activeCount: devices.filter(d => d.isActive).length
+        };
     }
 
     /**
@@ -2915,66 +3114,46 @@ class UserAuthService {
      * @returns {Promise<Object>} Clear result
      */
     async #clearAllTrustedDevices(userId, options = {}) {
-        const { terminateSessions = true, reason = 'clear_all_devices' } = options;
-
-        try {
-            // Clear from memory cache
-            for (const [key] of this.#trustedDevices) {
-                if (key.startsWith(`${userId}:`)) {
-                    this.#trustedDevices.delete(key);
-                }
+        // Clear from memory cache
+        for (const [key] of this.#trustedDevices) {
+            if (key.startsWith(`${userId}:`)) {
+                this.#trustedDevices.delete(key);
             }
+        }
 
-            // Get device count before clearing
-            const user = await UserModel.findById(userId);
-            const deviceCount = user.mfa?.trustedDevices?.length || 0;
+        // Clear from database
+        const user = await UserModel.findById(userId);
+        if (user) {
+            const clearedCount = user.mfa?.trustedDevices?.length || 0;
 
-            // Clear from database
-            if (user && user.mfa) {
-                user.mfa.trustedDevices = [];
-                await user.save();
-            }
-
-            // Terminate all sessions if requested
-            if (terminateSessions) {
-                await UserSessionModel.updateMany(
-                    { userId, status: 'active' },
-                    {
-                        status: 'terminated',
-                        terminatedAt: new Date(),
-                        terminationReason: reason
-                    }
-                );
-            }
+            if (!user.mfa) user.mfa = {};
+            user.mfa.trustedDevices = [];
+            await user.save();
 
             logger.info('All trusted devices cleared', {
                 userId,
-                deviceCount,
-                sessionsTerminated: terminateSessions,
-                reason
+                clearedCount,
+                requesterId: options.requesterId
             });
 
             return {
                 success: true,
-                clearedDevices: deviceCount,
-                sessionsTerminated: terminateSessions,
-                clearedAt: new Date(),
-                message: `${deviceCount} trusted devices cleared successfully`
+                message: `Cleared ${clearedCount} trusted devices`,
+                clearedCount
             };
-
-        } catch (error) {
-            logger.error('Failed to clear trusted devices', {
-                error: error.message,
-                userId
-            });
-            throw error;
         }
+
+        return {
+            success: false,
+            message: 'User not found',
+            clearedCount: 0
+        };
     }
 
-    // ==================== SECURITY ASSESSMENT METHODS ====================
+    // ==================== SECURITY ASSESSMENT PRIVATE METHODS ====================
 
     /**
-     * Assess password security for user
+     * Assess password security
      * @private
      * @param {Object} user - User object
      * @returns {Promise<Object>} Password security assessment
@@ -2984,83 +3163,58 @@ class UserAuthService {
         const issues = [];
         const recommendations = [];
 
-        try {
-            // Check if password exists (OAuth-only users might not have password)
-            if (!user.password) {
-                if (user.authProviders?.length > 0) {
-                    score = 80; // OAuth-only is relatively secure
-                    recommendations.push('Consider setting a backup password for account recovery');
-                } else {
-                    score = 0;
-                    issues.push('No password set');
-                    recommendations.push('Set a strong password immediately');
-                }
+        // Check if user has a password (OAuth-only users might not)
+        if (!user.password) {
+            if (user.authProviders?.length > 0) {
+                score = 85; // OAuth-only is generally secure
+                recommendations.push('Consider setting a backup password for account recovery');
             } else {
-                score = 70; // Base score for having a password
+                score = 0;
+                issues.push('No password set');
+                recommendations.push('Set a strong password immediately');
+            }
+        } else {
+            score = 70; // Base score for having a password
 
-                // Check password age
-                if (user.passwordChangedAt) {
-                    const passwordAge = Date.now() - user.passwordChangedAt.getTime();
-                    const daysSinceChange = passwordAge / (24 * 60 * 60 * 1000);
+            // Check password age
+            if (user.passwordChangedAt) {
+                const passwordAge = Date.now() - user.passwordChangedAt.getTime();
+                const ageInDays = passwordAge / (1000 * 60 * 60 * 24);
 
-                    if (daysSinceChange > 90) {
-                        score -= 20;
-                        issues.push('Password is older than 90 days');
-                        recommendations.push('Change your password regularly');
-                    } else if (daysSinceChange > 180) {
-                        score -= 40;
-                        issues.push('Password is very old (>6 months)');
-                        recommendations.push('Change your password immediately');
-                    }
-                }
-
-                // Check for recent failed attempts
-                if (user.security?.loginAttempts?.count > 0) {
+                if (ageInDays > 365) {
+                    score -= 20;
+                    issues.push('Password is over 1 year old');
+                    recommendations.push('Change your password regularly');
+                } else if (ageInDays > 180) {
                     score -= 10;
-                    issues.push('Recent failed login attempts detected');
-                    recommendations.push('Monitor account for suspicious activity');
-                }
-
-                // Check password history depth
-                const historyCount = user.passwordHistory?.length || 0;
-                if (historyCount >= 5) {
-                    score += 10; // Bonus for maintaining password history
+                    issues.push('Password is over 6 months old');
                 }
             }
 
-            return {
-                category: 'password',
-                score: Math.max(0, Math.min(100, score)),
-                issues,
-                recommendations,
-                metrics: {
-                    hasPassword: !!user.password,
-                    daysSinceLastChange: user.passwordChangedAt
-                        ? Math.floor((Date.now() - user.passwordChangedAt.getTime()) / (24 * 60 * 60 * 1000))
-                        : null,
-                    failedAttempts: user.security?.loginAttempts?.count || 0,
-                    historyDepth: user.passwordHistory?.length || 0
-                }
-            };
+            // Check password history for reuse
+            if (user.passwordHistory?.length < 5) {
+                score -= 5;
+                issues.push('Limited password history tracking');
+            }
 
-        } catch (error) {
-            logger.error('Password security assessment failed', {
-                userId: user._id,
-                error: error.message
-            });
-
-            return {
-                category: 'password',
-                score: 0,
-                issues: ['Assessment failed'],
-                recommendations: ['Review password security manually'],
-                error: error.message
-            };
+            // Check recent failed attempts
+            if (user.security?.loginAttempts?.count > 0) {
+                score -= 15;
+                issues.push('Recent failed login attempts detected');
+                recommendations.push('Review recent account activity');
+            }
         }
+
+        return {
+            score: Math.max(0, Math.min(100, score)),
+            issues,
+            recommendations,
+            category: 'password'
+        };
     }
 
     /**
-     * Assess MFA security for user
+     * Assess MFA security
      * @private
      * @param {Object} user - User object
      * @returns {Promise<Object>} MFA security assessment
@@ -3070,104 +3224,1132 @@ class UserAuthService {
         const issues = [];
         const recommendations = [];
 
-        try {
-            if (!user.mfa?.enabled) {
-                score = 0;
-                issues.push('Multi-factor authentication not enabled');
-                recommendations.push('Enable MFA to significantly improve account security');
-            } else {
-                score = 60; // Base score for having MFA enabled
+        if (!user.mfa?.enabled) {
+            score = 0;
+            issues.push('Multi-factor authentication is disabled');
+            recommendations.push('Enable MFA immediately for better security');
+        } else {
+            score = 60; // Base score for having MFA enabled
 
-                const enabledMethods = user.mfa.methods?.filter(m => m.enabled) || [];
+            const enabledMethods = user.mfa.methods?.filter(m => m.enabled) || [];
 
-                // Score based on number of methods
-                if (enabledMethods.length >= 2) {
-                    score += 20;
-                } else {
-                    recommendations.push('Consider setting up multiple MFA methods for redundancy');
-                }
-
-                // Score based on method types
-                const methodTypes = enabledMethods.map(m => m.type);
-
-                if (methodTypes.includes('totp')) {
-                    score += 10; // TOTP is very secure
-                }
-
-                if (methodTypes.includes('webauthn')) {
-                    score += 15; // WebAuthn is the most secure
-                }
-
-                if (methodTypes.includes('sms') && !methodTypes.includes('totp')) {
-                    score -= 10; // SMS-only is less secure
-                    recommendations.push('Consider upgrading from SMS to authenticator app');
-                }
-
-                // Check backup codes
-                if (!user.mfa.backupCodes?.length) {
-                    score -= 10;
-                    issues.push('No backup codes generated');
-                    recommendations.push('Generate backup codes for account recovery');
-                }
-
-                // Check trusted devices
-                const activeTrustedDevices = user.mfa.trustedDevices?.filter(
-                    d => d.expiresAt > Date.now()
-                ).length || 0;
-
-                if (activeTrustedDevices > 5) {
-                    score -= 10;
-                    issues.push('Too many trusted devices');
-                    recommendations.push('Review and remove unused trusted devices');
-                }
+            // Score based on number of methods
+            if (enabledMethods.length >= 2) {
+                score += 25;
+            } else if (enabledMethods.length === 1) {
+                score += 15;
+                recommendations.push('Consider enabling a second MFA method for redundancy');
             }
 
-            return {
-                category: 'mfa',
-                score: Math.max(0, Math.min(100, score)),
-                issues,
-                recommendations,
-                metrics: {
-                    enabled: user.mfa?.enabled || false,
-                    methodCount: user.mfa?.methods?.filter(m => m.enabled).length || 0,
-                    methodTypes: user.mfa?.methods?.filter(m => m.enabled).map(m => m.type) || [],
-                    backupCodesCount: user.mfa?.backupCodes?.length || 0,
-                    trustedDevicesCount: user.mfa?.trustedDevices?.filter(d => d.expiresAt > Date.now()).length || 0
+            // Score based on method types
+            const methodTypes = enabledMethods.map(m => m.type);
+            if (methodTypes.includes('totp')) score += 10;
+            if (methodTypes.includes('webauthn')) score += 15;
+            if (methodTypes.includes('sms')) score += 5; // SMS is less secure
+            if (methodTypes.includes('email')) score += 5;
+
+            // Check for backup codes
+            if (user.mfa.backupCodes?.length > 0) {
+                score += 10;
+
+                // Check if backup codes are recent
+                if (user.mfa.backupCodesGeneratedAt) {
+                    const codeAge = Date.now() - user.mfa.backupCodesGeneratedAt.getTime();
+                    if (codeAge > 365 * 24 * 60 * 60 * 1000) { // Older than 1 year
+                        issues.push('Backup codes are over 1 year old');
+                        recommendations.push('Regenerate backup codes periodically');
+                    }
                 }
-            };
+            } else {
+                issues.push('No backup codes generated');
+                recommendations.push('Generate backup codes for account recovery');
+            }
 
-        } catch (error) {
-            logger.error('MFA security assessment failed', {
-                userId: user._id,
-                error: error.message
-            });
-
-            return {
-                category: 'mfa',
-                score: 0,
-                issues: ['Assessment failed'],
-                recommendations: ['Review MFA security manually'],
-                error: error.message
-            };
+            // Check last usage
+            if (user.mfa.lastUsedAt) {
+                const lastUsed = Date.now() - user.mfa.lastUsedAt.getTime();
+                if (lastUsed > 30 * 24 * 60 * 60 * 1000) { // Not used in 30 days
+                    issues.push('MFA not used recently');
+                }
+            }
         }
+
+        return {
+            score: Math.max(0, Math.min(100, score)),
+            issues,
+            recommendations,
+            category: 'mfa'
+        };
     }
 
     /**
-     * Get security level from overall score
+     * Assess session security
      * @private
-     * @param {number} score - Overall security score
+     * @param {Object} user - User object
+     * @returns {Promise<Object>} Session security assessment
+     */
+    async #assessSessionSecurity(user) {
+        let score = 70; // Base score
+        const issues = [];
+        const recommendations = [];
+
+        try {
+            // Get active sessions
+            const activeSessions = await UserSessionModel.find({
+                userId: user._id,
+                status: 'active',
+                expiresAt: { $gt: new Date() }
+            });
+
+            // Check number of active sessions
+            if (activeSessions.length > 5) {
+                score -= 10;
+                issues.push('High number of active sessions');
+                recommendations.push('Review and close unnecessary sessions');
+            }
+
+            // Check for high-risk sessions
+            const highRiskSessions = activeSessions.filter(
+                session => session.security?.riskScore > this.#securityConfig.riskThresholds.high
+            );
+
+            if (highRiskSessions.length > 0) {
+                score -= 20;
+                issues.push(`${highRiskSessions.length} high-risk sessions detected`);
+                recommendations.push('Review high-risk sessions and terminate if unauthorized');
+            }
+
+            // Check for sessions from different locations
+            const locations = new Set();
+            activeSessions.forEach(session => {
+                if (session.location?.city && session.location?.country) {
+                    locations.add(`${session.location.city}, ${session.location.country}`);
+                }
+            });
+
+            if (locations.size > 3) {
+                score -= 15;
+                issues.push('Sessions from multiple geographic locations');
+                recommendations.push('Verify all session locations are legitimate');
+            }
+
+            // Check session ages
+            const oldSessions = activeSessions.filter(session => {
+                const sessionAge = Date.now() - session.createdAt.getTime();
+                return sessionAge > 7 * 24 * 60 * 60 * 1000; // Older than 7 days
+            });
+
+            if (oldSessions.length > 0) {
+                score -= 5;
+                issues.push('Long-lived sessions detected');
+                recommendations.push('Consider shorter session timeouts');
+            }
+
+        } catch (error) {
+            logger.error('Session security assessment failed', {
+                userId: user._id,
+                error: error.message
+            });
+            score -= 20;
+            issues.push('Unable to assess session security');
+        }
+
+        return {
+            score: Math.max(0, Math.min(100, score)),
+            issues,
+            recommendations,
+            category: 'sessions'
+        };
+    }
+
+    /**
+     * Assess device security
+     * @private
+     * @param {Object} user - User object
+     * @returns {Promise<Object>} Device security assessment
+     */
+    async #assessDeviceSecurity(user) {
+        let score = 60; // Base score
+        const issues = [];
+        const recommendations = [];
+
+        // Check trusted devices
+        const trustedDevices = user.mfa?.trustedDevices || [];
+
+        if (trustedDevices.length === 0) {
+            score += 10; // No trusted devices is actually more secure
+            recommendations.push('Consider trusting frequently used devices for convenience');
+        } else {
+            // Check for expired trusted devices
+            const expiredDevices = trustedDevices.filter(device => device.expiresAt < Date.now());
+            if (expiredDevices.length > 0) {
+                issues.push(`${expiredDevices.length} expired trusted devices found`);
+                recommendations.push('Clean up expired trusted devices');
+            }
+
+            // Check for too many trusted devices
+            const activeDevices = trustedDevices.filter(device => device.expiresAt > Date.now());
+            if (activeDevices.length > 10) {
+                score -= 15;
+                issues.push('High number of trusted devices');
+                recommendations.push('Review and remove unnecessary trusted devices');
+            }
+
+            // Check device trust duration
+            const longTrustedDevices = activeDevices.filter(device => {
+                const trustAge = Date.now() - device.trustedAt;
+                return trustAge > 90 * 24 * 60 * 60 * 1000; // Trusted for over 90 days
+            });
+
+            if (longTrustedDevices.length > 0) {
+                score -= 5;
+                issues.push('Devices trusted for extended periods');
+                recommendations.push('Periodically review device trust settings');
+            }
+        }
+
+        // Check recent login patterns
+        if (user.activity?.loginHistory) {
+            const recentLogins = user.activity.loginHistory.slice(0, 10);
+            const uniqueDevices = new Set(recentLogins.map(login => login.deviceId).filter(Boolean));
+
+            if (uniqueDevices.size > 5) {
+                score -= 10;
+                issues.push('Many different devices used recently');
+                recommendations.push('Verify all recent device usage is legitimate');
+            }
+        }
+
+        return {
+            score: Math.max(0, Math.min(100, score)),
+            issues,
+            recommendations,
+            category: 'devices'
+        };
+    }
+
+    /**
+     * Assess account security
+     * @private
+     * @param {Object} user - User object
+     * @returns {Promise<Object>} Account security assessment
+     */
+    async #assessAccountSecurity(user) {
+        let score = 70; // Base score
+        const issues = [];
+        const recommendations = [];
+
+        // Check email verification
+        if (!user.verification?.email?.verified) {
+            score -= 30;
+            issues.push('Email address not verified');
+            recommendations.push('Verify your email address immediately');
+        }
+
+        // Check account age
+        if (user.registeredAt) {
+            const accountAge = Date.now() - user.registeredAt.getTime();
+            const ageInDays = accountAge / (1000 * 60 * 60 * 24);
+
+            if (ageInDays < 30) {
+                score -= 5; // New accounts are slightly higher risk
+                issues.push('New account (less than 30 days old)');
+            }
+        }
+
+        // Check profile completeness
+        const profileFields = ['firstName', 'lastName', 'displayName'];
+        const completedFields = profileFields.filter(field => user.profile?.[field]);
+
+        if (completedFields.length < profileFields.length) {
+            score -= 5;
+            issues.push('Incomplete profile information');
+            recommendations.push('Complete your profile information');
+        }
+
+        // Check organization membership
+        if (!user.organizationId && (!user.organizations || user.organizations.length === 0)) {
+            score -= 10;
+            issues.push('No organization membership');
+            recommendations.push('Join an organization for enhanced security policies');
+        }
+
+        // Check OAuth providers
+        if (user.authProviders?.length > 0) {
+            score += 10; // Having OAuth providers adds security
+
+            // Check for multiple providers
+            if (user.authProviders.length > 1) {
+                score += 5;
+            }
+        }
+
+        // Check for security incidents
+        if (user.security?.incidents?.length > 0) {
+            const recentIncidents = user.security.incidents.filter(incident => {
+                const incidentAge = Date.now() - incident.timestamp.getTime();
+                return incidentAge < 30 * 24 * 60 * 60 * 1000; // Within last 30 days
+            });
+
+            if (recentIncidents.length > 0) {
+                score -= 25;
+                issues.push(`${recentIncidents.length} recent security incidents`);
+                recommendations.push('Review recent security incidents and take action');
+            }
+        }
+
+        return {
+            score: Math.max(0, Math.min(100, score)),
+            issues,
+            recommendations,
+            category: 'account'
+        };
+    }
+
+    // ==================== UTILITY PRIVATE METHODS ====================
+
+    /**
+     * Get security level from score
+     * @private
+     * @param {number} score - Security score
      * @returns {string} Security level
      */
     #getSecurityLevel(score) {
         if (score >= 90) return 'excellent';
-        if (score >= 80) return 'good';
+        if (score >= 75) return 'good';
         if (score >= 60) return 'fair';
         if (score >= 40) return 'poor';
         return 'critical';
     }
 
-    // Additional assessment methods (#assessSessionSecurity, #assessDeviceSecurity, #assessAccountSecurity)
-    // and other missing methods would continue here following the same pattern...
+    /**
+     * Generate security recommendations from assessment
+     * @private
+     * @param {Object} assessment - Security assessment
+     * @returns {Array} Security recommendations
+     */
+    #generateSecurityRecommendations(assessment) {
+        const recommendations = [];
+
+        // Collect all recommendations from categories
+        Object.values(assessment.categories).forEach(category => {
+            if (category.recommendations) {
+                recommendations.push(...category.recommendations.map(rec => ({
+                    category: category.category,
+                    priority: category.score < 40 ? 'high' : category.score < 70 ? 'medium' : 'low',
+                    recommendation: rec
+                })));
+            }
+        });
+
+        // Add overall recommendations based on score
+        if (assessment.overallScore < 40) {
+            recommendations.unshift({
+                category: 'general',
+                priority: 'critical',
+                recommendation: 'Immediate security review required - multiple critical issues detected'
+            });
+        } else if (assessment.overallScore < 70) {
+            recommendations.unshift({
+                category: 'general',
+                priority: 'high',
+                recommendation: 'Security improvements recommended - address highlighted issues'
+            });
+        }
+
+        // Sort by priority
+        const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+        return recommendations.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+    }
+
+    /**
+     * Analyze potential threats for user
+     * @private
+     * @param {Object} user - User object
+     * @param {Object} assessment - Security assessment
+     * @returns {Promise<Object>} Threat analysis
+     */
+    async #analyzePotentialThreats(user, assessment) {
+        const threats = [];
+
+        // Analyze based on security score
+        if (assessment.overallScore < 40) {
+            threats.push({
+                type: 'account_compromise',
+                severity: 'high',
+                description: 'Account is vulnerable to compromise due to weak security posture',
+                indicators: ['low_security_score', 'multiple_issues']
+            });
+        }
+
+        // Check for credential-based threats
+        if (!user.mfa?.enabled) {
+            threats.push({
+                type: 'credential_theft',
+                severity: 'medium',
+                description: 'Account vulnerable to credential theft without MFA protection',
+                indicators: ['no_mfa']
+            });
+        }
+
+        // Check for session-based threats
+        const activeSessions = await UserSessionModel.countDocuments({
+            userId: user._id,
+            status: 'active',
+            expiresAt: { $gt: new Date() }
+        });
+
+        if (activeSessions > 5) {
+            threats.push({
+                type: 'session_hijacking',
+                severity: 'medium',
+                description: 'Multiple active sessions increase risk of session hijacking',
+                indicators: ['multiple_sessions']
+            });
+        }
+
+        // Check for device-based threats
+        const trustedDevices = user.mfa?.trustedDevices?.filter(d => d.expiresAt > Date.now()) || [];
+        if (trustedDevices.length > 10) {
+            threats.push({
+                type: 'device_compromise',
+                severity: 'low',
+                description: 'Many trusted devices increase attack surface',
+                indicators: ['many_trusted_devices']
+            });
+        }
+
+        return {
+            threats,
+            threatLevel: threats.length > 0 ? Math.max(...threats.map(t =>
+                t.severity === 'high' ? 3 : t.severity === 'medium' ? 2 : 1
+            )) : 0,
+            lastAnalyzed: new Date()
+        };
+    }
+
+    // ==================== PERMISSION AND ACCESS CONTROL ====================
+
+    /**
+     * Check session access permission
+     * @private
+     * @param {string} requesterId - Requester user ID
+     * @param {string} userId - Target user ID
+     */
+    async #checkSessionAccessPermission(requesterId, userId) {
+        if (requesterId === userId) return; // Self-access allowed
+
+        // Check if requester has admin privileges
+        const requester = await UserModel.findById(requesterId);
+        if (!requester) {
+            throw new ForbiddenError('Requester not found', 'REQUESTER_NOT_FOUND');
+        }
+
+        // Check for admin roles or permissions
+        const hasAdminAccess = requester.roles?.includes('admin') ||
+            requester.roles?.includes('security-admin');
+
+        if (!hasAdminAccess) {
+            throw new ForbiddenError('Insufficient permissions to access user sessions', 'INSUFFICIENT_PERMISSIONS');
+        }
+    }
+
+    /**
+     * Check session revoke permission
+     * @private
+     * @param {string} requesterId - Requester user ID
+     * @param {string} userId - Target user ID
+     */
+    async #checkSessionRevokePermission(requesterId, userId) {
+        await this.#checkSessionAccessPermission(requesterId, userId);
+    }
+
+    /**
+     * Check device management permission
+     * @private
+     * @param {string} requesterId - Requester user ID
+     * @param {string} userId - Target user ID
+     */
+    async #checkDeviceManagementPermission(requesterId, userId) {
+        await this.#checkSessionAccessPermission(requesterId, userId);
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    /**
+     * Mask phone number for display
+     * @private
+     * @param {string} phoneNumber - Phone number to mask
+     * @returns {string} Masked phone number
+     */
+    #maskPhoneNumber(phoneNumber) {
+        if (phoneNumber.length <= 4) return phoneNumber;
+        const visible = phoneNumber.slice(-4);
+        const masked = '*'.repeat(Math.max(0, phoneNumber.length - 4));
+        return masked + visible;
+    }
+
+    /**
+     * Mask email address for display
+     * @private
+     * @param {string} email - Email to mask
+     * @returns {string} Masked email
+     */
+    #maskEmail(email) {
+        const [localPart, domain] = email.split('@');
+        if (localPart.length <= 3) {
+            return `${localPart[0]}***@${domain}`;
+        }
+        const visibleStart = localPart.slice(0, 2);
+        const visibleEnd = localPart.slice(-1);
+        const masked = '*'.repeat(Math.max(1, localPart.length - 3));
+        return `${visibleStart}${masked}${visibleEnd}@${domain}`;
+    }
+
+    /**
+     * Parse user agent string
+     * @private
+     * @param {string} userAgent - User agent string
+     * @returns {Object} Parsed user agent data
+     */
+    #parseUserAgent(userAgent) {
+        const uaParser = new UAParser(userAgent);
+        const result = uaParser.getResult();
+
+        return {
+            browser: `${result.browser.name || 'Unknown'} ${result.browser.version || ''}`.trim(),
+            os: `${result.os.name || 'Unknown'} ${result.os.version || ''}`.trim(),
+            device: result.device.type || 'desktop'
+        };
+    }
+
+    /**
+     * Extract groups from SSO attributes
+     * @private
+     * @param {Object} attributes - SSO attributes
+     * @returns {Array} Extracted groups
+     */
+    #extractGroups(attributes) {
+        const groupAttributes = [
+            'http://schemas.microsoft.com/ws/2008/06/identity/claims/groups',
+            'groups',
+            'memberOf',
+            'roles'
+        ];
+
+        for (const attr of groupAttributes) {
+            if (attributes[attr]) {
+                const value = attributes[attr];
+                return Array.isArray(value) ? value : [value];
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Map SSO groups to application roles
+     * @private
+     * @param {Array} groups - SSO groups
+     * @param {string} provider - SSO provider
+     * @returns {Array} Mapped roles
+     */
+    #mapSSOGroups(groups, provider) {
+        // Define group-to-role mappings per provider
+        const roleMappings = {
+            enterprise_saml: {
+                'Administrators': ['admin'],
+                'Security Admins': ['security-admin'],
+                'Users': ['user'],
+                'Managers': ['manager'],
+                'HR Team': ['hr'],
+                'IT Support': ['support']
+            }
+        };
+
+        const mappings = roleMappings[provider] || {};
+        const roles = new Set(['user']); // Default role
+
+        groups.forEach(group => {
+            const mappedRoles = mappings[group];
+            if (mappedRoles) {
+                mappedRoles.forEach(role => roles.add(role));
+            }
+        });
+
+        return Array.from(roles);
+    }
+
+    /**
+     * Extract department from groups
+     * @private
+     * @param {Array} groups - SSO groups
+     * @returns {string} Department name
+     */
+    #extractDepartment(groups) {
+        const departmentPrefixes = ['Dept-', 'Department-', 'Team-'];
+
+        for (const group of groups) {
+            for (const prefix of departmentPrefixes) {
+                if (group.startsWith(prefix)) {
+                    return group.substring(prefix.length);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Map SSO permissions from roles and groups
+     * @private
+     * @param {Array} roles - User roles
+     * @param {Array} groups - User groups
+     * @returns {Array} Permissions
+     */
+    #mapSSOPermissions(roles, groups) {
+        const permissions = new Set();
+
+        // Role-based permissions
+        const rolePermissions = {
+            admin: ['*'],
+            'security-admin': ['security:*', 'users:read', 'audit:read'],
+            manager: ['users:read', 'reports:read'],
+            user: ['profile:read', 'profile:write']
+        };
+
+        roles.forEach(role => {
+            const perms = rolePermissions[role] || [];
+            perms.forEach(perm => permissions.add(perm));
+        });
+
+        // Group-based permissions could be added here
+
+        return Array.from(permissions);
+    }
+
+    /**
+     * Generate username from SSO attributes
+     * @private
+     * @param {Object} userAttributes - SSO user attributes
+     * @returns {Promise<string>} Generated username
+     */
+    async #generateUsernameFromSSO(userAttributes) {
+        // Try different strategies for username generation
+        let baseUsername;
+
+        if (userAttributes.employeeId) {
+            baseUsername = `emp${userAttributes.employeeId}`;
+        } else if (userAttributes.email) {
+            baseUsername = userAttributes.email.split('@')[0].toLowerCase();
+        } else {
+            baseUsername = `${userAttributes.firstName || 'user'}${userAttributes.lastName || ''}`.toLowerCase();
+        }
+
+        // Clean username
+        baseUsername = baseUsername.replace(/[^a-z0-9]/g, '');
+
+        // Ensure uniqueness
+        let username = baseUsername;
+        let counter = 1;
+        while (await UserModel.findOne({ username })) {
+            username = `${baseUsername}${counter}`;
+            counter++;
+        }
+
+        return username;
+    }
+
+    /**
+     * Get MFA recommendations for user
+     * @private
+     * @param {Object} user - User object
+     * @returns {Array} MFA recommendations
+     */
+    #getMFARecommendations(user) {
+        const recommendations = [];
+        const enabledMethods = user.mfa?.methods?.filter(m => m.enabled) || [];
+
+        if (enabledMethods.length === 0) {
+            recommendations.push({
+                type: 'setup_first_method',
+                priority: 'high',
+                message: 'Set up your first MFA method to secure your account'
+            });
+        } else {
+            if (enabledMethods.length === 1) {
+                recommendations.push({
+                    type: 'setup_backup_method',
+                    priority: 'medium',
+                    message: 'Add a second MFA method for account recovery'
+                });
+            }
+
+            if (!enabledMethods.some(m => m.type === 'totp')) {
+                recommendations.push({
+                    type: 'setup_authenticator',
+                    priority: 'medium',
+                    message: 'Consider using an authenticator app for offline access'
+                });
+            }
+
+            if (!user.mfa.backupCodes || user.mfa.backupCodes.length === 0) {
+                recommendations.push({
+                    type: 'generate_backup_codes',
+                    priority: 'medium',
+                    message: 'Generate backup codes for emergency access'
+                });
+            }
+        }
+
+        return recommendations;
+    }
+
+    /**
+     * Calculate MFA security level
+     * @private
+     * @param {Array} mfaMethods - Array of MFA methods
+     * @returns {string} Security level
+     */
+    #calculateMFASecurityLevel(mfaMethods) {
+        if (!mfaMethods || mfaMethods.length === 0) return 'none';
+
+        const enabledMethods = mfaMethods.filter(m => m.enabled);
+        if (enabledMethods.length === 0) return 'none';
+
+        let score = 0;
+        const methodScores = {
+            totp: 8,
+            webauthn: 10,
+            push: 7,
+            sms: 4,
+            email: 3,
+            backup_codes: 2
+        };
+
+        enabledMethods.forEach(method => {
+            score += methodScores[method.type] || 0;
+        });
+
+        if (score >= 15) return 'excellent';
+        if (score >= 10) return 'good';
+        if (score >= 6) return 'fair';
+        return 'basic';
+    }
+
+    /**
+     * Get MFA next steps for user
+     * @private
+     * @param {Object} user - User object
+     * @returns {Array} Next steps recommendations
+     */
+    #getMFANextSteps(user) {
+        const nextSteps = [];
+        const enabledMethods = user.mfa?.methods?.filter(m => m.enabled) || [];
+
+        if (enabledMethods.length === 1) {
+            nextSteps.push('Consider setting up a second MFA method for redundancy');
+        }
+
+        if (!user.mfa?.backupCodes || user.mfa.backupCodes.length === 0) {
+            nextSteps.push('Generate backup codes for account recovery');
+        }
+
+        if (!enabledMethods.some(m => m.type === 'totp')) {
+            nextSteps.push('Consider setting up an authenticator app for offline access');
+        }
+
+        if (!enabledMethods.some(m => m.type === 'webauthn')) {
+            nextSteps.push('Consider using a hardware security key for maximum security');
+        }
+
+        const hasBackupCodes = user.mfa?.backupCodes?.filter(code => !code.used).length > 0;
+        if (hasBackupCodes && user.mfa.backupCodes.filter(code => !code.used).length < 3) {
+            nextSteps.push('Consider regenerating backup codes - few remaining');
+        }
+
+        return nextSteps;
+    }
+
+    /**
+     * Record failed MFA attempt with enhanced tracking
+     * @private
+     * @param {string} userId - User ID
+     * @param {string} method - MFA method
+     * @param {Object} deviceInfo - Device information
+     * @param {string} context - Additional context
+     */
+    async #recordFailedMFA(userId, method, deviceInfo, context = 'verification') {
+        try {
+            // Enhanced audit logging
+            await this.#auditService.log({
+                action: 'MFA_FAILED',
+                entityType: 'authentication',
+                entityId: userId,
+                userId: userId,
+                details: {
+                    method,
+                    context,
+                    ipAddress: deviceInfo?.ipAddress,
+                    deviceId: deviceInfo?.deviceId,
+                    userAgent: deviceInfo?.userAgent
+                }
+            });
+
+            // Increment failed MFA attempts counter with context
+            const failedKey = `mfa_failed:${userId}:${method}`;
+            const failedAttempts = await this.#cacheService.get(failedKey) || 0;
+            await this.#cacheService.set(failedKey, failedAttempts + 1, 900); // 15 minutes
+
+            // Send security alert after multiple failures
+            if (failedAttempts >= 2) {
+                const user = await UserModel.findById(userId);
+                if (user) {
+                    await this.#sendSecurityAlert(user, deviceInfo, 75, ['repeated_mfa_failures'], {
+                        method,
+                        context,
+                        attemptCount: failedAttempts + 1
+                    });
+                }
+            }
+
+        } catch (error) {
+            logger.warn('Failed to record MFA failure', {
+                userId,
+                method,
+                context,
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * Send MFA enabled notifications with enhanced details
+     * @private
+     * @param {Object} user - User object
+     * @param {string} method - MFA method that was enabled
+     * @param {Object} context - Additional context
+     */
+    async #sendMFAEnabledNotifications(user, method, context = {}) {
+        try {
+            const { deviceInfo, securityLevel } = context;
+
+            // Send confirmation email
+            await this.#emailService.sendMFAEnabledConfirmation(user.email, {
+                firstName: user.profile?.firstName,
+                method: method.toUpperCase(),
+                timestamp: new Date(),
+                securityLevel,
+                deviceInfo: deviceInfo ? {
+                    name: deviceInfo.deviceName || 'Unknown Device',
+                    location: deviceInfo.location
+                } : null
+            });
+
+            // Send in-app notification
+            await this.#notificationService.sendNotification({
+                type: 'MFA_ENABLED',
+                recipients: [user._id.toString()],
+                data: {
+                    method,
+                    timestamp: new Date(),
+                    securityLevel,
+                    nextSteps: this.#getMFANextSteps(user)
+                },
+                priority: 'normal'
+            });
+
+        } catch (error) {
+            logger.warn('Failed to send MFA enabled notifications', {
+                userId: user._id,
+                method,
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * Enhanced session tracking with additional metadata
+     * @private
+     * @param {string} sessionId - Session ID
+     * @param {Object} enhancementData - Enhancement data
+     */
+    async #enhanceSessionTracking(sessionId, enhancementData) {
+        try {
+            const { riskScore, riskFactors, deviceInfo, location } = enhancementData;
+
+            await UserSessionModel.findOneAndUpdate(
+                { sessionId },
+                {
+                    $set: {
+                        'security.riskScore': riskScore,
+                        'security.riskFactors': riskFactors,
+                        'security.threatLevel': this.#getThreatLevel(riskScore),
+                        'metadata.enhancedAt': new Date(),
+                        'location': location
+                    }
+                }
+            );
+
+            logger.debug('Session enhanced with security data', {
+                sessionId,
+                riskScore,
+                threatLevel: this.#getThreatLevel(riskScore)
+            });
+
+        } catch (error) {
+            logger.warn('Failed to enhance session tracking', {
+                sessionId,
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * Send session revoked notification
+     * @private
+     * @param {string} userId - User ID
+     * @param {Object} session - Session object
+     * @param {string} revokedBy - ID of user who revoked session
+     * @param {string} reason - Revocation reason
+     */
+    async #sendSessionRevokedNotification(userId, session, revokedBy, reason) {
+        try {
+            const user = await UserModel.findById(userId);
+            const revoker = await UserModel.findById(revokedBy);
+
+            if (user) {
+                await this.#notificationService.sendNotification({
+                    type: 'SESSION_REVOKED',
+                    recipients: [userId],
+                    data: {
+                        sessionInfo: {
+                            deviceInfo: session.deviceInfo,
+                            location: session.location,
+                            createdAt: session.createdAt
+                        },
+                        revokedBy: revoker ? {
+                            name: revoker.profile?.displayName || revoker.email,
+                            id: revokedBy
+                        } : null,
+                        reason,
+                        timestamp: new Date()
+                    },
+                    priority: 'high'
+                });
+
+                // Also send email if revoked by admin
+                if (revokedBy !== userId) {
+                    await this.#emailService.sendSessionRevokedEmail(user.email, {
+                        firstName: user.profile?.firstName,
+                        sessionInfo: session.deviceInfo,
+                        revokedBy: revoker?.profile?.displayName || 'Administrator',
+                        reason,
+                        timestamp: new Date()
+                    });
+                }
+            }
+
+        } catch (error) {
+            logger.warn('Failed to send session revoked notification', {
+                userId,
+                revokedBy,
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * Send enhanced security alert with detailed context
+     * @private
+     * @param {Object} user - User object
+     * @param {Object} deviceInfo - Device information
+     * @param {number|Array} alertData - Risk score or risk factors array
+     * @param {Array} [additionalFactors] - Additional risk factors
+     * @param {Object} [context] - Additional context
+     */
+    async #sendSecurityAlert(user, deviceInfo, alertData, additionalFactors = [], context = {}) {
+        try {
+            const location = await this.#getLocationFromIP(deviceInfo.ipAddress);
+            const uaParser = new UAParser(deviceInfo.userAgent);
+            const parsedUA = uaParser.getResult();
+
+            let riskScore, riskFactors;
+
+            if (typeof alertData === 'number') {
+                riskScore = alertData;
+                riskFactors = additionalFactors;
+            } else {
+                riskFactors = alertData;
+                riskScore = additionalFactors[0] || 50;
+            }
+
+            const alertPayload = {
+                userId: user._id,
+                alertType: context.alertType || this.#determineAlertType(riskFactors),
+                timestamp: new Date(),
+                riskScore,
+                riskFactors,
+                threatLevel: this.#getThreatLevel(riskScore),
+                location: location ? `${location.city}, ${location.country}` : 'Unknown',
+                device: `${parsedUA.browser.name || 'Unknown'} on ${parsedUA.os.name || 'Unknown'}`,
+                ipAddress: deviceInfo.ipAddress,
+                context
+            };
+
+            // Send email alert
+            await this.#emailService.sendSecurityAlert(user.email, {
+                firstName: user.profile?.firstName,
+                ...alertPayload,
+                actionRequired: riskScore > this.#securityConfig.riskThresholds.high,
+                recommendations: this.#getSecurityRecommendations(riskScore, riskFactors)
+            });
+
+            // Send in-app notification
+            await this.#notificationService.sendNotification({
+                type: 'SECURITY_ALERT',
+                recipients: [user._id.toString()],
+                data: alertPayload,
+                priority: riskScore > this.#securityConfig.riskThresholds.high ? 'high' : 'medium'
+            });
+
+            logger.info('Enhanced security alert sent', {
+                userId: user._id,
+                alertType: alertPayload.alertType,
+                riskScore,
+                location: alertPayload.location
+            });
+
+        } catch (error) {
+            logger.error('Failed to send enhanced security alert', {
+                userId: user._id,
+                riskScore: typeof alertData === 'number' ? alertData : 50,
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * Determine alert type from risk factors
+     * @private
+     * @param {Array} riskFactors - Risk factors
+     * @returns {string} Alert type
+     */
+    #determineAlertType(riskFactors) {
+        if (riskFactors.includes('compromised_credentials')) return 'credential_compromise';
+        if (riskFactors.includes('repeated_failed_attempts')) return 'brute_force_attempt';
+        if (riskFactors.includes('repeated_mfa_failures')) return 'mfa_bypass_attempt';
+        if (riskFactors.includes('new_device') && riskFactors.includes('new_location')) return 'suspicious_login';
+        if (riskFactors.includes('vpn_or_proxy')) return 'anonymous_access';
+        if (riskFactors.includes('anomalous_pattern')) return 'unusual_activity';
+        return 'security_concern';
+    }
+
+    /**
+     * Trust a device for simplified authentication flows
+     * @private
+     * @param {string} userId - User ID
+     * @param {Object} deviceInfo - Device information
+     * @param {Object} [options] - Trust options
+     */
+    async #trustDevice(userId, deviceInfo, options = {}) {
+        const {
+            duration = this.#securityConfig.deviceTrustDuration,
+            reason = 'user_request'
+        } = options;
+
+        try {
+            const key = `${userId}:${deviceInfo.deviceId}`;
+
+            // Get location data for the device
+            const location = await this.#getLocationFromIP(deviceInfo.ipAddress);
+
+            // Parse user agent for device information
+            const uaParser = new UAParser(deviceInfo.userAgent);
+            const parsedUA = uaParser.getResult();
+
+            const trustedDevice = {
+                userId,
+                deviceId: deviceInfo.deviceId,
+                deviceName: deviceInfo.deviceName || `${parsedUA.browser.name || 'Unknown'} on ${parsedUA.os.name || 'Unknown'}`,
+                userAgent: deviceInfo.userAgent,
+                trustedAt: Date.now(),
+                expiresAt: Date.now() + duration,
+                ipAddress: deviceInfo.ipAddress,
+                location,
+                reason,
+                metadata: {
+                    browser: parsedUA.browser.name,
+                    browserVersion: parsedUA.browser.version,
+                    os: parsedUA.os.name,
+                    osVersion: parsedUA.os.version,
+                    deviceType: parsedUA.device.type || 'desktop'
+                }
+            };
+
+            // Store in memory cache
+            this.#trustedDevices.set(key, trustedDevice);
+
+            // Store in database for persistence
+            const user = await UserModel.findById(userId);
+            if (user) {
+                if (!user.mfa) user.mfa = {};
+                if (!user.mfa.trustedDevices) user.mfa.trustedDevices = [];
+
+                // Remove existing entry for same device
+                user.mfa.trustedDevices = user.mfa.trustedDevices.filter(
+                    device => device.deviceId !== deviceInfo.deviceId
+                );
+
+                // Add new trusted device
+                user.mfa.trustedDevices.push({
+                    deviceId: trustedDevice.deviceId,
+                    deviceName: trustedDevice.deviceName,
+                    trustedAt: new Date(trustedDevice.trustedAt),
+                    expiresAt: new Date(trustedDevice.expiresAt),
+                    ipAddress: trustedDevice.ipAddress,
+                    location: trustedDevice.location,
+                    userAgent: trustedDevice.userAgent,
+                    reason: trustedDevice.reason,
+                    metadata: trustedDevice.metadata
+                });
+
+                await user.save();
+            }
+
+            // Audit device trust
+            await this.#auditService.log({
+                action: 'DEVICE_TRUSTED',
+                entityType: 'authentication',
+                entityId: userId,
+                userId: userId,
+                details: {
+                    deviceId: deviceInfo.deviceId,
+                    deviceName: trustedDevice.deviceName,
+                    ipAddress: deviceInfo.ipAddress,
+                    location: location ? `${location.city}, ${location.country}` : 'Unknown',
+                    duration: duration / (1000 * 60 * 60 * 24), // Convert to days
+                    reason
+                }
+            });
+
+            logger.info('Device trusted successfully', {
+                userId,
+                deviceId: deviceInfo.deviceId,
+                deviceName: trustedDevice.deviceName,
+                expiresAt: new Date(trustedDevice.expiresAt),
+                reason
+            });
+
+        } catch (error) {
+            logger.error('Failed to trust device', {
+                userId,
+                deviceId: deviceInfo.deviceId,
+                error: error.message
+            });
+            throw error;
+        }
+    }
 }
 
 module.exports = UserAuthService;

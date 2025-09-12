@@ -18,8 +18,8 @@
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const TokenService = require('../services/token-service');
 const BlacklistService = require('../services/blacklist-service');
-const UserModel = require('../../database/models/users/user-model');
-const OrganizationModel = require('../../database/models/organizations/organization-model');
+const UserModel = require('../../database/models/customer-services/core-business/user-management/user-model');
+const OrganizationModel = require('../../database/models/customer-services/hosted-organizations/organizations/organization-model');
 const CacheService = require('../../services/cache-service');
 const AuditService = require('../../security/audit/audit-service');
 const logger = require('../../utils/logger');
@@ -644,6 +644,8 @@ class JWTAuthStrategy {
     return metrics;
   }
 }
+
+module.exports = JWTAuthStrategy;
 
 // Export factory function
 module.exports = (config) => {

@@ -12,15 +12,15 @@
  */
 
 const mongoose = require('mongoose');
-const BaseModel = require('../base-model');
-const logger = require('../../../utils/logger');
-const { AppError } = require('../../../utils/app-error');
+const BaseModel = require('../../../base-model');
+const logger = require('../../../../../utils/logger');
+const { AppError } = require('../../../../../utils/app-error');
 
 // Enhanced fallback for dependencies
 let HashService, stringHelper;
 try {
-  HashService = require('../../../security/encryption/hash-service');
-  stringHelper = require('../../../utils/helpers/string-helper');
+  HashService = require('../../../../../security/encryption/hash-service');
+  stringHelper = require('../../../../../utils/helpers/string-helper');
 } catch (error) {
   logger.warn('Security dependencies not available, using fallback implementations');
   
