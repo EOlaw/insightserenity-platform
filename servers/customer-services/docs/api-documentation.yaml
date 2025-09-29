@@ -1,0 +1,451 @@
+openapi: 3.1.0
+info:
+  title: InsightSerenity Customer Services API
+  version: 1.0.0
+  description: |
+    # Customer Services API Documentation
+
+    ## Overview
+    The Customer Services API provides multi-tenant business services including:
+    - User Management
+    - Client Management
+    - Project Management
+    - Recruitment Services
+    - Organization Management
+
+    ## Authentication
+    All endpoints require JWT Bearer token authentication.
+
+    ## Multi-tenancy
+    All requests must include the `X-Tenant-ID` header.
+
+servers:
+  - url: http://localhost:3001
+    description: Development Server
+  - url: https://api.insightserenity.com
+    description: Production Server
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Users
+    description: User management operations
+  - name: Authentication
+    description: Authentication endpoints
+  - name: Clients
+    description: Client management
+  - name: Projects
+    description: Project management
+  - name: Organizations
+    description: Organization management
+  - name: Jobs
+    description: Recruitment job postings
+  - name: Candidates
+    description: Candidate management
+
+paths:
+  # Authentication Endpoints
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: User login
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      tokens:
+                        $ref: '#/components/schemas/AuthTokens'
+
+  /api/auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        200:
+          description: Token refreshed
+
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: User logout
+      operationId: logout
+      responses:
+        200:
+          description: Logged out successfully
+
+  # User Management Endpoints
+  /api/users:
+    get:
+      tags: [Users]
+      summary: Get all users
+      operationId: getUsers
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [admin, manager, employee, client, consultant]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive, pending, suspended]
+        - name: department
+          in: query
+          schema:
+            type: string
+      responses:
+        200:
+          description: Users retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  meta:
+                    $ref: '#/components/schemas/Pagination'
+
+    post:
+      tags: [Users]
+      summary: Create new user
+      operationId: createUser
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        201:
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/User'
+
+  /api/users/{userId}:
+    get:
+      tags: [Users]
+      summary: Get user by ID
+      operationId: getUserById
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: User retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/User'
+
+    put:
+      tags: [Users]
+      summary: Update user
+      operationId: updateUser
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        200:
+          description: User updated successfully
+
+    delete:
+      tags: [Users]
+      summary: Delete user
+      operationId: deleteUser
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: User deleted successfully
+
+  /api/users/search:
+    get:
+      tags: [Users]
+      summary: Search users
+      operationId: searchUsers
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+      responses:
+        200:
+          description: Search results
+
+  /api/users/statistics:
+    get:
+      tags: [Users]
+      summary: Get user statistics
+      operationId: getUserStatistics
+      parameters:
+        - $ref: '#/components/parameters/TenantIdHeader'
+      responses:
+        200:
+          description: Statistics retrieved
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    TenantIdHeader:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Tenant identifier
+
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  schemas:
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+        role:
+          type: string
+          enum: [super_admin, admin, manager, employee, client, consultant]
+        status:
+          type: string
+          enum: [active, inactive, pending, suspended, deleted]
+        profile:
+          type: object
+          properties:
+            displayName:
+              type: string
+            avatar:
+              type: object
+              properties:
+                url:
+                  type: string
+            bio:
+              type: string
+            phoneNumbers:
+              type: array
+              items:
+                type: object
+                properties:
+                  number:
+                    type: string
+                  type:
+                    type: string
+                    enum: [mobile, home, work]
+        professional:
+          type: object
+          properties:
+            jobTitle:
+              type: string
+            department:
+              type: string
+            employeeId:
+              type: string
+        emailVerified:
+          type: boolean
+        twoFactorEnabled:
+          type: boolean
+        lastLogin:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateUserRequest:
+      type: object
+      required: [firstName, lastName, email, password]
+      properties:
+        firstName:
+          type: string
+          minLength: 2
+          maxLength: 50
+        lastName:
+          type: string
+          minLength: 2
+          maxLength: 50
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        username:
+          type: string
+        role:
+          type: string
+          enum: [admin, manager, employee, client, consultant]
+        organizationId:
+          type: string
+        profile:
+          type: object
+        professional:
+          type: object
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        profile:
+          type: object
+        professional:
+          type: object
+        status:
+          type: string
+          enum: [active, inactive, suspended]
+
+    AuthTokens:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+        tokenType:
+          type: string
+          default: Bearer
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        pages:
+          type: integer
+        hasNext:
+          type: boolean
+        hasPrev:
+          type: boolean
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
