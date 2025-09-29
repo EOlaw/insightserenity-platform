@@ -17,7 +17,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
+const { filterXSS } = require('xss');
 const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
 const passport = require('passport');
@@ -329,10 +329,27 @@ class CustomerServicesApp {
         app.use(compression());
 
         // MongoDB injection prevention
-        app.use(mongoSanitize());
+        // app.use(mongoSanitize());
+
+        // MongoDB injection prevention - configured to avoid read-only property errors
+        app.use(mongoSanitize({
+            replaceWith: '_',
+            onSanitize: ({ req, key }) => {
+                // Optional: log sanitization events in development
+                if (process.env.NODE_ENV === 'development') {
+                    console.warn(`Sanitized potentially malicious key: ${key}`);
+                }
+            }
+        }));
 
         // XSS protection
-        app.use(xss());
+        // app.use(xss());
+        app.use((req, res, next) => {
+            if (req.body) {
+                req.body = JSON.parse(filterXSS(JSON.stringify(req.body)));
+            }
+            next();
+        });
 
         // Prevent HTTP parameter pollution
         app.use(hpp());

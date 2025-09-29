@@ -11,8 +11,11 @@ const createRateLimiter = (options = {}) => {
         message: 'Too many requests',
         standardHeaders: true,
         legacyHeaders: false,
-        keyGenerator: (req) => {
-            return req.user?.id || req.ip;
+        // Remove custom keyGenerator to use the default which properly handles IPv6
+        // Or use the skip option if you need user-based rate limiting
+        skip: (req) => {
+            // You can implement skip logic here if needed
+            return false;
         }
     };
     

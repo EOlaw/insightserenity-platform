@@ -351,8 +351,8 @@ class DatabaseManager extends EventEmitter {
             ...poolConfig,
             ...config.options,
             // MongoDB driver options
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
+            // useNewUrlParser: true,
+            // useUnifiedTopology: true,
             // Connection string options
             authSource: config.authSource || 'admin',
             retryWrites: config.retryWrites !== false,

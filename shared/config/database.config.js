@@ -6,8 +6,8 @@ module.exports = {
             uri: process.env.DATABASE_ADMIN_URI || process.env.MONGODB_URI,
             name: 'insightserenity_admin',
             options: {
-                useNewUrlParser: true,
-                useUnifiedTopology: true,
+                // useNewUrlParser: true,
+                // useUnifiedTopology: true,
                 serverSelectionTimeoutMS: 30000,
                 socketTimeoutMS: 45000,
                 bufferCommands: false,
@@ -20,8 +20,8 @@ module.exports = {
             uri: process.env.DATABASE_CUSTOMER_URI || process.env.MONGODB_URI,
             name: 'insightserenity_customer',
             options: {
-                useNewUrlParser: true,
-                useUnifiedTopology: true,
+                // useNewUrlParser: true,
+                // useUnifiedTopology: true,
                 serverSelectionTimeoutMS: 30000,
                 socketTimeoutMS: 45000,
                 bufferCommands: false,
@@ -34,8 +34,8 @@ module.exports = {
             uri: process.env.DATABASE_SHARED_URI || process.env.MONGODB_URI,
             name: 'insightserenity_shared',
             options: {
-                useNewUrlParser: true,
-                useUnifiedTopology: true,
+                // useNewUrlParser: true,
+                // useUnifiedTopology: true,
                 serverSelectionTimeoutMS: 30000,
                 socketTimeoutMS: 45000,
                 bufferCommands: false,
