@@ -42,14 +42,19 @@ const tenantResolver = require('./middleware/tenant-resolver');
 const requestLogger = require('./middleware/request-logger');
 const apiVersioning = require('./middleware/api-versioning');
 
-// Import route modules
+// Import route modules - Core Business
+const authRoutes = require('./modules/core-business/authentication/routes'); // NEW: Authentication routes
 const userRoutes = require('./modules/core-business/user-management/routes/user-routes');
 const clientRoutes = require('./modules/core-business/client-management/routes/client.routes');
 const consultantRoutes = require('./modules/core-business/consultant-management/routes/consultant.routes');
 const projectRoutes = require('./modules/core-business/project-management/routes/project.routes');
+
+// Import route modules - Hosted Organizations
 const organizationRoutes = require('./modules/hosted-organizations/organization-management/routes/organization.routes');
 const subscriptionRoutes = require('./modules/hosted-organizations/subscription-management/routes/subscription.routes');
 const tenantRoutes = require('./modules/hosted-organizations/tenant-management/routes/tenant.routes');
+
+// Import route modules - Recruitment Services
 const jobRoutes = require('./modules/recruitment-services/jobs/routes/job.routes');
 const candidateRoutes = require('./modules/recruitment-services/candidates/routes/candidate.routes');
 const applicationRoutes = require('./modules/recruitment-services/applications/routes/application.routes');
@@ -83,7 +88,7 @@ class CustomerServicesApp {
 
         // Module registry
         this.modules = {
-            coreBusiness: ['user-management', 'client-management', 'consultant-management', 'project-management'],
+            coreBusiness: ['authentication', 'user-management', 'client-management', 'consultant-management', 'project-management'],
             hostedOrganizations: ['organization-management', 'subscription-management', 'tenant-management'],
             recruitmentServices: ['jobs', 'candidates', 'applications', 'partnerships']
         };
@@ -328,9 +333,6 @@ class CustomerServicesApp {
         // Compression
         app.use(compression());
 
-        // MongoDB injection prevention
-        // app.use(mongoSanitize());
-
         // MongoDB injection prevention - configured to avoid read-only property errors
         app.use(mongoSanitize({
             replaceWith: '_',
@@ -343,7 +345,6 @@ class CustomerServicesApp {
         }));
 
         // XSS protection
-        // app.use(xss());
         app.use((req, res, next) => {
             if (req.body) {
                 req.body = JSON.parse(filterXSS(JSON.stringify(req.body)));
@@ -545,23 +546,30 @@ class CustomerServicesApp {
             }
         }
 
-        // API Routes - Core Business
+        // ==================== AUTHENTICATION ROUTES ====================
+        // Mount authentication routes BEFORE other protected routes
+        // This ensures authentication endpoints are accessible without auth
+        apiRouter.use('/auth', authRoutes);
+
+        // ==================== CORE BUSINESS ROUTES ====================
         apiRouter.use('/users', userRoutes);
         apiRouter.use('/clients', clientRoutes);
         apiRouter.use('/consultants', consultantRoutes);
         apiRouter.use('/projects', projectRoutes);
 
-        // API Routes - Hosted Organizations
+        // ==================== HOSTED ORGANIZATIONS ROUTES ====================
         apiRouter.use('/organizations', organizationRoutes);
         apiRouter.use('/subscriptions', subscriptionRoutes);
         apiRouter.use('/tenants', tenantRoutes);
 
-        // API Routes - Recruitment Services
+        // ==================== RECRUITMENT SERVICES ROUTES ====================
         apiRouter.use('/jobs', jobRoutes);
         apiRouter.use('/candidates', candidateRoutes);
         apiRouter.use('/applications', applicationRoutes);
         apiRouter.use('/partnerships', partnershipRoutes);
 
+        // ==================== UTILITY ROUTES ====================
+        
         // Metrics endpoint
         apiRouter.get('/metrics', this._authenticate('jwt'), (req, res) => {
             res.json({
@@ -586,7 +594,7 @@ class CustomerServicesApp {
         // Legacy API support
         app.use('/api', apiRouter);
 
-        this.logger.info('Routes configured');
+        this.logger.info('Routes configured (including authentication)');
     }
 
     /**

@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/logs/.1db327d4b5c9986158a26a00e88c0441f3cc3a77-audit.json",
+    "files": [
+        {
+            "date": 1759274676023,
+            "name": "/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/logs/app-error-2025-09-30.log",
+            "hash": "2570ef907057b4d81c9dc809ecd7c342d629ac853d77d377eb244ffdcfa1ec8c"
+        }
+    ],
+    "hashType": "sha256"
+}
