@@ -81,54 +81,162 @@ class UserService {
                 throw new AppError('User already exists with this email', 409);
             }
 
-            // Prepare user document
+            // Prepare user document aligned with schema
             const userDocument = {
-                ...userData,
                 email: userData.email.toLowerCase(),
                 username: userData.username ? userData.username.toLowerCase() : undefined,
                 password: await this._hashPassword(userData.password),
-                status: userData.status || 'active',
-                emailVerified: false,
-                verificationToken: this._generateVerificationToken(),
-                metadata: {
-                    ...userData.metadata,
-                    createdBy: createdBy || 'system',
-                    createdAt: new Date(),
-                    lastUpdated: new Date(),
-                    lastUpdatedBy: createdBy || 'system',
-                    version: 1,
-                    source: userData.metadata?.source || 'api',
-                    ipAddress: userData.metadata?.ipAddress
+                phoneNumber: userData.phoneNumber,
+                
+                // Profile object (required fields)
+                profile: {
+                    firstName: userData.profile?.firstName,
+                    lastName: userData.profile?.lastName,
+                    middleName: userData.profile?.middleName,
+                    displayName: userData.profile?.displayName,
+                    title: userData.profile?.title,
+                    bio: userData.profile?.bio,
+                    dateOfBirth: userData.profile?.dateOfBirth,
+                    gender: userData.profile?.gender,
+                    avatar: userData.profile?.avatar,
                 },
-                security: {
-                    ...userData.security,
-                    loginAttempts: 0,
-                    lastLogin: null,
-                    lastPasswordChange: new Date(),
-                    passwordHistory: [],
-                    mfaEnabled: false,
-                    apiKeys: []
+
+                // Account status
+                accountStatus: {
+                    status: userData.accountStatus?.status || 'pending',
+                    reason: userData.accountStatus?.reason,
                 },
+
+                // Verification
+                verification: {
+                    email: {
+                        verified: false,
+                        token: this._generateVerificationToken(),
+                        tokenExpires: new Date(Date.now() + 86400000), // 24 hours
+                    }
+                },
+
+                // Preferences with proper structure
                 preferences: {
-                    ...this._getDefaultPreferences(),
-                    ...userData.preferences
+                    language: userData.preferences?.language || 'en',
+                    timezone: userData.preferences?.timezone || 'UTC',
+                    theme: userData.preferences?.theme || 'auto',
+                    notifications: {
+                        email: {
+                            enabled: userData.preferences?.notifications?.email?.enabled ?? true,
+                            frequency: userData.preferences?.notifications?.email?.frequency || 'instant',
+                            categories: {
+                                security: userData.preferences?.notifications?.email?.categories?.security ?? true,
+                                updates: userData.preferences?.notifications?.email?.categories?.updates ?? true,
+                                marketing: userData.preferences?.notifications?.email?.categories?.marketing ?? false,
+                                social: userData.preferences?.notifications?.email?.categories?.social ?? true,
+                                billing: userData.preferences?.notifications?.email?.categories?.billing ?? true,
+                            }
+                        },
+                        sms: {
+                            enabled: userData.preferences?.notifications?.sms?.enabled ?? false,
+                            categories: {
+                                security: userData.preferences?.notifications?.sms?.categories?.security ?? true,
+                                critical: userData.preferences?.notifications?.sms?.categories?.critical ?? true,
+                            }
+                        },
+                        push: {
+                            enabled: userData.preferences?.notifications?.push?.enabled ?? true,
+                            tokens: userData.preferences?.notifications?.push?.tokens || []
+                        },
+                        inApp: {
+                            enabled: userData.preferences?.notifications?.inApp?.enabled ?? true,
+                            playSound: userData.preferences?.notifications?.inApp?.playSound ?? true,
+                            showBadge: userData.preferences?.notifications?.inApp?.showBadge ?? true,
+                        }
+                    },
+                    privacy: {
+                        profileVisibility: userData.preferences?.privacy?.profileVisibility || 'organization',
+                        showEmail: userData.preferences?.privacy?.showEmail ?? false,
+                        showPhone: userData.preferences?.privacy?.showPhone ?? false,
+                        showLocation: userData.preferences?.privacy?.showLocation ?? false,
+                        allowDirectMessages: userData.preferences?.privacy?.allowDirectMessages ?? true,
+                        allowMentions: userData.preferences?.privacy?.allowMentions ?? true,
+                        dataCollection: {
+                            analytics: userData.preferences?.privacy?.dataCollection?.analytics ?? true,
+                            personalization: userData.preferences?.privacy?.dataCollection?.personalization ?? true,
+                            thirdParty: userData.preferences?.privacy?.dataCollection?.thirdParty ?? false,
+                        }
+                    }
                 },
-                professional: {
-                    ...userData.professional,
-                    skills: userData.professional?.skills || [],
-                    certifications: userData.professional?.certifications || [],
-                    education: userData.professional?.education || []
-                },
+
+                // Organizations
+                organizations: userData.organizations || [],
+
+                // Compliance
                 compliance: {
-                    gdprConsent: userData.compliance?.gdprConsent || false,
-                    gdprConsentDate: userData.compliance?.gdprConsent ? new Date() : null,
-                    marketingConsent: userData.compliance?.marketingConsent || false,
-                    dataRetentionConsent: userData.compliance?.dataRetentionConsent || false,
-                    termsAccepted: userData.compliance?.termsAccepted || false,
-                    termsAcceptedDate: userData.compliance?.termsAccepted ? new Date() : null,
-                    privacyPolicyAccepted: userData.compliance?.privacyPolicyAccepted || false,
-                    privacyPolicyAcceptedDate: userData.compliance?.privacyPolicyAccepted ? new Date() : null
-                }
+                    gdpr: {
+                        consentGiven: userData.compliance?.gdpr?.consentGiven || false,
+                        consentDate: userData.compliance?.gdpr?.consentGiven ? new Date() : null,
+                    },
+                    terms: {
+                        accepted: userData.compliance?.terms?.accepted || false,
+                        acceptedAt: userData.compliance?.terms?.accepted ? new Date() : null,
+                        version: userData.compliance?.terms?.version,
+                    },
+                    privacy: {
+                        accepted: userData.compliance?.privacy?.accepted || false,
+                        acceptedAt: userData.compliance?.privacy?.accepted ? new Date() : null,
+                        version: userData.compliance?.privacy?.version,
+                    },
+                    marketing: {
+                        consent: userData.compliance?.marketing?.consent || false,
+                        consentDate: userData.compliance?.marketing?.consent ? new Date() : null,
+                        channels: {
+                            email: userData.compliance?.marketing?.channels?.email ?? false,
+                            sms: userData.compliance?.marketing?.channels?.sms ?? false,
+                            push: userData.compliance?.marketing?.channels?.push ?? false,
+                        }
+                    }
+                },
+
+                // Metadata
+                metadata: {
+                    source: userData.metadata?.source || 'api',
+                    referrer: userData.metadata?.referrer,
+                    campaign: userData.metadata?.campaign,
+                    tags: userData.metadata?.tags || [],
+                    flags: {
+                        isVip: userData.metadata?.flags?.isVip ?? false,
+                        isBetaTester: userData.metadata?.flags?.isBetaTester ?? false,
+                        isInfluencer: userData.metadata?.flags?.isInfluencer ?? false,
+                        requiresReview: userData.metadata?.flags?.requiresReview ?? false,
+                    }
+                },
+
+                // Security
+                security: {
+                    loginAttempts: {
+                        count: 0,
+                        lastAttempt: null,
+                        lockUntil: null,
+                    },
+                    riskScore: 0,
+                    threatLevel: 'none',
+                },
+
+                // Activity
+                activity: {
+                    loginCount: 0,
+                    activitySummary: {
+                        totalLogins: 0,
+                        totalActions: 0,
+                        lastWeek: 0,
+                        lastMonth: 0,
+                    }
+                },
+
+                // API Access
+                apiAccess: {
+                    enabled: false,
+                    keys: [],
+                    webhooks: [],
+                },
             };
 
             // Create user through secure database service
@@ -139,7 +247,6 @@ class UserService {
                 tenantId,
                 createdBy,
                 userEmail: newUser.email,
-                userRole: newUser.role
             });
 
             return newUser.toSafeJSON ? newUser.toSafeJSON() : this._sanitizeUserOutput(newUser);
@@ -341,25 +448,25 @@ class UserService {
                 throw AppError.unauthorized(`Account is locked. Try again in ${remainingTime} minutes`);
             }
 
-            if (user.status === USER_STATUS.SUSPENDED) {
+            if (user.accountStatus?.status === USER_STATUS.SUSPENDED) {
                 throw AppError.forbidden('Account is suspended. Please contact support');
             }
 
-            if (user.status === USER_STATUS.BLOCKED) {
+            if (user.accountStatus?.status === USER_STATUS.BLOCKED) {
                 throw AppError.forbidden('Account is blocked. Please contact support');
             }
 
-            if (user.status === USER_STATUS.INACTIVE) {
+            if (user.accountStatus?.status === USER_STATUS.INACTIVE) {
                 throw AppError.forbidden('Account is inactive. Please contact support to reactivate');
             }
 
             const isPasswordValid = await user.comparePassword(password);
             if (!isPasswordValid) {
-                if (typeof user.recordFailedLogin === 'function') {
-                    await user.recordFailedLogin({ ip, userAgent, reason: 'Invalid password' });
+                if (typeof user.incrementLoginAttempts === 'function') {
+                    await user.incrementLoginAttempts();
                 }
 
-                const attemptsRemaining = this.maxLoginAttempts - user.loginAttempts;
+                const attemptsRemaining = this.maxLoginAttempts - (user.security?.loginAttempts?.count || 0);
                 if (attemptsRemaining <= 0) {
                     throw AppError.unauthorized('Account locked due to too many failed attempts');
                 } else {
@@ -368,14 +475,8 @@ class UserService {
             }
 
             // Generate tokens
-            const accessToken = user.generateAuthToken({
-                audience: 'customer-services',
-                expiresIn: '24h'
-            });
-
-            const refreshToken = await user.generateRefreshToken({
-                ip, userAgent, deviceId: device
-            });
+            const accessToken = this._generateAccessToken(user);
+            const refreshToken = this._generateRefreshToken(user);
 
             // Record successful login
             if (typeof user.recordLogin === 'function') {
@@ -394,11 +495,8 @@ class UserService {
             };
 
             // Add required actions
-            if (user.mustChangePassword) response.requiresAction.push('CHANGE_PASSWORD');
-            if (!user.emailVerified) response.requiresAction.push('VERIFY_EMAIL');
-            if (!user.phoneVerified && user.profile?.phoneNumbers?.length > 0) response.requiresAction.push('VERIFY_PHONE');
-
-            if (user.twoFactorEnabled) {
+            if (!user.verification?.email?.verified) response.requiresAction.push('VERIFY_EMAIL');
+            if (user.mfa?.enabled) {
                 response.requiresAction.push('TWO_FACTOR_AUTH');
                 delete response.tokens;
                 response.tempToken = this._generateTempToken(user._id);
@@ -431,15 +529,9 @@ class UserService {
                 throw AppError.validation('New password must be different from current password');
             }
 
-            // Update password
-            const updates = {
-                password: await this._hashPassword(newPassword),
-                passwordChangedAt: new Date(),
-                mustChangePassword: false,
-                refreshTokens: [] // Clear all refresh tokens
-            };
-
-            await dbService.updateUser(userId, updates, tenantId);
+            // Update password directly on user document
+            user.password = newPassword;
+            await user.save();
 
             await this._sendPasswordChangeNotification(user);
             await this._logUserActivity(userId, 'PASSWORD_CHANGED', { method: 'user_initiated' });
@@ -457,14 +549,18 @@ class UserService {
     async requestPasswordReset(email, tenantId) {
         try {
             const dbService = this._getDatabaseService();
-            const user = await dbService.findUserByCredentials(email, tenantId);
+            const User = dbService.getUserModel();
+            
+            const user = await User.findOne({
+                email: email.toLowerCase(),
+                'accountStatus.status': { $ne: 'deleted' }
+            });
 
             if (!user) {
                 return { message: 'If the email exists, a password reset link has been sent' };
             }
 
-            const resetToken = user.generatePasswordResetToken();
-            await user.save();
+            const resetToken = await user.generatePasswordResetToken();
 
             await this._sendPasswordResetEmail(user, resetToken);
             await this._logUserActivity(user._id, 'PASSWORD_RESET_REQUESTED', { email });
@@ -480,31 +576,20 @@ class UserService {
         try {
             this._validatePassword(newPassword);
 
-            const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
             const dbService = this._getDatabaseService();
-
-            // Find user by reset token (would need custom method)
             const User = dbService.getUserModel();
+            
             const user = await User.findOne({
-                passwordResetToken: hashedToken,
-                passwordResetExpires: { $gt: Date.now() },
-                tenantId,
-                status: { $nin: [USER_STATUS.DELETED, USER_STATUS.ARCHIVED] }
-            }).select('+passwordHistory');
+                'security.passwordReset.token': await this._hashToken(resetToken),
+                'security.passwordReset.tokenExpires': { $gt: Date.now() },
+                'accountStatus.status': { $nin: ['deleted', 'archived'] }
+            }).select('+password +passwordHistory');
 
             if (!user) {
                 throw AppError.unauthorized('Invalid or expired reset token');
             }
 
-            // Update password
-            user.password = await this._hashPassword(newPassword);
-            user.passwordChangedAt = new Date();
-            user.passwordResetToken = undefined;
-            user.passwordResetExpires = undefined;
-            user.mustChangePassword = false;
-            user.refreshTokens = [];
-
-            await user.save();
+            await user.resetPassword(resetToken, newPassword);
 
             await this._sendPasswordResetConfirmation(user);
             await this._logUserActivity(user._id, 'PASSWORD_RESET_COMPLETED', { method: 'reset_token' });
@@ -550,21 +635,21 @@ class UserService {
     async getUsersByRole(tenantId, role, options = {}) {
         return await this.getUsers(tenantId, {
             ...options,
-            filters: { ...options.filters, role }
+            filters: { ...options.filters, 'organizations.roles.roleName': role }
         });
     }
 
     async getUsersByDepartment(tenantId, department, options = {}) {
         return await this.getUsers(tenantId, {
             ...options,
-            filters: { ...options.filters, 'professional.department': department }
+            filters: { ...options.filters, 'organizations.departmentId': department }
         });
     }
 
     async getUsersByManager(tenantId, managerId, options = {}) {
         return await this.getUsers(tenantId, {
             ...options,
-            filters: { ...options.filters, 'professional.manager': managerId }
+            filters: { ...options.filters, 'organizations.manager': managerId }
         });
     }
 
@@ -581,24 +666,38 @@ class UserService {
 
     // ============= HELPER METHODS =============
 
+    /**
+     * Validate user data against schema requirements
+     * @private
+     */
     _validateUserData(userData) {
         const errors = [];
 
-        if (!userData.firstName) errors.push('First name is required');
-        if (!userData.lastName) errors.push('Last name is required');
-        if (!userData.email) errors.push('Email is required');
-        if (!userData.password) errors.push('Password is required');
+        // Check required profile fields (as per schema)
+        if (!userData.profile?.firstName) {
+            errors.push('First name is required');
+        }
+        
+        if (!userData.profile?.lastName) {
+            errors.push('Last name is required');
+        }
 
-        if (userData.email && !validator.isEmail(userData.email)) {
+        // Check email
+        if (!userData.email) {
+            errors.push('Email is required');
+        } else if (!validator.isEmail(userData.email)) {
             errors.push('Invalid email format');
         }
 
-        if (userData.password) {
+        // Check password
+        if (!userData.password) {
+            errors.push('Password is required');
+        } else {
             if (userData.password.length < this.passwordMinLength) {
                 errors.push(`Password must be at least ${this.passwordMinLength} characters`);
             }
-            if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(userData.password)) {
-                errors.push('Password must contain uppercase, lowercase, and numbers');
+            if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/.test(userData.password)) {
+                errors.push('Password must contain uppercase, lowercase, number, and special character');
             }
         }
 
@@ -628,12 +727,14 @@ class UserService {
         
         // Remove sensitive fields
         delete userObject.password;
-        delete userObject.passwordResetToken;
-        delete userObject.passwordResetExpires;
-        delete userObject.emailVerificationToken;
-        delete userObject.emailVerificationExpires;
-        delete userObject.twoFactorSecret;
-        delete userObject.refreshTokens;
+        delete userObject.passwordHistory;
+        delete userObject.security?.passwordReset;
+        delete userObject.verification?.email?.token;
+        delete userObject.verification?.phone?.code;
+        delete userObject.mfa?.methods;
+        delete userObject.apiAccess?.keys;
+        delete userObject.authProviders;
+        delete userObject.searchTokens;
         delete userObject.__v;
 
         return userObject;
@@ -649,36 +750,43 @@ class UserService {
         return await bcrypt.hash(password, saltRounds);
     }
 
+    async _hashToken(token) {
+        return crypto.createHash('sha256').update(token).digest('hex');
+    }
+
     _generateVerificationToken() {
         return crypto.randomBytes(32).toString('hex');
+    }
+
+    _generateAccessToken(user) {
+        return jwt.sign(
+            { 
+                userId: user._id,
+                email: user.email,
+                tenantId: user.organizations?.[0]?.tenantId
+            },
+            process.env.JWT_SECRET || 'customer-jwt-secret',
+            { expiresIn: '24h' }
+        );
+    }
+
+    _generateRefreshToken(user) {
+        return jwt.sign(
+            { 
+                userId: user._id,
+                type: 'refresh'
+            },
+            process.env.JWT_SECRET || 'customer-jwt-secret',
+            { expiresIn: '30d' }
+        );
     }
 
     _generateTempToken(userId) {
         return jwt.sign(
             { userId, type: 'temp' },
-            process.env.JWT_SECRET,
+            process.env.JWT_SECRET || 'customer-jwt-secret',
             { expiresIn: '5m' }
         );
-    }
-
-    _getDefaultPreferences() {
-        return {
-            language: 'en',
-            timezone: 'UTC',
-            theme: 'light',
-            notifications: {
-                email: true,
-                push: false,
-                sms: false,
-                inApp: true
-            },
-            privacy: {
-                profileVisible: true,
-                showEmail: false,
-                showPhone: false,
-                showLocation: false
-            }
-        };
     }
 
     // Placeholder methods for external services

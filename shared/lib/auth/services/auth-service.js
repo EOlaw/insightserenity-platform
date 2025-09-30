@@ -1,11 +1,22 @@
 /**
  * @fileoverview Main Authentication Service
  */
+const speakeasy = require('speakeasy');
+const QRCode = require('qrcode');
+const crypto = require('crypto');
+const bcrypt = require('bcrypt');
+const geoip = require('geoip-lite');
+const UAParser = require('ua-parser-js')
 
 const bcrypt = require('bcryptjs');
-const TokenService = require('./token-service');
+const BlacklistService = require('./blacklist-service')
+const PasswordService = require('./password-service')
 const SessionService = require('./session-service');
+const TokenService = require('./token-service');
 const TwoFactorService = require('./two-factor-service');
+
+const { Logger } = require('../../utils/logger')
+const { AppError, ValidateError, NotFoundError, ConflictError } = require('../../utils/app-error')
 
 class AuthService {
     constructor() {

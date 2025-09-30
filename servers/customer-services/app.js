@@ -43,7 +43,7 @@ const requestLogger = require('./middleware/request-logger');
 const apiVersioning = require('./middleware/api-versioning');
 
 // Import route modules
-const userRoutes = require('./modules/core-business/user-management/routes/user.routes');
+const userRoutes = require('./modules/core-business/user-management/routes/user-routes');
 const clientRoutes = require('./modules/core-business/client-management/routes/client.routes');
 const consultantRoutes = require('./modules/core-business/consultant-management/routes/consultant.routes');
 const projectRoutes = require('./modules/core-business/project-management/routes/project.routes');

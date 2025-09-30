@@ -4,7 +4,7 @@
  */
 
 // Use simplified service to avoid connection issues
-const userService = require('../services/user.service');
+const userService = require('../services/user-service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
 

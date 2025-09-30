@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const { EventEmitter } = require('events');
 const CryptoUtils = require('./crypto-utils');
 
@@ -228,6 +229,35 @@ class HashService extends EventEmitter {
             this.emit('error', error);
             throw new Error(`Hash creation failed: ${error.message}`);
         }
+    }
+
+    /**
+     * Hash password using bcrypt
+     * @param {string} password - Plain text password
+     * @param {number} saltRounds - Cost factor (default: 10)
+     * @returns {Promise<string>} Hashed password
+     */
+    static async hashPassword(password, saltRounds = 10) {
+        return await bcrypt.hash(password, saltRounds);
+    }
+
+    /**
+     * Compare password with hash
+     * @param {string} candidatePassword - Plain text password to check
+     * @param {string} hashedPassword - Hashed password to compare against
+     * @returns {Promise<boolean>} True if password matches
+     */
+    static async comparePassword(candidatePassword, hashedPassword) {
+        return await bcrypt.compare(candidatePassword, hashedPassword);
+    }
+
+    /**
+     * Hash token using SHA256
+     * @param {string} token - Token to hash
+     * @returns {Promise<string>} Hashed token
+     */
+    static async hashToken(token) {
+        return crypto.createHash('sha256').update(token).digest('hex');
     }
 
     /**

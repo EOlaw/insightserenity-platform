@@ -35,7 +35,7 @@ class ModelRouter extends EventEmitter {
             adminModelsPath: config.adminModelsPath || 'admin-server',
             customerModelsPath: config.customerModelsPath || 'customer-services',
             sharedModelsPath: config.sharedModelsPath || 'shared',
-            modelFilePattern: config.modelFilePattern || '**/*.model.js',
+            modelFilePattern: config.modelFilePattern || '**/*{.model.js, -model.js}',
             excludePatterns: config.excludePatterns || ['**/test/**', '**/tests/**', '**/*.test.js', '**/*.spec.js'],
             watchEnabled: config.watchEnabled !== false && process.env.NODE_ENV === 'development',
             autoDiscover: config.autoDiscover !== false,
