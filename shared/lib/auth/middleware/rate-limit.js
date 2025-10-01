@@ -118,7 +118,7 @@ function initializeRedis() {
  */
 function getRedisStore() {
     const redis = initializeRedis();
-    
+
     if (!redis) {
         logger.warn('Redis not available, using in-memory rate limiting');
         return undefined;
@@ -151,8 +151,8 @@ function generateRateLimitKey(req, type, options = {}) {
             // Handle both IPv4 and IPv6
             const ip = req.ip || req.connection?.remoteAddress || 'unknown';
             // Normalize IPv6 addresses
-            const normalizedIP = ip.includes('::ffff:') 
-                ? ip.split('::ffff:')[1] 
+            const normalizedIP = ip.includes('::ffff:')
+                ? ip.split('::ffff:')[1]
                 : ip;
             parts.push(`ip:${normalizedIP}`);
             break;
@@ -234,9 +234,9 @@ function getDynamicRateLimit(req, baseConfig) {
 
     // Check for authenticated user with subscription/tier
     if (req.user) {
-        const userTier = req.user.subscription?.tier || 
-                        req.user.plan || 
-                        'free';
+        const userTier = req.user.subscription?.tier ||
+            req.user.plan ||
+            'free';
 
         // Adjust limits based on tier
         const tierMultipliers = {
@@ -287,12 +287,12 @@ function shouldSkipRateLimit(req, options = {}) {
 
     // Skip for internal requests
     if (options.skipInternal) {
-        const isInternal = req.ip === '127.0.0.1' || 
-                          req.ip === '::1' ||
-                          req.ip?.startsWith('10.') ||
-                          req.ip?.startsWith('172.') ||
-                          req.ip?.startsWith('192.168.');
-        
+        const isInternal = req.ip === '127.0.0.1' ||
+            req.ip === '::1' ||
+            req.ip?.startsWith('10.') ||
+            req.ip?.startsWith('172.') ||
+            req.ip?.startsWith('192.168.');
+
         if (isInternal) {
             rateLimitStats.bypassedRequests++;
             return true;
@@ -301,10 +301,10 @@ function shouldSkipRateLimit(req, options = {}) {
 
     // Skip for specific user roles
     if (options.skipRoles && req.user?.roles) {
-        const hasSkipRole = options.skipRoles.some(role => 
+        const hasSkipRole = options.skipRoles.some(role =>
             req.user.roles.includes(role)
         );
-        
+
         if (hasSkipRole) {
             rateLimitStats.bypassedRequests++;
             logger.debug('Rate limit bypassed: User role', {
@@ -428,7 +428,7 @@ function createRateLimiter(options = {}) {
         legacyHeaders: config.legacyHeaders,
         skipSuccessfulRequests: config.skipSuccessfulRequests,
         skipFailedRequests: config.skipFailedRequests,
-        
+
         // Key generator
         keyGenerator: (req) => {
             return generateRateLimitKey(req, config.keyGenerator, {
@@ -545,6 +545,17 @@ const presets = {
     }),
 
     /**
+     * MFA verification rate limiter
+     */
+    mfaVerification: createRateLimiter({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: 10,
+        message: 'Too many MFA verification attempts. Please try again later.',
+        keyGenerator: KEY_GENERATOR_TYPE.COMBINED,
+        skipSuccessfulRequests: true
+    }),
+
+    /**
      * API endpoint rate limiter
      */
     api: createRateLimiter({
@@ -632,7 +643,7 @@ function resetRateLimitStats() {
     rateLimitStats.limitsByEndpoint.clear();
     rateLimitStats.limitsByUser.clear();
     rateLimitStats.limitsByIP.clear();
-    
+
     logger.info('Rate limiting statistics reset');
 }
 
@@ -656,6 +667,7 @@ module.exports.login = presets.login;
 module.exports.registration = presets.registration;
 module.exports.passwordReset = presets.passwordReset;
 module.exports.emailVerification = presets.emailVerification;
+module.exports.mfaVerification = presets.mfaVerification;
 module.exports.api = presets.api;
 module.exports.upload = presets.upload;
 module.exports.search = presets.search;

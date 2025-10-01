@@ -12,8 +12,8 @@ const router = express.Router();
 const OAuthController = require('../controllers/oauth-controller');
 
 // Import middleware
-const { authenticate } = require('../middlewares/authenticate');
-const { rateLimit } = require('../middlewares/rate-limit');
+const { authenticate } = require('../../../../../../shared/lib/auth/middleware/authenticate');
+const rateLimit = require('../../../../../../shared/lib/auth/middleware/rate-limit');
 
 // Import validators
 const { validateOAuthLink, validateOAuthUnlink } = require('../validators/oauth-validators');

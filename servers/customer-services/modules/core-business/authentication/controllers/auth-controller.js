@@ -7,7 +7,7 @@
 
 const logger = require('../../../../../../shared/lib/utils/logger');
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
-const CustomerAuthService = require('../services/customer-auth-service');
+const CustomerAuthService = require('../services/direct-auth-service');
 const AuthResponseDto = require('../dto/auth-response.dto');
 const UserResponseDto = require('../dto/user-response.dto');
 

@@ -12,9 +12,9 @@ const router = express.Router();
 const AuthController = require('../controllers/auth-controller');
 
 // Import middleware
-const { authenticate } = require('../middlewares/authenticate');
-const { validateTenant } = require('../middlewares/validate-tenant');
-const { rateLimit } = require('../middlewares/rate-limit');
+const { authenticate } = require('../../../../../../shared/lib/auth/middleware/authenticate');
+const { validateTenant } = require('../../../../../../shared/lib/auth/middleware/validate-tenant');
+const rateLimit = require('../../../../../../shared/lib/auth/middleware/rate-limit');
 
 // Import validators
 const {
