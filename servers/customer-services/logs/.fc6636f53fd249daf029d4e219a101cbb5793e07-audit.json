@@ -9,6 +9,11 @@
             "date": 1759274676025,
             "name": "/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/logs/app-debug-2025-09-30.log",
             "hash": "1c7b361baa0773f8b3cd5da24dcf286c334d7720fb3a34c6f94d3dbd6056c843"
+        },
+        {
+            "date": 1759301874721,
+            "name": "/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/logs/app-debug-2025-10-01.log",
+            "hash": "ea305d86344f158bf96da1089ce902d7825d681020537806358929074c06834c"
         }
     ],
     "hashType": "sha256"
