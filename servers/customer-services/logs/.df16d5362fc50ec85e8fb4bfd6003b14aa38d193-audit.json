@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/logs/.df16d5362fc50ec85e8fb4bfd6003b14aa38d193-audit.json",
+    "files": [
+        {
+            "date": 1759380239733,
+            "name": "/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/logs/direct-auth-service-error-2025-10-01.log",
+            "hash": "3612d88426a21bb1d1a065b397edc30297a345d349af1874b5c1ae409b414e83"
+        }
+    ],
+    "hashType": "sha256"
+}

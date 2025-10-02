@@ -764,7 +764,21 @@ const userSchemaDefinition = {
   metadata: {
     source: {
       type: String,
-      enum: ['registration', 'invitation', 'import', 'migration', 'api', 'admin']
+      enum: [
+        'registration', 
+        'invitation', 
+        'import', 
+        'migration', 
+        'api', 
+        'admin',
+        'web_client',
+        'web_consultant',
+        'web_candidate',
+        'referral',
+        'linkedin',
+        'job_board',
+        'direct_inquiry'
+      ]
     },
     referrer: String,
     campaign: String,

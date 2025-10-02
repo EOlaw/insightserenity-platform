@@ -1,0 +1,66 @@
+2025-10-01 14:23:31.454 [app] error: AuthService: Failed to get User model
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "this.db.getModel is not a function",
+  "model": "User"
+}
+2025-10-01 14:23:31.455 [app] error: Registration failed
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "User model not found",
+  "email": "john.doe@example.com",
+  "tenantId": {
+    "tenantId": "default",
+    "ipAddress": "127.0.0.1",
+    "userAgent": "PostmanRuntime/7.48.0"
+  },
+  "context": "default"
+}
+2025-10-01 14:26:36.490 [app] error: AuthService: Failed to get User model
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "this.db.getModel is not a function",
+  "model": "User"
+}
+2025-10-01 14:26:36.491 [app] error: Registration failed
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "User model not found",
+  "email": "john.doe@example.com",
+  "tenantId": {
+    "tenantId": "default",
+    "ipAddress": "127.0.0.1",
+    "userAgent": "PostmanRuntime/7.48.0"
+  },
+  "context": "default"
+}
+2025-10-01 14:27:28.668 [app] error: AuthService: Failed to get User model
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "this.db.getModel is not a function",
+  "model": "User"
+}
+2025-10-01 14:27:28.669 [app] error: Registration failed
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "User model not found",
+  "email": "john.doe@example.com",
+  "tenantId": {
+    "tenantId": "default",
+    "ipAddress": "127.0.0.1",
+    "userAgent": "PostmanRuntime/7.48.0"
+  },
+  "context": "default"
+}

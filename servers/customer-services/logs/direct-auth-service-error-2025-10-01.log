@@ -1,0 +1,31 @@
+2025-10-01 23:44:43.412 [direct-auth-service] error: Direct user registration failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "User validation failed: metadata.source: `web_client` is not a valid enum value for path `metadata.source`.",
+  "stack": "ValidationError: User validation failed: metadata.source: `web_client` is not a valid enum value for path `metadata.source`.\n    at Document.invalidate (/Users/eolaw/Desktop/insightserenity-platform/node_modules/mongoose/lib/document.js:3358:32)\n    at /Users/eolaw/Desktop/insightserenity-platform/node_modules/mongoose/lib/document.js:3119:17\n    at /Users/eolaw/Desktop/insightserenity-platform/node_modules/mongoose/lib/schemaType.js:1416:9\n    at process.processTicksAndRejections (node:internal/process/task_queues:85:11)",
+  "email": "john.doe@example.com",
+  "userType": "client"
+}
+2025-10-01 23:50:31.596 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-01 23:50:31.596 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-01 23:50:31.598 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
