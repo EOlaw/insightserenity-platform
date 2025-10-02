@@ -572,3 +572,24 @@
   "version": "1.0.0",
   "error": "logger.error is not a function"
 }
+2025-10-02 06:38:42.288 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:38:42.288 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:38:42.290 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}

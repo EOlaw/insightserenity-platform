@@ -1386,3 +1386,87 @@
   "version": "1.0.0",
   "tokenHash": "a2017d2990..."
 }
+2025-10-02 06:38:41.996 [direct-auth-service] info: Starting direct user registration
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "email": "john.doe@example.com",
+  "userType": "client"
+}
+2025-10-02 06:38:42.287 [direct-auth-service] info: User created successfully
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "userId": "68de64421ec34bfae5426f55",
+  "email": "john.doe@example.com",
+  "userType": "client"
+}
+2025-10-02 06:38:42.288 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:38:42.288 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:38:42.290 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:38:45.117 [direct-auth-service] info: Starting direct user login
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "email": "john.doe@example.com"
+}
+2025-10-02 06:38:45.361 [direct-auth-service] info: Direct user login successful
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "userId": "68de64421ec34bfae5426f55",
+  "email": "john.doe@example.com",
+  "userType": "client"
+}
+2025-10-02 06:39:15.094 [direct-auth-service] info: Logging out user
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "userId": "68de64421ec34bfae5426f55"
+}
+2025-10-02 06:39:15.201 [direct-auth-service] info: User logged out successfully
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "userId": "68de64421ec34bfae5426f55",
+  "tokenExpires": "2025-10-03T11:38:45.000Z"
+}
+2025-10-02 06:39:15.201 [direct-auth-service] info: Logging out user
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "userId": "68de64421ec34bfae5426f55"
+}
+2025-10-02 06:39:15.316 [direct-auth-service] info: User logged out successfully
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "userId": "68de64421ec34bfae5426f55",
+  "tokenExpires": "2025-11-01T11:38:45.000Z"
+}
