@@ -1,96 +1,31 @@
 /**
  * @fileoverview Session Management Routes
  * @module servers/customer-services/modules/core-business/authentication/routes/session-routes
- * @description Handles session management routes
- * @version 1.0.0
  */
 
 const express = require('express');
 const router = express.Router();
 
-// Import controllers
+// Import controller (singleton - same pattern as user-routes)
 const SessionController = require('../controllers/session-controller');
 
-// Import middleware
-const { authenticate } = require('../../../../../../shared/lib/auth/middleware/authenticate');
-const rateLimit = require('../../../../../../shared/lib/auth/middleware/rate-limit');
-
 /**
- * @route   GET /api/auth/sessions
- * @desc    List active sessions
- * @access  Protected
+ * Session routes
+ * Base path: /api/v1/auth/session
  */
-router.get(
-    '/',
-    authenticate(),
-    SessionController.listActiveSessions
-);
 
-/**
- * @route   GET /api/auth/sessions/stats
- * @desc    Get session statistics
- * @access  Protected
- */
-router.get(
-    '/stats',
-    authenticate(),
-    SessionController.getSessionStatistics
-);
+// Public routes
+router.post('/refresh', SessionController.refreshToken.bind(SessionController));
 
-/**
- * @route   GET /api/auth/sessions/:sessionId
- * @desc    Get specific session details
- * @access  Protected
- */
-router.get(
-    '/:sessionId',
-    authenticate(),
-    SessionController.getSessionDetails
-);
-
-/**
- * @route   DELETE /api/auth/sessions/:sessionId
- * @desc    Terminate specific session
- * @access  Protected
- */
-router.delete(
-    '/:sessionId',
-    authenticate(),
-    SessionController.terminateSession
-);
-
-/**
- * @route   DELETE /api/auth/sessions
- * @desc    Terminate all sessions
- * @access  Protected
- */
-router.delete(
-    '/',
-    authenticate(),
-    SessionController.terminateAllSessions
-);
-
-/**
- * @route   POST /api/auth/sessions/refresh-activity
- * @desc    Refresh session activity
- * @access  Protected
- */
-router.post(
-    '/refresh-activity',
-    authenticate(),
-    rateLimit.api,
-    SessionController.refreshSessionActivity
-);
-
-/**
- * @route   POST /api/auth/sessions/:sessionId/report
- * @desc    Report suspicious session
- * @access  Protected
- */
-router.post(
-    '/:sessionId/report',
-    authenticate(),
-    SessionController.reportSuspiciousSession
-);
+// Protected routes (require authentication middleware)
+router.get('/', SessionController.getCurrentSession.bind(SessionController));
+router.get('/all', SessionController.getAllSessions.bind(SessionController));
+router.post('/logout', SessionController.logout.bind(SessionController));
+router.delete('/:sessionId', SessionController.terminateSession.bind(SessionController));
+router.post('/terminate-all', SessionController.terminateAllSessions.bind(SessionController));
+router.get('/activity', SessionController.getSessionActivity.bind(SessionController));
+router.post('/trust-device', SessionController.trustDevice.bind(SessionController));
+router.delete('/trust-device/:deviceId', SessionController.removeTrustedDevice.bind(SessionController));
+router.get('/trusted-devices', SessionController.getTrustedDevices.bind(SessionController));
 
 module.exports = router;

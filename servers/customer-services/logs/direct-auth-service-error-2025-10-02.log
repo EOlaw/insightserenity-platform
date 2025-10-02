@@ -1,0 +1,313 @@
+2025-10-02 00:39:25.814 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 00:43:14.184 [direct-auth-service] error: Direct user registration failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "E11000 duplicate key error collection: insightserenity_customer_dev.users index: username_1 dup key: { username: \"johndoe\" }",
+  "stack": "MongoServerError: E11000 duplicate key error collection: insightserenity_customer_dev.users index: username_1 dup key: { username: \"johndoe\" }\n    at InsertOneOperation.execute (/Users/eolaw/Desktop/insightserenity-platform/node_modules/mongoose/node_modules/mongodb/lib/operations/insert.js:51:19)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async tryOperation (/Users/eolaw/Desktop/insightserenity-platform/node_modules/mongoose/node_modules/mongodb/lib/operations/execute_operation.js:207:20)\n    at async executeOperation (/Users/eolaw/Desktop/insightserenity-platform/node_modules/mongoose/node_modules/mongodb/lib/operations/execute_operation.js:75:16)\n    at async Collection.insertOne (/Users/eolaw/Desktop/insightserenity-platform/node_modules/mongoose/node_modules/mongodb/lib/collection.js:157:16)",
+  "email": "john.doe@example.com",
+  "userType": "client"
+}
+2025-10-02 00:43:41.628 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 00:51:35.991 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 00:51:35.991 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 00:51:35.994 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 00:51:39.726 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 00:57:34.089 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 00:58:09.751 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 00:58:09.751 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 00:58:09.753 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 00:58:12.339 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 00:59:40.196 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 01:00:41.295 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 01:00:41.295 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 01:00:41.297 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 01:01:14.911 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 01:16:28.152 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 01:16:28.153 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 01:16:28.155 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 01:16:31.882 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 01:43:17.621 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 02:16:38.425 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 02:16:38.425 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 02:16:38.427 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 02:16:45.734 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 02:20:13.297 [direct-auth-service] error: Direct user registration failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Validation failed",
+  "stack": "AppError: Validation failed\n    at AppError.validation (/Users/eolaw/Desktop/insightserenity-platform/shared/lib/utils/app-error.js:946:16)\n    at DirectAuthService._validateRegistrationData (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/modules/core-business/authentication/services/direct-auth-service.js:396:28)\n    at DirectAuthService.registerDirectUser (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/modules/core-business/authentication/services/direct-auth-service.js:103:18)\n    at AuthController.registerUser (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/modules/core-business/authentication/controllers/auth-controller.js:70:52)\n    at Layer.handle [as handle_request] (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/express/lib/router/layer.js:95:5)\n    at next (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/express/lib/router/route.js:149:13)\n    at Route.dispatch (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/express/lib/router/route.js:119:3)\n    at Layer.handle [as handle_request] (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/express/lib/router/layer.js:95:5)\n    at /Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/express/lib/router/index.js:284:15\n    at router.process_params (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/express/lib/router/index.js:346:12)",
+  "email": "john.doe@example.com",
+  "userType": "client"
+}
+2025-10-02 02:20:27.848 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 02:20:27.848 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 02:20:27.850 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 02:20:43.250 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 02:28:42.293 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 02:28:42.293 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 02:28:42.295 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 02:28:49.697 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 03:01:17.062 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 03:01:17.063 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 03:01:17.064 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 03:01:20.802 [direct-auth-service] error: Direct user login failed
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Invalid credentials",
+  "email": "john.doe@example.com"
+}
+2025-10-02 03:04:35.039 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 03:04:35.039 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 03:04:35.041 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}

@@ -27,14 +27,15 @@ router.use('/', authRoutes);
 // MFA routes (/api/auth/mfa/*)
 router.use('/mfa', mfaRoutes);
 
+// OAuth routes (/api/auth/oauth/*)
+router.use('/oauth', oauthRoutes);
+
 // Password routes (/api/auth/password/*)
 router.use('/password', passwordRoutes);
 
 // Session routes (/api/auth/sessions/*)
+router.use('/session', sessionRoutes);
 router.use('/sessions', sessionRoutes);
-
-// OAuth routes (/api/auth/oauth/*)
-router.use('/oauth', oauthRoutes);
 
 // Verification routes (/api/auth/verify/*)
 router.use('/verify', verificationRoutes);

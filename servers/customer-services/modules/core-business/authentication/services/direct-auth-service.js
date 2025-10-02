@@ -118,7 +118,7 @@ class DirectAuthService {
             const userDocument = {
                 email: userData.email.toLowerCase(),
                 username: userData.username ? userData.username.toLowerCase() : undefined,
-                password: await this._hashPassword(userData.password),
+                password: userData.password,  // Let User model pre-save middleware handle hashing
                 phoneNumber: userData.phoneNumber,
 
                 // Profile (required fields)
@@ -267,7 +267,12 @@ class DirectAuthService {
             }
 
             // Verify password
+            console.log('DEBUG - Login password attempt:', password);
+            console.log('DEBUG - Stored hash:', user.password);
+            console.log('DEBUG - Hash exists:', !!user.password);
+
             const isPasswordValid = await user.comparePassword(password);
+            console.log('DEBUG - Password valid:', isPasswordValid);
             if (!isPasswordValid) {
                 if (typeof user.incrementLoginAttempts === 'function') {
                     await user.incrementLoginAttempts();
@@ -433,9 +438,9 @@ class DirectAuthService {
     }
 
     _getUserTypeFromUser(user) {
-        return user.metadata?.userType || 
-               user.customFields?.userType ||
-               DIRECT_USER_TYPES.CLIENT;
+        return user.metadata?.userType ||
+            user.customFields?.userType ||
+            DIRECT_USER_TYPES.CLIENT;
     }
 
     _getRegistrationNextSteps(userType, user) {
@@ -609,7 +614,7 @@ class DirectAuthService {
         if (user.toSafeJSON) return user.toSafeJSON();
 
         const userObject = user.toObject ? user.toObject() : user;
-        
+
         delete userObject.password;
         delete userObject.passwordHistory;
         delete userObject.security?.passwordReset;

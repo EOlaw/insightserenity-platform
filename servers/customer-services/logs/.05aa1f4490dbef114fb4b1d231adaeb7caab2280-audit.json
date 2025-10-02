@@ -9,6 +9,11 @@
             "date": 1759380239734,
             "name": "/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/logs/direct-auth-service-debug-2025-10-01.log",
             "hash": "d200d7be57a72bce985bf2f547278fa01c77ee7e70b633fa940709e21bd7a18e"
+        },
+        {
+            "date": 1759381899089,
+            "name": "/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/logs/direct-auth-service-debug-2025-10-02.log",
+            "hash": "4b25b70c376a4f88b5e19ac38e56c02965420eb63eb6dc333008df8b8e92674a"
         }
     ],
     "hashType": "sha256"

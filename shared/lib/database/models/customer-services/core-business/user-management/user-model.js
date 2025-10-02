@@ -24,6 +24,7 @@ const HashService = require('../../../../../security/encryption/hash-service');
 const CommonValidator = require('../../../../../utils/validators/common-validators');
 const stringHelper = require('../../../../../utils/helpers/string-helper');
 const TwoFactorService = require('../../../../../auth/services/two-factor-service');
+const { buffer } = require('stream/consumers');
 
 const { Schema } = mongoose;
 
@@ -56,6 +57,13 @@ const userSchemaDefinition = {
       validator: CommonValidator.isEmail,
       message: 'Invalid email address'
     }
+  },
+
+  tenantId: {
+    type: String,
+    required: true,
+    index: true,
+    default: 'default'
   },
 
   alternateEmails: [{
@@ -814,6 +822,9 @@ const userSchema = new Schema(userSchemaDefinition, {
 
 // ==================== Indexes ====================
 userSchema.index({ email: 1, 'accountStatus.status': 1 });
+userSchema.index({ email: 1, tenantId: 1 }); // Add tenantId to this index
+userSchema.index({ 'accountStatus.status': 1, tenantId: 1 });
+userSchema.index({ tenantId: 1, 'organizations.organizationId': 1 });
 userSchema.index({ 'organizations.organizationId': 1, 'organizations.status': 1 });
 userSchema.index({ 'organizations.tenantId': 1 });
 userSchema.index({ 'profile.firstName': 1, 'profile.lastName': 1 });
@@ -874,6 +885,10 @@ userSchema.pre('save', async function(next) {
     // Hash password if modified
     if (this.isModified('password')) {
       // Check password policy
+      console.log('DEBUG - Password being saved (first 10 chars):', this.password.substring(0, 10));
+      console.log('DEBUG - REGISTRATION: Password being saved:', this.password);
+      console.log('DEBUG - REGISTRATION: Password length:', this.password.length);
+      console.log('DEBUG - REGISTRATION: Password bytes:', Buffer.from(this.password).toString('hex'));
       await this.validatePasswordPolicy(this.password);
       
       // Add to password history

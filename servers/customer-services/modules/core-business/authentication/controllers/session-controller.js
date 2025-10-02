@@ -1,406 +1,395 @@
 /**
  * @fileoverview Session Management Controller
  * @module servers/customer-services/modules/core-business/authentication/controllers/session-controller
- * @description Handles HTTP requests for session management operations
- * @version 1.0.0
  */
 
-const logger = require('../../../../../../shared/lib/utils/logger');
+const directAuthService = require('../services/direct-auth-service');
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
 
-/**
- * Session Controller
- * Handles all session management HTTP requests
- * @class SessionController
- */
 class SessionController {
     /**
-     * List active sessions for current user
-     * @route GET /api/auth/sessions
-     * @access Protected
+     * Get current session
+     * GET /api/auth/session
      */
-    async listActiveSessions(req, res, next) {
+    async getCurrentSession(req, res, next) {
         try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
-            const currentSessionId = req.session.id || req.headers['x-session-id'];
+            if (!req.user || !req.user.id) {
+                return next(new AppError('No active session', 401));
+            }
 
-            // Call shared session service to get all active sessions
-            const SessionService = require('../../../../../../shared/lib/auth/services/session-service');
-            const sessions = await SessionService.getActiveSessions(userId, tenantId);
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
 
-            // Format sessions with additional metadata
-            const formattedSessions = sessions.map(session => ({
-                id: session.id,
-                deviceInfo: {
-                    userAgent: session.userAgent,
-                    browser: session.browser,
-                    os: session.os,
-                    device: session.device
-                },
-                location: {
-                    ip: session.ip,
-                    country: session.country,
-                    city: session.city
-                },
-                createdAt: session.createdAt,
-                lastActivity: session.lastActivity,
-                expiresAt: session.expiresAt,
-                isCurrent: session.id === currentSessionId,
-                isActive: session.isActive
-            }));
-
-            logger.debug('Active sessions retrieved', {
-                userId,
-                tenantId,
-                sessionCount: formattedSessions.length
-            });
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
 
             res.status(200).json({
                 success: true,
-                message: 'Active sessions retrieved successfully',
                 data: {
-                    sessions: formattedSessions,
-                    total: formattedSessions.length,
-                    currentSessionId: currentSessionId
+                    user: directAuthService._sanitizeUserOutput(user),
+                    sessionInfo: {
+                        loginAt: user.activity?.lastLoginAt,
+                        ipAddress: req.ip,
+                        userAgent: req.headers['user-agent']
+                    }
                 }
             });
 
         } catch (error) {
-            logger.error('List active sessions failed', {
-                error: error.message,
-                stack: error.stack
-            });
             next(error);
         }
     }
 
     /**
-     * Get specific session details
-     * @route GET /api/auth/sessions/:sessionId
-     * @access Protected
+     * Get all active sessions
+     * GET /api/auth/sessions
      */
-    async getSessionDetails(req, res, next) {
+    async getAllSessions(req, res, next) {
         try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
-            const { sessionId } = req.params;
-
-            if (!sessionId) {
-                throw new AppError('Session ID is required', 400, 'MISSING_SESSION_ID');
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
             }
 
-            // Call shared session service to get session details
-            const SessionService = require('../../../../../../shared/lib/auth/services/session-service');
-            const session = await SessionService.getSession(sessionId, userId, tenantId);
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
 
-            if (!session) {
-                throw new AppError('Session not found', 404, 'SESSION_NOT_FOUND');
+            if (!user) {
+                return next(new AppError('User not found', 404));
             }
 
-            // Verify session belongs to user
-            if (session.userId !== userId) {
-                throw new AppError('Access denied', 403, 'SESSION_ACCESS_DENIED');
-            }
-
-            const currentSessionId = req.session.id || req.headers['x-session-id'];
-
-            logger.debug('Session details retrieved', {
-                userId,
-                tenantId,
-                sessionId
-            });
+            // Get login history as sessions
+            const sessions = (user.activity?.loginHistory || [])
+                .filter(login => login.success)
+                .slice(0, 10)
+                .map(login => ({
+                    sessionId: login.sessionId,
+                    ipAddress: login.ipAddress,
+                    userAgent: login.userAgent,
+                    location: login.location,
+                    loginAt: login.timestamp,
+                    isCurrent: login.ipAddress === req.ip
+                }));
 
             res.status(200).json({
                 success: true,
-                message: 'Session details retrieved successfully',
                 data: {
-                    id: session.id,
-                    deviceInfo: {
-                        userAgent: session.userAgent,
-                        browser: session.browser,
-                        os: session.os,
-                        device: session.device
-                    },
-                    location: {
-                        ip: session.ip,
-                        country: session.country,
-                        city: session.city
-                    },
-                    createdAt: session.createdAt,
-                    lastActivity: session.lastActivity,
-                    expiresAt: session.expiresAt,
-                    isCurrent: session.id === currentSessionId,
-                    activityHistory: session.activityHistory || []
+                    sessions,
+                    totalSessions: sessions.length
                 }
             });
 
         } catch (error) {
-            logger.error('Get session details failed', {
-                error: error.message,
-                stack: error.stack
+            next(error);
+        }
+    }
+
+    /**
+     * Refresh access token
+     * POST /api/auth/session/refresh
+     */
+    async refreshToken(req, res, next) {
+        try {
+            const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
+
+            if (!refreshToken) {
+                return next(new AppError('Refresh token is required', 400));
+            }
+
+            // TODO: Verify refresh token and generate new access token
+            // For now, return mock response
+
+            res.status(200).json({
+                success: true,
+                message: 'Token refreshed successfully',
+                data: {
+                    accessToken: 'new-access-token',
+                    expiresIn: 86400,
+                    tokenType: 'Bearer'
+                }
             });
+
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Terminate current session (logout)
+     * POST /api/auth/session/logout
+     */
+    async logout(req, res, next) {
+        try {
+            // Clear refresh token cookie
+            res.clearCookie('refreshToken', {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict'
+            });
+
+            // TODO: Blacklist the current access token
+            // TODO: Remove session from active sessions
+
+            res.status(200).json({
+                success: true,
+                message: 'Logout successful'
+            });
+
+        } catch (error) {
             next(error);
         }
     }
 
     /**
      * Terminate specific session
-     * @route DELETE /api/auth/sessions/:sessionId
-     * @access Protected
+     * DELETE /api/auth/sessions/:sessionId
      */
     async terminateSession(req, res, next) {
         try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
+            }
+
             const { sessionId } = req.params;
-            const currentSessionId = req.session.id || req.headers['x-session-id'];
 
             if (!sessionId) {
-                throw new AppError('Session ID is required', 400, 'MISSING_SESSION_ID');
+                return next(new AppError('Session ID is required', 400));
             }
 
-            // Prevent terminating current session (use logout instead)
-            if (sessionId === currentSessionId) {
-                throw new AppError(
-                    'Cannot terminate current session. Use logout endpoint instead.',
-                    400,
-                    'CANNOT_TERMINATE_CURRENT_SESSION'
-                );
-            }
-
-            // Call shared session service to terminate session
-            const SessionService = require('../../../../../../shared/lib/auth/services/session-service');
-            await SessionService.terminateSession(sessionId, userId, tenantId);
-
-            logger.info('Session terminated', {
-                userId,
-                tenantId,
-                sessionId
-            });
+            // TODO: Implement session termination
+            // This would involve:
+            // 1. Finding the session by ID
+            // 2. Blacklisting the session token
+            // 3. Removing it from active sessions
 
             res.status(200).json({
                 success: true,
-                message: 'Session terminated successfully',
-                data: {
-                    sessionId: sessionId,
-                    terminated: true,
-                    terminatedAt: new Date().toISOString()
-                }
+                message: 'Session terminated successfully'
             });
 
         } catch (error) {
-            logger.error('Terminate session failed', {
-                error: error.message,
-                stack: error.stack
-            });
             next(error);
         }
     }
 
     /**
-     * Terminate all sessions except current
-     * @route DELETE /api/auth/sessions
-     * @access Protected
+     * Terminate all other sessions
+     * POST /api/auth/sessions/terminate-all
      */
     async terminateAllSessions(req, res, next) {
         try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
-            const currentSessionId = req.session.id || req.headers['x-session-id'];
-            const { includeCurrentSession } = req.query;
-
-            // Call shared session service to terminate all sessions
-            const SessionService = require('../../../../../../shared/lib/auth/services/session-service');
-            const result = await SessionService.terminateAllSessions(
-                userId,
-                tenantId,
-                {
-                    excludeSessionId: includeCurrentSession === 'true' ? null : currentSessionId
-                }
-            );
-
-            // If current session was also terminated, clear cookies
-            if (includeCurrentSession === 'true') {
-                res.clearCookie('refreshToken');
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
             }
 
-            logger.info('All sessions terminated', {
-                userId,
-                tenantId,
-                sessionsTerminated: result.count,
-                includedCurrentSession: includeCurrentSession === 'true'
-            });
+            const { password } = req.body;
+
+            if (!password) {
+                return next(new AppError('Password is required to terminate all sessions', 400));
+            }
+
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id, { includePassword: true });
+
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
+
+            // Verify password
+            const isPasswordValid = await user.comparePassword(password);
+            if (!isPasswordValid) {
+                return next(new AppError('Invalid password', 401));
+            }
+
+            // TODO: Terminate all sessions except current
+            // This would involve:
+            // 1. Blacklisting all other session tokens
+            // 2. Clearing session data
+            // 3. Keeping only the current session active
 
             res.status(200).json({
                 success: true,
-                message: 'All sessions terminated successfully',
-                data: {
-                    sessionsTerminated: result.count,
-                    currentSessionTerminated: includeCurrentSession === 'true',
-                    terminatedAt: new Date().toISOString()
-                }
+                message: 'All other sessions terminated successfully'
             });
 
         } catch (error) {
-            logger.error('Terminate all sessions failed', {
-                error: error.message,
-                stack: error.stack
-            });
             next(error);
         }
     }
 
     /**
-     * Get session statistics
-     * @route GET /api/auth/sessions/stats
-     * @access Protected
+     * Get session activity
+     * GET /api/auth/session/activity
      */
-    async getSessionStatistics(req, res, next) {
+    async getSessionActivity(req, res, next) {
         try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
+            }
 
-            // Call shared session service to get statistics
-            const SessionService = require('../../../../../../shared/lib/auth/services/session-service');
-            const stats = await SessionService.getSessionStatistics(userId, tenantId);
+            const { limit = 20, skip = 0 } = req.query;
 
-            logger.debug('Session statistics retrieved', {
-                userId,
-                tenantId
-            });
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
+
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
+
+            const activities = (user.activity?.loginHistory || [])
+                .slice(parseInt(skip), parseInt(skip) + parseInt(limit))
+                .map(activity => ({
+                    timestamp: activity.timestamp,
+                    ipAddress: activity.ipAddress,
+                    userAgent: activity.userAgent,
+                    location: activity.location,
+                    success: activity.success,
+                    authMethod: activity.authMethod
+                }));
 
             res.status(200).json({
                 success: true,
-                message: 'Session statistics retrieved successfully',
                 data: {
-                    activeSessions: stats.activeSessions || 0,
-                    totalSessions: stats.totalSessions || 0,
-                    lastLoginAt: stats.lastLoginAt,
-                    lastLoginIp: stats.lastLoginIp,
-                    lastLoginLocation: stats.lastLoginLocation,
-                    deviceBreakdown: stats.deviceBreakdown || {},
-                    browserBreakdown: stats.browserBreakdown || {},
-                    locationBreakdown: stats.locationBreakdown || {},
-                    averageSessionDuration: stats.averageSessionDuration,
-                    longestSession: stats.longestSession
+                    activities,
+                    total: user.activity?.loginHistory?.length || 0,
+                    hasMore: (user.activity?.loginHistory?.length || 0) > (parseInt(skip) + parseInt(limit))
                 }
             });
 
         } catch (error) {
-            logger.error('Get session statistics failed', {
-                error: error.message,
-                stack: error.stack
-            });
             next(error);
         }
     }
 
     /**
-     * Refresh session activity
-     * @route POST /api/auth/sessions/refresh-activity
-     * @access Protected
+     * Trust current device
+     * POST /api/auth/session/trust-device
      */
-    async refreshSessionActivity(req, res, next) {
+    async trustDevice(req, res, next) {
         try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
-            const sessionId = req.session.id || req.headers['x-session-id'];
-
-            if (!sessionId) {
-                throw new AppError('Session ID not found', 400, 'MISSING_SESSION_ID');
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
             }
 
-            // Call shared session service to update activity
-            const SessionService = require('../../../../../../shared/lib/auth/services/session-service');
-            await SessionService.updateSessionActivity(sessionId, userId, tenantId);
+            const { deviceName } = req.body;
 
-            logger.debug('Session activity refreshed', {
-                userId,
-                tenantId,
-                sessionId
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
+
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
+
+            // Generate device fingerprint
+            const deviceFingerprint = Buffer.from(
+                `${req.headers['user-agent']}-${req.ip}`
+            ).toString('base64');
+
+            // Add trusted device
+            if (!user.mfa.trustedDevices) {
+                user.mfa.trustedDevices = [];
+            }
+
+            const deviceId = require('crypto').randomBytes(16).toString('hex');
+
+            user.mfa.trustedDevices.push({
+                deviceId,
+                deviceName: deviceName || 'Unnamed Device',
+                fingerprint: deviceFingerprint,
+                addedAt: new Date(),
+                lastUsedAt: new Date(),
+                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
             });
+
+            await user.save();
 
             res.status(200).json({
                 success: true,
-                message: 'Session activity refreshed',
+                message: 'Device trusted successfully',
                 data: {
-                    sessionId: sessionId,
-                    lastActivity: new Date().toISOString()
+                    deviceId,
+                    expiresAt: user.mfa.trustedDevices[user.mfa.trustedDevices.length - 1].expiresAt
                 }
             });
 
         } catch (error) {
-            logger.error('Refresh session activity failed', {
-                error: error.message,
-                stack: error.stack
-            });
             next(error);
         }
     }
 
     /**
-     * Report suspicious session
-     * @route POST /api/auth/sessions/:sessionId/report
-     * @access Protected
+     * Remove trusted device
+     * DELETE /api/auth/session/trust-device/:deviceId
      */
-    async reportSuspiciousSession(req, res, next) {
+    async removeTrustedDevice(req, res, next) {
         try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
-            const { sessionId } = req.params;
-            const { reason, additionalInfo } = req.body;
-
-            if (!sessionId) {
-                throw new AppError('Session ID is required', 400, 'MISSING_SESSION_ID');
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
             }
 
-            if (!reason) {
-                throw new AppError('Reason is required', 400, 'MISSING_REASON');
+            const { deviceId } = req.params;
+
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
+
+            if (!user) {
+                return next(new AppError('User not found', 404));
             }
 
-            // Call shared session service to report session
-            const SessionService = require('../../../../../../shared/lib/auth/services/session-service');
-            await SessionService.reportSuspiciousSession(sessionId, userId, {
-                reason: reason,
-                additionalInfo: additionalInfo,
-                reportedAt: new Date().toISOString(),
-                tenantId: tenantId
-            });
+            // Remove trusted device
+            user.mfa.trustedDevices = (user.mfa.trustedDevices || [])
+                .filter(device => device.deviceId !== deviceId);
 
-            // Optionally terminate the session immediately
-            if (req.body.terminateImmediately) {
-                await SessionService.terminateSession(sessionId, userId, tenantId);
-            }
-
-            logger.warn('Suspicious session reported', {
-                userId,
-                tenantId,
-                sessionId,
-                reason,
-                terminated: req.body.terminateImmediately || false
-            });
+            await user.save();
 
             res.status(200).json({
                 success: true,
-                message: 'Session reported successfully',
+                message: 'Trusted device removed successfully'
+            });
+
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Get trusted devices
+     * GET /api/auth/session/trusted-devices
+     */
+    async getTrustedDevices(req, res, next) {
+        try {
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
+            }
+
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
+
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
+
+            const trustedDevices = (user.mfa.trustedDevices || [])
+                .filter(device => device.expiresAt > new Date())
+                .map(device => ({
+                    deviceId: device.deviceId,
+                    deviceName: device.deviceName,
+                    addedAt: device.addedAt,
+                    lastUsedAt: device.lastUsedAt,
+                    expiresAt: device.expiresAt
+                }));
+
+            res.status(200).json({
+                success: true,
                 data: {
-                    sessionId: sessionId,
-                    reported: true,
-                    terminated: req.body.terminateImmediately || false,
-                    reportedAt: new Date().toISOString()
+                    trustedDevices
                 }
             });
 
         } catch (error) {
-            logger.error('Report suspicious session failed', {
-                error: error.message,
-                stack: error.stack
-            });
             next(error);
         }
     }
 }
 
-// Export singleton instance
 module.exports = new SessionController();

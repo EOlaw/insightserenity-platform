@@ -1,506 +1,478 @@
 /**
- * @fileoverview Verification Controller
+ * @fileoverview Account Verification Controller
  * @module servers/customer-services/modules/core-business/authentication/controllers/verification-controller
- * @description Handles HTTP requests for email and phone verification operations
- * @version 1.0.0
  */
 
-const logger = require('../../../../../../shared/lib/utils/logger');
+const directAuthService = require('../services/direct-auth-service');
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
 
-/**
- * Verification Controller
- * Handles all verification-related HTTP requests
- * @class VerificationController
- */
 class VerificationController {
     /**
-     * Verify email address with token
-     * @route POST /api/auth/verify/email
-     * @access Public
+     * Verify email with token
+     * POST /api/auth/verify/email
      */
     async verifyEmail(req, res, next) {
         try {
             const { token, email } = req.body;
 
             if (!token) {
-                throw new AppError('Verification token is required', 400, 'MISSING_TOKEN');
+                return next(new AppError('Verification token is required', 400));
             }
 
-            // Call shared auth service for email verification
-            const AuthService = require('../../../../../../shared/lib/auth/services/auth-service');
-            const result = await AuthService.verifyEmail(token, email);
+            const dbService = directAuthService._getDatabaseService();
+            
+            // Find user by email if provided, otherwise find by token
+            let user;
+            if (email) {
+                user = await dbService.findByEmail(email);
+            } else {
+                // TODO: Find user by verification token
+                return next(new AppError('Email is required', 400));
+            }
 
-            logger.info('Email verification successful', {
-                email: result.email,
-                userId: result.userId
-            });
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
+
+            // Verify email
+            await user.verifyEmail(token);
 
             res.status(200).json({
                 success: true,
                 message: 'Email verified successfully',
                 data: {
-                    email: result.email,
-                    verified: true,
-                    verifiedAt: new Date().toISOString()
+                    emailVerified: true,
+                    accountStatus: user.accountStatus?.status
                 }
             });
 
         } catch (error) {
-            logger.error('Email verification failed', {
-                error: error.message,
-                stack: error.stack
-            });
-            next(error);
-        }
-    }
-
-    /**
-     * Verify email with code (alternative method)
-     * @route POST /api/auth/verify/email/code
-     * @access Public
-     */
-    async verifyEmailWithCode(req, res, next) {
-        try {
-            const { email, code } = req.body;
-            const tenantId = req.headers['x-tenant-id'] || req.body.tenantId;
-
-            if (!email) {
-                throw new AppError('Email is required', 400, 'MISSING_EMAIL');
-            }
-
-            if (!code) {
-                throw new AppError('Verification code is required', 400, 'MISSING_CODE');
-            }
-
-            // Call shared auth service for email verification with code
-            const AuthService = require('../../../../../../shared/lib/auth/services/auth-service');
-            const result = await AuthService.verifyEmailWithCode(email, code, tenantId);
-
-            logger.info('Email verification with code successful', {
-                email: email,
-                userId: result.userId
-            });
-
-            res.status(200).json({
-                success: true,
-                message: 'Email verified successfully',
-                data: {
-                    email: email,
-                    verified: true,
-                    verifiedAt: new Date().toISOString()
-                }
-            });
-
-        } catch (error) {
-            logger.error('Email verification with code failed', {
-                error: error.message,
-                stack: error.stack
-            });
             next(error);
         }
     }
 
     /**
      * Resend email verification
-     * @route POST /api/auth/verify/email/resend
-     * @access Public
+     * POST /api/auth/verify/email/resend
      */
     async resendEmailVerification(req, res, next) {
         try {
             const { email } = req.body;
-            const tenantId = req.headers['x-tenant-id'] || req.body.tenantId;
 
             if (!email) {
-                throw new AppError('Email is required', 400, 'MISSING_EMAIL');
+                return next(new AppError('Email is required', 400));
             }
 
-            // Call shared auth service to resend verification
-            const AuthService = require('../../../../../../shared/lib/auth/services/auth-service');
-            await AuthService.resendEmailVerification(email, tenantId);
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findByEmail(email);
 
-            logger.info('Verification email resent', {
-                email,
-                tenantId
-            });
+            if (!user) {
+                // Don't reveal if user exists
+                return res.status(200).json({
+                    success: true,
+                    message: 'If an account exists with this email, a verification email has been sent'
+                });
+            }
+
+            if (user.verification?.email?.verified) {
+                return next(new AppError('Email is already verified', 400));
+            }
+
+            // Check verification attempts
+            if (user.verification.email.attempts >= 5) {
+                return next(new AppError('Too many verification attempts. Please contact support', 429));
+            }
+
+            // Generate new verification token
+            const verificationToken = await user.generateEmailVerificationToken();
+            user.verification.email.attempts += 1;
+            await user.save();
+
+            // TODO: Send verification email
+            // await NotificationService.sendEmail({
+            //     to: user.email,
+            //     template: 'email-verification',
+            //     data: { 
+            //         verificationToken, 
+            //         verificationUrl: `${process.env.PLATFORM_URL}/verify-email?token=${verificationToken}`
+            //     }
+            // });
 
             res.status(200).json({
                 success: true,
                 message: 'Verification email sent successfully',
-                data: {
-                    email: email,
-                    message: 'Please check your email for the verification link'
-                }
+                // In development, return token for testing
+                ...(process.env.NODE_ENV === 'development' && { verificationToken })
             });
 
         } catch (error) {
-            logger.error('Resend email verification failed', {
-                error: error.message,
-                stack: error.stack
-            });
-            next(error);
-        }
-    }
-
-    /**
-     * Check email verification status
-     * @route GET /api/auth/verify/email/status
-     * @access Public
-     */
-    async checkEmailVerificationStatus(req, res, next) {
-        try {
-            const { email } = req.query;
-            const tenantId = req.headers['x-tenant-id'];
-
-            if (!email) {
-                throw new AppError('Email is required', 400, 'MISSING_EMAIL');
-            }
-
-            // Call shared auth service to check status
-            const AuthService = require('../../../../../../shared/lib/auth/services/auth-service');
-            const status = await AuthService.getEmailVerificationStatus(email, tenantId);
-
-            logger.debug('Email verification status checked', {
-                email,
-                isVerified: status.isVerified
-            });
-
-            res.status(200).json({
-                success: true,
-                message: 'Email verification status retrieved',
-                data: {
-                    email: email,
-                    isVerified: status.isVerified,
-                    verifiedAt: status.verifiedAt,
-                    canResend: status.canResend,
-                    nextResendAvailableAt: status.nextResendAvailableAt
-                }
-            });
-
-        } catch (error) {
-            logger.error('Check email verification status failed', {
-                error: error.message,
-                stack: error.stack
-            });
             next(error);
         }
     }
 
     /**
      * Send phone verification code
-     * @route POST /api/auth/verify/phone/send
-     * @access Protected
+     * POST /api/auth/verify/phone/send
      */
-    async sendPhoneVerificationCode(req, res, next) {
+    async sendPhoneVerification(req, res, next) {
         try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
-            const { phoneNumber, method } = req.body;
-
-            if (!phoneNumber) {
-                throw new AppError('Phone number is required', 400, 'MISSING_PHONE_NUMBER');
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
             }
 
-            // Method can be 'sms' or 'call'
-            const verificationMethod = method || 'sms';
+            const { phoneNumber } = req.body;
 
-            // Call shared verification service to send code
-            const VerificationService = require('../../../../../../shared/lib/auth/services/verification-service');
-            const result = await VerificationService.sendPhoneVerificationCode(
-                userId,
-                phoneNumber,
-                verificationMethod,
-                tenantId
-            );
+            if (!phoneNumber) {
+                return next(new AppError('Phone number is required', 400));
+            }
 
-            logger.info('Phone verification code sent', {
-                userId,
-                phoneNumber: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
-                method: verificationMethod,
-                tenantId
-            });
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
+
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
+
+            // Generate verification code
+            const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+            user.verification.phone = {
+                verified: false,
+                code: verificationCode, // In production, hash this
+                codeExpires: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+                attempts: 0
+            };
+
+            user.phoneNumber = phoneNumber;
+            await user.save();
+
+            // TODO: Send SMS with verification code
+            // await NotificationService.sendSMS({
+            //     to: phoneNumber,
+            //     message: `Your verification code is: ${verificationCode}`
+            // });
 
             res.status(200).json({
                 success: true,
-                message: `Verification code sent via ${verificationMethod}`,
-                data: {
-                    phoneNumber: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
-                    verificationId: result.verificationId,
-                    expiresIn: result.expiresIn,
-                    method: verificationMethod,
-                    canResendAt: result.canResendAt
-                }
+                message: 'Verification code sent successfully',
+                // In development, return code for testing
+                ...(process.env.NODE_ENV === 'development' && { verificationCode })
             });
 
         } catch (error) {
-            logger.error('Send phone verification code failed', {
-                error: error.message,
-                stack: error.stack
-            });
             next(error);
         }
     }
 
     /**
-     * Verify phone number with code
-     * @route POST /api/auth/verify/phone
-     * @access Protected
+     * Verify phone with code
+     * POST /api/auth/verify/phone
      */
     async verifyPhone(req, res, next) {
         try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
-            const { phoneNumber, code, verificationId } = req.body;
-
-            if (!phoneNumber) {
-                throw new AppError('Phone number is required', 400, 'MISSING_PHONE_NUMBER');
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
             }
+
+            const { code } = req.body;
 
             if (!code) {
-                throw new AppError('Verification code is required', 400, 'MISSING_CODE');
+                return next(new AppError('Verification code is required', 400));
             }
 
-            // Call shared verification service to verify phone
-            const VerificationService = require('../../../../../../shared/lib/auth/services/verification-service');
-            const result = await VerificationService.verifyPhone(
-                userId,
-                phoneNumber,
-                code,
-                verificationId,
-                tenantId
-            );
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
 
-            logger.info('Phone verification successful', {
-                userId,
-                phoneNumber: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
-                tenantId
-            });
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
+
+            const { phone } = user.verification;
+
+            if (!phone.code || !phone.codeExpires) {
+                return next(new AppError('No verification code found. Please request a new code', 400));
+            }
+
+            if (phone.codeExpires < new Date()) {
+                return next(new AppError('Verification code expired', 400));
+            }
+
+            if (phone.attempts >= 5) {
+                return next(new AppError('Too many verification attempts', 429));
+            }
+
+            if (phone.code !== code) {
+                user.verification.phone.attempts += 1;
+                await user.save();
+                return next(new AppError('Invalid verification code', 400));
+            }
+
+            // Verify phone
+            user.verification.phone = {
+                verified: true,
+                verifiedAt: new Date(),
+                attempts: 0
+            };
+
+            await user.save();
 
             res.status(200).json({
                 success: true,
-                message: 'Phone number verified successfully',
+                message: 'Phone verified successfully',
                 data: {
-                    phoneNumber: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
-                    verified: true,
-                    verifiedAt: new Date().toISOString()
+                    phoneVerified: true
                 }
             });
 
         } catch (error) {
-            logger.error('Phone verification failed', {
-                error: error.message,
-                stack: error.stack
-            });
             next(error);
         }
     }
 
     /**
-     * Check phone verification status
-     * @route GET /api/auth/verify/phone/status
-     * @access Protected
-     */
-    async checkPhoneVerificationStatus(req, res, next) {
-        try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
-            const { phoneNumber } = req.query;
-
-            if (!phoneNumber) {
-                throw new AppError('Phone number is required', 400, 'MISSING_PHONE_NUMBER');
-            }
-
-            // Call shared verification service to check status
-            const VerificationService = require('../../../../../../shared/lib/auth/services/verification-service');
-            const status = await VerificationService.getPhoneVerificationStatus(
-                userId,
-                phoneNumber,
-                tenantId
-            );
-
-            logger.debug('Phone verification status checked', {
-                userId,
-                phoneNumber: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
-                isVerified: status.isVerified
-            });
-
-            res.status(200).json({
-                success: true,
-                message: 'Phone verification status retrieved',
-                data: {
-                    phoneNumber: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
-                    isVerified: status.isVerified,
-                    verifiedAt: status.verifiedAt,
-                    canResend: status.canResend,
-                    nextResendAvailableAt: status.nextResendAvailableAt
-                }
-            });
-
-        } catch (error) {
-            logger.error('Check phone verification status failed', {
-                error: error.message,
-                stack: error.stack
-            });
-            next(error);
-        }
-    }
-
-    /**
-     * Resend phone verification code
-     * @route POST /api/auth/verify/phone/resend
-     * @access Protected
-     */
-    async resendPhoneVerificationCode(req, res, next) {
-        try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
-            const { phoneNumber, method } = req.body;
-
-            if (!phoneNumber) {
-                throw new AppError('Phone number is required', 400, 'MISSING_PHONE_NUMBER');
-            }
-
-            const verificationMethod = method || 'sms';
-
-            // Call shared verification service to resend code
-            const VerificationService = require('../../../../../../shared/lib/auth/services/verification-service');
-            const result = await VerificationService.sendPhoneVerificationCode(
-                userId,
-                phoneNumber,
-                verificationMethod,
-                tenantId
-            );
-
-            logger.info('Phone verification code resent', {
-                userId,
-                phoneNumber: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
-                method: verificationMethod,
-                tenantId
-            });
-
-            res.status(200).json({
-                success: true,
-                message: `Verification code resent via ${verificationMethod}`,
-                data: {
-                    phoneNumber: phoneNumber.replace(/\d(?=\d{4})/g, '*'),
-                    verificationId: result.verificationId,
-                    expiresIn: result.expiresIn,
-                    method: verificationMethod,
-                    canResendAt: result.canResendAt
-                }
-            });
-
-        } catch (error) {
-            logger.error('Resend phone verification code failed', {
-                error: error.message,
-                stack: error.stack
-            });
-            next(error);
-        }
-    }
-
-    /**
-     * Verify document (for KYC purposes)
-     * @route POST /api/auth/verify/document
-     * @access Protected
-     */
-    async verifyDocument(req, res, next) {
-        try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
-            const { documentType, documentNumber, documentImages } = req.body;
-
-            if (!documentType) {
-                throw new AppError('Document type is required', 400, 'MISSING_DOCUMENT_TYPE');
-            }
-
-            if (!documentNumber) {
-                throw new AppError('Document number is required', 400, 'MISSING_DOCUMENT_NUMBER');
-            }
-
-            if (!documentImages || !Array.isArray(documentImages) || documentImages.length === 0) {
-                throw new AppError('Document images are required', 400, 'MISSING_DOCUMENT_IMAGES');
-            }
-
-            // Call shared verification service to submit document
-            const VerificationService = require('../../../../../../shared/lib/auth/services/verification-service');
-            const result = await VerificationService.submitDocumentVerification(
-                userId,
-                {
-                    type: documentType,
-                    number: documentNumber,
-                    images: documentImages
-                },
-                tenantId
-            );
-
-            logger.info('Document verification submitted', {
-                userId,
-                documentType,
-                tenantId,
-                verificationId: result.verificationId
-            });
-
-            res.status(200).json({
-                success: true,
-                message: 'Document submitted for verification',
-                data: {
-                    verificationId: result.verificationId,
-                    status: result.status,
-                    estimatedCompletionTime: result.estimatedCompletionTime,
-                    message: 'Your document is being reviewed. You will be notified once verification is complete.'
-                }
-            });
-
-        } catch (error) {
-            logger.error('Document verification submission failed', {
-                error: error.message,
-                stack: error.stack
-            });
-            next(error);
-        }
-    }
-
-    /**
-     * Get verification status for all methods
-     * @route GET /api/auth/verify/status
-     * @access Protected
+     * Get verification status
+     * GET /api/auth/verify/status
      */
     async getVerificationStatus(req, res, next) {
         try {
-            const userId = req.user.id;
-            const tenantId = req.user.tenantId;
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
+            }
 
-            // Call shared verification service to get all statuses
-            const VerificationService = require('../../../../../../shared/lib/auth/services/verification-service');
-            const status = await VerificationService.getAllVerificationStatuses(userId, tenantId);
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
 
-            logger.debug('Verification statuses retrieved', {
-                userId,
-                tenantId
-            });
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
 
             res.status(200).json({
                 success: true,
-                message: 'Verification statuses retrieved',
                 data: {
-                    email: status.email,
-                    phone: status.phone,
-                    document: status.document,
-                    overallStatus: status.overallStatus,
-                    completionPercentage: status.completionPercentage
+                    email: {
+                        verified: user.verification?.email?.verified || false,
+                        verifiedAt: user.verification?.email?.verifiedAt
+                    },
+                    phone: {
+                        verified: user.verification?.phone?.verified || false,
+                        verifiedAt: user.verification?.phone?.verifiedAt
+                    },
+                    identity: {
+                        verified: user.verification?.identity?.verified || false,
+                        verifiedAt: user.verification?.identity?.verifiedAt
+                    },
+                    isFullyVerified: user.isFullyVerified
                 }
             });
 
         } catch (error) {
-            logger.error('Get verification status failed', {
-                error: error.message,
-                stack: error.stack
+            next(error);
+        }
+    }
+
+    /**
+     * Request identity verification
+     * POST /api/auth/verify/identity
+     */
+    async requestIdentityVerification(req, res, next) {
+        try {
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
+            }
+
+            const { method, documentType } = req.body;
+
+            const validMethods = ['document', 'biometric', 'manual_review'];
+            const validDocuments = ['passport', 'drivers_license', 'national_id', 'residence_permit'];
+
+            if (!validMethods.includes(method)) {
+                return next(new AppError('Invalid verification method', 400));
+            }
+
+            if (method === 'document' && !validDocuments.includes(documentType)) {
+                return next(new AppError('Invalid document type', 400));
+            }
+
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
+
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
+
+            if (user.verification?.identity?.verified) {
+                return next(new AppError('Identity is already verified', 400));
+            }
+
+            // Initialize identity verification
+            user.verification.identity = {
+                verified: false,
+                method: method,
+                documents: []
+            };
+
+            await user.save();
+
+            res.status(200).json({
+                success: true,
+                message: 'Identity verification initiated',
+                data: {
+                    method,
+                    nextSteps: method === 'document' 
+                        ? 'Please upload your identity document' 
+                        : 'Verification process will begin shortly'
+                }
             });
+
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Upload identity document
+     * POST /api/auth/verify/identity/upload
+     */
+    async uploadIdentityDocument(req, res, next) {
+        try {
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
+            }
+
+            // TODO: Handle file upload
+            const { documentUrl, documentType } = req.body;
+
+            if (!documentUrl || !documentType) {
+                return next(new AppError('Document URL and type are required', 400));
+            }
+
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
+
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
+
+            // Add document to verification
+            if (!user.verification.identity) {
+                user.verification.identity = {
+                    verified: false,
+                    documents: []
+                };
+            }
+
+            user.verification.identity.documents.push({
+                type: documentType,
+                status: 'pending_review',
+                uploadedAt: new Date()
+            });
+
+            await user.save();
+
+            res.status(200).json({
+                success: true,
+                message: 'Identity document uploaded successfully',
+                data: {
+                    status: 'pending_review',
+                    message: 'Your document is being reviewed. This may take 24-48 hours.'
+                }
+            });
+
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Check if email is verified
+     * GET /api/auth/verify/email/check/:email
+     */
+    async checkEmailVerification(req, res, next) {
+        try {
+            const { email } = req.params;
+
+            if (!email) {
+                return next(new AppError('Email is required', 400));
+            }
+
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findByEmail(email);
+
+            if (!user) {
+                // Don't reveal if user exists
+                return res.status(200).json({
+                    success: true,
+                    data: {
+                        verified: false
+                    }
+                });
+            }
+
+            res.status(200).json({
+                success: true,
+                data: {
+                    verified: user.verification?.email?.verified || false
+                }
+            });
+
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Add alternate email
+     * POST /api/auth/verify/email/alternate
+     */
+    async addAlternateEmail(req, res, next) {
+        try {
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
+            }
+
+            const { email } = req.body;
+
+            if (!email) {
+                return next(new AppError('Email is required', 400));
+            }
+
+            const dbService = directAuthService._getDatabaseService();
+            const user = await dbService.findUserById(req.user.id);
+
+            if (!user) {
+                return next(new AppError('User not found', 404));
+            }
+
+            // Check if email already exists
+            const existingUser = await dbService.findByEmail(email);
+            if (existingUser && existingUser.id !== user.id) {
+                return next(new AppError('Email already in use', 409));
+            }
+
+            // Add alternate email
+            user.alternateEmails.push({
+                email: email.toLowerCase(),
+                verified: false,
+                isPrimary: false,
+                addedAt: new Date()
+            });
+
+            await user.save();
+
+            // TODO: Send verification email to alternate email
+
+            res.status(200).json({
+                success: true,
+                message: 'Alternate email added. Please verify it.',
+                data: {
+                    alternateEmail: email
+                }
+            });
+
+        } catch (error) {
             next(error);
         }
     }
 }
 
-// Export singleton instance
 module.exports = new VerificationController();

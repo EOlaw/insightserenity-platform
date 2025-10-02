@@ -14,6 +14,11 @@
             "date": 1759301874720,
             "name": "/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/logs/app-combined-2025-10-01.log",
             "hash": "e8b5f641f6464df6ae1bf36bb76a7e9eec3a7912c981db0c159812babf722a48"
+        },
+        {
+            "date": 1759381898762,
+            "name": "/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/logs/app-combined-2025-10-02.log",
+            "hash": "31e910a55a1995e817211c040228e34605eb378119d9cfe54e3a03952d71296d"
         }
     ],
     "hashType": "sha256"
