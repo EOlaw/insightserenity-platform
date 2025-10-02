@@ -311,3 +311,264 @@
   "version": "1.0.0",
   "error": "logger.error is not a function"
 }
+2025-10-02 03:10:46.363 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 03:10:46.364 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 03:10:46.365 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 05:46:12.205 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 05:46:12.205 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 05:46:12.207 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 05:46:30.693 [direct-auth-service] error: Failed to get user by ID
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "dbService.getUserById is not a function",
+  "userId": "68de57f4586acc7ed97f69a6"
+}
+2025-10-02 05:52:09.810 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 05:52:09.810 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 05:52:09.812 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 05:52:23.832 [direct-auth-service] error: Failed to get user by ID
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Path collision at passwordHistory.hash remaining portion hash",
+  "userId": "68de5959d17ec2b59385ce16"
+}
+2025-10-02 06:20:38.159 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:20:38.159 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:20:38.161 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:21:08.045 [direct-auth-service] error: Failed to get TokenBlacklist model
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "database.getSharedDatabaseService is not a function"
+}
+2025-10-02 06:21:08.046 [direct-auth-service] error: Error checking token blacklist
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Token blacklist service unavailable"
+}
+2025-10-02 06:21:15.251 [direct-auth-service] error: Failed to get TokenBlacklist model
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "database.getSharedDatabaseService is not a function"
+}
+2025-10-02 06:21:15.251 [direct-auth-service] error: Error checking token blacklist
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Token blacklist service unavailable"
+}
+2025-10-02 06:21:31.259 [direct-auth-service] error: Failed to get TokenBlacklist model
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "database.getSharedDatabaseService is not a function"
+}
+2025-10-02 06:21:31.260 [direct-auth-service] error: Error checking token blacklist
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Token blacklist service unavailable"
+}
+2025-10-02 06:21:38.152 [direct-auth-service] error: Failed to get TokenBlacklist model
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "database.getSharedDatabaseService is not a function"
+}
+2025-10-02 06:21:38.153 [direct-auth-service] error: Error checking token blacklist
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Token blacklist service unavailable"
+}
+2025-10-02 06:22:09.139 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:22:09.139 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:22:09.141 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:22:53.947 [direct-auth-service] error: Failed to get TokenBlacklist model
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "database.getSharedDatabaseService is not a function"
+}
+2025-10-02 06:22:53.948 [direct-auth-service] error: Error checking token blacklist
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Token blacklist service unavailable"
+}
+2025-10-02 06:27:09.460 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:27:09.460 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:27:09.463 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:27:20.693 [direct-auth-service] error: Failed to get TokenBlacklist model
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "database.getModel is not a function"
+}
+2025-10-02 06:27:20.693 [direct-auth-service] error: Error checking token blacklist
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Token blacklist service unavailable"
+}
+2025-10-02 06:27:54.834 [direct-auth-service] error: Failed to get TokenBlacklist model
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "database.getModel is not a function"
+}
+2025-10-02 06:27:54.835 [direct-auth-service] error: Error checking token blacklist
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "Token blacklist service unavailable"
+}
+2025-10-02 06:32:13.926 [direct-auth-service] error: Failed to send welcome email
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:32:13.926 [direct-auth-service] error: Failed to initialize onboarding
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}
+2025-10-02 06:32:13.928 [direct-auth-service] error: Failed to track registration event
+{
+  "service": "direct-auth-service",
+  "environment": "development",
+  "version": "1.0.0",
+  "error": "logger.error is not a function"
+}

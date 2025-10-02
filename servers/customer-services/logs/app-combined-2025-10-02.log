@@ -1156,3 +1156,1352 @@
   "environment": "development",
   "version": "1.0.0"
 }
+2025-10-02 03:14:57.179 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 03:14:57.182 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 03:14:57.185 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 03:15:02.864 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 03:15:02.867 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 03:15:02.870 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 03:15:08.856 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 03:15:09.177 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 03:15:09.230 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 03:15:09.940 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 03:15:10.062 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 03:15:10.284 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:33:00.560 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:33:00.564 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:33:00.567 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:33:04.350 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:33:04.975 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:33:05.136 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:33:05.221 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:33:05.287 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:33:06.424 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 05:42:59.485 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:42:59.489 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:42:59.492 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:42:59.901 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:42:59.904 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:42:59.906 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:43:00.532 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:43:00.535 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:43:00.537 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:43:05.653 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 05:43:06.508 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:43:07.501 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:43:07.653 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:43:07.658 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:43:07.862 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:44:34.107 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:44:34.110 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:44:34.114 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:44:40.026 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:44:40.203 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:44:40.278 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:44:42.506 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:44:42.787 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:44:42.910 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 05:45:13.002 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:13.006 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:13.008 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:13.498 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:13.501 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:13.504 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:13.835 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:13.838 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:13.841 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:17.933 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:18.083 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:20.889 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:20.974 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:20.980 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 05:45:21.103 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:28.820 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:28.822 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:28.825 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:29.408 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:29.411 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:29.413 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:29.749 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:29.751 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:29.754 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:58.933 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:45:58.937 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:45:58.941 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:46:04.025 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:46:04.043 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:46:04.045 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:46:04.046 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:46:04.153 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:46:06.091 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 05:51:27.530 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:51:27.534 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:51:27.537 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:51:27.930 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:51:27.933 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:51:27.935 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:51:33.193 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:51:33.304 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:51:33.510 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:51:33.819 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:51:33.939 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 05:51:34.172 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:51:57.040 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:51:57.044 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:51:57.047 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:52:02.426 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:52:02.558 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:52:02.559 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:52:02.568 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 05:52:02.623 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:52:03.509 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:54:53.120 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:54:53.123 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:54:53.126 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:54:53.609 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:54:53.612 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:54:53.614 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:55:05.906 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:55:05.909 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:55:05.911 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 05:55:10.542 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 05:55:10.549 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:55:10.611 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:55:10.625 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:55:11.581 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 05:55:12.458 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:04:50.621 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:04:50.625 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:04:50.628 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:04:51.374 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:04:51.377 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:04:51.379 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:05:01.932 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:05:01.936 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:05:01.940 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:05:06.779 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:05:06.915 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:05:06.917 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:05:06.958 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:05:07.034 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:05:08.460 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 06:17:36.837 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:17:36.841 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:36.844 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:17:42.773 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:42.979 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:43.531 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:43.554 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:43.617 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:43.766 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 06:17:50.616 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:17:50.619 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:50.622 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:17:56.419 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:56.429 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:56.654 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:56.729 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:56.894 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:17:56.942 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 06:18:34.699 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:18:34.703 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:18:34.706 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:18:36.649 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:18:36.653 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:18:36.655 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:18:37.231 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:18:37.235 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:18:37.237 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:18:42.119 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:18:42.162 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:18:42.478 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:18:42.547 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:18:43.018 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 06:18:43.877 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:20:18.976 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:20:18.979 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:20:18.982 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:20:25.658 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:20:25.661 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:20:25.663 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:20:29.916 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:20:30.046 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:20:30.825 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:20:31.500 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 06:20:31.714 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:20:32.737 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:22:02.189 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:22:02.193 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:22:02.196 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:22:07.546 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:22:07.622 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:22:07.727 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:22:08.067 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:22:08.097 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 06:22:09.085 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:26:54.936 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:26:54.940 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:26:54.942 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:27:02.158 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:27:02.161 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:27:02.163 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:27:07.804 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:27:07.808 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:27:08.310 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:27:09.817 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:27:09.900 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:27:09.924 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 06:31:35.585 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:31:35.588 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:31:35.591 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:31:36.384 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:31:36.388 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:31:36.391 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:31:55.333 [app] info: Session cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:31:55.338 [app] info: MFA cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:31:55.341 [app] info: Blacklist cleanup scheduler started
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "interval": 3600000
+}
+2025-10-02 06:31:59.414 [app] info: TokenService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:31:59.415 [app] info: BlacklistService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:31:59.459 [app] info: TwoFactorService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:31:59.594 [app] info: AuthService: Database initialized
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0",
+  "context": "default"
+}
+2025-10-02 06:32:00.330 [app] info: SessionService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}
+2025-10-02 06:32:00.642 [app] info: PasswordService: Database initialized successfully
+{
+  "service": "app",
+  "environment": "development",
+  "version": "1.0.0"
+}

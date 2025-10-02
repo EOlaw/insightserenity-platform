@@ -14,7 +14,6 @@ class AuthController {
      */
     async registerUser(req, res, next) {
         try {
-            // Validate request
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
                 return next(AppError.validation('Validation failed', errors.array()));
@@ -38,14 +37,12 @@ class AuthController {
                 partnerType
             } = req.body;
 
-            // Prepare user data
             const userData = {
                 email,
                 username,
                 password,
                 phoneNumber,
                 profile,
-                // User-type-specific fields
                 companyName,
                 businessType,
                 industry,
@@ -57,7 +54,6 @@ class AuthController {
                 partnerType
             };
 
-            // Registration options
             const options = {
                 ip: req.ip || req.connection.remoteAddress,
                 userAgent: req.headers['user-agent'],
@@ -66,7 +62,6 @@ class AuthController {
                 marketingSource: req.body.marketingSource
             };
 
-            // Call service
             const result = await directAuthService.registerDirectUser(
                 userData,
                 userType,
@@ -112,7 +107,6 @@ class AuthController {
 
             const result = await directAuthService.loginDirectUser(credentials, options);
 
-            // Handle MFA challenge
             if (result.requiresMFA) {
                 return res.status(200).json({
                     success: true,
@@ -125,13 +119,12 @@ class AuthController {
                 });
             }
 
-            // Set refresh token as HTTP-only cookie
             if (result.tokens?.refreshToken) {
                 res.cookie('refreshToken', result.tokens.refreshToken, {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: 'strict',
-                    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+                    maxAge: 30 * 24 * 60 * 60 * 1000
                 });
             }
 
@@ -147,17 +140,122 @@ class AuthController {
     }
 
     /**
-     * Logout user
+     * Logout user (Production-Ready)
      * POST /api/auth/logout
+     * Invalidates both access and refresh tokens in database
      */
     async logoutUser(req, res, next) {
         try {
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
+            }
+
+            // Extract access token from Authorization header
+            const accessToken = req.headers.authorization?.replace('Bearer ', '');
+            
+            // Extract refresh token from cookie or body
+            const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+
+            // Build logout options with context
+            const logoutOptions = {
+                ip: req.ip || req.connection.remoteAddress,
+                userAgent: req.headers['user-agent'],
+                sessionId: req.body.sessionId,
+                deviceId: req.body.deviceId,
+                location: req.body.location
+            };
+
+            // Blacklist access token if present
+            if (accessToken) {
+                await directAuthService.logoutUser(
+                    req.user.id, 
+                    accessToken,
+                    logoutOptions
+                );
+            }
+
+            // Blacklist refresh token if present
+            if (refreshToken) {
+                await directAuthService.logoutUser(
+                    req.user.id,
+                    refreshToken,
+                    { ...logoutOptions, reason: 'logout_refresh' }
+                );
+            }
+
             // Clear refresh token cookie
-            res.clearCookie('refreshToken');
+            res.clearCookie('refreshToken', {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict'
+            });
 
             res.status(200).json({
                 success: true,
                 message: 'Logout successful'
+            });
+
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Logout from all devices (Production-Ready)
+     * POST /api/auth/logout-all
+     * Invalidates all active tokens for the user
+     */
+    async logoutAllDevices(req, res, next) {
+        try {
+            if (!req.user || !req.user.id) {
+                return next(new AppError('User not authenticated', 401));
+            }
+
+            // Extract current tokens to blacklist them first
+            const accessToken = req.headers.authorization?.replace('Bearer ', '');
+            const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+
+            const logoutOptions = {
+                ip: req.ip || req.connection.remoteAddress,
+                userAgent: req.headers['user-agent']
+            };
+
+            // Blacklist current tokens
+            if (accessToken) {
+                await directAuthService.logoutUser(
+                    req.user.id, 
+                    accessToken,
+                    logoutOptions
+                );
+            }
+
+            if (refreshToken) {
+                await directAuthService.logoutUser(
+                    req.user.id,
+                    refreshToken,
+                    logoutOptions
+                );
+            }
+
+            // Blacklist all other tokens
+            const tokensBlacklisted = await directAuthService.logoutUserAllDevices(
+                req.user.id,
+                'logout_all_devices'
+            );
+
+            // Clear refresh token cookie
+            res.clearCookie('refreshToken', {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict'
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Logged out from all devices successfully',
+                data: {
+                    tokensInvalidated: tokensBlacklisted
+                }
             });
 
         } catch (error) {
@@ -175,11 +273,16 @@ class AuthController {
                 return next(new AppError('User not authenticated', 401));
             }
 
-            // User is already loaded by auth middleware
+            const userData = await directAuthService.getUserById(req.user.id);
+
+            if (!userData) {
+                return next(new AppError('User not found', 404));
+            }
+
             res.status(200).json({
                 success: true,
                 data: {
-                    user: req.user
+                    user: userData
                 }
             });
 
@@ -200,12 +303,12 @@ class AuthController {
                 return next(new AppError('Verification token is required', 400));
             }
 
-            // TODO: Implement email verification logic
-            // This would typically be in a separate verification service
+            const result = await directAuthService.verifyEmail(token, email);
 
             res.status(200).json({
                 success: true,
-                message: 'Email verified successfully'
+                message: 'Email verified successfully',
+                data: result
             });
 
         } catch (error) {
@@ -225,7 +328,7 @@ class AuthController {
                 return next(new AppError('Email is required', 400));
             }
 
-            // TODO: Implement resend verification logic
+            await directAuthService.resendVerificationEmail(email);
 
             res.status(200).json({
                 success: true,
@@ -249,7 +352,7 @@ class AuthController {
                 return next(new AppError('Email is required', 400));
             }
 
-            // TODO: Implement forgot password logic
+            await directAuthService.initiatePasswordReset(email);
 
             res.status(200).json({
                 success: true,
@@ -279,7 +382,7 @@ class AuthController {
                 return next(new AppError('Passwords do not match', 400));
             }
 
-            // TODO: Implement reset password logic
+            await directAuthService.resetPassword(token, newPassword);
 
             res.status(200).json({
                 success: true,
@@ -313,7 +416,11 @@ class AuthController {
                 return next(new AppError('Passwords do not match', 400));
             }
 
-            // TODO: Implement change password logic
+            await directAuthService.changePassword(
+                req.user.id,
+                currentPassword,
+                newPassword
+            );
 
             res.status(200).json({
                 success: true,
@@ -326,8 +433,9 @@ class AuthController {
     }
 
     /**
-     * Refresh access token
+     * Refresh access token (Production-Ready)
      * POST /api/auth/refresh
+     * Implements token rotation for security
      */
     async refreshToken(req, res, next) {
         try {
@@ -337,15 +445,22 @@ class AuthController {
                 return next(new AppError('Refresh token is required', 400));
             }
 
-            // TODO: Implement refresh token logic
+            const result = await directAuthService.refreshAccessToken(refreshToken);
+
+            // Set new refresh token cookie (token rotation)
+            if (result.tokens?.refreshToken) {
+                res.cookie('refreshToken', result.tokens.refreshToken, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'strict',
+                    maxAge: 30 * 24 * 60 * 60 * 1000
+                });
+            }
 
             res.status(200).json({
                 success: true,
                 message: 'Token refreshed successfully',
-                data: {
-                    accessToken: 'new-access-token',
-                    expiresIn: 86400
-                }
+                data: result
             });
 
         } catch (error) {
@@ -354,5 +469,4 @@ class AuthController {
     }
 }
 
-// Export singleton instance (same pattern as user-controller)
 module.exports = new AuthController();
