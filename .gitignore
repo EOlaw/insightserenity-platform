@@ -10,6 +10,11 @@
 !.yarn/releases
 !.yarn/versions
 
+# servers/customer-services
+/servers/customer-services/node_modules
+/servers/customer-services/.env
+/servers/customer-services/logs
+
 # testing
 /coverage
 
