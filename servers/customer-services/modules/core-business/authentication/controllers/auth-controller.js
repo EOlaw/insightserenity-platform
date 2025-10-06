@@ -153,16 +153,16 @@ class AuthController {
             // Extract access token from Authorization header
             const accessToken = req.headers.authorization?.replace('Bearer ', '');
 
-            // Extract refresh token from cookie or body
-            const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+            // Extract refresh token from cookie or body (safely handle undefined body)
+            const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
-            // Build logout options with context
+            // Build logout options with context (safely access body properties)
             const logoutOptions = {
                 ip: req.ip || req.connection.remoteAddress,
                 userAgent: req.headers['user-agent'],
-                sessionId: req.body.sessionId,
-                deviceId: req.body.deviceId,
-                location: req.body.location
+                sessionId: req.body?.sessionId,
+                deviceId: req.body?.deviceId,
+                location: req.body?.location
             };
 
             // Blacklist access token if present

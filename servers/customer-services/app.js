@@ -334,15 +334,24 @@ class CustomerServicesApp {
         app.use(compression());
 
         // MongoDB injection prevention - configured to avoid read-only property errors
-        app.use(mongoSanitize({
-            replaceWith: '_',
-            onSanitize: ({ req, key }) => {
-                // Optional: log sanitization events in development
+        app.use((req, res, next) => {
+            try {
+                mongoSanitize({
+                    replaceWith: '_',
+                    onSanitize: ({ req, key }) => {
+                        if (process.env.NODE_ENV === 'development') {
+                            console.warn(`Sanitized potentially malicious key: ${key}`);
+                        }
+                    }
+                })(req, res, next);
+            } catch (error) {
+                // Log the error but don't crash the request
                 if (process.env.NODE_ENV === 'development') {
-                    console.warn(`Sanitized potentially malicious key: ${key}`);
+                    console.error('Sanitization error:', error.message);
                 }
+                next();
             }
-        }));
+        });
 
         // XSS protection
         app.use((req, res, next) => {
@@ -569,7 +578,7 @@ class CustomerServicesApp {
         apiRouter.use('/partnerships', partnershipRoutes);
 
         // ==================== UTILITY ROUTES ====================
-        
+
         // Metrics endpoint
         apiRouter.get('/metrics', this._authenticate('jwt'), (req, res) => {
             res.json({
