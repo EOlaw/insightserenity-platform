@@ -21,7 +21,7 @@ const eslintConfig = [
     ],
   },
   {
-    files: ["servers/**/*", "shared/**/*"],
+    files: ["**/*", "servers/**/*", "shared/**/*"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
       "@typescript-eslint/no-var-requires": "off",

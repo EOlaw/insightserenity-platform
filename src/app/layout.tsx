@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
-import '@/styles/globals.css'
+import '../styles/globals.css'
 import { cn } from '@/lib/utils/cn'
 import { Providers } from '@/components/providers'
 import { Toaster } from '@/components/ui/toaster'
