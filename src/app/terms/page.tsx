@@ -1,242 +1,98 @@
-'use client'
-
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/shared/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import {
-  Scale,
   FileText,
+  Scale,
   Shield,
-  AlertCircle,
+  CreditCard,
+  UserCheck,
+  AlertTriangle,
+  Calendar,
+  Download,
+  ArrowLeft,
+  ExternalLink,
   CheckCircle,
-  Info,
+  XCircle,
   Mail,
   Building2,
-  Calendar,
-  ChevronRight,
-  Download,
-  ExternalLink,
-  Lock,
-  Users,
-  CreditCard,
   Globe,
-  Gavel,
-  BookOpen,
-  AlertTriangle,
-  Ban,
-  UserCheck,
-  Key,
-  Database,
-  Server,
-  Clock,
-  DollarSign,
+  Lock,
   RefreshCw,
-  XCircle,
+  Clock,
+  Gavel,
+  Users,
+  Settings,
+  Ban,
+  Eye,
+  Phone,
+  MapPin,
 } from 'lucide-react'
 
-const termsSections = [
+const termsHighlights = [
   {
-    title: '1. Acceptance of Terms',
-    content: `By accessing or using Enterprise Platform ("Service"), you agree to be bound by these Terms of Service ("Terms"). If you disagree with any part of these terms, you do not have permission to access the Service.
-
-These Terms apply to all visitors, users, and others who access or use the Service. By accessing or using the Service, you agree to be bound by these Terms and our Privacy Policy.
-
-We reserve the right to update and change these Terms at any time without notice. Continued use of the Service after any such changes constitutes your acceptance of the new Terms.`,
+    icon: Scale,
+    title: 'Fair Terms',
+    description: 'Clear, reasonable terms that protect both users and the platform.',
   },
   {
-    title: '2. Account Registration',
-    content: `When you create an account with us, you must provide information that is accurate, complete, and current at all times. You are responsible for safeguarding the password and for all activities that occur under your account.
-
-Requirements:
-• You must be at least 18 years old or have parental consent
-• You must provide valid contact information
-• You must not use false or misleading information
-• You must not create accounts for automated or fraudulent purposes
-• You are responsible for maintaining account security
-
-You agree to notify us immediately of any unauthorized access to or use of your account. We will not be liable for any loss or damage arising from your failure to comply with this section.`,
+    icon: Shield,
+    title: 'User Protection',
+    description: 'Your rights and protections when using our services.',
   },
   {
-    title: '3. Acceptable Use',
-    content: `You may use our Service only for lawful purposes and in accordance with these Terms. You agree not to use the Service:
-
-Prohibited Activities:
-• To violate any applicable laws or regulations
-• To transmit any malicious code, viruses, or destructive nature
-• To infringe upon or violate our intellectual property rights or the rights of others
-• To harass, abuse, or harm another person
-• To spam, phish, or engage in other deceptive practices
-• To interfere with or disrupt the Service or servers
-• To attempt to gain unauthorized access to any portion of the Service
-• To collect or track personal information of other users
-• To use the Service for any illegal or unauthorized purpose
-• To compete with us or use the Service to build a similar service
-
-We reserve the right to terminate or suspend your account immediately, without prior notice or liability, for any reason whatsoever, including without limitation if you breach the Terms.`,
+    icon: RefreshCw,
+    title: 'Regular Updates',
+    description: 'Terms are regularly reviewed and updated for clarity and fairness.',
   },
   {
-    title: '4. Subscription and Payment',
-    content: `Billing and Renewal:
-• Subscription fees are billed in advance on a monthly or annual basis
-• Subscriptions automatically renew unless cancelled before the renewal date
-• You authorize us to charge your payment method for all fees
-• All fees are exclusive of taxes unless stated otherwise
-
-Pricing Changes:
-• We reserve the right to modify pricing with 30 days notice
-• Price changes will take effect at the next billing cycle
-• You may cancel your subscription if you disagree with price changes
-
-Refunds:
-• Payments are non-refundable except as required by law
-• No refunds for partial months or unused features
-• We may provide refunds or credits at our sole discretion
-• Refund requests must be submitted within 30 days of payment`,
-  },
-  {
-    title: '5. Intellectual Property Rights',
-    content: `Service Ownership:
-The Service and its original content, features, and functionality are and will remain the exclusive property of Enterprise Platform and its licensors. The Service is protected by copyright, trademark, and other laws. Our trademarks and trade dress may not be used without our prior written consent.
-
-Your Content:
-• You retain ownership of content you submit to the Service
-• You grant us a worldwide, non-exclusive, royalty-free license to use your content
-• This license is solely to operate and improve the Service
-• You represent that you have the right to grant this license
-• You are responsible for your content's legality and appropriateness
-
-Feedback:
-Any feedback, comments, or suggestions you provide regarding the Service is entirely voluntary and we will be free to use such feedback without any obligation to you.`,
-  },
-  {
-    title: '6. Privacy and Data Protection',
-    content: `Your use of the Service is also governed by our Privacy Policy. Please review our Privacy Policy, which also governs the Site and informs users of our data collection practices.
-
-Data Processing:
-• We process data in accordance with applicable privacy laws
-• You are responsible for obtaining necessary consents from your users
-• We implement appropriate security measures to protect data
-• You must comply with all applicable data protection laws
-• We may process data in multiple jurisdictions
-
-Data Ownership:
-• You retain all rights to your data
-• We claim no ownership over your data
-• You can export your data at any time
-• We will delete your data upon account termination (subject to legal requirements)`,
-  },
-  {
-    title: '7. Service Level Agreement',
-    content: `Service Availability:
-• We guarantee 99.9% uptime for paid plans
-• Uptime is measured monthly excluding scheduled maintenance
-• Scheduled maintenance will be announced 48 hours in advance
-• Emergency maintenance may occur without notice
-
-Support:
-• Email support for all plans
-• Priority support for Professional and Enterprise plans
-• 24/7 support for Enterprise plans
-• Response times vary by plan level
-
-Service Credits:
-• Credits available for uptime below 99.9%
-• Credits calculated as percentage of monthly fee
-• Credits must be requested within 30 days
-• Credits apply to future invoices only`,
-  },
-  {
-    title: '8. Limitation of Liability',
-    content: `TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL ENTERPRISE PLATFORM, ITS AFFILIATES, AGENTS, DIRECTORS, EMPLOYEES, SUPPLIERS, OR LICENSORS BE LIABLE FOR ANY INDIRECT, PUNITIVE, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR EXEMPLARY DAMAGES, INCLUDING WITHOUT LIMITATION DAMAGES FOR LOSS OF PROFITS, GOODWILL, USE, DATA, OR OTHER INTANGIBLE LOSSES.
-
-IN NO EVENT SHALL OUR AGGREGATE LIABILITY EXCEED THE GREATER OF ONE HUNDRED DOLLARS ($100) OR THE AMOUNT YOU PAID US IN THE TWELVE MONTHS PRECEDING THE EVENT GIVING RISE TO LIABILITY.
-
-SOME JURISDICTIONS DO NOT ALLOW THE EXCLUSION OR LIMITATION OF LIABILITY FOR CONSEQUENTIAL OR INCIDENTAL DAMAGES, SO THE ABOVE LIMITATION MAY NOT APPLY TO YOU.`,
-  },
-  {
-    title: '9. Indemnification',
-    content: `You agree to defend, indemnify, and hold harmless Enterprise Platform and its licensees, licensors, employees, contractors, agents, officers and directors, from and against any and all claims, damages, obligations, losses, liabilities, costs or debt, and expenses (including but not limited to attorney's fees), resulting from or arising out of:
-
-• Your use and access of the Service
-• Your breach of these Terms
-• Your violation of any third-party right, including intellectual property rights
-• Your violation of any applicable law, rule, or regulation
-• Any claim or damage arising from your content
-• Your negligent or wrongful conduct`,
-  },
-  {
-    title: '10. Termination',
-    content: `Either party may terminate these Terms at any time for any reason.
-
-Termination by You:
-• You may cancel your account at any time through your account settings
-• Cancellation takes effect at the end of the current billing period
-• You remain responsible for all charges incurred before termination
-• No refunds for partial periods
-
-Termination by Us:
-• We may suspend or terminate your account for Terms violations
-• We may terminate for non-payment of fees
-• We may terminate for extended inactivity
-• We may discontinue the Service with 90 days notice
-
-Effects of Termination:
-• Your right to use the Service ceases immediately
-• We may delete your data after 30 days
-• You can export your data before deletion
-• Provisions that should survive termination will survive`,
-  },
-  {
-    title: '11. Warranties and Disclaimers',
-    content: `THE SERVICE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS. THE SERVICE IS PROVIDED WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, OR COURSE OF PERFORMANCE.
-
-We do not warrant that:
-• The Service will function uninterrupted, secure, or error-free
-• The results obtained from the Service will be accurate or reliable
-• The quality of the Service will meet your expectations
-• Any errors in the Service will be corrected
-
-You understand and agree that your use of the Service is at your own discretion and risk and that you will be solely responsible for any damage that results from your use of the Service.`,
-  },
-  {
-    title: '12. Governing Law',
-    content: `These Terms shall be governed and construed in accordance with the laws of the State of California, United States, without regard to its conflict of law provisions.
-
-Our failure to enforce any right or provision of these Terms will not be considered a waiver of those rights. If any provision of these Terms is held to be invalid or unenforceable by a court, the remaining provisions of these Terms will remain in effect.
-
-Dispute Resolution:
-• You agree to first attempt to resolve disputes informally
-• If informal resolution fails, disputes will be resolved through binding arbitration
-• Arbitration will be conducted in San Francisco, California
-• Each party bears its own costs in arbitration
-• Class action lawsuits and jury trials are waived`,
+    icon: Eye,
+    title: 'Transparent Policies',
+    description: 'Plain language explanations of complex legal concepts.',
   },
 ]
 
-const contactInfo = {
-  legal: {
-    email: 'legal@enterprise.com',
-    phone: '+1 (415) 555-0105',
-    address: [
-      'Enterprise Platform, Inc.',
-      'Legal Department',
-      '100 Market Street, Suite 500',
-      'San Francisco, CA 94105',
+const serviceFeatures = [
+  {
+    category: 'Platform Access',
+    icon: Globe,
+    items: [
+      'Web-based dashboard and tools',
+      'Mobile-responsive interface',
+      'API access and integrations',
+      'Multi-user collaboration',
     ],
   },
-  support: {
-    email: 'support@enterprise.com',
-    phone: '+1 (800) 555-0100',
+  {
+    category: 'Account Features',
+    icon: UserCheck,
+    items: [
+      'Personal and team accounts',
+      'Custom branding options',
+      'Data import/export tools',
+      'Advanced analytics',
+    ],
   },
-}
-
-const relatedDocuments = [
-  { title: 'Privacy Policy', link: '/privacy', icon: Shield },
-  { title: 'Cookie Policy', link: '/cookies', icon: Database },
-  { title: 'Data Processing Agreement', link: '/dpa', icon: FileText },
-  { title: 'Service Level Agreement', link: '/sla', icon: CheckCircle },
-  { title: 'Security Overview', link: '/security', icon: Lock },
-  { title: 'Acceptable Use Policy', link: '/aup', icon: UserCheck },
+  {
+    category: 'Support Services',
+    icon: Users,
+    items: [
+      '24/7 customer support',
+      'Documentation and tutorials',
+      'Training and onboarding',
+      'Community forums',
+    ],
+  },
+  {
+    category: 'Security & Privacy',
+    icon: Lock,
+    items: [
+      'Data encryption and protection',
+      'Regular security audits',
+      'GDPR and CCPA compliance',
+      'Secure payment processing',
+    ],
+  },
 ]
 
 export default function TermsPage() {
@@ -253,23 +109,15 @@ export default function TermsPage() {
                 </div>
                 <span className="text-lg font-bold">Enterprise</span>
               </Link>
-              <div className="hidden md:flex items-center space-x-6">
-                <Link href="/privacy" className="text-xs text-gray-600 hover:text-gray-900 transition">
-                  Privacy
-                </Link>
-                <Link href="/terms" className="text-xs text-primary font-medium">
-                  Terms
-                </Link>
-                <Link href="/cookies" className="text-xs text-gray-600 hover:text-gray-900 transition">
-                  Cookies
-                </Link>
-                <Link href="/security" className="text-xs text-gray-600 hover:text-gray-900 transition">
-                  Security
-                </Link>
-              </div>
             </div>
             <div className="flex items-center space-x-3">
-              <Button variant="ghost" size="sm">
+              <Link href="/">
+                <Button variant="ghost" size="sm">
+                  <ArrowLeft className="h-3.5 w-3.5 mr-2" />
+                  Back to Home
+                </Button>
+              </Link>
+              <Button variant="outline" size="sm">
                 <Download className="h-3.5 w-3.5 mr-2" />
                 Download PDF
               </Button>
@@ -281,108 +129,55 @@ export default function TermsPage() {
       {/* Hero Section */}
       <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center space-x-2 mb-4">
-              <Scale className="h-6 w-6 text-primary" />
-              <span className="text-sm text-gray-600">Legal Agreement</span>
+          <div className="max-w-4xl mx-auto text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-6">
+              <FileText className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
               Terms of Service
             </h1>
-            <p className="text-base text-gray-600 mb-6">
-              These Terms of Service ("Terms") govern your use of Enterprise Platform's
-              products and services. By using our Service, you agree to these Terms.
+            <p className="text-base text-gray-600 mb-8">
+              These terms govern your use of the Enterprise Platform. By using our services,
+              you agree to be bound by these terms.
             </p>
-            <div className="flex items-center space-x-6 text-sm text-gray-500">
-              <span>Effective Date: January 1, 2024</span>
-              <span>Last Updated: January 22, 2024</span>
-              <span>Version: 3.1</span>
-            </div>
-
-            {/* Important Notice */}
-            <div className="mt-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="flex items-start space-x-3">
-                <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-yellow-900">Important Notice</p>
-                  <p className="text-xs text-yellow-800 mt-1">
-                    Please read these Terms carefully before using our Service. These Terms
-                    include important information about your legal rights, remedies, and
-                    obligations. By using the Service, you agree to be bound by these Terms.
-                  </p>
-                </div>
-              </div>
+            <div className="flex items-center justify-center gap-4 text-sm text-gray-500">
+              <span className="flex items-center">
+                <Calendar className="h-4 w-4 mr-1" />
+                Last updated: December 2024
+              </span>
+              <span className="flex items-center">
+                <Scale className="h-4 w-4 mr-1" />
+                Version 2.1
+              </span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Quick Navigation */}
-      <section className="py-8 border-b sticky top-16 bg-white z-40">
+      {/* Terms Highlights */}
+      <section className="py-16">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap gap-2 justify-center">
-            {termsSections.map((section, index) => (
-              <Link
-                key={index}
-                href={`#section-${index + 1}`}
-                className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 rounded-full transition"
-              >
-                {section.title.split('.')[0]}
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4">Our Terms Philosophy</h2>
+              <p className="text-sm text-gray-600">
+                We believe in clear, fair terms that protect everyone in our community
+              </p>
+            </div>
 
-      {/* Terms Content */}
-      <section className="py-16 lg:py-24">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto">
-            {termsSections.map((section, index) => (
-              <div
-                key={index}
-                id={`section-${index + 1}`}
-                className="mb-12 scroll-mt-24"
-              >
-                <h2 className="text-xl font-bold mb-4">{section.title}</h2>
-                <div className="prose prose-sm max-w-none">
-                  {section.content.split('\n\n').map((paragraph, pIndex) => (
-                    <p key={pIndex} className="text-sm text-gray-700 mb-4 whitespace-pre-line">
-                      {paragraph}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Related Documents */}
-      <section className="py-16 lg:py-24 bg-gray-50">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold mb-8 text-center">Related Documents</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {relatedDocuments.map((doc, index) => {
-                const Icon = doc.icon
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {termsHighlights.map((highlight, index) => {
+                const Icon = highlight.icon
                 return (
-                  <Link key={index} href={doc.link}>
-                    <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-                      <CardContent className="p-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                            <Icon className="h-5 w-5 text-primary" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{doc.title}</p>
-                            <p className="text-xs text-gray-500">View document</p>
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-gray-400" />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
+                  <Card key={index} className="hover:shadow-lg transition-shadow">
+                    <CardContent className="p-6 text-center">
+                      <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mx-auto mb-4">
+                        <Icon className="h-6 w-6 text-primary" />
+                      </div>
+                      <h3 className="font-semibold mb-2">{highlight.title}</h3>
+                      <p className="text-xs text-gray-600">{highlight.description}</p>
+                    </CardContent>
+                  </Card>
                 )
               })}
             </div>
@@ -390,91 +185,461 @@ export default function TermsPage() {
         </div>
       </section>
 
-      {/* Contact Section */}
-      <section className="py-16 lg:py-24">
+      {/* Service Overview */}
+      <section className="py-16 bg-gray-50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto">
-            <Card>
-              <CardHeader>
-                <CardTitle>Contact Us</CardTitle>
-                <CardDescription className="text-xs">
-                  For questions about these Terms of Service
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="font-semibold text-sm mb-3">Legal Department</h3>
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <p className="flex items-center">
-                      <Mail className="h-4 w-4 mr-2" />
-                      {contactInfo.legal.email}
-                    </p>
-                    <p className="flex items-center">
-                      <Phone className="h-4 w-4 mr-2" />
-                      {contactInfo.legal.phone}
-                    </p>
-                    <p className="flex items-start">
-                      <Building2 className="h-4 w-4 mr-2 mt-0.5" />
-                      <span>
-                        {contactInfo.legal.address.map((line, i) => (
-                          <span key={i}>
-                            {line}
-                            {i < contactInfo.legal.address.length - 1 && <br />}
-                          </span>
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4">What Our Service Includes</h2>
+              <p className="text-sm text-gray-600">
+                Comprehensive platform features and services covered by these terms
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {serviceFeatures.map((feature, index) => {
+                const Icon = feature.icon
+                return (
+                  <Card key={index} className="hover:shadow-lg transition-shadow">
+                    <CardHeader>
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                          <Icon className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">{feature.category}</CardTitle>
+                          <span className="text-xs text-gray-500">{feature.items.length} features</span>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-2">
+                        {feature.items.map((item, idx) => (
+                          <li key={idx} className="text-xs text-gray-600 flex items-center">
+                            <CheckCircle className="h-3 w-3 text-green-600 mr-2" />
+                            {item}
+                          </li>
                         ))}
-                      </span>
-                    </p>
-                  </div>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-sm mb-3">General Support</h3>
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <p className="flex items-center">
-                      <Mail className="h-4 w-4 mr-2" />
-                      {contactInfo.support.email}
-                    </p>
-                    <p className="flex items-center">
-                      <Phone className="h-4 w-4 mr-2" />
-                      {contactInfo.support.phone}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-3">
-                      Available Monday-Friday, 9am-6pm PST
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Agreement Section */}
-      <section className="py-16 lg:py-24 bg-primary">
+      {/* Main Terms Content */}
+      <section className="py-16">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-4xl mx-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+              {/* Table of Contents */}
+              <aside className="lg:col-span-1">
+                <Card className="sticky top-20">
+                  <CardHeader>
+                    <CardTitle className="text-base">Table of Contents</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <nav className="space-y-2">
+                      {[
+                        'Acceptance of Terms',
+                        'Description of Service',
+                        'User Accounts',
+                        'Acceptable Use',
+                        'Payment Terms',
+                        'Intellectual Property',
+                        'Privacy & Data',
+                        'Termination',
+                        'Disclaimers',
+                        'Limitation of Liability',
+                        'Governing Law',
+                        'Contact Information',
+                      ].map((item, index) => (
+                        <Link
+                          key={index}
+                          href={`#section-${index + 1}`}
+                          className="block text-xs text-gray-600 hover:text-primary py-1"
+                        >
+                          {item}
+                        </Link>
+                      ))}
+                    </nav>
+                  </CardContent>
+                </Card>
+              </aside>
+
+              {/* Content */}
+              <div className="lg:col-span-3 space-y-8">
+                {/* Acceptance of Terms */}
+                <Card id="section-1">
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <CheckCircle className="h-5 w-5 text-primary" />
+                      <span>1. Acceptance of Terms</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-gray-700">
+                      By accessing or using the Enterprise Platform ("Service"), you agree to be bound by these
+                      Terms of Service ("Terms"). If you disagree with any part of these terms, you may not
+                      access or use our Service.
+                    </p>
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <h4 className="text-sm font-semibold mb-2 flex items-center">
+                        <AlertTriangle className="h-4 w-4 text-blue-600 mr-2" />
+                        Important Note
+                      </h4>
+                      <p className="text-xs text-gray-700">
+                        These Terms constitute a legally binding agreement between you and Enterprise Platform Inc.
+                        Please read them carefully before using our services.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Description of Service */}
+                <Card id="section-2">
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Globe className="h-5 w-5 text-primary" />
+                      <span>2. Description of Service</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-gray-700">
+                      Enterprise Platform is a comprehensive business management solution that provides:
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2">Core Features</h4>
+                        <ul className="space-y-1">
+                          {[
+                            'Project management tools',
+                            'Team collaboration features',
+                            'Analytics and reporting',
+                            'API access and integrations',
+                          ].map((item, idx) => (
+                            <li key={idx} className="text-xs text-gray-600 flex items-center">
+                              <div className="w-1 h-1 bg-primary rounded-full mr-2" />
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2">Additional Services</h4>
+                        <ul className="space-y-1">
+                          {[
+                            'Customer support',
+                            'Training and onboarding',
+                            'Data backup and recovery',
+                            'Security monitoring',
+                          ].map((item, idx) => (
+                            <li key={idx} className="text-xs text-gray-600 flex items-center">
+                              <div className="w-1 h-1 bg-primary rounded-full mr-2" />
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* User Accounts */}
+                <Card id="section-3">
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <UserCheck className="h-5 w-5 text-primary" />
+                      <span>3. User Accounts</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-gray-700">
+                      To access certain features of our Service, you must create an account and provide accurate information.
+                    </p>
+                    <div className="space-y-3">
+                      <div className="border-l-4 border-green-500 pl-4">
+                        <h4 className="text-sm font-semibold mb-1">Account Requirements</h4>
+                        <p className="text-xs text-gray-600">
+                          You must be at least 18 years old and provide accurate, current information.
+                          One person or entity per account.
+                        </p>
+                      </div>
+                      <div className="border-l-4 border-blue-500 pl-4">
+                        <h4 className="text-sm font-semibold mb-1">Account Security</h4>
+                        <p className="text-xs text-gray-600">
+                          You are responsible for maintaining the security of your account credentials
+                          and all activities under your account.
+                        </p>
+                      </div>
+                      <div className="border-l-4 border-red-500 pl-4">
+                        <h4 className="text-sm font-semibold mb-1">Account Termination</h4>
+                        <p className="text-xs text-gray-600">
+                          We may suspend or terminate accounts that violate these Terms or engage
+                          in fraudulent or harmful activities.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Acceptable Use */}
+                <Card id="section-4">
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Shield className="h-5 w-5 text-primary" />
+                      <span>4. Acceptable Use</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-gray-700">
+                      You agree to use our Service responsibly and in compliance with all applicable laws.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <h4 className="text-sm font-semibold mb-3 text-green-700 flex items-center">
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Allowed Activities
+                        </h4>
+                        <ul className="space-y-1">
+                          {[
+                            'Business and personal project management',
+                            'Team collaboration and communication',
+                            'Data analysis and reporting',
+                            'Integration with approved third-party services',
+                            'Educational and training purposes',
+                          ].map((item, idx) => (
+                            <li key={idx} className="text-xs text-gray-600 flex items-start">
+                              <CheckCircle className="h-3 w-3 text-green-600 mr-2 mt-0.5" />
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold mb-3 text-red-700 flex items-center">
+                          <Ban className="h-4 w-4 mr-2" />
+                          Prohibited Activities
+                        </h4>
+                        <ul className="space-y-1">
+                          {[
+                            'Illegal activities or content',
+                            'Harassment or abusive behavior',
+                            'Spam or unauthorized marketing',
+                            'Security breaches or hacking attempts',
+                            'Sharing copyrighted content without permission',
+                          ].map((item, idx) => (
+                            <li key={idx} className="text-xs text-gray-600 flex items-start">
+                              <XCircle className="h-3 w-3 text-red-600 mr-2 mt-0.5" />
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Payment Terms */}
+                <Card id="section-5">
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <CreditCard className="h-5 w-5 text-primary" />
+                      <span>5. Payment Terms</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-gray-700">
+                      Paid services are billed according to your selected plan and billing cycle.
+                    </p>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <h4 className="text-sm font-semibold mb-2">Billing Cycle</h4>
+                          <ul className="space-y-1 text-xs text-gray-600">
+                            <li>• Monthly or annual billing available</li>
+                            <li>• Automatic renewal unless cancelled</li>
+                            <li>• Pro-rated charges for plan changes</li>
+                            <li>• Taxes added where applicable</li>
+                          </ul>
+                        </div>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <h4 className="text-sm font-semibold mb-2">Refund Policy</h4>
+                          <ul className="space-y-1 text-xs text-gray-600">
+                            <li>• 30-day money-back guarantee</li>
+                            <li>• Pro-rated refunds for cancellations</li>
+                            <li>• No refunds for usage-based charges</li>
+                            <li>• Refunds processed within 5-10 business days</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div className="border border-yellow-200 bg-yellow-50 p-4 rounded-lg">
+                        <h4 className="text-sm font-semibold mb-1 flex items-center text-yellow-800">
+                          <Clock className="h-4 w-4 mr-2" />
+                          Payment Due Dates
+                        </h4>
+                        <p className="text-xs text-yellow-700">
+                          Payment is due immediately upon subscription or renewal. Late payments may result
+                          in service suspension after a 7-day grace period.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Intellectual Property */}
+                <Card id="section-6">
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Gavel className="h-5 w-5 text-primary" />
+                      <span>6. Intellectual Property</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-gray-700">
+                      The Service and its content are protected by intellectual property laws.
+                    </p>
+                    <div className="space-y-3">
+                      <div className="border-l-4 border-purple-500 pl-4">
+                        <h4 className="text-sm font-semibold mb-1">Our Rights</h4>
+                        <p className="text-xs text-gray-600">
+                          We own all rights to the Enterprise Platform software, design, trademarks,
+                          and documentation. You receive a limited license to use our Service.
+                        </p>
+                      </div>
+                      <div className="border-l-4 border-blue-500 pl-4">
+                        <h4 className="text-sm font-semibold mb-1">Your Rights</h4>
+                        <p className="text-xs text-gray-600">
+                          You retain ownership of all content and data you upload to our Service.
+                          You grant us a license to process and store your data to provide the Service.
+                        </p>
+                      </div>
+                      <div className="border-l-4 border-green-500 pl-4">
+                        <h4 className="text-sm font-semibold mb-1">Content Guidelines</h4>
+                        <p className="text-xs text-gray-600">
+                          You must have the right to upload any content and ensure it doesn't
+                          infringe on third-party intellectual property rights.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Termination */}
+                <Card id="section-8">
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Ban className="h-5 w-5 text-primary" />
+                      <span>8. Termination</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-gray-700">
+                      Either party may terminate this agreement under certain circumstances.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2">Your Rights</h4>
+                        <ul className="space-y-1 text-xs text-gray-600">
+                          <li>• Cancel anytime from account settings</li>
+                          <li>• 30-day notice for annual subscriptions</li>
+                          <li>• Download your data before cancellation</li>
+                          <li>• Request data deletion after termination</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2">Our Rights</h4>
+                        <ul className="space-y-1 text-xs text-gray-600">
+                          <li>• Suspend service for Terms violations</li>
+                          <li>• Terminate accounts for illegal activity</li>
+                          <li>• End service with 30-day notice</li>
+                          <li>• Retain data as required by law</li>
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="bg-red-50 p-4 rounded-lg">
+                      <h4 className="text-sm font-semibold mb-1 text-red-800">
+                        Effect of Termination
+                      </h4>
+                      <p className="text-xs text-red-700">
+                        Upon termination, your access to the Service will cease, and your data may be
+                        deleted after a 30-day retention period, except as required by law.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Contact Information */}
+                <Card id="section-12">
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Mail className="h-5 w-5 text-primary" />
+                      <span>12. Contact Information</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-gray-700">
+                      For questions about these Terms of Service, please contact us:
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-3">
+                        <div className="flex items-center space-x-2">
+                          <Mail className="h-4 w-4 text-primary" />
+                          <span className="text-sm">legal@enterprise.com</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Phone className="h-4 w-4 text-primary" />
+                          <span className="text-sm">+1 (555) 123-4567</span>
+                        </div>
+                        <div className="flex items-start space-x-2">
+                          <MapPin className="h-4 w-4 text-primary mt-0.5" />
+                          <div className="text-sm">
+                            <div>Enterprise Platform Inc.</div>
+                            <div>Legal Department</div>
+                            <div>123 Business Street</div>
+                            <div>San Francisco, CA 94105</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <h4 className="text-sm font-semibold mb-2">Legal Notices</h4>
+                        <p className="text-xs text-gray-600 mb-2">
+                          For formal legal notices, please send written correspondence to our legal department
+                          at the address provided.
+                        </p>
+                        <p className="text-xs font-medium">Response time: 10 business days</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-16 bg-primary">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-2xl sm:text-3xl font-bold text-black mb-4">
-            By Using Our Service
+            Questions About Our Terms?
           </h2>
           <p className="text-sm text-black/80 mb-8 max-w-2xl mx-auto">
-            You acknowledge that you have read, understood, and agree to be bound by these
-            Terms of Service and our Privacy Policy.
+            Our legal team is here to help clarify any questions you may have about our terms of service.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link href="/register">
-              <Button variant="secondary" size="lg">
-                Create Account
-                <CheckCircle className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-            <Link href="/contact">
-              <Button variant="outline" size="lg" className="bg-black/10 border-black/20 hover:bg-black/20">
-                Contact Legal Team
-                <Mail className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
+            <Button variant="secondary" size="lg">
+              <Mail className="mr-2 h-4 w-4" />
+              Contact Legal Team
+            </Button>
+            <Button variant="outline" size="lg" className="bg-black/10 border-black/20 hover:bg-black/20">
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Legal Resources
+            </Button>
           </div>
-          <p className="text-xs text-black/60 mt-6">
-            If you do not agree to these Terms, please do not use our Service
-          </p>
         </div>
       </section>
     </div>

@@ -1,235 +1,182 @@
-'use client'
-
-import { useState } from 'react'
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '../../shared/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../shared/components/ui/card'
 import {
   FileText,
-  Code,
   Package,
-  Github,
-  Globe,
-  Shield,
-  Award,
-  Info,
+  Code,
   ExternalLink,
   Download,
+  ArrowLeft,
+  Calendar,
+  Star,
+  Users,
+  Github,
+  CheckCircle,
+  Scale,
+  Heart,
+  Globe,
+  Shield,
   Search,
   Filter,
-  ChevronRight,
-  ChevronDown,
-  CheckCircle,
-  Heart,
-  Star,
-  GitBranch,
-  Terminal,
-  Layers,
-  Database,
-  Server,
-  Lock,
-  Book,
-  Coffee,
-  Zap,
-  Box,
+  Eye,
+  Copy,
+  Check,
+  Mail,
+  Building2,
+  Phone,
+  MapPin,
 } from 'lucide-react'
 
-const licenses = [
+const licenseTypes = [
+  {
+    name: 'MIT License',
+    count: 156,
+    description: 'Permissive free software license',
+    color: 'bg-green-100 text-green-800',
+    icon: CheckCircle,
+  },
+  {
+    name: 'Apache 2.0',
+    count: 43,
+    description: 'Patent and trademark protection',
+    color: 'bg-blue-100 text-blue-800',
+    icon: Shield,
+  },
+  {
+    name: 'BSD 3-Clause',
+    count: 28,
+    description: 'Revised BSD license with advertising clause',
+    color: 'bg-purple-100 text-purple-800',
+    icon: Scale,
+  },
+  {
+    name: 'ISC License',
+    count: 12,
+    description: 'Internet Software Consortium license',
+    color: 'bg-orange-100 text-orange-800',
+    icon: Globe,
+  },
+]
+
+const majorDependencies = [
   {
     name: 'React',
     version: '18.2.0',
     license: 'MIT',
-    category: 'Frontend Framework',
     description: 'A JavaScript library for building user interfaces',
-    url: 'https://reactjs.org/',
-    github: 'https://github.com/facebook/react',
+    homepage: 'https://reactjs.org',
+    repository: 'https://github.com/facebook/react',
+    author: 'Meta Platforms, Inc.',
+    category: 'Frontend Framework',
+    stars: 220000,
   },
   {
     name: 'Next.js',
     version: '14.0.4',
     license: 'MIT',
-    category: 'Frontend Framework',
     description: 'The React Framework for Production',
-    url: 'https://nextjs.org/',
-    github: 'https://github.com/vercel/next.js',
+    homepage: 'https://nextjs.org',
+    repository: 'https://github.com/vercel/next.js',
+    author: 'Vercel',
+    category: 'Framework',
+    stars: 118000,
   },
   {
     name: 'TypeScript',
-    version: '5.3.3',
+    version: '5.3.2',
     license: 'Apache-2.0',
+    description: 'TypeScript is a superset of JavaScript that compiles to clean JavaScript output',
+    homepage: 'https://www.typescriptlang.org',
+    repository: 'https://github.com/microsoft/TypeScript',
+    author: 'Microsoft Corporation',
     category: 'Language',
-    description: 'TypeScript is a typed superset of JavaScript',
-    url: 'https://www.typescriptlang.org/',
-    github: 'https://github.com/microsoft/TypeScript',
+    stars: 97000,
   },
   {
     name: 'Tailwind CSS',
-    version: '3.4.0',
+    version: '3.3.6',
     license: 'MIT',
-    category: 'CSS Framework',
-    description: 'A utility-first CSS framework',
-    url: 'https://tailwindcss.com/',
-    github: 'https://github.com/tailwindlabs/tailwindcss',
+    description: 'A utility-first CSS framework for rapid UI development',
+    homepage: 'https://tailwindcss.com',
+    repository: 'https://github.com/tailwindlabs/tailwindcss',
+    author: 'Tailwind Labs',
+    category: 'Styling',
+    stars: 78000,
   },
   {
     name: 'Radix UI',
-    version: '1.0.0',
+    version: '1.0.4',
     license: 'MIT',
+    description: 'Low-level UI primitives with accessibility and keyboard navigation',
+    homepage: 'https://radix-ui.com',
+    repository: 'https://github.com/radix-ui/primitives',
+    author: 'WorkOS',
     category: 'UI Components',
-    description: 'Low-level UI primitives for React',
-    url: 'https://www.radix-ui.com/',
-    github: 'https://github.com/radix-ui/primitives',
-  },
-  {
-    name: 'Zustand',
-    version: '4.4.7',
-    license: 'MIT',
-    category: 'State Management',
-    description: 'Bear necessities for state management in React',
-    url: 'https://zustand-demo.pmnd.rs/',
-    github: 'https://github.com/pmndrs/zustand',
-  },
-  {
-    name: 'React Query',
-    version: '5.17.0',
-    license: 'MIT',
-    category: 'Data Fetching',
-    description: 'Powerful asynchronous state management',
-    url: 'https://tanstack.com/query',
-    github: 'https://github.com/tanstack/query',
-  },
-  {
-    name: 'Axios',
-    version: '1.6.5',
-    license: 'MIT',
-    category: 'HTTP Client',
-    description: 'Promise based HTTP client',
-    url: 'https://axios-http.com/',
-    github: 'https://github.com/axios/axios',
-  },
-  {
-    name: 'Framer Motion',
-    version: '10.17.9',
-    license: 'MIT',
-    category: 'Animation',
-    description: 'Production-ready motion library for React',
-    url: 'https://www.framer.com/motion/',
-    github: 'https://github.com/framer/motion',
-  },
-  {
-    name: 'Recharts',
-    version: '2.10.3',
-    license: 'MIT',
-    category: 'Data Visualization',
-    description: 'A composable charting library built on React components',
-    url: 'https://recharts.org/',
-    github: 'https://github.com/recharts/recharts',
-  },
-  {
-    name: 'date-fns',
-    version: '3.0.6',
-    license: 'MIT',
-    category: 'Date Utility',
-    description: 'Modern JavaScript date utility library',
-    url: 'https://date-fns.org/',
-    github: 'https://github.com/date-fns/date-fns',
-  },
-  {
-    name: 'React Hook Form',
-    version: '7.48.2',
-    license: 'MIT',
-    category: 'Form Management',
-    description: 'Performant forms with easy-to-use validation',
-    url: 'https://react-hook-form.com/',
-    github: 'https://github.com/react-hook-form/react-hook-form',
-  },
-  {
-    name: 'Zod',
-    version: '3.22.4',
-    license: 'MIT',
-    category: 'Validation',
-    description: 'TypeScript-first schema validation',
-    url: 'https://zod.dev/',
-    github: 'https://github.com/colinhacks/zod',
+    stars: 14000,
   },
   {
     name: 'Lucide React',
-    version: '0.303.0',
+    version: '0.294.0',
     license: 'ISC',
+    description: 'Beautiful & consistent icon toolkit made by the community',
+    homepage: 'https://lucide.dev',
+    repository: 'https://github.com/lucide-icons/lucide',
+    author: 'Lucide Contributors',
     category: 'Icons',
-    description: 'Beautiful & consistent icon toolkit',
-    url: 'https://lucide.dev/',
-    github: 'https://github.com/lucide-icons/lucide',
-  },
-  {
-    name: 'Socket.io Client',
-    version: '4.5.4',
-    license: 'MIT',
-    category: 'Real-time',
-    description: 'Real-time bidirectional event-based communication',
-    url: 'https://socket.io/',
-    github: 'https://github.com/socketio/socket.io-client',
+    stars: 8500,
   },
 ]
 
-const licenseTypes = {
-  MIT: {
-    name: 'MIT License',
-    description: 'A permissive license that allows commercial use, modification, distribution, and private use.',
-    permissions: ['Commercial use', 'Modification', 'Distribution', 'Private use'],
-    conditions: ['License and copyright notice'],
-    limitations: ['No liability', 'No warranty'],
+const allDependencies = [
+  ...majorDependencies,
+  {
+    name: 'axios',
+    version: '1.6.2',
+    license: 'MIT',
+    description: 'Promise based HTTP client for the browser and node.js',
+    homepage: 'https://axios-http.com',
+    repository: 'https://github.com/axios/axios',
+    author: 'Matt Zabriskie',
+    category: 'HTTP Client',
+    stars: 104000,
   },
-  'Apache-2.0': {
-    name: 'Apache License 2.0',
-    description: 'A permissive license that also provides an express grant of patent rights.',
-    permissions: ['Commercial use', 'Modification', 'Distribution', 'Private use', 'Patent use'],
-    conditions: ['License and copyright notice', 'State changes'],
-    limitations: ['No liability', 'No warranty', 'No trademark use'],
+  {
+    name: 'react-hot-toast',
+    version: '2.4.1',
+    license: 'MIT',
+    description: 'Smoking Hot React Notifications',
+    homepage: 'https://react-hot-toast.com',
+    repository: 'https://github.com/timolins/react-hot-toast',
+    author: 'Timo Lins',
+    category: 'Notifications',
+    stars: 8900,
   },
-  ISC: {
-    name: 'ISC License',
-    description: 'A permissive license functionally equivalent to the MIT License.',
-    permissions: ['Commercial use', 'Modification', 'Distribution', 'Private use'],
-    conditions: ['License and copyright notice'],
-    limitations: ['No liability', 'No warranty'],
+  {
+    name: 'zustand',
+    version: '4.4.7',
+    license: 'MIT',
+    description: 'Small, fast and scalable bearbones state-management solution',
+    homepage: 'https://zustand-demo.pmnd.rs',
+    repository: 'https://github.com/pmndrs/zustand',
+    author: 'Poimandres',
+    category: 'State Management',
+    stars: 42000,
   },
-}
-
-const categories = [
-  'All',
-  'Frontend Framework',
-  'CSS Framework',
-  'UI Components',
-  'State Management',
-  'Data Fetching',
-  'HTTP Client',
-  'Animation',
-  'Data Visualization',
-  'Date Utility',
-  'Form Management',
-  'Validation',
-  'Icons',
-  'Real-time',
-  'Language',
+  {
+    name: 'class-variance-authority',
+    version: '0.7.0',
+    license: 'Apache-2.0',
+    description: 'CVA - Class Variance Authority',
+    homepage: 'https://cva.style',
+    repository: 'https://github.com/joe-bell/cva',
+    author: 'Joe Bell',
+    category: 'Utility',
+    stars: 4200,
+  },
 ]
 
 export default function LicensesPage() {
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('All')
-  const [selectedLicense, setSelectedLicense] = useState('All')
-  const [expandedLicense, setExpandedLicense] = useState<string | null>(null)
-
-  const filteredLicenses = licenses.filter(license => {
-    const matchesSearch = license.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          license.description.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCategory = selectedCategory === 'All' || license.category === selectedCategory
-    const matchesLicense = selectedLicense === 'All' || license.license === selectedLicense
-    return matchesSearch && matchesCategory && matchesLicense
-  })
-
-  const uniqueLicenseTypes = Array.from(new Set(licenses.map(l => l.license)))
-
   return (
     <div className="min-h-screen bg-white">
       {/* Navigation */}
@@ -243,25 +190,17 @@ export default function LicensesPage() {
                 </div>
                 <span className="text-lg font-bold">Enterprise</span>
               </Link>
-              <div className="hidden md:flex items-center space-x-6">
-                <Link href="/licenses" className="text-xs text-primary font-medium">
-                  Licenses
-                </Link>
-                <Link href="/privacy" className="text-xs text-gray-600 hover:text-gray-900 transition">
-                  Privacy
-                </Link>
-                <Link href="/terms" className="text-xs text-gray-600 hover:text-gray-900 transition">
-                  Terms
-                </Link>
-                <Link href="/security" className="text-xs text-gray-600 hover:text-gray-900 transition">
-                  Security
-                </Link>
-              </div>
             </div>
             <div className="flex items-center space-x-3">
-              <Button variant="ghost" size="sm">
+              <Link href="/">
+                <Button variant="ghost" size="sm">
+                  <ArrowLeft className="h-3.5 w-3.5 mr-2" />
+                  Back to Home
+                </Button>
+              </Link>
+              <Button variant="outline" size="sm">
                 <Download className="h-3.5 w-3.5 mr-2" />
-                Export Licenses
+                Download Report
               </Button>
             </div>
           </div>
@@ -273,200 +212,139 @@ export default function LicensesPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-6">
-              <Award className="h-8 w-8 text-primary" />
+              <Package className="h-8 w-8 text-primary" />
             </div>
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
               Open Source Licenses
             </h1>
             <p className="text-base text-gray-600 mb-8">
-              Enterprise Platform is built on the shoulders of giants. We're grateful to the
-              open source community for their incredible work. Below is a list of the
-              third-party libraries and their licenses.
+              We're built on the shoulders of giants. Here's our attribution to the amazing
+              open source projects that make Enterprise Platform possible.
             </p>
-            <div className="flex items-center justify-center gap-6">
-              <div className="flex items-center space-x-2">
-                <Package className="h-5 w-5 text-primary" />
-                <span className="text-sm font-medium">{licenses.length} Dependencies</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Shield className="h-5 w-5 text-green-600" />
-                <span className="text-sm font-medium">All Compatible</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Heart className="h-5 w-5 text-red-600" />
-                <span className="text-sm font-medium">Open Source</span>
-              </div>
+            <div className="flex items-center justify-center gap-4 text-sm text-gray-500">
+              <span className="flex items-center">
+                <Calendar className="h-4 w-4 mr-1" />
+                Updated: December 2024
+              </span>
+              <span className="flex items-center">
+                <Package className="h-4 w-4 mr-1" />
+                {allDependencies.length} dependencies
+              </span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Filters */}
-      <section className="py-8 border-b sticky top-16 bg-white z-40">
+      {/* License Summary */}
+      <section className="py-16">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-6xl mx-auto">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search packages..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                className="px-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                {categories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-              <select
-                value={selectedLicense}
-                onChange={(e) => setSelectedLicense(e.target.value)}
-                className="px-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="All">All Licenses</option>
-                {uniqueLicenseTypes.map(license => (
-                  <option key={license} value={license}>{license}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* License List */}
-      <section className="py-16 lg:py-24">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-6xl mx-auto">
-            <div className="mb-8">
-              <h2 className="text-2xl font-bold mb-2">Third-Party Dependencies</h2>
+            <div className="text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4">License Distribution</h2>
               <p className="text-sm text-gray-600">
-                {filteredLicenses.length} packages found
+                Overview of the different licenses used by our dependencies
               </p>
             </div>
 
-            <div className="grid gap-4">
-              {filteredLicenses.map((pkg) => (
-                <Card key={pkg.name} className="hover:shadow-lg transition-shadow">
-                  <CardHeader
-                    className="cursor-pointer"
-                    onClick={() => setExpandedLicense(expandedLicense === pkg.name ? null : pkg.name)}
-                  >
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {licenseTypes.map((license, index) => {
+                const Icon = license.icon
+                return (
+                  <Card key={index} className="hover:shadow-lg transition-shadow">
+                    <CardContent className="p-6 text-center">
+                      <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mx-auto mb-4">
+                        <Icon className="h-6 w-6 text-primary" />
+                      </div>
+                      <h3 className="font-semibold mb-2">{license.name}</h3>
+                      <p className="text-xs text-gray-600 mb-3">{license.description}</p>
+                      <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${license.color}`}>
+                        {license.count} packages
+                      </span>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Attribution Banner */}
+      <section className="py-8 bg-gradient-to-r from-blue-50 to-purple-50 border-y">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-4xl mx-auto text-center">
+            <div className="flex items-center justify-center mb-4">
+              <Heart className="h-6 w-6 text-red-500 mr-2" />
+              <h3 className="text-lg font-semibold">Built with Open Source</h3>
+            </div>
+            <p className="text-sm text-gray-700">
+              We believe in giving back to the open source community that has made our platform possible.
+              All the projects listed below are essential to our success, and we're grateful to their maintainers
+              and contributors.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Major Dependencies */}
+      <section className="py-16 bg-gray-50">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4">Major Dependencies</h2>
+              <p className="text-sm text-gray-600">
+                Core technologies that power our platform
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {majorDependencies.map((dep, index) => (
+                <Card key={index} className="hover:shadow-lg transition-shadow">
+                  <CardHeader>
                     <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-4">
+                      <div className="flex items-center space-x-3">
                         <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
                           <Package className="h-5 w-5 text-primary" />
                         </div>
                         <div>
-                          <CardTitle className="text-base">{pkg.name}</CardTitle>
-                          <CardDescription className="text-xs mt-1">
-                            {pkg.description}
-                          </CardDescription>
-                          <div className="flex items-center gap-4 mt-2">
-                            <span className="text-xs text-gray-500">v{pkg.version}</span>
-                            <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">
-                              {pkg.license}
-                            </span>
-                            <span className="text-xs text-gray-500">{pkg.category}</span>
-                          </div>
+                          <CardTitle className="text-base">{dep.name}</CardTitle>
+                          <CardDescription className="text-xs">v{dep.version} • {dep.license}</CardDescription>
                         </div>
                       </div>
-                      {expandedLicense === pkg.name ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-gray-400" />
-                      )}
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs bg-gray-100 px-2 py-1 rounded">{dep.category}</span>
+                      </div>
                     </div>
                   </CardHeader>
-                  {expandedLicense === pkg.name && (
-                    <CardContent>
-                      <div className="flex items-center gap-4">
-                        <a
-                          href={pkg.url}
+                  <CardContent>
+                    <p className="text-xs text-gray-600 mb-3">{dep.description}</p>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>Author: {dep.author}</span>
+                        <span className="flex items-center">
+                          <Star className="h-3 w-3 mr-1 text-yellow-500" />
+                          {dep.stars.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Link
+                          href={dep.homepage}
                           target="_blank"
-                          rel="noopener noreferrer"
                           className="text-xs text-primary hover:underline flex items-center"
                         >
-                          <Globe className="h-3 w-3 mr-1" />
-                          Website
-                        </a>
-                        <a
-                          href={pkg.github}
+                          Homepage
+                          <ExternalLink className="h-3 w-3 ml-1" />
+                        </Link>
+                        <span className="text-xs text-gray-400">•</span>
+                        <Link
+                          href={dep.repository}
                           target="_blank"
-                          rel="noopener noreferrer"
                           className="text-xs text-primary hover:underline flex items-center"
                         >
                           <Github className="h-3 w-3 mr-1" />
-                          GitHub
-                        </a>
-                        <button className="text-xs text-primary hover:underline flex items-center">
-                          <FileText className="h-3 w-3 mr-1" />
-                          View License
-                        </button>
+                          Repository
+                        </Link>
                       </div>
-                    </CardContent>
-                  )}
-                </Card>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* License Types */}
-      <section className="py-16 lg:py-24 bg-gray-50">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-6xl mx-auto">
-            <h2 className="text-2xl font-bold mb-8 text-center">License Types</h2>
-
-            <div className="grid md:grid-cols-3 gap-6">
-              {Object.entries(licenseTypes).map(([key, license]) => (
-                <Card key={key}>
-                  <CardHeader>
-                    <CardTitle className="text-base">{license.name}</CardTitle>
-                    <CardDescription className="text-xs">
-                      {license.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <p className="text-xs font-semibold text-green-700 mb-2">Permissions</p>
-                      <ul className="space-y-1">
-                        {license.permissions.map((perm, idx) => (
-                          <li key={idx} className="flex items-start space-x-2">
-                            <CheckCircle className="h-3 w-3 text-green-600 mt-0.5" />
-                            <span className="text-xs text-gray-700">{perm}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-yellow-700 mb-2">Conditions</p>
-                      <ul className="space-y-1">
-                        {license.conditions.map((cond, idx) => (
-                          <li key={idx} className="flex items-start space-x-2">
-                            <Info className="h-3 w-3 text-yellow-600 mt-0.5" />
-                            <span className="text-xs text-gray-700">{cond}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-red-700 mb-2">Limitations</p>
-                      <ul className="space-y-1">
-                        {license.limitations.map((limit, idx) => (
-                          <li key={idx} className="flex items-start space-x-2">
-                            <XCircle className="h-3 w-3 text-red-600 mt-0.5" />
-                            <span className="text-xs text-gray-700">{limit}</span>
-                          </li>
-                        ))}
-                      </ul>
                     </div>
                   </CardContent>
                 </Card>
@@ -476,69 +354,98 @@ export default function LicensesPage() {
         </div>
       </section>
 
-      {/* Our License */}
-      <section className="py-16 lg:py-24">
+      {/* All Dependencies */}
+      <section className="py-16">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto">
-            <Card className="border-primary">
-              <CardHeader>
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-                    <span className="text-black font-bold text-sm">E</span>
-                  </div>
-                  <div>
-                    <CardTitle>Enterprise Platform License</CardTitle>
-                    <CardDescription className="text-xs">
-                      Our software is provided under a commercial license
-                    </CardDescription>
-                  </div>
+          <div className="max-w-6xl mx-auto">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-2xl font-bold">All Dependencies</h2>
+                <p className="text-sm text-gray-600">Complete list of open source packages</p>
+              </div>
+              <div className="flex items-center space-x-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search packages..."
+                    className="pl-10 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-gray-700">
-                  Enterprise Platform is proprietary software. While we use many open source
-                  libraries (listed above), our platform itself is not open source.
-                </p>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="text-sm font-semibold mb-2">What you can do:</h4>
-                    <ul className="space-y-1">
-                      <li className="flex items-start space-x-2">
-                        <CheckCircle className="h-3 w-3 text-green-600 mt-0.5" />
-                        <span className="text-xs">Use the platform for your business</span>
-                      </li>
-                      <li className="flex items-start space-x-2">
-                        <CheckCircle className="h-3 w-3 text-green-600 mt-0.5" />
-                        <span className="text-xs">Customize your instance</span>
-                      </li>
-                      <li className="flex items-start space-x-2">
-                        <CheckCircle className="h-3 w-3 text-green-600 mt-0.5" />
-                        <span className="text-xs">Integrate with other services</span>
-                      </li>
-                    </ul>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold mb-2">What you cannot do:</h4>
-                    <ul className="space-y-1">
-                      <li className="flex items-start space-x-2">
-                        <XCircle className="h-3 w-3 text-red-600 mt-0.5" />
-                        <span className="text-xs">Redistribute our software</span>
-                      </li>
-                      <li className="flex items-start space-x-2">
-                        <XCircle className="h-3 w-3 text-red-600 mt-0.5" />
-                        <span className="text-xs">Reverse engineer the platform</span>
-                      </li>
-                      <li className="flex items-start space-x-2">
-                        <XCircle className="h-3 w-3 text-red-600 mt-0.5" />
-                        <span className="text-xs">Create derivative works</span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-                <div className="pt-4 border-t">
-                  <p className="text-xs text-gray-600">
-                    For full license terms, please refer to your subscription agreement.
-                  </p>
+                <Button variant="outline" size="sm">
+                  <Filter className="h-4 w-4 mr-2" />
+                  Filter
+                </Button>
+              </div>
+            </div>
+
+            <Card>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="text-left p-4 text-xs font-semibold text-gray-700">Package</th>
+                        <th className="text-left p-4 text-xs font-semibold text-gray-700">Version</th>
+                        <th className="text-left p-4 text-xs font-semibold text-gray-700">License</th>
+                        <th className="text-left p-4 text-xs font-semibold text-gray-700">Category</th>
+                        <th className="text-left p-4 text-xs font-semibold text-gray-700">Links</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allDependencies.map((dep, index) => (
+                        <tr key={index} className="border-b hover:bg-gray-50">
+                          <td className="p-4">
+                            <div>
+                              <div className="text-sm font-medium">{dep.name}</div>
+                              <div className="text-xs text-gray-500 truncate max-w-xs" title={dep.description}>
+                                {dep.description}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">
+                              v{dep.version}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <span className="text-xs font-medium">{dep.license}</span>
+                          </td>
+                          <td className="p-4">
+                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                              {dep.category}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center space-x-2">
+                              <Link
+                                href={dep.homepage}
+                                target="_blank"
+                                className="text-xs text-gray-400 hover:text-primary"
+                                title="Homepage"
+                              >
+                                <Globe className="h-3 w-3" />
+                              </Link>
+                              <Link
+                                href={dep.repository}
+                                target="_blank"
+                                className="text-xs text-gray-400 hover:text-primary"
+                                title="Repository"
+                              >
+                                <Github className="h-3 w-3" />
+                              </Link>
+                              <button
+                                className="text-xs text-gray-400 hover:text-primary"
+                                title="View License"
+                              >
+                                <Eye className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </CardContent>
             </Card>
@@ -546,34 +453,184 @@ export default function LicensesPage() {
         </div>
       </section>
 
-      {/* Attribution */}
-      <section className="py-16 lg:py-24 bg-primary">
+      {/* License Text Examples */}
+      <section className="py-16 bg-gray-50">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4">Common Licenses</h2>
+              <p className="text-sm text-gray-600">
+                Full text of the most common licenses used by our dependencies
+              </p>
+            </div>
+
+            <div className="space-y-8">
+              {/* MIT License */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>MIT License</span>
+                    <Button variant="outline" size="sm">
+                      <Copy className="h-3 w-3 mr-2" />
+                      Copy
+                    </Button>
+                  </CardTitle>
+                  <CardDescription>
+                    Used by {licenseTypes.find(l => l.name === 'MIT License')?.count} packages
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="bg-gray-100 p-4 rounded-lg font-mono text-xs leading-relaxed">
+                    <p className="mb-3">
+                      MIT License
+                    </p>
+                    <p className="mb-3">
+                      Copyright (c) [year] [fullname]
+                    </p>
+                    <p className="mb-3">
+                      Permission is hereby granted, free of charge, to any person obtaining a copy
+                      of this software and associated documentation files (the "Software"), to deal
+                      in the Software without restriction, including without limitation the rights
+                      to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+                      copies of the Software, and to permit persons to whom the Software is
+                      furnished to do so, subject to the following conditions:
+                    </p>
+                    <p className="mb-3">
+                      The above copyright notice and this permission notice shall be included in all
+                      copies or substantial portions of the Software.
+                    </p>
+                    <p>
+                      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+                      IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+                      FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+                      AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+                      LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+                      OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+                      SOFTWARE.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Apache 2.0 License */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Apache License 2.0</span>
+                    <Button variant="outline" size="sm">
+                      <Copy className="h-3 w-3 mr-2" />
+                      Copy
+                    </Button>
+                  </CardTitle>
+                  <CardDescription>
+                    Used by {licenseTypes.find(l => l.name === 'Apache 2.0')?.count} packages
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="bg-gray-100 p-4 rounded-lg font-mono text-xs leading-relaxed">
+                    <p className="mb-3">
+                      Apache License Version 2.0, January 2004
+                    </p>
+                    <p className="mb-3">
+                      Licensed under the Apache License, Version 2.0 (the "License");
+                      you may not use this file except in compliance with the License.
+                      You may obtain a copy of the License at
+                    </p>
+                    <p className="mb-3 text-blue-600">
+                      http://www.apache.org/licenses/LICENSE-2.0
+                    </p>
+                    <p>
+                      Unless required by applicable law or agreed to in writing, software
+                      distributed under the License is distributed on an "AS IS" BASIS,
+                      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+                      See the License for the specific language governing permissions and
+                      limitations under the License.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Contact & Support */}
+      <section className="py-16">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-4xl mx-auto">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Users className="h-5 w-5 text-primary" />
+                  <span>Questions About Licenses?</span>
+                </CardTitle>
+                <CardDescription>
+                  Contact our legal team for license compliance questions
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Mail className="h-4 w-4 text-primary" />
+                      <span className="text-sm">legal@enterprise.com</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Phone className="h-4 w-4 text-primary" />
+                      <span className="text-sm">+1 (555) 123-4567</span>
+                    </div>
+                    <div className="flex items-start space-x-2">
+                      <MapPin className="h-4 w-4 text-primary mt-0.5" />
+                      <div className="text-sm">
+                        <div>Enterprise Platform Inc.</div>
+                        <div>Legal & Compliance</div>
+                        <div>123 Business Street</div>
+                        <div>San Francisco, CA 94105</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <h4 className="text-sm font-semibold mb-2">License Compliance</h4>
+                    <p className="text-xs text-gray-600 mb-3">
+                      We take open source license compliance seriously. All dependencies are
+                      regularly audited for license compatibility and compliance.
+                    </p>
+                    <div className="space-y-2">
+                      <Button size="sm" className="w-full">
+                        <Download className="h-3 w-3 mr-2" />
+                        Download License Report
+                      </Button>
+                      <Button variant="outline" size="sm" className="w-full">
+                        <FileText className="h-3 w-3 mr-2" />
+                        View License Policy
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-16 bg-primary">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <Heart className="h-8 w-8 text-red-600 mx-auto mb-4" />
           <h2 className="text-2xl sm:text-3xl font-bold text-black mb-4">
-            Thank You, Open Source Community
+            Supporting Open Source
           </h2>
           <p className="text-sm text-black/80 mb-8 max-w-2xl mx-auto">
-            We're grateful for the amazing open source projects that make Enterprise Platform
-            possible. Consider supporting these projects if you find them valuable.
+            We're committed to contributing back to the open source community that has made our platform possible.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <a
-              href="https://github.com/sponsors"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Button variant="secondary" size="lg">
-                <Github className="mr-2 h-4 w-4" />
-                Support Open Source
-              </Button>
-            </a>
-            <Link href="/contact">
-              <Button variant="outline" size="lg" className="bg-black/10 border-black/20 hover:bg-black/20">
-                Contact Legal Team
-                <Mail className="mr-2 h-4 w-4" />
-              </Button>
-            </Link>
+            <Button variant="secondary" size="lg">
+              <Github className="mr-2 h-4 w-4" />
+              View Our Contributions
+            </Button>
+            <Button variant="outline" size="lg" className="bg-black/10 border-black/20 hover:bg-black/20">
+              <Heart className="mr-2 h-4 w-4" />
+              Sponsor Projects
+            </Button>
           </div>
         </div>
       </section>

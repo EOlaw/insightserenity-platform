@@ -159,13 +159,24 @@ class CustomerServicesApp {
                     crossOriginEmbedderPolicy: false
                 },
                 cors: {
-                    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
+                    origin: process.env.CORS_ORIGIN
+                        ? process.env.CORS_ORIGIN.split(',')
+                        : [
+                            'http://localhost:3000',
+                            'http://localhost:3001',
+                            'http://localhost:4000',
+                            'http://127.0.0.1:3000',
+                            'http://127.0.0.1:3001',
+                            'http://127.0.0.1:4000'
+                        ],
                     credentials: true,
                     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-                    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-API-Version']
+                    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-API-Version'],
+                    exposedHeaders: ['Authorization'],
+                    maxAge: 86400
                 },
                 rateLimit: {
-                    windowMs: 15 * 60 * 1000, // 15 minutes
+                    windowMs: 15 * 60 * 1000,
                     max: process.env.RATE_LIMIT || 100,
                     message: 'Too many requests from this IP'
                 }

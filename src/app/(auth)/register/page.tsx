@@ -24,6 +24,7 @@ export default function RegisterPage() {
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [passwordStrength, setPasswordStrength] = useState(0)
 
   const checkPasswordStrength = (password: string) => {
@@ -31,8 +32,30 @@ export default function RegisterPage() {
     if (password.length >= 8) strength++
     if (password.match(/[a-z]/) && password.match(/[A-Z]/)) strength++
     if (password.match(/[0-9]/)) strength++
-    if (password.match(/[^a-zA-Z0-9]/)) strength++
+    if (password.match(/[@$!%*?&]/)) strength++
     setPasswordStrength(strength)
+  }
+
+  const validatePasswordComplexity = (password: string): string[] => {
+    const errors: string[] = []
+    
+    if (password.length < 8) {
+      errors.push('Password must be at least 8 characters')
+    }
+    if (!/(?=.*[a-z])/.test(password)) {
+      errors.push('Password must contain at least one lowercase letter')
+    }
+    if (!/(?=.*[A-Z])/.test(password)) {
+      errors.push('Password must contain at least one uppercase letter')
+    }
+    if (!/(?=.*\d)/.test(password)) {
+      errors.push('Password must contain at least one number')
+    }
+    if (!/(?=.*[@$!%*?&])/.test(password)) {
+      errors.push('Password must contain at least one special character (@$!%*?&)')
+    }
+    
+    return errors
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -44,18 +67,45 @@ export default function RegisterPage() {
 
     if (name === 'password') {
       checkPasswordStrength(value)
+      const passwordErrors = validatePasswordComplexity(value)
+      setValidationErrors(passwordErrors)
     }
   }
 
   const validateForm = () => {
-    // Basic validation
+    setError('')
+    setValidationErrors([])
+
+    if (!formData.firstName.trim()) {
+      setError('First name is required')
+      return false
+    }
+
+    if (!formData.lastName.trim()) {
+      setError('Last name is required')
+      return false
+    }
+
     if (!formData.email) {
       setError('Email is required')
       return false
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(formData.email)) {
+      setError('Please enter a valid email address')
+      return false
+    }
+
     if (!formData.password) {
       setError('Password is required')
+      return false
+    }
+
+    const passwordErrors = validatePasswordComplexity(formData.password)
+    if (passwordErrors.length > 0) {
+      setValidationErrors(passwordErrors)
+      setError('Password does not meet complexity requirements')
       return false
     }
 
@@ -74,47 +124,71 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
+    
     if (!validateForm()) return
 
     setIsLoading(true)
+    setError('')
+    setValidationErrors([])
 
     try {
-      // Use real API call instead of simulation
-      const response = await auth.register({
-        email: formData.email,
+      // Structure data according to backend expectations
+      const registrationData = {
+        email: formData.email.toLowerCase().trim(),
         password: formData.password,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        company: formData.company,
-        phone: formData.phone
-      })
+        profile: {
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
+        },
+        phoneNumber: formData.phone.trim() || undefined,
+        companyName: formData.company.trim() || undefined,
+        userType: 'client'
+      }
+
+      console.log('Sending registration data:', registrationData)
+
+      const response = await auth.register(registrationData)
+
+      console.log('Registration response:', response)
 
       toast.success('Registration successful! Please check your email to verify your account.')
 
-      // Store tokens and redirect
-      if (response.data?.accessToken) {
-        // The auth.register method already handles token storage
+      // Handle token storage and redirection
+      if (response.data?.tokens?.accessToken) {
+        // Tokens are automatically stored by auth.register
         setTimeout(() => {
           router.push('/dashboard')
         }, 2000)
       } else {
-        // If no token, redirect to login
+        // Redirect to verification page if no immediate login
         setTimeout(() => {
-          router.push('/login')
+          router.push('/verify-email?email=' + encodeURIComponent(formData.email))
         }, 2000)
       }
     } catch (error: any) {
-      console.error('Registration failed:', error)
+      console.error('Registration error:', error)
 
-      // Handle specific error messages from backend
-      if (error.response?.data?.message) {
-        toast.error(error.response.data.message)
+      // Extract detailed error information
+      const errorResponse = error.response?.data
+
+      if (errorResponse?.error?.details && Array.isArray(errorResponse.error.details)) {
+        // Backend returned validation errors array
+        setValidationErrors(errorResponse.error.details)
+        setError('Please correct the following errors:')
+      } else if (errorResponse?.error?.message) {
+        // Backend returned error message
+        setError(errorResponse.error.message)
+      } else if (errorResponse?.message) {
+        // Alternative error message format
+        setError(errorResponse.message)
       } else if (error.message) {
-        toast.error(error.message)
+        // Generic error message
+        setError(error.message)
       } else {
-        toast.error('Registration failed. Please try again.')
+        setError('Registration failed. Please try again.')
       }
+
+      toast.error(error.response?.data?.error?.message || error.message || 'Registration failed')
     } finally {
       setIsLoading(false)
     }
@@ -152,9 +226,18 @@ export default function RegisterPage() {
       </CardHeader>
       <CardContent className="space-y-4">
         {error && (
-          <div className="flex items-center space-x-2 text-destructive bg-destructive/10 p-3 rounded-lg">
-            <AlertCircle className="h-4 w-4" />
-            <p className="text-xs">{error}</p>
+          <div className="flex flex-col space-y-2 text-destructive bg-destructive/10 p-3 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="h-4 w-4" />
+              <p className="text-xs font-medium">{error}</p>
+            </div>
+            {validationErrors.length > 0 && (
+              <ul className="text-xs space-y-1 ml-6 list-disc">
+                {validationErrors.map((err, idx) => (
+                  <li key={idx}>{err}</li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
@@ -205,7 +288,6 @@ export default function RegisterPage() {
             value={formData.company}
             onChange={handleChange}
             leftIcon={<Building2 className="h-3.5 w-3.5" />}
-            required
             disabled={isLoading}
             fullWidth
           />
@@ -247,6 +329,11 @@ export default function RegisterPage() {
                     style={{ width: `${passwordStrength * 25}%` }}
                   />
                 </div>
+                {passwordStrength < 4 && (
+                  <p className="text-2xs text-muted-foreground mt-1">
+                    Must include: uppercase, lowercase, number, and special character (@$!%*?&)
+                  </p>
+                )}
               </div>
             )}
           </div>

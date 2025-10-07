@@ -53,6 +53,7 @@ import {
   FileCode,
   Workflow,
   Bot,
+  Eye
 } from 'lucide-react'
 
 const documentationSections = [

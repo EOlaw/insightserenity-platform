@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import Footer from '@/components/Footer'
-import { ThemeToggle } from '@/components/ThemeToggle'
+import Navigation from '@/components/Navigation'
 import { FeatureHighlight } from '@/components/FeatureHighlight'
 import { HelpTooltip } from '@/components/HelpTooltip'
 import {
@@ -64,51 +64,8 @@ const benefits = [
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background transition-colors">
-      {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-8">
-              <Link href="/" className="flex items-center space-x-2 logo">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <span className="text-black font-bold text-sm">E</span>
-                </div>
-                <span className="text-lg font-bold text-foreground">Enterprise</span>
-              </Link>
-              <div className="hidden md:flex items-center space-x-6">
-                <Link href="/features" className="text-xs text-muted-foreground hover:text-foreground transition">
-                  Features
-                </Link>
-                <Link href="/pricing" className="text-xs text-muted-foreground hover:text-foreground transition">
-                  Pricing
-                </Link>
-                <Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition">
-                  About
-                </Link>
-                <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition">
-                  Contact
-                </Link>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <FeatureHighlight
-                featureId="dark-mode"
-                title="New: Dark Mode!"
-                description="Switch between light and dark themes for comfortable viewing any time of day."
-                position="bottom-left"
-              >
-                <ThemeToggle />
-              </FeatureHighlight>
-              <Link href="/login">
-                <Button variant="ghost" size="sm">Sign in</Button>
-              </Link>
-              <Link href="/register">
-                <Button size="sm">Get Started</Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </nav>
+      {/* Navigation - Now authentication-aware */}
+      <Navigation />
 
       {/* Hero Section */}
       <section className="relative overflow-hidden">
