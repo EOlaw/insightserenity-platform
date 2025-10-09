@@ -526,56 +526,138 @@ class DirectAuthService {
      * @param {string} email - User email
      * @returns {Promise<Object>} Verification result
      */
+    // async verifyEmail(token, email) {
+    //     try {
+    //         logger.info('Verifying email', { email });
+
+    //         const dbService = this._getDatabaseService();
+    //         const user = await dbService.findUserByCredentials(
+    //             email,
+    //             this.config.companyTenantId
+    //         );
+
+    //         if (!user) {
+    //             throw new AppError('User not found', 404);
+    //         }
+
+    //         if (user.verification?.email?.verified) {
+    //             return {
+    //                 message: 'Email already verified',
+    //                 verified: true
+    //             };
+    //         }
+
+    //         const storedToken = user.verification?.email?.token;
+    //         const tokenExpires = user.verification?.email?.tokenExpires;
+
+    //         if (!storedToken || storedToken !== token) {
+    //             throw new AppError('Invalid verification token', 400);
+    //         }
+
+    //         if (new Date() > new Date(tokenExpires)) {
+    //             throw new AppError('Verification token has expired', 400);
+    //         }
+
+    //         user.verification.email.verified = true;
+    //         user.verification.email.verifiedAt = new Date();
+    //         user.accountStatus.status = 'active';
+    //         user.accountStatus.reason = 'Email verified';
+
+    //         await user.save();
+
+    //         logger.info('Email verified successfully', { userId: user._id || user.id });
+
+    //         return {
+    //             message: 'Email verified successfully',
+    //             verified: true,
+    //             user: this._sanitizeUserOutput(user)
+    //         };
+    //     } catch (error) {
+    //         logger.error('Email verification failed', {
+    //             error: error.message,
+    //             email
+    //         });
+    //         throw error;
+    //     }
+    // }
     async verifyEmail(token, email) {
         try {
             logger.info('Verifying email', { email });
 
             const dbService = this._getDatabaseService();
-            const user = await dbService.findUserByCredentials(
-                email,
-                this.config.companyTenantId
-            );
+
+            // Get User model and explicitly select the verification token field
+            const User = dbService.getModel('User', 'customer');
+            const user = await User.findOne({
+                email: email.toLowerCase(),
+                tenantId: this.config.companyTenantId,
+                'accountStatus.status': { $ne: 'deleted' }
+            }).select('+verification.email.token');  // CRITICAL: Explicitly include the token field
 
             if (!user) {
-                throw new AppError('User not found', 404);
+                throw new AppError('User not found', 404, 'USER_NOT_FOUND');
             }
 
             if (user.verification?.email?.verified) {
                 return {
                     message: 'Email already verified',
-                    verified: true
+                    verified: true,
+                    user: this._sanitizeUserOutput(user)
                 };
             }
 
             const storedToken = user.verification?.email?.token;
             const tokenExpires = user.verification?.email?.tokenExpires;
 
-            if (!storedToken || storedToken !== token) {
-                throw new AppError('Invalid verification token', 400);
+            if (!storedToken) {
+                throw new AppError('No verification token found', 400, 'NO_TOKEN');
+            }
+
+            // Trim both tokens to handle any whitespace issues
+            if (storedToken.trim() !== token.trim()) {
+                logger.warn('Token mismatch', {
+                    providedLength: token.length,
+                    storedLength: storedToken.length,
+                    email
+                });
+                throw new AppError('Invalid verification token', 400, 'INVALID_TOKEN');
             }
 
             if (new Date() > new Date(tokenExpires)) {
-                throw new AppError('Verification token has expired', 400);
+                throw new AppError('Verification token has expired', 400, 'TOKEN_EXPIRED');
             }
 
+            // Update verification status
             user.verification.email.verified = true;
             user.verification.email.verifiedAt = new Date();
-            user.accountStatus.status = 'active';
-            user.accountStatus.reason = 'Email verified';
+            user.verification.email.token = undefined;
+            user.verification.email.tokenExpires = undefined;
+
+            // Update account status
+            if (user.accountStatus.status === 'pending') {
+                user.accountStatus.status = 'active';
+                user.accountStatus.activatedAt = new Date();
+                user.accountStatus.reason = 'Email verified successfully';
+            }
 
             await user.save();
 
-            logger.info('Email verified successfully', { userId: user._id || user.id });
+            logger.info('Email verified successfully', {
+                userId: user._id || user.id,
+                email: user.email
+            });
 
             return {
                 message: 'Email verified successfully',
                 verified: true,
                 user: this._sanitizeUserOutput(user)
             };
+
         } catch (error) {
             logger.error('Email verification failed', {
                 error: error.message,
-                email
+                email,
+                stack: error.stack
             });
             throw error;
         }
