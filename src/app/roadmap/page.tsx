@@ -63,6 +63,7 @@ import {
   Send,
   ChevronRight,
   TrendingUp,
+  Lock
 } from 'lucide-react'
 
 const quarters = [
@@ -325,11 +326,11 @@ export default function RoadmapPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed': return 'text-green-600 bg-green-100'
-      case 'in-progress': return 'text-blue-600 bg-blue-100'
-      case 'planned': return 'text-orange-600 bg-orange-100'
-      case 'future': return 'text-purple-600 bg-purple-100'
-      default: return 'text-gray-600 bg-gray-100'
+      case 'completed': return 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-950'
+      case 'in-progress': return 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-950'
+      case 'planned': return 'text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-950'
+      case 'future': return 'text-purple-600 bg-purple-100 dark:text-purple-400 dark:bg-purple-950'
+      default: return 'text-muted-foreground bg-muted'
     }
   }
 
@@ -345,10 +346,10 @@ export default function RoadmapPage() {
 
   const getImpactColor = (impact: string) => {
     switch (impact) {
-      case 'high': return 'text-red-600'
-      case 'medium': return 'text-yellow-600'
-      case 'low': return 'text-green-600'
-      default: return 'text-gray-600'
+      case 'high': return 'text-red-600 dark:text-red-400'
+      case 'medium': return 'text-yellow-600 dark:text-yellow-400'
+      case 'low': return 'text-green-600 dark:text-green-400'
+      default: return 'text-muted-foreground'
     }
   }
 
@@ -360,9 +361,9 @@ export default function RoadmapPage() {
   }))
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -370,22 +371,22 @@ export default function RoadmapPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
-                <Link href="/features" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/features" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Features
                 </Link>
-                <Link href="/pricing" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/pricing" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Pricing
                 </Link>
                 <Link href="/roadmap" className="text-xs text-primary font-medium">
                   Roadmap
                 </Link>
-                <Link href="/about" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition">
                   About
                 </Link>
-                <Link href="/contact" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Contact
                 </Link>
               </div>
@@ -403,16 +404,16 @@ export default function RoadmapPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-6">
               <Rocket className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Product Roadmap
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               See what we've shipped, what we're building, and what's coming next.
               Your feedback shapes our priorities.
             </p>
@@ -435,7 +436,7 @@ export default function RoadmapPage() {
       </section>
 
       {/* Category Filter */}
-      <section className="py-8 border-b sticky top-16 bg-white z-40">
+      <section className="py-8 border-b border-border sticky top-16 bg-background z-40">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-wrap gap-2 justify-center">
             {categories.map(category => (
@@ -445,7 +446,7 @@ export default function RoadmapPage() {
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
                   selectedCategory === category
                     ? 'bg-primary text-black'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
                 }`}
               >
                 {category}
@@ -462,7 +463,7 @@ export default function RoadmapPage() {
             {/* Timeline */}
             <div className="relative">
               {/* Vertical Line */}
-              <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-gray-200" />
+              <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-border" />
 
               {/* Quarters */}
               {filteredQuarters.map((quarter, quarterIndex) => (
@@ -491,16 +492,16 @@ export default function RoadmapPage() {
                       )}
                     </div>
                     <div className="ml-6">
-                      <h3 className="text-xl font-bold flex items-center gap-2">
+                      <h3 className="text-xl font-bold flex items-center gap-2 text-foreground">
                         {quarter.name}
                         {quarter.status === 'current' && (
-                          <span className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded-full">
+                          <span className="text-xs px-2 py-1 bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-400 rounded-full">
                             Current
                           </span>
                         )}
                       </h3>
-                      <p className="text-sm font-medium text-gray-900">{quarter.theme}</p>
-                      <p className="text-xs text-gray-600">{quarter.description}</p>
+                      <p className="text-sm font-medium text-foreground">{quarter.theme}</p>
+                      <p className="text-xs text-muted-foreground">{quarter.description}</p>
                     </div>
                   </div>
 
@@ -542,7 +543,7 @@ export default function RoadmapPage() {
                                     {getStatusIcon(feature.status)}
                                     {feature.status.replace('-', ' ')}
                                   </span>
-                                  <span className="text-xs text-gray-500">{feature.category}</span>
+                                  <span className="text-xs text-muted-foreground">{feature.category}</span>
                                 </div>
                                 <span className={`text-xs font-medium ${getImpactColor(feature.impact)}`}>
                                   {feature.impact} impact
@@ -551,10 +552,10 @@ export default function RoadmapPage() {
                               {feature.progress !== undefined && (
                                 <div className="mt-3">
                                   <div className="flex items-center justify-between text-xs mb-1">
-                                    <span className="text-gray-600">Progress</span>
-                                    <span className="font-medium">{feature.progress}%</span>
+                                    <span className="text-muted-foreground">Progress</span>
+                                    <span className="font-medium text-foreground">{feature.progress}%</span>
                                   </div>
-                                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                  <div className="w-full bg-muted rounded-full h-1.5">
                                     <div
                                       className="bg-blue-600 h-1.5 rounded-full transition-all"
                                       style={{ width: `${feature.progress}%` }}
@@ -576,14 +577,14 @@ export default function RoadmapPage() {
       </section>
 
       {/* Recently Shipped */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
                 Recently Shipped
               </h2>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 Features and improvements we've recently delivered
               </p>
             </div>
@@ -594,13 +595,13 @@ export default function RoadmapPage() {
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        <CheckCircle className="h-5 w-5 text-green-600" />
+                        <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
                         <div>
-                          <p className="text-sm font-medium">{item.title}</p>
-                          <p className="text-xs text-gray-500">{item.category}</p>
+                          <p className="text-sm font-medium text-foreground">{item.title}</p>
+                          <p className="text-xs text-muted-foreground">{item.category}</p>
                         </div>
                       </div>
-                      <span className="text-xs text-gray-500">{item.date}</span>
+                      <span className="text-xs text-muted-foreground">{item.date}</span>
                     </div>
                   </CardContent>
                 </Card>

@@ -167,9 +167,9 @@ const awards = [
 
 export default function AboutPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -177,19 +177,19 @@ export default function AboutPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
-                <Link href="/features" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/features" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Features
                 </Link>
-                <Link href="/pricing" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/pricing" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Pricing
                 </Link>
                 <Link href="/about" className="text-xs text-primary font-medium">
                   About
                 </Link>
-                <Link href="/contact" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Contact
                 </Link>
               </div>
@@ -207,14 +207,14 @@ export default function AboutPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Building the Future of
               <span className="text-primary"> Enterprise Software</span>
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               We're on a mission to empower businesses with innovative solutions that drive growth,
               efficiency, and success in the digital age.
             </p>
@@ -236,7 +236,7 @@ export default function AboutPage() {
       </section>
 
       {/* Stats Section */}
-      <section className="py-16 lg:py-24 border-y">
+      <section className="py-16 lg:py-24 border-y border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
             {stats.map((stat, index) => {
@@ -246,8 +246,8 @@ export default function AboutPage() {
                   <div className="inline-flex items-center justify-center w-12 h-12 bg-primary/10 rounded-lg mb-3">
                     <Icon className="h-6 w-6 text-primary" />
                   </div>
-                  <div className="text-2xl sm:text-3xl font-bold mb-1">{stat.value}</div>
-                  <div className="text-xs text-gray-600">{stat.label}</div>
+                  <div className="text-2xl sm:text-3xl font-bold text-foreground mb-1">{stat.value}</div>
+                  <div className="text-xs text-muted-foreground">{stat.label}</div>
                 </div>
               )
             })}
@@ -260,13 +260,13 @@ export default function AboutPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-6">Our Mission</h2>
-              <p className="text-sm text-gray-600 mb-6">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-6 text-foreground">Our Mission</h2>
+              <p className="text-sm text-muted-foreground mb-6">
                 To democratize enterprise software by making powerful, scalable solutions accessible
                 to businesses of all sizes. We believe that every company deserves world-class tools
                 to compete and thrive in today's digital economy.
               </p>
-              <p className="text-sm text-gray-600 mb-6">
+              <p className="text-sm text-muted-foreground mb-6">
                 Through continuous innovation and a deep understanding of our customers' needs, we're
                 building a platform that transforms how businesses operate, collaborate, and grow.
               </p>
@@ -274,22 +274,22 @@ export default function AboutPage() {
                 <div className="flex items-start gap-3">
                   <CheckCircle className="h-5 w-5 text-primary mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium">Customer-Centric Innovation</p>
-                    <p className="text-xs text-gray-600">Every feature is built with our customers in mind</p>
+                    <p className="text-sm font-medium text-foreground">Customer-Centric Innovation</p>
+                    <p className="text-xs text-muted-foreground">Every feature is built with our customers in mind</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <CheckCircle className="h-5 w-5 text-primary mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium">Global Accessibility</p>
-                    <p className="text-xs text-gray-600">Making enterprise tools available worldwide</p>
+                    <p className="text-sm font-medium text-foreground">Global Accessibility</p>
+                    <p className="text-xs text-muted-foreground">Making enterprise tools available worldwide</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <CheckCircle className="h-5 w-5 text-primary mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium">Sustainable Growth</p>
-                    <p className="text-xs text-gray-600">Building for long-term success and impact</p>
+                    <p className="text-sm font-medium text-foreground">Sustainable Growth</p>
+                    <p className="text-xs text-muted-foreground">Building for long-term success and impact</p>
                   </div>
                 </div>
               </div>
@@ -301,28 +301,28 @@ export default function AboutPage() {
                   <CardTitle className="text-xl">Our Vision</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-muted-foreground">
                     To be the most trusted and innovative enterprise platform, empowering millions of
                     businesses to achieve their full potential through technology.
                   </p>
-                  <div className="pt-4 border-t">
-                    <h4 className="font-semibold text-sm mb-3">By 2030, we aim to:</h4>
+                  <div className="pt-4 border-t border-border">
+                    <h4 className="font-semibold text-sm mb-3 text-foreground">By 2030, we aim to:</h4>
                     <ul className="space-y-2">
                       <li className="flex items-start gap-2">
                         <span className="text-primary">•</span>
-                        <span className="text-xs">Serve 1 million businesses globally</span>
+                        <span className="text-xs text-muted-foreground">Serve 1 million businesses globally</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="text-primary">•</span>
-                        <span className="text-xs">Achieve carbon neutrality in all operations</span>
+                        <span className="text-xs text-muted-foreground">Achieve carbon neutrality in all operations</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="text-primary">•</span>
-                        <span className="text-xs">Create 10,000+ jobs worldwide</span>
+                        <span className="text-xs text-muted-foreground">Create 10,000+ jobs worldwide</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="text-primary">•</span>
-                        <span className="text-xs">Establish presence in 50+ countries</span>
+                        <span className="text-xs text-muted-foreground">Establish presence in 50+ countries</span>
                       </li>
                     </ul>
                   </div>
@@ -334,11 +334,11 @@ export default function AboutPage() {
       </section>
 
       {/* Values */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Our Core Values</h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Our Core Values</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               These principles guide everything we do, from product development to customer relationships
             </p>
           </div>
@@ -354,7 +354,7 @@ export default function AboutPage() {
                     <CardTitle className="text-base">{value.title}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-xs text-gray-600">{value.description}</p>
+                    <p className="text-xs text-muted-foreground">{value.description}</p>
                   </CardContent>
                 </Card>
               )
@@ -367,15 +367,15 @@ export default function AboutPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Our Journey</h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Our Journey</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               From startup to industry leader, here's how we've grown
             </p>
           </div>
           <div className="max-w-4xl mx-auto">
             <div className="relative">
               {/* Vertical Line */}
-              <div className="absolute left-1/2 transform -translate-x-1/2 h-full w-0.5 bg-gray-200" />
+              <div className="absolute left-1/2 transform -translate-x-1/2 h-full w-0.5 bg-gray-200 dark:bg-gray-700" />
 
               {/* Timeline Items */}
               {timeline.map((item, index) => {
@@ -385,8 +385,8 @@ export default function AboutPage() {
                     <div className={`w-5/12 ${index % 2 === 0 ? 'text-right pr-8' : 'text-left pl-8 order-1'}`}>
                       <div className={`inline-block ${index % 2 === 0 ? 'text-right' : 'text-left'}`}>
                         <span className="text-xs text-primary font-semibold">{item.year}</span>
-                        <h3 className="text-base font-semibold mt-1">{item.title}</h3>
-                        <p className="text-xs text-gray-600 mt-1">{item.description}</p>
+                        <h3 className="text-base font-semibold mt-1 text-foreground">{item.title}</h3>
+                        <p className="text-xs text-muted-foreground mt-1">{item.description}</p>
                       </div>
                     </div>
                     <div className="absolute left-1/2 transform -translate-x-1/2 w-10 h-10 bg-primary rounded-full flex items-center justify-center">
@@ -401,11 +401,11 @@ export default function AboutPage() {
       </section>
 
       {/* Leadership Team */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Leadership Team</h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Leadership Team</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Meet the visionaries driving our mission forward
             </p>
           </div>
@@ -413,8 +413,8 @@ export default function AboutPage() {
             {leadership.map((member, index) => (
               <Card key={index} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
-                  <div className="w-20 h-20 bg-gray-200 rounded-full mx-auto mb-4 flex items-center justify-center">
-                    <Users className="h-8 w-8 text-gray-400" />
+                  <div className="w-20 h-20 bg-muted rounded-full mx-auto mb-4 flex items-center justify-center">
+                    <Users className="h-8 w-8 text-muted-foreground" />
                   </div>
                   <CardTitle className="text-base text-center">{member.name}</CardTitle>
                   <CardDescription className="text-xs text-center">
@@ -422,12 +422,12 @@ export default function AboutPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-xs text-gray-600 text-center mb-4">{member.bio}</p>
+                  <p className="text-xs text-muted-foreground text-center mb-4">{member.bio}</p>
                   <div className="flex justify-center space-x-2">
-                    <a href={member.linkedin} className="p-1.5 bg-gray-100 rounded hover:bg-primary hover:text-white transition">
+                    <a href={member.linkedin} className="p-1.5 bg-muted rounded hover:bg-primary hover:text-white transition">
                       <Linkedin className="h-3 w-3" />
                     </a>
-                    <a href={member.twitter} className="p-1.5 bg-gray-100 rounded hover:bg-primary hover:text-white transition">
+                    <a href={member.twitter} className="p-1.5 bg-muted rounded hover:bg-primary hover:text-white transition">
                       <Twitter className="h-3 w-3" />
                     </a>
                   </div>
@@ -442,8 +442,8 @@ export default function AboutPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Awards & Recognition</h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Awards & Recognition</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Industry recognition for our innovation and excellence
             </p>
           </div>
@@ -452,9 +452,9 @@ export default function AboutPage() {
               <Card key={index} className="text-center">
                 <CardContent className="pt-6">
                   <Trophy className="h-8 w-8 text-primary mx-auto mb-3" />
-                  <h3 className="text-sm font-semibold">{award.title}</h3>
-                  <p className="text-xs text-gray-600 mt-1">{award.org}</p>
-                  <p className="text-2xs text-gray-500 mt-1">{award.year}</p>
+                  <h3 className="text-sm font-semibold text-foreground">{award.title}</h3>
+                  <p className="text-xs text-muted-foreground mt-1">{award.org}</p>
+                  <p className="text-2xs text-muted-foreground mt-1">{award.year}</p>
                 </CardContent>
               </Card>
             ))}

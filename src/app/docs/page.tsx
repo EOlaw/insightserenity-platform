@@ -233,9 +233,9 @@ export default function DocumentationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -243,19 +243,19 @@ export default function DocumentationPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
                 <Link href="/docs" className="text-xs text-primary font-medium">
                   Documentation
                 </Link>
-                <Link href="/api" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/api" className="text-xs text-muted-foreground hover:text-foreground transition">
                   API Reference
                 </Link>
-                <Link href="/support" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/support" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Support
                 </Link>
-                <Link href="/status" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/status" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Status
                 </Link>
               </div>
@@ -277,29 +277,29 @@ export default function DocumentationPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-6">
               <BookOpen className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Documentation
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               Everything you need to know about using Enterprise Platform.
               From getting started to advanced features.
             </p>
 
             {/* Search Bar */}
             <div className="max-w-xl mx-auto relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search documentation..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full pl-10 pr-4 py-3 text-sm border border-border bg-background text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
@@ -328,7 +328,7 @@ export default function DocumentationPage() {
             {/* Sidebar Navigation */}
             <aside className="lg:col-span-1">
               <div className="sticky top-20">
-                <h3 className="text-sm font-semibold mb-4">Documentation</h3>
+                <h3 className="text-sm font-semibold mb-4 text-foreground">Documentation</h3>
                 <div className="space-y-1">
                   {documentationSections.map((section) => {
                     const Icon = section.icon
@@ -337,16 +337,16 @@ export default function DocumentationPage() {
                       <div key={section.title}>
                         <button
                           onClick={() => setExpandedSection(isExpanded ? null : section.title)}
-                          className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg hover:bg-gray-100 transition"
+                          className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg hover:bg-muted transition text-foreground"
                         >
                           <div className="flex items-center space-x-2">
-                            <Icon className="h-4 w-4 text-gray-500" />
+                            <Icon className="h-4 w-4 text-muted-foreground" />
                             <span>{section.title}</span>
                           </div>
                           {isExpanded ? (
-                            <ChevronDown className="h-3 w-3 text-gray-400" />
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
                           ) : (
-                            <ChevronRight className="h-3 w-3 text-gray-400" />
+                            <ChevronRight className="h-3 w-3 text-muted-foreground" />
                           )}
                         </button>
                         {isExpanded && (
@@ -355,11 +355,11 @@ export default function DocumentationPage() {
                               <Link
                                 key={item.title}
                                 href={item.link}
-                                className="block px-3 py-1.5 text-xs text-gray-600 hover:text-primary hover:bg-gray-50 rounded"
+                                className="block px-3 py-1.5 text-xs text-muted-foreground hover:text-primary hover:bg-muted/50 rounded"
                               >
                                 {item.title}
                                 {item.time && (
-                                  <span className="text-gray-400 ml-1">• {item.time}</span>
+                                  <span className="text-muted-foreground ml-1">• {item.time}</span>
                                 )}
                               </Link>
                             ))}
@@ -390,40 +390,40 @@ export default function DocumentationPage() {
                     <Card>
                       <CardContent className="pt-6">
                         <div className="flex items-center space-x-2 mb-2">
-                          <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-sm font-bold">
+                          <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-sm font-bold text-foreground">
                             1
                           </div>
-                          <h4 className="text-sm font-semibold">Sign Up</h4>
+                          <h4 className="text-sm font-semibold text-foreground">Sign Up</h4>
                         </div>
-                        <p className="text-xs text-gray-600">Create your account and choose a plan</p>
+                        <p className="text-xs text-muted-foreground">Create your account and choose a plan</p>
                       </CardContent>
                     </Card>
                     <Card>
                       <CardContent className="pt-6">
                         <div className="flex items-center space-x-2 mb-2">
-                          <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-sm font-bold">
+                          <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-sm font-bold text-foreground">
                             2
                           </div>
-                          <h4 className="text-sm font-semibold">Configure</h4>
+                          <h4 className="text-sm font-semibold text-foreground">Configure</h4>
                         </div>
-                        <p className="text-xs text-gray-600">Set up your organization and team</p>
+                        <p className="text-xs text-muted-foreground">Set up your organization and team</p>
                       </CardContent>
                     </Card>
                     <Card>
                       <CardContent className="pt-6">
                         <div className="flex items-center space-x-2 mb-2">
-                          <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-sm font-bold">
+                          <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-sm font-bold text-foreground">
                             3
                           </div>
-                          <h4 className="text-sm font-semibold">Launch</h4>
+                          <h4 className="text-sm font-semibold text-foreground">Launch</h4>
                         </div>
-                        <p className="text-xs text-gray-600">Start using the platform features</p>
+                        <p className="text-xs text-muted-foreground">Start using the platform features</p>
                       </CardContent>
                     </Card>
                   </div>
 
                   {/* Code Example */}
-                  <div className="bg-gray-900 rounded-lg p-4">
+                  <div className="bg-gray-900 dark:bg-gray-950 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs text-gray-400">Example API Request</span>
                       <button
@@ -465,18 +465,18 @@ export default function DocumentationPage() {
                       <Link
                         key={index}
                         href={article.link}
-                        className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition"
+                        className="flex items-center justify-between p-3 rounded-lg hover:bg-muted transition"
                       >
                         <div>
-                          <p className="text-sm font-medium">{article.title}</p>
-                          <p className="text-xs text-gray-500">{article.category}</p>
+                          <p className="text-sm font-medium text-foreground">{article.title}</p>
+                          <p className="text-xs text-muted-foreground">{article.category}</p>
                         </div>
                         <div className="flex items-center space-x-3">
-                          <span className="text-xs text-gray-400 flex items-center">
+                          <span className="text-xs text-muted-foreground flex items-center">
                             <Eye className="h-3 w-3 mr-1" />
                             {article.views.toLocaleString()}
                           </span>
-                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
                         </div>
                       </Link>
                     ))}
@@ -496,13 +496,13 @@ export default function DocumentationPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {videoTutorials.map((video, index) => (
                       <Link key={index} href={video.link} className="group">
-                        <div className="aspect-video bg-gray-200 rounded-lg mb-2 relative overflow-hidden">
+                        <div className="aspect-video bg-muted rounded-lg mb-2 relative overflow-hidden">
                           <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                             <PlayCircle className="h-8 w-8 text-white" />
                           </div>
                         </div>
-                        <p className="text-xs font-medium">{video.title}</p>
-                        <p className="text-xs text-gray-500">{video.duration}</p>
+                        <p className="text-xs font-medium text-foreground">{video.title}</p>
+                        <p className="text-xs text-muted-foreground">{video.duration}</p>
                       </Link>
                     ))}
                   </div>
@@ -525,14 +525,14 @@ export default function DocumentationPage() {
                         <Link
                           key={index}
                           href={resource.link}
-                          className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition"
+                          className="flex items-start space-x-3 p-3 rounded-lg hover:bg-muted transition"
                         >
                           <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
                             <Icon className="h-4 w-4 text-primary" />
                           </div>
                           <div>
-                            <p className="text-sm font-medium">{resource.title}</p>
-                            <p className="text-xs text-gray-600">{resource.description}</p>
+                            <p className="text-sm font-medium text-foreground">{resource.title}</p>
+                            <p className="text-xs text-muted-foreground">{resource.description}</p>
                           </div>
                         </Link>
                       )
@@ -546,21 +546,21 @@ export default function DocumentationPage() {
       </section>
 
       {/* Help Section */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Need Help?
             </h2>
-            <p className="text-sm text-gray-600 mb-8">
+            <p className="text-sm text-muted-foreground mb-8">
               Can't find what you're looking for? We're here to help.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               <Card>
                 <CardContent className="pt-6">
                   <MessageSquare className="h-8 w-8 text-primary mx-auto mb-3" />
-                  <h3 className="text-sm font-semibold mb-1">Community Forum</h3>
-                  <p className="text-xs text-gray-600 mb-3">Get help from our community</p>
+                  <h3 className="text-sm font-semibold mb-1 text-foreground">Community Forum</h3>
+                  <p className="text-xs text-muted-foreground mb-3">Get help from our community</p>
                   <Link href="/community" className="text-xs text-primary hover:underline">
                     Visit Forum →
                   </Link>
@@ -569,8 +569,8 @@ export default function DocumentationPage() {
               <Card>
                 <CardContent className="pt-6">
                   <Mail className="h-8 w-8 text-primary mx-auto mb-3" />
-                  <h3 className="text-sm font-semibold mb-1">Email Support</h3>
-                  <p className="text-xs text-gray-600 mb-3">Get help from our team</p>
+                  <h3 className="text-sm font-semibold mb-1 text-foreground">Email Support</h3>
+                  <p className="text-xs text-muted-foreground mb-3">Get help from our team</p>
                   <Link href="/support" className="text-xs text-primary hover:underline">
                     Contact Support →
                   </Link>
@@ -579,8 +579,8 @@ export default function DocumentationPage() {
               <Card>
                 <CardContent className="pt-6">
                   <GraduationCap className="h-8 w-8 text-primary mx-auto mb-3" />
-                  <h3 className="text-sm font-semibold mb-1">Training</h3>
-                  <p className="text-xs text-gray-600 mb-3">Learn from experts</p>
+                  <h3 className="text-sm font-semibold mb-1 text-foreground">Training</h3>
+                  <p className="text-xs text-muted-foreground mb-3">Learn from experts</p>
                   <Link href="/training" className="text-xs text-primary hover:underline">
                     View Courses →
                   </Link>

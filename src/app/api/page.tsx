@@ -286,18 +286,18 @@ export default function APIReferencePage() {
 
   const getMethodColor = (method: string) => {
     switch (method) {
-      case 'GET': return 'text-green-600 bg-green-100'
-      case 'POST': return 'text-blue-600 bg-blue-100'
-      case 'PUT': return 'text-orange-600 bg-orange-100'
-      case 'DELETE': return 'text-red-600 bg-red-100'
-      default: return 'text-gray-600 bg-gray-100'
+      case 'GET': return 'text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400'
+      case 'POST': return 'text-blue-600 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400'
+      case 'PUT': return 'text-orange-600 bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400'
+      case 'DELETE': return 'text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400'
+      default: return 'text-muted-foreground bg-muted'
     }
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -305,19 +305,19 @@ export default function APIReferencePage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
-                <Link href="/docs" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/docs" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Documentation
                 </Link>
                 <Link href="/api" className="text-xs text-primary font-medium">
                   API Reference
                 </Link>
-                <Link href="/support" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/support" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Support
                 </Link>
-                <Link href="/status" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/status" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Status
                 </Link>
               </div>
@@ -339,16 +339,16 @@ export default function APIReferencePage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-6">
               <Code className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               API Reference
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               Build powerful integrations with our comprehensive REST API.
               Full documentation for all endpoints and features.
             </p>
@@ -377,24 +377,24 @@ export default function APIReferencePage() {
       </section>
 
       {/* API Info Cards */}
-      <section className="py-8 border-y">
+      <section className="py-8 border-y border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="text-center">
               <div className="text-2xl font-bold text-primary">v1</div>
-              <div className="text-xs text-gray-600">Current Version</div>
+              <div className="text-xs text-muted-foreground">Current Version</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-primary">REST</div>
-              <div className="text-xs text-gray-600">API Type</div>
+              <div className="text-xs text-muted-foreground">API Type</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-primary">99.99%</div>
-              <div className="text-xs text-gray-600">Uptime SLA</div>
+              <div className="text-xs text-muted-foreground">Uptime SLA</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-primary">&lt;100ms</div>
-              <div className="text-xs text-gray-600">Avg Response Time</div>
+              <div className="text-xs text-muted-foreground">Avg Response Time</div>
             </div>
           </div>
         </div>
@@ -409,18 +409,18 @@ export default function APIReferencePage() {
               <div className="sticky top-20">
                 <div className="mb-4">
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <input
                       type="text"
                       placeholder="Search endpoints..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full pl-10 pr-4 py-2 text-xs border border-border bg-background text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
                 </div>
 
-                <h3 className="text-sm font-semibold mb-4">Endpoints</h3>
+                <h3 className="text-sm font-semibold mb-4 text-foreground">Endpoints</h3>
                 <div className="space-y-1">
                   {apiEndpoints.map((category) => {
                     const isExpanded = expandedCategory === category.category
@@ -428,13 +428,13 @@ export default function APIReferencePage() {
                       <div key={category.category}>
                         <button
                           onClick={() => setExpandedCategory(isExpanded ? null : category.category)}
-                          className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg hover:bg-gray-100 transition"
+                          className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg hover:bg-muted transition text-foreground"
                         >
                           <span>{category.category}</span>
                           {isExpanded ? (
-                            <ChevronDown className="h-3 w-3 text-gray-400" />
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
                           ) : (
-                            <ChevronRight className="h-3 w-3 text-gray-400" />
+                            <ChevronRight className="h-3 w-3 text-muted-foreground" />
                           )}
                         </button>
                         {isExpanded && (
@@ -443,9 +443,9 @@ export default function APIReferencePage() {
                               <Link
                                 key={endpoint.path}
                                 href={`#${endpoint.path}`}
-                                className="block px-3 py-1.5 text-xs text-gray-600 hover:text-primary hover:bg-gray-50 rounded"
+                                className="block px-3 py-1.5 text-xs text-muted-foreground hover:text-primary hover:bg-muted/50 rounded"
                               >
-                                <span className={`inline-block w-12 text-2xs font-medium ${getMethodColor(endpoint.method)}`}>
+                                <span className={`inline-block w-12 text-2xs font-medium ${getMethodColor(endpoint.method)} px-1 py-0.5 rounded`}>
                                   {endpoint.method}
                                 </span>
                                 <span className="ml-2">{endpoint.path}</span>
@@ -472,26 +472,26 @@ export default function APIReferencePage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <h3 className="text-sm font-semibold">Base URL</h3>
-                    <code className="block bg-gray-100 p-2 rounded text-xs">
+                    <h3 className="text-sm font-semibold text-foreground">Base URL</h3>
+                    <code className="block bg-muted p-2 rounded text-xs text-foreground">
                       https://api.enterprise.com/v1
                     </code>
                   </div>
 
                   <div className="space-y-2">
-                    <h3 className="text-sm font-semibold">Authentication</h3>
-                    <p className="text-xs text-gray-600">
+                    <h3 className="text-sm font-semibold text-foreground">Authentication</h3>
+                    <p className="text-xs text-muted-foreground">
                       All API requests require authentication using an API key in the Authorization header:
                     </p>
-                    <code className="block bg-gray-100 p-2 rounded text-xs">
+                    <code className="block bg-muted p-2 rounded text-xs text-foreground">
                       Authorization: Bearer YOUR_API_KEY
                     </code>
                   </div>
 
                   <div className="space-y-2">
-                    <h3 className="text-sm font-semibold">Code Example</h3>
-                    <div className="bg-gray-900 rounded-lg">
-                      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800">
+                    <h3 className="text-sm font-semibold text-foreground">Code Example</h3>
+                    <div className="bg-gray-900 dark:bg-gray-950 rounded-lg">
+                      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 dark:border-gray-700">
                         <div className="flex space-x-2">
                           {Object.keys(codeExamples).map((lang) => (
                             <button
@@ -544,25 +544,25 @@ export default function APIReferencePage() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="border-b">
-                          <th className="text-left py-2">Tier</th>
-                          <th className="text-left py-2">Requests</th>
-                          <th className="text-left py-2">Burst Rate</th>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 text-foreground">Tier</th>
+                          <th className="text-left py-2 text-foreground">Requests</th>
+                          <th className="text-left py-2 text-foreground">Burst Rate</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rateLimits.map((limit) => (
-                          <tr key={limit.tier} className="border-b">
-                            <td className="py-2 font-medium">{limit.tier}</td>
-                            <td className="py-2">{limit.requests}</td>
-                            <td className="py-2">{limit.burst}</td>
+                          <tr key={limit.tier} className="border-b border-border">
+                            <td className="py-2 font-medium text-foreground">{limit.tier}</td>
+                            <td className="py-2 text-muted-foreground">{limit.requests}</td>
+                            <td className="py-2 text-muted-foreground">{limit.burst}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                    <p className="text-xs text-blue-800">
+                  <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <p className="text-xs text-blue-800 dark:text-blue-400">
                       <Info className="inline h-3 w-3 mr-1" />
                       Rate limit information is included in response headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
                     </p>
@@ -583,16 +583,16 @@ export default function APIReferencePage() {
                     {sdkLanguages.map((sdk) => {
                       const Icon = sdk.icon
                       return (
-                        <div key={sdk.name} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                        <div key={sdk.name} className="flex items-center justify-between p-3 border border-border rounded-lg hover:bg-muted/50 transition">
                           <div className="flex items-center space-x-3">
-                            <Icon className="h-5 w-5 text-gray-600" />
+                            <Icon className="h-5 w-5 text-muted-foreground" />
                             <div>
-                              <p className="text-sm font-medium">{sdk.name}</p>
-                              <p className="text-xs text-gray-500">v{sdk.version}</p>
+                              <p className="text-sm font-medium text-foreground">{sdk.name}</p>
+                              <p className="text-xs text-muted-foreground">v{sdk.version}</p>
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="text-xs text-gray-500">{sdk.downloads}</p>
+                            <p className="text-xs text-muted-foreground">{sdk.downloads}</p>
                             <a href="#" className="text-xs text-primary hover:underline">Install →</a>
                           </div>
                         </div>
@@ -613,12 +613,12 @@ export default function APIReferencePage() {
                 <CardContent>
                   <div className="space-y-2">
                     {webhookEvents.map((event) => (
-                      <div key={event.event} className="flex items-center justify-between py-2 border-b">
+                      <div key={event.event} className="flex items-center justify-between py-2 border-b border-border">
                         <div>
-                          <code className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">
+                          <code className="text-xs font-mono bg-muted px-2 py-1 rounded text-foreground">
                             {event.event}
                           </code>
-                          <p className="text-xs text-gray-600 mt-1">{event.description}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{event.description}</p>
                         </div>
                       </div>
                     ))}
@@ -639,15 +639,15 @@ export default function APIReferencePage() {
                     {errorCodes.map((error) => (
                       <div key={error.code} className="flex items-start space-x-3">
                         <span className={`text-xs font-mono px-2 py-1 rounded ${
-                          error.code < 400 ? 'bg-green-100 text-green-800' :
-                          error.code < 500 ? 'bg-orange-100 text-orange-800' :
-                          'bg-red-100 text-red-800'
+                          error.code < 400 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                          error.code < 500 ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400' :
+                          'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
                         }`}>
                           {error.code}
                         </span>
                         <div className="flex-1">
-                          <p className="text-sm font-medium">{error.name}</p>
-                          <p className="text-xs text-gray-600">{error.description}</p>
+                          <p className="text-sm font-medium text-foreground">{error.name}</p>
+                          <p className="text-xs text-muted-foreground">{error.description}</p>
                         </div>
                       </div>
                     ))}

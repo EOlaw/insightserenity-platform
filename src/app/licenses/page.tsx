@@ -33,28 +33,28 @@ const licenseTypes = [
     name: 'MIT License',
     count: 156,
     description: 'Permissive free software license',
-    color: 'bg-green-100 text-green-800',
+    color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
     icon: CheckCircle,
   },
   {
     name: 'Apache 2.0',
     count: 43,
     description: 'Patent and trademark protection',
-    color: 'bg-blue-100 text-blue-800',
+    color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
     icon: Shield,
   },
   {
     name: 'BSD 3-Clause',
     count: 28,
     description: 'Revised BSD license with advertising clause',
-    color: 'bg-purple-100 text-purple-800',
+    color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
     icon: Scale,
   },
   {
     name: 'ISC License',
     count: 12,
     description: 'Internet Software Consortium license',
-    color: 'bg-orange-100 text-orange-800',
+    color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
     icon: Globe,
   },
 ]
@@ -178,9 +178,9 @@ const allDependencies = [
 
 export default function LicensesPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -188,7 +188,7 @@ export default function LicensesPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
             </div>
             <div className="flex items-center space-x-3">
@@ -208,20 +208,20 @@ export default function LicensesPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-6">
               <Package className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Open Source Licenses
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               We're built on the shoulders of giants. Here's our attribution to the amazing
               open source projects that make Enterprise Platform possible.
             </p>
-            <div className="flex items-center justify-center gap-4 text-sm text-gray-500">
+            <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center">
                 <Calendar className="h-4 w-4 mr-1" />
                 Updated: December 2024
@@ -240,8 +240,8 @@ export default function LicensesPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">License Distribution</h2>
-              <p className="text-sm text-gray-600">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">License Distribution</h2>
+              <p className="text-sm text-muted-foreground">
                 Overview of the different licenses used by our dependencies
               </p>
             </div>
@@ -255,8 +255,8 @@ export default function LicensesPage() {
                       <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mx-auto mb-4">
                         <Icon className="h-6 w-6 text-primary" />
                       </div>
-                      <h3 className="font-semibold mb-2">{license.name}</h3>
-                      <p className="text-xs text-gray-600 mb-3">{license.description}</p>
+                      <h3 className="font-semibold mb-2 text-foreground">{license.name}</h3>
+                      <p className="text-xs text-muted-foreground mb-3">{license.description}</p>
                       <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${license.color}`}>
                         {license.count} packages
                       </span>
@@ -270,14 +270,14 @@ export default function LicensesPage() {
       </section>
 
       {/* Attribution Banner */}
-      <section className="py-8 bg-gradient-to-r from-blue-50 to-purple-50 border-y">
+      <section className="py-8 bg-gradient-to-r from-blue-100/50 to-purple-100/50 dark:from-blue-900/20 dark:to-purple-900/20 border-y border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="flex items-center justify-center mb-4">
               <Heart className="h-6 w-6 text-red-500 mr-2" />
-              <h3 className="text-lg font-semibold">Built with Open Source</h3>
+              <h3 className="text-lg font-semibold text-foreground">Built with Open Source</h3>
             </div>
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-muted-foreground">
               We believe in giving back to the open source community that has made our platform possible.
               All the projects listed below are essential to our success, and we're grateful to their maintainers
               and contributors.
@@ -287,12 +287,12 @@ export default function LicensesPage() {
       </section>
 
       {/* Major Dependencies */}
-      <section className="py-16 bg-gray-50">
+      <section className="py-16 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">Major Dependencies</h2>
-              <p className="text-sm text-gray-600">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Major Dependencies</h2>
+              <p className="text-sm text-muted-foreground">
                 Core technologies that power our platform
               </p>
             </div>
@@ -312,14 +312,14 @@ export default function LicensesPage() {
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <span className="text-xs bg-gray-100 px-2 py-1 rounded">{dep.category}</span>
+                        <span className="text-xs bg-muted px-2 py-1 rounded">{dep.category}</span>
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-xs text-gray-600 mb-3">{dep.description}</p>
+                    <p className="text-xs text-muted-foreground mb-3">{dep.description}</p>
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs text-gray-500">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>Author: {dep.author}</span>
                         <span className="flex items-center">
                           <Star className="h-3 w-3 mr-1 text-yellow-500" />
@@ -335,7 +335,7 @@ export default function LicensesPage() {
                           Homepage
                           <ExternalLink className="h-3 w-3 ml-1" />
                         </Link>
-                        <span className="text-xs text-gray-400">•</span>
+                        <span className="text-xs text-muted-foreground">•</span>
                         <Link
                           href={dep.repository}
                           target="_blank"
@@ -360,16 +360,16 @@ export default function LicensesPage() {
           <div className="max-w-6xl mx-auto">
             <div className="flex items-center justify-between mb-8">
               <div>
-                <h2 className="text-2xl font-bold">All Dependencies</h2>
-                <p className="text-sm text-gray-600">Complete list of open source packages</p>
+                <h2 className="text-2xl font-bold text-foreground">All Dependencies</h2>
+                <p className="text-sm text-muted-foreground">Complete list of open source packages</p>
               </div>
               <div className="flex items-center space-x-3">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <input
                     type="text"
                     placeholder="Search packages..."
-                    className="pl-10 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="pl-10 pr-4 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background text-foreground"
                   />
                 </div>
                 <Button variant="outline" size="sm">
@@ -383,36 +383,36 @@ export default function LicensesPage() {
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
+                    <thead className="bg-muted/50 border-b border-border">
                       <tr>
-                        <th className="text-left p-4 text-xs font-semibold text-gray-700">Package</th>
-                        <th className="text-left p-4 text-xs font-semibold text-gray-700">Version</th>
-                        <th className="text-left p-4 text-xs font-semibold text-gray-700">License</th>
-                        <th className="text-left p-4 text-xs font-semibold text-gray-700">Category</th>
-                        <th className="text-left p-4 text-xs font-semibold text-gray-700">Links</th>
+                        <th className="text-left p-4 text-xs font-semibold text-foreground">Package</th>
+                        <th className="text-left p-4 text-xs font-semibold text-foreground">Version</th>
+                        <th className="text-left p-4 text-xs font-semibold text-foreground">License</th>
+                        <th className="text-left p-4 text-xs font-semibold text-foreground">Category</th>
+                        <th className="text-left p-4 text-xs font-semibold text-foreground">Links</th>
                       </tr>
                     </thead>
                     <tbody>
                       {allDependencies.map((dep, index) => (
-                        <tr key={index} className="border-b hover:bg-gray-50">
+                        <tr key={index} className="border-b border-border hover:bg-muted/50">
                           <td className="p-4">
                             <div>
-                              <div className="text-sm font-medium">{dep.name}</div>
-                              <div className="text-xs text-gray-500 truncate max-w-xs" title={dep.description}>
+                              <div className="text-sm font-medium text-foreground">{dep.name}</div>
+                              <div className="text-xs text-muted-foreground truncate max-w-xs" title={dep.description}>
                                 {dep.description}
                               </div>
                             </div>
                           </td>
                           <td className="p-4">
-                            <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">
+                            <span className="text-xs font-mono bg-muted px-2 py-1 rounded">
                               v{dep.version}
                             </span>
                           </td>
                           <td className="p-4">
-                            <span className="text-xs font-medium">{dep.license}</span>
+                            <span className="text-xs font-medium text-foreground">{dep.license}</span>
                           </td>
                           <td className="p-4">
-                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                            <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-1 rounded">
                               {dep.category}
                             </span>
                           </td>
@@ -421,7 +421,7 @@ export default function LicensesPage() {
                               <Link
                                 href={dep.homepage}
                                 target="_blank"
-                                className="text-xs text-gray-400 hover:text-primary"
+                                className="text-xs text-muted-foreground hover:text-primary"
                                 title="Homepage"
                               >
                                 <Globe className="h-3 w-3" />
@@ -429,13 +429,13 @@ export default function LicensesPage() {
                               <Link
                                 href={dep.repository}
                                 target="_blank"
-                                className="text-xs text-gray-400 hover:text-primary"
+                                className="text-xs text-muted-foreground hover:text-primary"
                                 title="Repository"
                               >
                                 <Github className="h-3 w-3" />
                               </Link>
                               <button
-                                className="text-xs text-gray-400 hover:text-primary"
+                                className="text-xs text-muted-foreground hover:text-primary"
                                 title="View License"
                               >
                                 <Eye className="h-3 w-3" />
@@ -454,12 +454,12 @@ export default function LicensesPage() {
       </section>
 
       {/* License Text Examples */}
-      <section className="py-16 bg-gray-50">
+      <section className="py-16 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">Common Licenses</h2>
-              <p className="text-sm text-gray-600">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Common Licenses</h2>
+              <p className="text-sm text-muted-foreground">
                 Full text of the most common licenses used by our dependencies
               </p>
             </div>
@@ -480,7 +480,7 @@ export default function LicensesPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="bg-gray-100 p-4 rounded-lg font-mono text-xs leading-relaxed">
+                  <div className="bg-muted p-4 rounded-lg font-mono text-xs leading-relaxed text-muted-foreground">
                     <p className="mb-3">
                       MIT License
                     </p>
@@ -527,7 +527,7 @@ export default function LicensesPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="bg-gray-100 p-4 rounded-lg font-mono text-xs leading-relaxed">
+                  <div className="bg-muted p-4 rounded-lg font-mono text-xs leading-relaxed text-muted-foreground">
                     <p className="mb-3">
                       Apache License Version 2.0, January 2004
                     </p>
@@ -536,7 +536,7 @@ export default function LicensesPage() {
                       you may not use this file except in compliance with the License.
                       You may obtain a copy of the License at
                     </p>
-                    <p className="mb-3 text-blue-600">
+                    <p className="mb-3 text-blue-600 dark:text-blue-400">
                       http://www.apache.org/licenses/LICENSE-2.0
                     </p>
                     <p>
@@ -573,15 +573,15 @@ export default function LicensesPage() {
                   <div className="space-y-3">
                     <div className="flex items-center space-x-2">
                       <Mail className="h-4 w-4 text-primary" />
-                      <span className="text-sm">legal@enterprise.com</span>
+                      <span className="text-sm text-foreground">legal@enterprise.com</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Phone className="h-4 w-4 text-primary" />
-                      <span className="text-sm">+1 (555) 123-4567</span>
+                      <span className="text-sm text-foreground">+1 (555) 123-4567</span>
                     </div>
                     <div className="flex items-start space-x-2">
                       <MapPin className="h-4 w-4 text-primary mt-0.5" />
-                      <div className="text-sm">
+                      <div className="text-sm text-foreground">
                         <div>Enterprise Platform Inc.</div>
                         <div>Legal & Compliance</div>
                         <div>123 Business Street</div>
@@ -589,9 +589,9 @@ export default function LicensesPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <h4 className="text-sm font-semibold mb-2">License Compliance</h4>
-                    <p className="text-xs text-gray-600 mb-3">
+                  <div className="bg-blue-100/50 dark:bg-blue-900/20 p-4 rounded-lg">
+                    <h4 className="text-sm font-semibold mb-2 text-foreground">License Compliance</h4>
+                    <p className="text-xs text-muted-foreground mb-3">
                       We take open source license compliance seriously. All dependencies are
                       regularly audited for license compatibility and compliance.
                     </p>

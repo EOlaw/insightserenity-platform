@@ -271,9 +271,9 @@ export default function SupportPage() {
   ]
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -281,19 +281,19 @@ export default function SupportPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
-                <Link href="/docs" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/docs" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Documentation
                 </Link>
                 <Link href="/support" className="text-xs text-primary font-medium">
                   Support
                 </Link>
-                <Link href="/status" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/status" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Status
                 </Link>
-                <Link href="/community" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/community" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Community
                 </Link>
               </div>
@@ -315,43 +315,43 @@ export default function SupportPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-6">
               <Headphones className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               How Can We Help You?
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               Get answers from our knowledge base or reach out to our support team.
               We're here to help you succeed.
             </p>
 
             {/* Search Bar */}
             <div className="max-w-xl mx-auto relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search for help articles..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full pl-10 pr-4 py-3 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background text-foreground"
               />
             </div>
 
             <div className="flex items-center justify-center gap-6 mt-8">
-              <span className="text-sm text-gray-600 flex items-center">
-                <CheckCircle className="h-4 w-4 text-green-600 mr-1" />
+              <span className="text-sm text-muted-foreground flex items-center">
+                <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mr-1" />
                 99.9% uptime
               </span>
-              <span className="text-sm text-gray-600 flex items-center">
-                <Clock className="h-4 w-4 text-blue-600 mr-1" />
+              <span className="text-sm text-muted-foreground flex items-center">
+                <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-1" />
                 &lt;4hr response time
               </span>
-              <span className="text-sm text-gray-600 flex items-center">
-                <Star className="h-4 w-4 text-yellow-600 mr-1" />
+              <span className="text-sm text-muted-foreground flex items-center">
+                <Star className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mr-1" />
                 4.9/5 satisfaction
               </span>
             </div>
@@ -363,8 +363,8 @@ export default function SupportPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Browse Help Topics</h2>
-            <p className="text-sm text-gray-600">Find answers organized by category</p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Browse Help Topics</h2>
+            <p className="text-sm text-muted-foreground">Find answers organized by category</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
@@ -377,7 +377,7 @@ export default function SupportPage() {
                       <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
                         <Icon className="h-5 w-5 text-primary" />
                       </div>
-                      <span className="text-xs text-gray-500">{category.articles} articles</span>
+                      <span className="text-xs text-muted-foreground">{category.articles} articles</span>
                     </div>
                     <CardTitle className="text-base mt-3">{category.title}</CardTitle>
                     <CardDescription className="text-xs">
@@ -387,7 +387,7 @@ export default function SupportPage() {
                   <CardContent>
                     <ul className="space-y-1">
                       {category.popular.slice(0, 3).map((article, idx) => (
-                        <li key={idx} className="text-xs text-gray-600 hover:text-primary flex items-center">
+                        <li key={idx} className="text-xs text-muted-foreground hover:text-primary flex items-center">
                           <ChevronRight className="h-3 w-3 mr-1" />
                           {article}
                         </li>
@@ -408,11 +408,11 @@ export default function SupportPage() {
       </section>
 
       {/* Contact Options */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Contact Support</h2>
-            <p className="text-sm text-gray-600">Choose your preferred way to get help</p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Contact Support</h2>
+            <p className="text-sm text-muted-foreground">Choose your preferred way to get help</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
@@ -430,7 +430,7 @@ export default function SupportPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-2 text-xs text-gray-600">
+                    <div className="space-y-2 text-xs text-muted-foreground">
                       <div className="flex items-center justify-between">
                         <span>Availability:</span>
                         <span className="font-medium">{option.availability}</span>
@@ -458,8 +458,8 @@ export default function SupportPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">Popular Articles</h2>
-              <p className="text-sm text-gray-600">Most viewed help articles this week</p>
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Popular Articles</h2>
+              <p className="text-sm text-muted-foreground">Most viewed help articles this week</p>
             </div>
 
             <div className="space-y-3">
@@ -468,22 +468,22 @@ export default function SupportPage() {
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <Link href="#" className="text-sm font-medium hover:text-primary">
+                        <Link href="#" className="text-sm font-medium text-foreground hover:text-primary">
                           {article.title}
                         </Link>
                         <div className="flex items-center gap-4 mt-1">
-                          <span className="text-xs text-gray-500">{article.category}</span>
-                          <span className="text-xs text-gray-500 flex items-center">
+                          <span className="text-xs text-muted-foreground">{article.category}</span>
+                          <span className="text-xs text-muted-foreground flex items-center">
                             <Users className="h-3 w-3 mr-1" />
                             {article.views.toLocaleString()} views
                           </span>
-                          <span className="text-xs text-green-600 flex items-center">
+                          <span className="text-xs text-green-600 dark:text-green-400 flex items-center">
                             <ThumbsUp className="h-3 w-3 mr-1" />
                             {article.helpful}% helpful
                           </span>
                         </div>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-gray-400" />
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </CardContent>
                 </Card>
@@ -503,11 +503,11 @@ export default function SupportPage() {
       </section>
 
       {/* Support Plans */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Support Plans</h2>
-            <p className="text-sm text-gray-600">Different levels of support for different needs</p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Support Plans</h2>
+            <p className="text-sm text-muted-foreground">Different levels of support for different needs</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
@@ -528,13 +528,13 @@ export default function SupportPage() {
                   <ul className="space-y-2">
                     {plan.features.map((feature, idx) => (
                       <li key={idx} className="flex items-start space-x-2">
-                        <CheckCircle className="h-4 w-4 text-green-600 mt-0.5" />
-                        <span className="text-xs text-gray-700">{feature}</span>
+                        <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
+                        <span className="text-xs text-muted-foreground">{feature}</span>
                       </li>
                     ))}
                   </ul>
-                  <p className="text-xs text-gray-500 mt-4 pt-4 border-t">
-                    Included with: <span className="font-medium">{plan.included}</span>
+                  <p className="text-xs text-muted-foreground mt-4 pt-4 border-t border-border">
+                    Included with: <span className="font-medium text-foreground">{plan.included}</span>
                   </p>
                 </CardContent>
               </Card>
@@ -548,19 +548,19 @@ export default function SupportPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">Video Tutorials</h2>
-              <p className="text-sm text-gray-600">Learn with step-by-step video guides</p>
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Video Tutorials</h2>
+              <p className="text-sm text-muted-foreground">Learn with step-by-step video guides</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {videoTutorials.map((video, index) => (
                 <Card key={index} className="hover:shadow-lg transition-shadow">
-                  <div className="aspect-video bg-gray-200 rounded-t-lg flex items-center justify-center">
-                    <Video className="h-12 w-12 text-gray-400" />
+                  <div className="aspect-video bg-muted rounded-t-lg flex items-center justify-center">
+                    <Video className="h-12 w-12 text-muted-foreground" />
                   </div>
                   <CardContent className="pt-4">
-                    <h3 className="text-sm font-medium">{video.title}</h3>
-                    <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+                    <h3 className="text-sm font-medium text-foreground">{video.title}</h3>
+                    <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
                       <span>{video.duration}</span>
                       <span>{video.views.toLocaleString()} views</span>
                     </div>
@@ -582,12 +582,12 @@ export default function SupportPage() {
       </section>
 
       {/* FAQs */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">Frequently Asked Questions</h2>
-              <p className="text-sm text-gray-600">Quick answers to common questions</p>
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Frequently Asked Questions</h2>
+              <p className="text-sm text-muted-foreground">Quick answers to common questions</p>
             </div>
 
             <div className="space-y-4">
@@ -595,17 +595,17 @@ export default function SupportPage() {
                 <Card key={index} className="cursor-pointer" onClick={() => setExpandedFaq(expandedFaq === index ? null : index)}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold">{faq.question}</h3>
+                      <h3 className="text-sm font-semibold text-foreground">{faq.question}</h3>
                       {expandedFaq === index ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
                       ) : (
-                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
                       )}
                     </div>
                   </CardHeader>
                   {expandedFaq === index && (
                     <CardContent>
-                      <p className="text-xs text-gray-600">{faq.answer}</p>
+                      <p className="text-xs text-muted-foreground">{faq.answer}</p>
                     </CardContent>
                   )}
                 </Card>

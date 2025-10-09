@@ -124,9 +124,9 @@ const thirdPartyProviders = [
 
 export default function CookiesPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -134,7 +134,7 @@ export default function CookiesPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
             </div>
             <div className="flex items-center space-x-3">
@@ -154,20 +154,20 @@ export default function CookiesPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-6">
               <Cookie className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Cookie Policy
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               Learn about how we use cookies and similar technologies to improve your experience
               and provide our services.
             </p>
-            <div className="flex items-center justify-center gap-4 text-sm text-gray-500">
+            <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center">
                 <Calendar className="h-4 w-4 mr-1" />
                 Last updated: December 2024
@@ -182,15 +182,15 @@ export default function CookiesPage() {
       </section>
 
       {/* Cookie Banner Simulation */}
-      <section className="py-8 bg-blue-50 border-y border-blue-200">
+      <section className="py-8 bg-blue-50/50 dark:bg-blue-950/50 border-y border-blue-200 dark:border-blue-800">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
-            <div className="bg-white rounded-lg p-6 shadow-lg border">
+            <div className="bg-card rounded-lg p-6 shadow-lg border-2 border-border">
               <div className="flex items-start space-x-4">
                 <Cookie className="h-8 w-8 text-primary flex-shrink-0 mt-1" />
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold mb-2">We use cookies to enhance your experience</h3>
-                  <p className="text-sm text-gray-600 mb-4">
+                  <h3 className="text-lg font-semibold mb-2 text-card-foreground">We use cookies to enhance your experience</h3>
+                  <p className="text-sm text-card-foreground/80 mb-4">
                     This website uses cookies to ensure you get the best experience. You can customize
                     your cookie preferences or accept all cookies.
                   </p>
@@ -211,8 +211,8 @@ export default function CookiesPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">Cookie Preferences</h2>
-              <p className="text-sm text-gray-600">
+              <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Cookie Preferences</h2>
+              <p className="text-sm text-muted-foreground">
                 Control which cookies we can use to improve your experience
               </p>
             </div>
@@ -230,34 +230,34 @@ export default function CookiesPage() {
                           </div>
                           <div>
                             <CardTitle className="text-base">{type.title}</CardTitle>
-                            <span className="text-xs text-gray-500">{type.count} cookies</span>
+                            <span className="text-xs text-muted-foreground">{type.count} cookies</span>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
                           {type.required ? (
-                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                            <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-2 py-1 rounded">
                               Required
                             </span>
                           ) : (
-                            <button className="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">
-                              <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform translate-x-1" />
+                            <button className="relative inline-flex h-6 w-11 items-center rounded-full bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">
+                              <span className="inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform translate-x-1" />
                             </button>
                           )}
                         </div>
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-xs text-gray-600 mb-3">{type.description}</p>
+                      <p className="text-xs text-muted-foreground mb-3">{type.description}</p>
                       <div className="space-y-2">
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-muted-foreground">
                           <strong>Retention:</strong> {type.retention}
                         </div>
                         <div>
-                          <p className="text-xs font-medium mb-1">Examples:</p>
+                          <p className="text-xs font-medium mb-1 text-foreground">Examples:</p>
                           <ul className="space-y-1">
                             {type.examples.map((example, idx) => (
-                              <li key={idx} className="text-xs text-gray-600 flex items-center">
-                                <div className="w-1 h-1 bg-gray-400 rounded-full mr-2" />
+                              <li key={idx} className="text-xs text-muted-foreground flex items-center">
+                                <div className="w-1 h-1 bg-muted-foreground rounded-full mr-2" />
                                 {example}
                               </li>
                             ))}
@@ -282,7 +282,7 @@ export default function CookiesPage() {
       </section>
 
       {/* Main Content */}
-      <section className="py-16 bg-gray-50">
+      <section className="py-16 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -306,7 +306,7 @@ export default function CookiesPage() {
                         <Link
                           key={index}
                           href={`#section-${index + 1}`}
-                          className="block text-xs text-gray-600 hover:text-primary py-1"
+                          className="block text-xs text-muted-foreground hover:text-primary py-1"
                         >
                           {item}
                         </Link>
@@ -327,27 +327,27 @@ export default function CookiesPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <p className="text-sm text-gray-700">
+                    <p className="text-sm text-foreground">
                       Cookies are small text files that are stored on your device when you visit our website.
                       They help us provide you with a better experience by remembering your preferences and
                       understanding how you use our site.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <h4 className="text-sm font-semibold mb-2 flex items-center">
-                          <Globe className="h-4 w-4 text-blue-600 mr-2" />
+                      <div className="bg-blue-100 dark:bg-blue-950 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <h4 className="text-sm font-semibold mb-2 flex items-center text-foreground">
+                          <Globe className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2" />
                           First-Party Cookies
                         </h4>
-                        <p className="text-xs text-gray-700">
+                        <p className="text-xs text-foreground/80">
                           Set directly by our website to enable core functionality and remember your preferences.
                         </p>
                       </div>
-                      <div className="bg-green-50 p-4 rounded-lg">
-                        <h4 className="text-sm font-semibold mb-2 flex items-center">
-                          <Users className="h-4 w-4 text-green-600 mr-2" />
+                      <div className="bg-green-100 dark:bg-green-950 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                        <h4 className="text-sm font-semibold mb-2 flex items-center text-foreground">
+                          <Users className="h-4 w-4 text-green-600 dark:text-green-400 mr-2" />
                           Third-Party Cookies
                         </h4>
-                        <p className="text-xs text-gray-700">
+                        <p className="text-xs text-foreground/80">
                           Set by external services we use for analytics, support, and other features.
                         </p>
                       </div>
@@ -364,7 +364,7 @@ export default function CookiesPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <p className="text-sm text-gray-700">
+                    <p className="text-sm text-foreground">
                       We use cookies for several important purposes to enhance your experience:
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -392,11 +392,11 @@ export default function CookiesPage() {
                       ].map((purpose, index) => {
                         const Icon = purpose.icon
                         return (
-                          <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                          <div key={index} className="flex items-start space-x-3 p-3 bg-muted rounded-lg">
                             <Icon className="h-4 w-4 text-primary mt-0.5" />
                             <div>
-                              <h4 className="text-sm font-semibold">{purpose.title}</h4>
-                              <p className="text-xs text-gray-600">{purpose.description}</p>
+                              <h4 className="text-sm font-semibold text-foreground">{purpose.title}</h4>
+                              <p className="text-xs text-muted-foreground">{purpose.description}</p>
                             </div>
                           </div>
                         )
@@ -414,14 +414,14 @@ export default function CookiesPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <p className="text-sm text-gray-700">
+                    <p className="text-sm text-foreground">
                       We work with trusted third-party services that may set their own cookies:
                     </p>
                     <div className="space-y-4">
                       {thirdPartyProviders.map((provider, index) => (
-                        <div key={index} className="border rounded-lg p-4">
+                        <div key={index} className="border border-border rounded-lg p-4">
                           <div className="flex items-start justify-between mb-2">
-                            <h4 className="text-sm font-semibold">{provider.name}</h4>
+                            <h4 className="text-sm font-semibold text-foreground">{provider.name}</h4>
                             <Link
                               href={provider.privacyUrl}
                               target="_blank"
@@ -431,13 +431,13 @@ export default function CookiesPage() {
                               <ExternalLink className="h-3 w-3 ml-1" />
                             </Link>
                           </div>
-                          <p className="text-xs text-gray-600 mb-2">{provider.purpose}</p>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                          <p className="text-xs text-muted-foreground mb-2">{provider.purpose}</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted-foreground">
                             <div>
-                              <span className="font-medium">Cookies:</span> {provider.cookies.join(', ')}
+                              <span className="font-medium text-foreground">Cookies:</span> {provider.cookies.join(', ')}
                             </div>
                             <div>
-                              <span className="font-medium">Retention:</span> {provider.retention}
+                              <span className="font-medium text-foreground">Retention:</span> {provider.retention}
                             </div>
                           </div>
                         </div>
@@ -455,37 +455,37 @@ export default function CookiesPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <p className="text-sm text-gray-700">
+                    <p className="text-sm text-foreground">
                       You have several options to control cookies on our website:
                     </p>
                     <div className="space-y-4">
                       <div className="border-l-4 border-blue-500 pl-4">
-                        <h4 className="text-sm font-semibold mb-1">Cookie Preferences</h4>
-                        <p className="text-xs text-gray-600">
+                        <h4 className="text-sm font-semibold mb-1 text-foreground">Cookie Preferences</h4>
+                        <p className="text-xs text-muted-foreground">
                           Use our cookie preference center (shown above) to enable or disable
                           different types of cookies.
                         </p>
                       </div>
                       <div className="border-l-4 border-green-500 pl-4">
-                        <h4 className="text-sm font-semibold mb-1">Browser Settings</h4>
-                        <p className="text-xs text-gray-600">
+                        <h4 className="text-sm font-semibold mb-1 text-foreground">Browser Settings</h4>
+                        <p className="text-xs text-muted-foreground">
                           Configure your browser to block or delete cookies. Note that this may
                           affect website functionality.
                         </p>
                       </div>
                       <div className="border-l-4 border-purple-500 pl-4">
-                        <h4 className="text-sm font-semibold mb-1">Opt-out Tools</h4>
-                        <p className="text-xs text-gray-600">
+                        <h4 className="text-sm font-semibold mb-1 text-foreground">Opt-out Tools</h4>
+                        <p className="text-xs text-muted-foreground">
                           Use industry opt-out tools for advertising cookies and tracking.
                         </p>
                       </div>
                     </div>
-                    <div className="bg-yellow-50 p-4 rounded-lg">
-                      <h4 className="text-sm font-semibold mb-1 flex items-center text-yellow-800">
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                      <h4 className="text-sm font-semibold mb-1 flex items-center text-yellow-800 dark:text-yellow-400">
                         <AlertTriangle className="h-4 w-4 mr-2" />
                         Important Note
                       </h4>
-                      <p className="text-xs text-yellow-700">
+                      <p className="text-xs text-yellow-700 dark:text-yellow-500">
                         Disabling cookies may limit your ability to use certain features of our website.
                         Essential cookies cannot be disabled as they are required for basic functionality.
                       </p>
@@ -502,22 +502,22 @@ export default function CookiesPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <p className="text-sm text-gray-700">
+                    <p className="text-sm text-foreground">
                       We may update this Cookie Policy from time to time to reflect changes in our
                       practices or legal requirements.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="text-sm font-semibold mb-2">Notification</h4>
-                        <ul className="space-y-1 text-xs text-gray-600">
+                      <div className="bg-muted p-4 rounded-lg">
+                        <h4 className="text-sm font-semibold mb-2 text-foreground">Notification</h4>
+                        <ul className="space-y-1 text-xs text-muted-foreground">
                           <li>• Email notification for major changes</li>
                           <li>• Website banner for minor updates</li>
                           <li>• Updated policy posted on this page</li>
                         </ul>
                       </div>
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="text-sm font-semibold mb-2">Your Options</h4>
-                        <ul className="space-y-1 text-xs text-gray-600">
+                      <div className="bg-muted p-4 rounded-lg">
+                        <h4 className="text-sm font-semibold mb-2 text-foreground">Your Options</h4>
+                        <ul className="space-y-1 text-xs text-muted-foreground">
                           <li>• Review changes when notified</li>
                           <li>• Update your cookie preferences</li>
                           <li>• Contact us with questions</li>
@@ -536,22 +536,22 @@ export default function CookiesPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <p className="text-sm text-gray-700">
+                    <p className="text-sm text-foreground">
                       If you have questions about our use of cookies, please contact us:
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-3">
                         <div className="flex items-center space-x-2">
                           <Mail className="h-4 w-4 text-primary" />
-                          <span className="text-sm">privacy@enterprise.com</span>
+                          <span className="text-sm text-foreground">privacy@enterprise.com</span>
                         </div>
                         <div className="flex items-center space-x-2">
                           <Phone className="h-4 w-4 text-primary" />
-                          <span className="text-sm">+1 (555) 123-4567</span>
+                          <span className="text-sm text-foreground">+1 (555) 123-4567</span>
                         </div>
                         <div className="flex items-start space-x-2">
                           <MapPin className="h-4 w-4 text-primary mt-0.5" />
-                          <div className="text-sm">
+                          <div className="text-sm text-foreground">
                             <div>Enterprise Platform Inc.</div>
                             <div>Privacy Team</div>
                             <div>123 Business Street</div>
@@ -559,8 +559,8 @@ export default function CookiesPage() {
                           </div>
                         </div>
                       </div>
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <h4 className="text-sm font-semibold mb-2">Quick Actions</h4>
+                      <div className="bg-blue-100 dark:bg-blue-950 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <h4 className="text-sm font-semibold mb-2 text-foreground">Quick Actions</h4>
                         <div className="space-y-2">
                           <Button size="sm" className="w-full">
                             <Settings className="h-3 w-3 mr-2" />

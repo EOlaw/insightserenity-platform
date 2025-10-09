@@ -214,9 +214,9 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -224,19 +224,19 @@ export default function PricingPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
-                <Link href="/features" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/features" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Features
                 </Link>
                 <Link href="/pricing" className="text-xs text-primary font-medium">
                   Pricing
                 </Link>
-                <Link href="/about" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition">
                   About
                 </Link>
-                <Link href="/contact" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Contact
                 </Link>
               </div>
@@ -254,25 +254,25 @@ export default function PricingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto text-center">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Simple, Transparent Pricing
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               Choose the perfect plan for your business. All plans include core features,
               with no hidden fees or surprises.
             </p>
 
             {/* Billing Toggle */}
-            <div className="inline-flex items-center space-x-4 bg-gray-100 rounded-full p-1">
+            <div className="inline-flex items-center space-x-4 bg-gray-100 dark:bg-gray-800 rounded-full p-1">
               <button
                 onClick={() => setBillingPeriod('monthly')}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition ${
                   billingPeriod === 'monthly'
-                    ? 'bg-white text-gray-900 shadow'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 Monthly
@@ -281,12 +281,12 @@ export default function PricingPage() {
                 onClick={() => setBillingPeriod('annual')}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition ${
                   billingPeriod === 'annual'
-                    ? 'bg-white text-gray-900 shadow'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 Annual
-                <span className="ml-2 text-xs text-green-600">Save 20%</span>
+                <span className="ml-2 text-xs text-green-600 dark:text-green-400">Save 20%</span>
               </button>
             </div>
           </div>
@@ -323,19 +323,19 @@ export default function PricingPage() {
                     <div className="flex items-baseline">
                       {typeof plan.price.monthly === 'number' ? (
                         <>
-                          <span className="text-3xl font-bold">
+                          <span className="text-3xl font-bold text-foreground">
                             ${billingPeriod === 'monthly' ? plan.price.monthly : plan.price.annual}
                           </span>
-                          <span className="text-sm text-gray-600 ml-2">
+                          <span className="text-sm text-muted-foreground ml-2">
                             per user/month
                           </span>
                         </>
                       ) : (
-                        <span className="text-3xl font-bold">{plan.price.monthly}</span>
+                        <span className="text-3xl font-bold text-foreground">{plan.price.monthly}</span>
                       )}
                     </div>
                     {billingPeriod === 'annual' && typeof plan.price.monthly === 'number' && (
-                      <p className="text-xs text-green-600 mt-1">
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">
                         Save ${(plan.price.monthly - plan.price.annual) * 12} per user/year
                       </p>
                     )}
@@ -351,17 +351,17 @@ export default function PricingPage() {
                   </Button>
 
                   <div className="space-y-3">
-                    <p className="text-xs font-semibold text-gray-900">Features included:</p>
+                    <p className="text-xs font-semibold text-foreground">Features included:</p>
                     <ul className="space-y-2">
                       {plan.features.slice(0, 8).map((feature, idx) => (
                         <li key={idx} className="flex items-start space-x-2">
                           {feature.included ? (
-                            <Check className="h-4 w-4 text-green-600 mt-0.5" />
+                            <Check className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
                           ) : (
-                            <X className="h-4 w-4 text-gray-300 mt-0.5" />
+                            <X className="h-4 w-4 text-muted-foreground/30 mt-0.5" />
                           )}
                           <span className={`text-xs ${
-                            feature.included ? 'text-gray-700' : 'text-gray-400'
+                            feature.included ? 'text-foreground' : 'text-muted-foreground'
                           }`}>
                             {feature.name}
                           </span>
@@ -386,13 +386,13 @@ export default function PricingPage() {
       </section>
 
       {/* Features Comparison */}
-      <section id="features-comparison" className="py-16 lg:py-24 bg-gray-50">
+      <section id="features-comparison" className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Detailed Features Comparison
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Compare all features across our plans to find the perfect fit
             </p>
           </div>
@@ -400,13 +400,13 @@ export default function PricingPage() {
           <div className="max-w-5xl mx-auto overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b">
-                  <th className="text-left py-4 px-4 text-sm font-semibold">Features</th>
+                <tr className="border-b border-border">
+                  <th className="text-left py-4 px-4 text-sm font-semibold text-foreground">Features</th>
                   {plans.map((plan, idx) => (
                     <th key={idx} className="text-center py-4 px-4">
-                      <div className="text-sm font-semibold">{plan.name}</div>
+                      <div className="text-sm font-semibold text-foreground">{plan.name}</div>
                       {typeof plan.price.monthly === 'number' && (
-                        <div className="text-xs text-gray-600 mt-1">
+                        <div className="text-xs text-muted-foreground mt-1">
                           ${billingPeriod === 'monthly' ? plan.price.monthly : plan.price.annual}/mo
                         </div>
                       )}
@@ -416,14 +416,14 @@ export default function PricingPage() {
               </thead>
               <tbody>
                 {plans[0].features.map((_, featureIdx) => (
-                  <tr key={featureIdx} className="border-b">
-                    <td className="py-3 px-4 text-xs">{plans[0].features[featureIdx].name}</td>
+                  <tr key={featureIdx} className="border-b border-border">
+                    <td className="py-3 px-4 text-xs text-foreground">{plans[0].features[featureIdx].name}</td>
                     {plans.map((plan, planIdx) => (
                       <td key={planIdx} className="text-center py-3 px-4">
                         {plan.features[featureIdx].included ? (
-                          <Check className="h-4 w-4 text-green-600 mx-auto" />
+                          <Check className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" />
                         ) : (
-                          <X className="h-4 w-4 text-gray-300 mx-auto" />
+                          <X className="h-4 w-4 text-muted-foreground/30 mx-auto" />
                         )}
                       </td>
                     ))}
@@ -439,10 +439,10 @@ export default function PricingPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Power Up with Add-ons
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Enhance your plan with additional features and capabilities
             </p>
           </div>
@@ -472,13 +472,13 @@ export default function PricingPage() {
       </section>
 
       {/* Testimonials */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Trusted by Industry Leaders
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               See what our customers have to say about their experience
             </p>
           </div>
@@ -492,10 +492,10 @@ export default function PricingPage() {
                       <Star key={i} className="h-4 w-4 text-yellow-500 fill-current" />
                     ))}
                   </div>
-                  <p className="text-sm text-gray-600 mb-4 italic">"{testimonial.quote}"</p>
+                  <p className="text-sm text-muted-foreground mb-4 italic">"{testimonial.quote}"</p>
                   <div>
-                    <p className="text-xs font-semibold">{testimonial.author}</p>
-                    <p className="text-xs text-gray-500">{testimonial.role}</p>
+                    <p className="text-xs font-semibold text-foreground">{testimonial.author}</p>
+                    <p className="text-xs text-muted-foreground">{testimonial.role}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -508,10 +508,10 @@ export default function PricingPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Frequently Asked Questions
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Everything you need to know about our pricing and plans
             </p>
           </div>
@@ -521,17 +521,17 @@ export default function PricingPage() {
               <Card key={index} className="cursor-pointer" onClick={() => toggleFaq(index)}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">{faq.question}</h3>
+                    <h3 className="text-sm font-semibold text-foreground">{faq.question}</h3>
                     {expandedFaq === index ? (
-                      <ChevronUp className="h-4 w-4 text-gray-400" />
+                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
                     ) : (
-                      <ChevronDown className="h-4 w-4 text-gray-400" />
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
                     )}
                   </div>
                 </CardHeader>
                 {expandedFaq === index && (
                   <CardContent>
-                    <p className="text-xs text-gray-600">{faq.answer}</p>
+                    <p className="text-xs text-muted-foreground">{faq.answer}</p>
                   </CardContent>
                 )}
               </Card>
@@ -539,7 +539,7 @@ export default function PricingPage() {
           </div>
 
           <div className="text-center mt-12">
-            <p className="text-sm text-gray-600 mb-4">Still have questions?</p>
+            <p className="text-sm text-muted-foreground mb-4">Still have questions?</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link href="/contact">
                 <Button variant="outline">
@@ -588,53 +588,53 @@ export default function PricingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-black text-white py-12">
+      <footer className="bg-secondary dark:bg-gray-950 text-secondary-foreground py-12">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             <div>
               <h3 className="text-xs font-semibold mb-4">Product</h3>
               <ul className="space-y-2">
-                <li><Link href="/features" className="text-xs text-gray-400 hover:text-white">Features</Link></li>
-                <li><Link href="/pricing" className="text-xs text-gray-400 hover:text-white">Pricing</Link></li>
-                <li><Link href="/security" className="text-xs text-gray-400 hover:text-white">Security</Link></li>
-                <li><Link href="/roadmap" className="text-xs text-gray-400 hover:text-white">Roadmap</Link></li>
+                <li><Link href="/features" className="text-xs text-muted-foreground hover:text-foreground">Features</Link></li>
+                <li><Link href="/pricing" className="text-xs text-muted-foreground hover:text-foreground">Pricing</Link></li>
+                <li><Link href="/security" className="text-xs text-muted-foreground hover:text-foreground">Security</Link></li>
+                <li><Link href="/roadmap" className="text-xs text-muted-foreground hover:text-foreground">Roadmap</Link></li>
               </ul>
             </div>
             <div>
               <h3 className="text-xs font-semibold mb-4">Company</h3>
               <ul className="space-y-2">
-                <li><Link href="/about" className="text-xs text-gray-400 hover:text-white">About</Link></li>
-                <li><Link href="/blog" className="text-xs text-gray-400 hover:text-white">Blog</Link></li>
-                <li><Link href="/careers" className="text-xs text-gray-400 hover:text-white">Careers</Link></li>
-                <li><Link href="/press" className="text-xs text-gray-400 hover:text-white">Press</Link></li>
+                <li><Link href="/about" className="text-xs text-muted-foreground hover:text-foreground">About</Link></li>
+                <li><Link href="/blog" className="text-xs text-muted-foreground hover:text-foreground">Blog</Link></li>
+                <li><Link href="/careers" className="text-xs text-muted-foreground hover:text-foreground">Careers</Link></li>
+                <li><Link href="/press" className="text-xs text-muted-foreground hover:text-foreground">Press</Link></li>
               </ul>
             </div>
             <div>
               <h3 className="text-xs font-semibold mb-4">Resources</h3>
               <ul className="space-y-2">
-                <li><Link href="/docs" className="text-xs text-gray-400 hover:text-white">Documentation</Link></li>
-                <li><Link href="/api" className="text-xs text-gray-400 hover:text-white">API Reference</Link></li>
-                <li><Link href="/support" className="text-xs text-gray-400 hover:text-white">Support</Link></li>
-                <li><Link href="/status" className="text-xs text-gray-400 hover:text-white">Status</Link></li>
+                <li><Link href="/docs" className="text-xs text-muted-foreground hover:text-foreground">Documentation</Link></li>
+                <li><Link href="/api" className="text-xs text-muted-foreground hover:text-foreground">API Reference</Link></li>
+                <li><Link href="/support" className="text-xs text-muted-foreground hover:text-foreground">Support</Link></li>
+                <li><Link href="/status" className="text-xs text-muted-foreground hover:text-foreground">Status</Link></li>
               </ul>
             </div>
             <div>
               <h3 className="text-xs font-semibold mb-4">Legal</h3>
               <ul className="space-y-2">
-                <li><Link href="/privacy" className="text-xs text-gray-400 hover:text-white">Privacy</Link></li>
-                <li><Link href="/terms" className="text-xs text-gray-400 hover:text-white">Terms</Link></li>
-                <li><Link href="/cookies" className="text-xs text-gray-400 hover:text-white">Cookie Policy</Link></li>
-                <li><Link href="/licenses" className="text-xs text-gray-400 hover:text-white">Licenses</Link></li>
+                <li><Link href="/privacy" className="text-xs text-muted-foreground hover:text-foreground">Privacy</Link></li>
+                <li><Link href="/terms" className="text-xs text-muted-foreground hover:text-foreground">Terms</Link></li>
+                <li><Link href="/cookies" className="text-xs text-muted-foreground hover:text-foreground">Cookie Policy</Link></li>
+                <li><Link href="/licenses" className="text-xs text-muted-foreground hover:text-foreground">Licenses</Link></li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-white/10 mt-8 pt-8 flex flex-col sm:flex-row items-center justify-between">
-            <p className="text-xs text-gray-400">
+          <div className="border-t border-white/10 dark:border-border mt-8 pt-8 flex flex-col sm:flex-row items-center justify-between">
+            <p className="text-xs text-muted-foreground">
               © 2024 Enterprise Platform. All rights reserved.
             </p>
             <div className="flex items-center space-x-4 mt-4 sm:mt-0">
-              <Lock className="h-4 w-4 text-gray-400" />
-              <span className="text-xs text-gray-400">Secured by Enterprise-grade encryption</span>
+              <Lock className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Secured by Enterprise-grade encryption</span>
             </div>
           </div>
         </div>

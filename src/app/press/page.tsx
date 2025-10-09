@@ -247,9 +247,9 @@ const executiveQuotes = [
 
 export default function PressPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -257,19 +257,19 @@ export default function PressPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
-                <Link href="/about" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition">
                   About
                 </Link>
                 <Link href="/press" className="text-xs text-primary font-medium">
                   Press
                 </Link>
-                <Link href="/blog" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/blog" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Blog
                 </Link>
-                <Link href="/contact" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Contact
                 </Link>
               </div>
@@ -287,16 +287,16 @@ export default function PressPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-6">
               <Newspaper className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Press Center
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               Latest news, press releases, and media resources about Enterprise Platform.
               For media inquiries, please contact our press team.
             </p>
@@ -319,13 +319,13 @@ export default function PressPage() {
       </section>
 
       {/* Company Stats */}
-      <section className="py-16 border-y">
+      <section className="py-16 border-y border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8">
             {companyStats.map((stat, index) => (
               <div key={index} className="text-center">
                 <div className="text-2xl font-bold text-primary">{stat.value}</div>
-                <div className="text-xs text-gray-600 mt-1">{stat.label}</div>
+                <div className="text-xs text-muted-foreground mt-1">{stat.label}</div>
               </div>
             ))}
           </div>
@@ -336,8 +336,8 @@ export default function PressPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Latest Press Releases</h2>
-            <p className="text-sm text-gray-600">Official announcements and company news</p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Latest Press Releases</h2>
+            <p className="text-sm text-muted-foreground">Official announcements and company news</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -345,7 +345,7 @@ export default function PressPage() {
               <Card key={index} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-gray-500 flex items-center">
+                    <span className="text-xs text-muted-foreground flex items-center">
                       <Calendar className="h-3 w-3 mr-1" />
                       {release.date}
                     </span>
@@ -380,11 +380,11 @@ export default function PressPage() {
       </section>
 
       {/* Media Coverage */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">In the News</h2>
-            <p className="text-sm text-gray-600">Recent media coverage and mentions</p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">In the News</h2>
+            <p className="text-sm text-muted-foreground">Recent media coverage and mentions</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
@@ -392,11 +392,11 @@ export default function PressPage() {
               <Card key={index} className="hover:shadow-lg transition-shadow">
                 <CardContent className="pt-6">
                   <div className="h-8 mb-4 flex items-center">
-                    <div className="text-sm font-semibold">{coverage.publication}</div>
+                    <div className="text-sm font-semibold text-foreground">{coverage.publication}</div>
                   </div>
-                  <h3 className="text-sm font-medium mb-2 line-clamp-2">{coverage.title}</h3>
+                  <h3 className="text-sm font-medium mb-2 line-clamp-2 text-foreground">{coverage.title}</h3>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">{coverage.date}</span>
+                    <span className="text-xs text-muted-foreground">{coverage.date}</span>
                     <a
                       href={coverage.link}
                       target="_blank"
@@ -418,8 +418,8 @@ export default function PressPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Leadership Perspectives</h2>
-            <p className="text-sm text-gray-600">Insights from our executive team</p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Leadership Perspectives</h2>
+            <p className="text-sm text-muted-foreground">Insights from our executive team</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
@@ -427,12 +427,12 @@ export default function PressPage() {
               <Card key={index}>
                 <CardContent className="pt-6">
                   <Quote className="h-8 w-8 text-primary/20 mb-4" />
-                  <p className="text-sm text-gray-700 italic mb-4">"{item.quote}"</p>
+                  <p className="text-sm text-foreground italic mb-4">"{item.quote}"</p>
                   <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-gray-200 rounded-full" />
+                    <div className="w-12 h-12 bg-muted rounded-full" />
                     <div>
-                      <p className="text-sm font-semibold">{item.author}</p>
-                      <p className="text-xs text-gray-500">{item.role}</p>
+                      <p className="text-sm font-semibold text-foreground">{item.author}</p>
+                      <p className="text-xs text-muted-foreground">{item.role}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -443,11 +443,11 @@ export default function PressPage() {
       </section>
 
       {/* Media Kit */}
-      <section id="media-kit" className="py-16 lg:py-24 bg-gray-50">
+      <section id="media-kit" className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Media Kit</h2>
-            <p className="text-sm text-gray-600">Download resources for press and media use</p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Media Kit</h2>
+            <p className="text-sm text-muted-foreground">Download resources for press and media use</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
@@ -468,7 +468,7 @@ export default function PressPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex gap-1">
                         {resource.formats.map((format, idx) => (
-                          <span key={idx} className="text-2xs px-2 py-0.5 bg-gray-100 rounded">
+                          <span key={idx} className="text-2xs px-2 py-0.5 bg-muted rounded">
                             {format}
                           </span>
                         ))}
@@ -489,8 +489,8 @@ export default function PressPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Awards & Recognition</h2>
-            <p className="text-sm text-gray-600">Industry recognition for our innovation and excellence</p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Awards & Recognition</h2>
+            <p className="text-sm text-muted-foreground">Industry recognition for our innovation and excellence</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-4xl mx-auto">
@@ -500,9 +500,9 @@ export default function PressPage() {
                 <Card key={index} className="text-center">
                   <CardContent className="pt-6">
                     <Icon className="h-8 w-8 text-primary mx-auto mb-3" />
-                    <h3 className="text-sm font-semibold">{award.title}</h3>
-                    <p className="text-xs text-gray-600 mt-1">{award.description}</p>
-                    <p className="text-xs text-gray-500 mt-2">{award.year}</p>
+                    <h3 className="text-sm font-semibold text-foreground">{award.title}</h3>
+                    <p className="text-xs text-muted-foreground mt-1">{award.description}</p>
+                    <p className="text-xs text-muted-foreground mt-2">{award.year}</p>
                   </CardContent>
                 </Card>
               )
@@ -512,39 +512,39 @@ export default function PressPage() {
       </section>
 
       {/* Press Contact */}
-      <section id="contact" className="py-16 lg:py-24 bg-black text-white">
+      <section id="contact" className="py-16 lg:py-24 bg-secondary dark:bg-gray-950">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Press Contact</h2>
-            <p className="text-sm text-gray-300">Get in touch with our communications team</p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-white">Press Contact</h2>
+            <p className="text-sm text-gray-300 dark:text-gray-400">Get in touch with our communications team</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
             {pressContacts.map((contact, index) => (
-              <Card key={index} className="bg-white/10 border-white/20">
+              <Card key={index} className="bg-white/10 dark:bg-white/5 border-white/20 dark:border-white/10">
                 <CardHeader>
                   <CardTitle className="text-base text-white">{contact.name}</CardTitle>
-                  <CardDescription className="text-xs text-gray-300">
+                  <CardDescription className="text-xs text-gray-300 dark:text-gray-400">
                     {contact.role}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  <a href={`mailto:${contact.email}`} className="flex items-center space-x-2 text-xs text-gray-300 hover:text-white">
+                  <a href={`mailto:${contact.email}`} className="flex items-center space-x-2 text-xs text-gray-300 dark:text-gray-400 hover:text-white">
                     <Mail className="h-3 w-3" />
                     <span>{contact.email}</span>
                   </a>
-                  <a href={`tel:${contact.phone.replace(/\s/g, '')}`} className="flex items-center space-x-2 text-xs text-gray-300 hover:text-white">
+                  <a href={`tel:${contact.phone.replace(/\s/g, '')}`} className="flex items-center space-x-2 text-xs text-gray-300 dark:text-gray-400 hover:text-white">
                     <Phone className="h-3 w-3" />
                     <span>{contact.phone}</span>
                   </a>
-                  <p className="text-xs text-gray-400 pt-2">{contact.region}</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 pt-2">{contact.region}</p>
                 </CardContent>
               </Card>
             ))}
           </div>
 
           <div className="text-center mt-12">
-            <p className="text-sm text-gray-300 mb-4">For general inquiries</p>
+            <p className="text-sm text-gray-300 dark:text-gray-400 mb-4">For general inquiries</p>
             <a href="mailto:press@enterprise.com" className="text-primary hover:underline">
               press@enterprise.com
             </a>

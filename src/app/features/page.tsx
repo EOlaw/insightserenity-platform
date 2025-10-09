@@ -526,9 +526,9 @@ export default function FeaturesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -536,19 +536,19 @@ export default function FeaturesPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
                 <Link href="/features" className="text-xs text-primary font-medium">
                   Features
                 </Link>
-                <Link href="/pricing" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/pricing" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Pricing
                 </Link>
-                <Link href="/about" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition">
                   About
                 </Link>
-                <Link href="/contact" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Contact
                 </Link>
               </div>
@@ -566,14 +566,14 @@ export default function FeaturesPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Everything You Need to
               <span className="text-primary"> Transform Your Business</span>
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               Discover our comprehensive suite of features designed to streamline operations,
               boost productivity, and drive growth for enterprises of all sizes.
             </p>
@@ -599,10 +599,10 @@ export default function FeaturesPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Comprehensive Feature Set
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Explore our platform's capabilities organized by category
             </p>
           </div>
@@ -618,7 +618,7 @@ export default function FeaturesPage() {
                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
                     selectedCategory === index
                       ? 'bg-primary text-black shadow'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground'
                   }`}
                 >
                   <Icon className="h-4 w-4" />
@@ -631,10 +631,10 @@ export default function FeaturesPage() {
           {/* Selected Category Features */}
           <div className="max-w-6xl mx-auto">
             <div className="mb-8">
-              <h3 className="text-xl font-bold mb-2">
+              <h3 className="text-xl font-bold mb-2 text-foreground">
                 {featureCategories[selectedCategory].name}
               </h3>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 {featureCategories[selectedCategory].description}
               </p>
             </div>
@@ -663,9 +663,9 @@ export default function FeaturesPage() {
                           </div>
                         </div>
                         {isExpanded ? (
-                          <ChevronUp className="h-4 w-4 text-gray-400" />
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
                         ) : (
-                          <ChevronDown className="h-4 w-4 text-gray-400" />
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
                         )}
                       </div>
                     </CardHeader>
@@ -674,8 +674,8 @@ export default function FeaturesPage() {
                         <ul className="space-y-2">
                           {feature.capabilities.map((capability, idx) => (
                             <li key={idx} className="flex items-start space-x-2">
-                              <CheckCircle className="h-4 w-4 text-green-600 mt-0.5" />
-                              <span className="text-xs text-gray-700">{capability}</span>
+                              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
+                              <span className="text-xs text-muted-foreground">{capability}</span>
                             </li>
                           ))}
                         </ul>
@@ -690,13 +690,13 @@ export default function FeaturesPage() {
       </section>
 
       {/* Additional Features */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               And So Much More
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Additional features that make our platform the complete solution
             </p>
           </div>
@@ -712,8 +712,8 @@ export default function FeaturesPage() {
                         <Icon className="h-5 w-5 text-primary" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-semibold mb-1">{feature.name}</h3>
-                        <p className="text-xs text-gray-600">{feature.description}</p>
+                        <h3 className="text-sm font-semibold mb-1 text-foreground">{feature.name}</h3>
+                        <p className="text-xs text-muted-foreground">{feature.description}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -728,10 +728,10 @@ export default function FeaturesPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Seamless Integrations
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Connect with your favorite tools and extend functionality
             </p>
           </div>
@@ -741,18 +741,18 @@ export default function FeaturesPage() {
               {integrations.map((integration, index) => (
                 <div
                   key={index}
-                  className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow text-center"
+                  className="bg-background border border-border rounded-lg p-4 hover:shadow-md transition-shadow text-center"
                 >
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-2 flex items-center justify-center">
-                    <Package className="h-6 w-6 text-gray-400" />
+                  <div className="w-12 h-12 bg-muted rounded-lg mx-auto mb-2 flex items-center justify-center">
+                    <Package className="h-6 w-6 text-muted-foreground" />
                   </div>
-                  <p className="text-xs font-medium">{integration.name}</p>
-                  <p className="text-2xs text-gray-500">{integration.category}</p>
+                  <p className="text-xs font-medium text-foreground">{integration.name}</p>
+                  <p className="text-2xs text-muted-foreground">{integration.category}</p>
                 </div>
               ))}
             </div>
             <div className="text-center mt-8">
-              <p className="text-sm text-gray-600 mb-4">And many more...</p>
+              <p className="text-sm text-muted-foreground mb-4">And many more...</p>
               <Link href="/integrations">
                 <Button variant="outline">
                   View All Integrations
@@ -765,7 +765,7 @@ export default function FeaturesPage() {
       </section>
 
       {/* Security Features */}
-      <section className="py-16 lg:py-24 bg-black text-white">
+      <section className="py-16 lg:py-24 bg-black dark:bg-gray-950 text-white">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
             <div className="text-center mb-12">
@@ -846,10 +846,10 @@ export default function FeaturesPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Built for Performance
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Lightning-fast and reliable at any scale
             </p>
           </div>
@@ -857,19 +857,19 @@ export default function FeaturesPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 max-w-4xl mx-auto">
             <div className="text-center">
               <div className="text-3xl font-bold text-primary mb-2">99.99%</div>
-              <div className="text-xs text-gray-600">Uptime SLA</div>
+              <div className="text-xs text-muted-foreground">Uptime SLA</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-primary mb-2">&lt;100ms</div>
-              <div className="text-xs text-gray-600">Average Response Time</div>
+              <div className="text-xs text-muted-foreground">Average Response Time</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-primary mb-2">150+</div>
-              <div className="text-xs text-gray-600">Countries Served</div>
+              <div className="text-xs text-muted-foreground">Countries Served</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-primary mb-2">10M+</div>
-              <div className="text-xs text-gray-600">API Calls Daily</div>
+              <div className="text-xs text-muted-foreground">API Calls Daily</div>
             </div>
           </div>
         </div>
@@ -902,43 +902,43 @@ export default function FeaturesPage() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-black text-white py-12">
+      <footer className="bg-black dark:bg-gray-950 text-white py-12 transition-colors">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             <div>
               <h3 className="text-xs font-semibold mb-4">Product</h3>
               <ul className="space-y-2">
-                <li><Link href="/features" className="text-xs text-gray-400 hover:text-white">Features</Link></li>
-                <li><Link href="/pricing" className="text-xs text-gray-400 hover:text-white">Pricing</Link></li>
-                <li><Link href="/security" className="text-xs text-gray-400 hover:text-white">Security</Link></li>
-                <li><Link href="/roadmap" className="text-xs text-gray-400 hover:text-white">Roadmap</Link></li>
+                <li><Link href="/features" className="text-xs text-gray-400 hover:text-white transition">Features</Link></li>
+                <li><Link href="/pricing" className="text-xs text-gray-400 hover:text-white transition">Pricing</Link></li>
+                <li><Link href="/security" className="text-xs text-gray-400 hover:text-white transition">Security</Link></li>
+                <li><Link href="/roadmap" className="text-xs text-gray-400 hover:text-white transition">Roadmap</Link></li>
               </ul>
             </div>
             <div>
               <h3 className="text-xs font-semibold mb-4">Company</h3>
               <ul className="space-y-2">
-                <li><Link href="/about" className="text-xs text-gray-400 hover:text-white">About</Link></li>
-                <li><Link href="/blog" className="text-xs text-gray-400 hover:text-white">Blog</Link></li>
-                <li><Link href="/careers" className="text-xs text-gray-400 hover:text-white">Careers</Link></li>
-                <li><Link href="/press" className="text-xs text-gray-400 hover:text-white">Press</Link></li>
+                <li><Link href="/about" className="text-xs text-gray-400 hover:text-white transition">About</Link></li>
+                <li><Link href="/blog" className="text-xs text-gray-400 hover:text-white transition">Blog</Link></li>
+                <li><Link href="/careers" className="text-xs text-gray-400 hover:text-white transition">Careers</Link></li>
+                <li><Link href="/press" className="text-xs text-gray-400 hover:text-white transition">Press</Link></li>
               </ul>
             </div>
             <div>
               <h3 className="text-xs font-semibold mb-4">Resources</h3>
               <ul className="space-y-2">
-                <li><Link href="/docs" className="text-xs text-gray-400 hover:text-white">Documentation</Link></li>
-                <li><Link href="/api" className="text-xs text-gray-400 hover:text-white">API Reference</Link></li>
-                <li><Link href="/support" className="text-xs text-gray-400 hover:text-white">Support</Link></li>
-                <li><Link href="/status" className="text-xs text-gray-400 hover:text-white">Status</Link></li>
+                <li><Link href="/docs" className="text-xs text-gray-400 hover:text-white transition">Documentation</Link></li>
+                <li><Link href="/api" className="text-xs text-gray-400 hover:text-white transition">API Reference</Link></li>
+                <li><Link href="/support" className="text-xs text-gray-400 hover:text-white transition">Support</Link></li>
+                <li><Link href="/status" className="text-xs text-gray-400 hover:text-white transition">Status</Link></li>
               </ul>
             </div>
             <div>
               <h3 className="text-xs font-semibold mb-4">Legal</h3>
               <ul className="space-y-2">
-                <li><Link href="/privacy" className="text-xs text-gray-400 hover:text-white">Privacy</Link></li>
-                <li><Link href="/terms" className="text-xs text-gray-400 hover:text-white">Terms</Link></li>
-                <li><Link href="/cookies" className="text-xs text-gray-400 hover:text-white">Cookie Policy</Link></li>
-                <li><Link href="/licenses" className="text-xs text-gray-400 hover:text-white">Licenses</Link></li>
+                <li><Link href="/privacy" className="text-xs text-gray-400 hover:text-white transition">Privacy</Link></li>
+                <li><Link href="/terms" className="text-xs text-gray-400 hover:text-white transition">Terms</Link></li>
+                <li><Link href="/cookies" className="text-xs text-gray-400 hover:text-white transition">Cookie Policy</Link></li>
+                <li><Link href="/licenses" className="text-xs text-gray-400 hover:text-white transition">Licenses</Link></li>
               </ul>
             </div>
           </div>

@@ -207,48 +207,48 @@ export default function StatusPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'operational': return 'text-green-600'
-      case 'degraded': return 'text-yellow-600'
-      case 'partial': return 'text-orange-600'
-      case 'major': return 'text-red-600'
-      default: return 'text-gray-600'
+      case 'operational': return 'text-green-600 dark:text-green-400'
+      case 'degraded': return 'text-yellow-600 dark:text-yellow-400'
+      case 'partial': return 'text-orange-600 dark:text-orange-400'
+      case 'major': return 'text-red-600 dark:text-red-400'
+      default: return 'text-muted-foreground'
     }
   }
 
   const getStatusBg = (status: string) => {
     switch (status) {
-      case 'operational': return 'bg-green-100'
-      case 'degraded': return 'bg-yellow-100'
-      case 'partial': return 'bg-orange-100'
-      case 'major': return 'bg-red-100'
-      default: return 'bg-gray-100'
+      case 'operational': return 'bg-green-100 dark:bg-green-950'
+      case 'degraded': return 'bg-yellow-100 dark:bg-yellow-950'
+      case 'partial': return 'bg-orange-100 dark:bg-orange-950'
+      case 'major': return 'bg-red-100 dark:bg-red-950'
+      default: return 'bg-muted'
     }
   }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'operational': return <CheckCircle className="h-5 w-5 text-green-600" />
-      case 'degraded': return <AlertTriangle className="h-5 w-5 text-yellow-600" />
-      case 'partial': return <AlertCircle className="h-5 w-5 text-orange-600" />
-      case 'major': return <XCircle className="h-5 w-5 text-red-600" />
-      default: return <Info className="h-5 w-5 text-gray-600" />
+      case 'operational': return <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+      case 'degraded': return <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+      case 'partial': return <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+      case 'major': return <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+      default: return <Info className="h-5 w-5 text-muted-foreground" />
     }
   }
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
-      case 'minor': return 'text-yellow-600 bg-yellow-100'
-      case 'major': return 'text-red-600 bg-red-100'
-      case 'maintenance': return 'text-blue-600 bg-blue-100'
-      case 'resolved': return 'text-green-600 bg-green-100'
-      default: return 'text-gray-600 bg-gray-100'
+      case 'minor': return 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-950'
+      case 'major': return 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-950'
+      case 'maintenance': return 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-950'
+      case 'resolved': return 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-950'
+      default: return 'text-muted-foreground bg-muted'
     }
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -256,16 +256,16 @@ export default function StatusPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
                 <Link href="/status" className="text-xs text-primary font-medium">
                   Status
                 </Link>
-                <Link href="/status/history" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/status/history" className="text-xs text-muted-foreground hover:text-foreground transition">
                   History
                 </Link>
-                <Link href="/status/subscribe" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/status/subscribe" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Subscribe
                 </Link>
               </div>
@@ -285,7 +285,7 @@ export default function StatusPage() {
       </nav>
 
       {/* Current Status Hero */}
-      <section className={`py-16 ${currentStatus.overall === 'operational' ? 'bg-green-50' : 'bg-yellow-50'}`}>
+      <section className={`py-16 ${currentStatus.overall === 'operational' ? 'bg-green-50 dark:bg-green-950/20' : 'bg-yellow-50 dark:bg-yellow-950/20'}`}>
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="flex items-center justify-center mb-4">
@@ -294,7 +294,7 @@ export default function StatusPage() {
             <h1 className={`text-3xl sm:text-4xl font-bold mb-2 ${getStatusColor(currentStatus.overall)}`}>
               {currentStatus.message}
             </h1>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
               Last updated: {new Date(currentStatus.lastUpdated).toLocaleString()}
             </p>
             <div className="flex items-center justify-center gap-6 mt-6">
@@ -314,18 +314,18 @@ export default function StatusPage() {
       </section>
 
       {/* Metrics Overview */}
-      <section className="py-8 border-b">
+      <section className="py-8 border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {metrics.map((metric, index) => (
               <div key={index} className="text-center">
                 <div className="flex items-center justify-center">
-                  <span className="text-2xl font-bold">{metric.value}</span>
-                  {metric.trend === 'up' && <ArrowUp className="h-4 w-4 text-green-600 ml-2" />}
-                  {metric.trend === 'down' && <ArrowDown className="h-4 w-4 text-red-600 ml-2" />}
-                  {metric.trend === 'neutral' && <Minus className="h-4 w-4 text-gray-400 ml-2" />}
+                  <span className="text-2xl font-bold text-foreground">{metric.value}</span>
+                  {metric.trend === 'up' && <ArrowUp className="h-4 w-4 text-green-600 dark:text-green-400 ml-2" />}
+                  {metric.trend === 'down' && <ArrowDown className="h-4 w-4 text-red-600 dark:text-red-400 ml-2" />}
+                  {metric.trend === 'neutral' && <Minus className="h-4 w-4 text-muted-foreground ml-2" />}
                 </div>
-                <p className="text-xs text-gray-600 mt-1">{metric.label}</p>
+                <p className="text-xs text-muted-foreground mt-1">{metric.label}</p>
               </div>
             ))}
           </div>
@@ -337,8 +337,8 @@ export default function StatusPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-6xl mx-auto">
             <div className="mb-8">
-              <h2 className="text-2xl font-bold mb-2">Services</h2>
-              <p className="text-sm text-gray-600">Current status of all services</p>
+              <h2 className="text-2xl font-bold mb-2 text-foreground">Services</h2>
+              <p className="text-sm text-muted-foreground">Current status of all services</p>
             </div>
 
             <div className="grid gap-4">
@@ -351,24 +351,24 @@ export default function StatusPage() {
                           service.status === 'operational' ? 'bg-green-500' : 'bg-yellow-500'
                         }`} />
                         <div>
-                          <h3 className="text-sm font-semibold">{service.name}</h3>
-                          <p className="text-xs text-gray-500">{service.description}</p>
+                          <h3 className="text-sm font-semibold text-foreground">{service.name}</h3>
+                          <p className="text-xs text-muted-foreground">{service.description}</p>
                         </div>
                       </div>
                       <div className="flex items-center space-x-6">
                         <div className="text-right">
-                          <p className="text-xs text-gray-500">Uptime</p>
-                          <p className="text-sm font-medium">{service.uptime}%</p>
+                          <p className="text-xs text-muted-foreground">Uptime</p>
+                          <p className="text-sm font-medium text-foreground">{service.uptime}%</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-xs text-gray-500">Response</p>
-                          <p className="text-sm font-medium">{service.responseTime}ms</p>
+                          <p className="text-xs text-muted-foreground">Response</p>
+                          <p className="text-sm font-medium text-foreground">{service.responseTime}ms</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-xs text-gray-500">Last incident</p>
-                          <p className="text-sm font-medium">{service.lastIncident}</p>
+                          <p className="text-xs text-muted-foreground">Last incident</p>
+                          <p className="text-sm font-medium text-foreground">{service.lastIncident}</p>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
                       </div>
                     </div>
                   </CardContent>
@@ -380,12 +380,12 @@ export default function StatusPage() {
       </section>
 
       {/* Uptime History */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-6xl mx-auto">
             <div className="mb-8">
-              <h2 className="text-2xl font-bold mb-2">Uptime History</h2>
-              <p className="text-sm text-gray-600">Monthly uptime over the past 6 months</p>
+              <h2 className="text-2xl font-bold mb-2 text-foreground">Uptime History</h2>
+              <p className="text-sm text-muted-foreground">Monthly uptime over the past 6 months</p>
             </div>
 
             <Card>
@@ -393,13 +393,13 @@ export default function StatusPage() {
                 <div className="grid grid-cols-6 gap-4 mb-6">
                   {uptimeHistory.map((month, index) => (
                     <div key={index} className="text-center">
-                      <div className="text-xs text-gray-500 mb-2">{month.month}</div>
+                      <div className="text-xs text-muted-foreground mb-2">{month.month}</div>
                       <div className={`text-lg font-bold ${
-                        month.uptime >= 99.9 ? 'text-green-600' : 'text-yellow-600'
+                        month.uptime >= 99.9 ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'
                       }`}>
                         {month.uptime}%
                       </div>
-                      <div className="mt-2 h-24 bg-gray-200 rounded relative">
+                      <div className="mt-2 h-24 bg-gray-200 dark:bg-gray-700 rounded relative">
                         <div
                           className={`absolute bottom-0 left-0 right-0 rounded ${
                             month.uptime >= 99.9 ? 'bg-green-500' : 'bg-yellow-500'
@@ -410,14 +410,14 @@ export default function StatusPage() {
                     </div>
                   ))}
                 </div>
-                <div className="flex items-center justify-between pt-4 border-t">
+                <div className="flex items-center justify-between pt-4 border-t border-border">
                   <div className="text-sm">
-                    <span className="font-medium">Average uptime:</span>
-                    <span className="ml-2 text-green-600 font-bold">99.98%</span>
+                    <span className="font-medium text-foreground">Average uptime:</span>
+                    <span className="ml-2 text-green-600 dark:text-green-400 font-bold">99.98%</span>
                   </div>
                   <div className="text-sm">
-                    <span className="font-medium">SLA target:</span>
-                    <span className="ml-2">99.9%</span>
+                    <span className="font-medium text-foreground">SLA target:</span>
+                    <span className="ml-2 text-foreground">99.9%</span>
                   </div>
                 </div>
               </CardContent>
@@ -431,8 +431,8 @@ export default function StatusPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-6xl mx-auto">
             <div className="mb-8">
-              <h2 className="text-2xl font-bold mb-2">Recent Incidents</h2>
-              <p className="text-sm text-gray-600">Past incidents and their resolutions</p>
+              <h2 className="text-2xl font-bold mb-2 text-foreground">Recent Incidents</h2>
+              <p className="text-sm text-muted-foreground">Past incidents and their resolutions</p>
             </div>
 
             <div className="space-y-4">
@@ -442,12 +442,12 @@ export default function StatusPage() {
                     <div className="flex items-start justify-between">
                       <div>
                         <div className="flex items-center gap-3 mb-2">
-                          <span className="text-xs text-gray-500">{incident.date}</span>
+                          <span className="text-xs text-muted-foreground">{incident.date}</span>
                           <span className={`text-xs px-2 py-1 rounded-full ${getSeverityColor(incident.severity)}`}>
                             {incident.severity}
                           </span>
                           <span className={`text-xs px-2 py-1 rounded-full ${
-                            incident.status === 'resolved' ? 'bg-green-100 text-green-600' : 'bg-yellow-100 text-yellow-600'
+                            incident.status === 'resolved' ? 'bg-green-100 text-green-600 dark:bg-green-950 dark:text-green-400' : 'bg-yellow-100 text-yellow-600 dark:bg-yellow-950 dark:text-yellow-400'
                           }`}>
                             {incident.status}
                           </span>
@@ -458,21 +458,21 @@ export default function StatusPage() {
                         </CardDescription>
                       </div>
                       {expandedIncident === incident.id ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
                       ) : (
-                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
                       )}
                     </div>
                   </CardHeader>
                   {expandedIncident === incident.id && (
                     <CardContent>
-                      <p className="text-xs text-gray-600 mb-4">{incident.description}</p>
+                      <p className="text-xs text-muted-foreground mb-4">{incident.description}</p>
                       <div className="space-y-2">
-                        <h4 className="text-xs font-semibold">Timeline:</h4>
+                        <h4 className="text-xs font-semibold text-foreground">Timeline:</h4>
                         {incident.updates.map((update, idx) => (
                           <div key={idx} className="flex items-start space-x-3 text-xs">
-                            <span className="text-gray-500 font-mono">{update.time}</span>
-                            <span className="text-gray-700">{update.message}</span>
+                            <span className="text-muted-foreground font-mono">{update.time}</span>
+                            <span className="text-muted-foreground">{update.message}</span>
                           </div>
                         ))}
                       </div>
@@ -495,12 +495,12 @@ export default function StatusPage() {
       </section>
 
       {/* Scheduled Maintenance */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
             <div className="mb-8">
-              <h2 className="text-2xl font-bold mb-2">Scheduled Maintenance</h2>
-              <p className="text-sm text-gray-600">Upcoming maintenance windows</p>
+              <h2 className="text-2xl font-bold mb-2 text-foreground">Scheduled Maintenance</h2>
+              <p className="text-sm text-muted-foreground">Upcoming maintenance windows</p>
             </div>
 
             <div className="space-y-4">
@@ -509,8 +509,8 @@ export default function StatusPage() {
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-sm font-semibold">{maintenance.title}</h3>
-                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-600">
+                        <h3 className="text-sm font-semibold text-foreground">{maintenance.title}</h3>
+                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                           <span className="flex items-center">
                             <Calendar className="h-3 w-3 mr-1" />
                             {maintenance.date}
@@ -519,9 +519,9 @@ export default function StatusPage() {
                             <Clock className="h-3 w-3 mr-1" />
                             {maintenance.time}
                           </span>
-                          <span>Impact: <span className={maintenance.impact === 'Low' ? 'text-green-600' : 'text-yellow-600'}>{maintenance.impact}</span></span>
+                          <span>Impact: <span className={maintenance.impact === 'Low' ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}>{maintenance.impact}</span></span>
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           Affected services: {maintenance.services.join(', ')}
                         </p>
                       </div>

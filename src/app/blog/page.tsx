@@ -197,9 +197,9 @@ export default function BlogPage() {
   const currentPosts = filteredPosts.slice(startIndex, endIndex)
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -207,22 +207,22 @@ export default function BlogPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
                 <Link href="/blog" className="text-xs text-primary font-medium">
                   Blog
                 </Link>
-                <Link href="/resources" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/resources" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Resources
                 </Link>
-                <Link href="/docs" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/docs" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Documentation
                 </Link>
-                <Link href="/about" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition">
                   About
                 </Link>
-                <Link href="/contact" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Contact
                 </Link>
               </div>
@@ -244,26 +244,26 @@ export default function BlogPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Enterprise Platform Blog
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               Insights, updates, and best practices from our team and community.
               Stay informed about the latest in enterprise technology.
             </p>
 
             {/* Search Bar */}
             <div className="max-w-xl mx-auto relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search articles..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full pl-10 pr-4 py-3 text-sm border border-border bg-background text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
           </div>
@@ -272,23 +272,23 @@ export default function BlogPage() {
 
       {/* Featured Posts */}
       {!searchTerm && selectedCategory === 'All Posts' && (
-        <section className="py-16 border-b">
+        <section className="py-16 border-b border-border">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="mb-8">
-              <h2 className="text-2xl font-bold">Featured Articles</h2>
-              <p className="text-sm text-gray-600 mt-1">Our most popular and impactful content</p>
+              <h2 className="text-2xl font-bold text-foreground">Featured Articles</h2>
+              <p className="text-sm text-muted-foreground mt-1">Our most popular and impactful content</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {featuredPosts.map((post) => (
                 <Card key={post.id} className="hover:shadow-lg transition-shadow">
-                  <div className="aspect-video bg-gray-200 rounded-t-lg" />
+                  <div className="aspect-video bg-muted rounded-t-lg" />
                   <CardHeader>
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
                         {post.category}
                       </span>
-                      <span className="text-xs text-gray-500">{post.readTime}</span>
+                      <span className="text-xs text-muted-foreground">{post.readTime}</span>
                     </div>
                     <CardTitle className="text-base line-clamp-2">{post.title}</CardTitle>
                     <CardDescription className="text-xs line-clamp-3">
@@ -316,7 +316,7 @@ export default function BlogPage() {
             <aside className="lg:col-span-1">
               {/* Categories */}
               <div className="mb-8">
-                <h3 className="text-sm font-semibold mb-4">Categories</h3>
+                <h3 className="text-sm font-semibold mb-4 text-foreground">Categories</h3>
                 <div className="space-y-2">
                   {categories.map((category) => (
                     <button
@@ -325,7 +325,7 @@ export default function BlogPage() {
                       className={`w-full text-left px-3 py-2 text-xs rounded-lg transition ${
                         selectedCategory === category
                           ? 'bg-primary text-black font-medium'
-                          : 'hover:bg-gray-100 text-gray-700'
+                          : 'hover:bg-muted text-muted-foreground hover:text-foreground'
                       }`}
                     >
                       {category}
@@ -336,13 +336,13 @@ export default function BlogPage() {
 
               {/* Popular Tags */}
               <div className="mb-8">
-                <h3 className="text-sm font-semibold mb-4">Popular Tags</h3>
+                <h3 className="text-sm font-semibold mb-4 text-foreground">Popular Tags</h3>
                 <div className="flex flex-wrap gap-2">
                   {popularTags.map((tag) => (
                     <button
                       key={tag}
                       onClick={() => setSearchTerm(tag)}
-                      className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-full transition"
+                      className="px-3 py-1 text-xs bg-muted hover:bg-muted/80 text-foreground rounded-full transition"
                     >
                       {tag}
                     </button>
@@ -363,7 +363,7 @@ export default function BlogPage() {
                     <input
                       type="email"
                       placeholder="Your email"
-                      className="w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-3 py-2 text-xs border border-border bg-background text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                     <Button size="sm" className="w-full">
                       <Mail className="mr-2 h-3.5 w-3.5" />
@@ -381,13 +381,13 @@ export default function BlogPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {currentPosts.map((post) => (
                       <Card key={post.id} className="hover:shadow-lg transition-shadow">
-                        <div className="aspect-video bg-gray-200 rounded-t-lg" />
+                        <div className="aspect-video bg-muted rounded-t-lg" />
                         <CardHeader>
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs px-2 py-1 bg-gray-100 rounded-full">
+                            <span className="text-xs px-2 py-1 bg-muted rounded-full text-foreground">
                               {post.category}
                             </span>
-                            <button className="text-gray-400 hover:text-gray-600">
+                            <button className="text-muted-foreground hover:text-foreground">
                               <Bookmark className="h-4 w-4" />
                             </button>
                           </div>
@@ -397,7 +397,7 @@ export default function BlogPage() {
                           </CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <div className="flex items-center justify-between text-xs text-gray-500">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
                             <div className="flex items-center space-x-3">
                               <span className="flex items-center">
                                 <User className="h-3 w-3 mr-1" />
@@ -417,7 +417,7 @@ export default function BlogPage() {
                             {post.tags.map((tag, idx) => (
                               <span
                                 key={idx}
-                                className="text-2xs px-2 py-0.5 bg-gray-100 rounded-full"
+                                className="text-2xs px-2 py-0.5 bg-muted rounded-full text-foreground"
                               >
                                 {tag}
                               </span>
@@ -443,7 +443,7 @@ export default function BlogPage() {
                       <button
                         onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                         disabled={currentPage === 1}
-                        className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="p-2 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </button>
@@ -454,7 +454,7 @@ export default function BlogPage() {
                           className={`px-3 py-1 rounded-lg text-sm ${
                             currentPage === i + 1
                               ? 'bg-primary text-black'
-                              : 'hover:bg-gray-100'
+                              : 'hover:bg-muted text-foreground'
                           }`}
                         >
                           {i + 1}
@@ -463,7 +463,7 @@ export default function BlogPage() {
                       <button
                         onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                         disabled={currentPage === totalPages}
-                        className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="p-2 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <ChevronRight className="h-4 w-4" />
                       </button>
@@ -472,9 +472,9 @@ export default function BlogPage() {
                 </>
               ) : (
                 <div className="text-center py-12">
-                  <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500">No articles found</p>
-                  <p className="text-sm text-gray-400 mt-1">Try adjusting your search or filters</p>
+                  <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No articles found</p>
+                  <p className="text-sm text-muted-foreground mt-1">Try adjusting your search or filters</p>
                 </div>
               )}
             </div>

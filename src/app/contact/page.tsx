@@ -143,9 +143,9 @@ export default function ContactPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -153,16 +153,16 @@ export default function ContactPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
-                <Link href="/features" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/features" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Features
                 </Link>
-                <Link href="/pricing" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/pricing" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Pricing
                 </Link>
-                <Link href="/about" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition">
                   About
                 </Link>
                 <Link href="/contact" className="text-xs text-primary font-medium">
@@ -183,17 +183,17 @@ export default function ContactPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto text-center">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Get in Touch
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               Have questions about our platform? We're here to help. Reach out to our team
               and we'll get back to you as soon as possible.
             </p>
-            <div className="flex flex-wrap justify-center gap-6 text-sm text-gray-600">
+            <div className="flex flex-wrap justify-center gap-6 text-sm text-muted-foreground">
               <a href="mailto:hello@enterprise.com" className="flex items-center gap-2 hover:text-primary transition">
                 <Mail className="h-4 w-4" />
                 hello@enterprise.com
@@ -283,12 +283,12 @@ export default function ContactPage() {
                         disabled={isSubmitting}
                       />
                       <div className="space-y-1">
-                        <label className="text-xs font-medium">Inquiry Type</label>
+                        <label className="text-xs font-medium text-foreground">Inquiry Type</label>
                         <select
                           name="type"
                           value={formData.type}
                           onChange={handleChange}
-                          className="w-full px-3 py-2 text-xs border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                          className="w-full px-3 py-2 text-xs border border-border bg-background text-foreground rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
                           disabled={isSubmitting}
                         >
                           <option value="sales">Sales Inquiry</option>
@@ -313,13 +313,13 @@ export default function ContactPage() {
                     />
 
                     <div className="space-y-1">
-                      <label className="text-xs font-medium">Message</label>
+                      <label className="text-xs font-medium text-foreground">Message</label>
                       <textarea
                         name="message"
                         value={formData.message}
                         onChange={handleChange}
                         rows={6}
-                        className="w-full px-3 py-2 text-xs border rounded-md focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                        className="w-full px-3 py-2 text-xs border border-border bg-background text-foreground rounded-md focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                         placeholder="Tell us more about your inquiry..."
                         required
                         disabled={isSubmitting}
@@ -350,8 +350,8 @@ export default function ContactPage() {
                   <div className="flex items-start space-x-3">
                     <Mail className="h-4 w-4 text-primary mt-0.5" />
                     <div>
-                      <p className="text-xs font-medium">Email</p>
-                      <a href="mailto:hello@enterprise.com" className="text-xs text-gray-600 hover:text-primary">
+                      <p className="text-xs font-medium text-foreground">Email</p>
+                      <a href="mailto:hello@enterprise.com" className="text-xs text-muted-foreground hover:text-primary">
                         hello@enterprise.com
                       </a>
                     </div>
@@ -359,8 +359,8 @@ export default function ContactPage() {
                   <div className="flex items-start space-x-3">
                     <Phone className="h-4 w-4 text-primary mt-0.5" />
                     <div>
-                      <p className="text-xs font-medium">Phone</p>
-                      <a href="tel:+14155550100" className="text-xs text-gray-600 hover:text-primary">
+                      <p className="text-xs font-medium text-foreground">Phone</p>
+                      <a href="tel:+14155550100" className="text-xs text-muted-foreground hover:text-primary">
                         +1 (415) 555-0100
                       </a>
                     </div>
@@ -368,8 +368,8 @@ export default function ContactPage() {
                   <div className="flex items-start space-x-3">
                     <Headphones className="h-4 w-4 text-primary mt-0.5" />
                     <div>
-                      <p className="text-xs font-medium">Support</p>
-                      <p className="text-xs text-gray-600">24/7 Live Chat Available</p>
+                      <p className="text-xs font-medium text-foreground">Support</p>
+                      <p className="text-xs text-muted-foreground">24/7 Live Chat Available</p>
                     </div>
                   </div>
                 </CardContent>
@@ -382,13 +382,13 @@ export default function ContactPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="flex space-x-3">
-                    <a href="#" className="p-2 bg-gray-100 rounded-lg hover:bg-primary hover:text-white transition">
+                    <a href="#" className="p-2 bg-muted rounded-lg hover:bg-primary hover:text-white transition">
                       <Linkedin className="h-4 w-4" />
                     </a>
-                    <a href="#" className="p-2 bg-gray-100 rounded-lg hover:bg-primary hover:text-white transition">
+                    <a href="#" className="p-2 bg-muted rounded-lg hover:bg-primary hover:text-white transition">
                       <Twitter className="h-4 w-4" />
                     </a>
-                    <a href="#" className="p-2 bg-gray-100 rounded-lg hover:bg-primary hover:text-white transition">
+                    <a href="#" className="p-2 bg-muted rounded-lg hover:bg-primary hover:text-white transition">
                       <Github className="h-4 w-4" />
                     </a>
                   </div>
@@ -402,18 +402,18 @@ export default function ContactPage() {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-600">Monday - Friday</span>
-                    <span className="font-medium">9:00 AM - 6:00 PM</span>
+                    <span className="text-muted-foreground">Monday - Friday</span>
+                    <span className="font-medium text-foreground">9:00 AM - 6:00 PM</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-600">Saturday</span>
-                    <span className="font-medium">10:00 AM - 4:00 PM</span>
+                    <span className="text-muted-foreground">Saturday</span>
+                    <span className="font-medium text-foreground">10:00 AM - 4:00 PM</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-600">Sunday</span>
-                    <span className="font-medium">Closed</span>
+                    <span className="text-muted-foreground">Sunday</span>
+                    <span className="font-medium text-foreground">Closed</span>
                   </div>
-                  <p className="text-2xs text-gray-500 pt-2">
+                  <p className="text-2xs text-muted-foreground pt-2">
                     * Support available 24/7 for enterprise customers
                   </p>
                 </CardContent>
@@ -424,11 +424,11 @@ export default function ContactPage() {
       </section>
 
       {/* Contact Options */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">How Can We Help?</h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">How Can We Help?</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Choose the department that best fits your needs
             </p>
           </div>
@@ -451,7 +451,7 @@ export default function ContactPage() {
                     <a href={`mailto:${option.email}`} className="text-xs text-primary hover:underline">
                       {option.email}
                     </a>
-                    <p className="text-2xs text-gray-500 mt-2">
+                    <p className="text-2xs text-muted-foreground mt-2">
                       Response time: {option.responseTime}
                     </p>
                   </CardContent>
@@ -466,8 +466,8 @@ export default function ContactPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Our Offices</h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Our Offices</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Visit us at any of our global locations
             </p>
           </div>
@@ -480,8 +480,8 @@ export default function ContactPage() {
                     <div>
                       <CardTitle className="text-base">{office.location}</CardTitle>
                       <div className="flex items-center gap-1 mt-1">
-                        <MapPin className="h-3 w-3 text-gray-400" />
-                        <span className="text-2xs text-gray-600">{office.country}</span>
+                        <MapPin className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-2xs text-muted-foreground">{office.country}</span>
                       </div>
                     </div>
                     <Globe className="h-4 w-4 text-primary" />
@@ -489,19 +489,19 @@ export default function ContactPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div>
-                    <p className="text-xs font-medium">Address</p>
-                    <p className="text-xs text-gray-600">{office.address}</p>
-                    <p className="text-xs text-gray-600">{office.city}</p>
+                    <p className="text-xs font-medium text-foreground">Address</p>
+                    <p className="text-xs text-muted-foreground">{office.address}</p>
+                    <p className="text-xs text-muted-foreground">{office.city}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium">Phone</p>
+                    <p className="text-xs font-medium text-foreground">Phone</p>
                     <a href={`tel:${office.phone.replace(/\s/g, '')}`} className="text-xs text-primary hover:underline">
                       {office.phone}
                     </a>
                   </div>
                   <div>
-                    <p className="text-xs font-medium">Hours</p>
-                    <p className="text-xs text-gray-600">{office.hours}</p>
+                    <p className="text-xs font-medium text-foreground">Hours</p>
+                    <p className="text-xs text-muted-foreground">{office.hours}</p>
                   </div>
                 </CardContent>
               </Card>

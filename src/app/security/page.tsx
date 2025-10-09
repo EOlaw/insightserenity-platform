@@ -240,9 +240,9 @@ const securityStats = [
 
 export default function SecurityPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -250,22 +250,22 @@ export default function SecurityPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
-                <Link href="/features" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/features" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Features
                 </Link>
-                <Link href="/pricing" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/pricing" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Pricing
                 </Link>
                 <Link href="/security" className="text-xs text-primary font-medium">
                   Security
                 </Link>
-                <Link href="/about" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition">
                   About
                 </Link>
-                <Link href="/contact" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Contact
                 </Link>
               </div>
@@ -283,17 +283,17 @@ export default function SecurityPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-6">
               <Shield className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Enterprise-Grade Security
               <span className="text-primary"> You Can Trust</span>
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               We take security seriously. Our platform is built with multiple layers of protection
               to keep your data safe, secure, and compliant with global standards.
             </p>
@@ -316,13 +316,13 @@ export default function SecurityPage() {
       </section>
 
       {/* Security Stats */}
-      <section className="py-16 border-y">
+      <section className="py-16 border-y border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
             {securityStats.map((stat, index) => (
               <div key={index} className="text-center">
                 <div className="text-2xl sm:text-3xl font-bold text-primary mb-2">{stat.value}</div>
-                <div className="text-xs text-gray-600">{stat.label}</div>
+                <div className="text-xs text-muted-foreground">{stat.label}</div>
               </div>
             ))}
           </div>
@@ -333,10 +333,10 @@ export default function SecurityPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Comprehensive Security Features
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Multiple layers of security to protect your business
             </p>
           </div>
@@ -350,7 +350,7 @@ export default function SecurityPage() {
                     <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
                       <CategoryIcon className="h-5 w-5 text-primary" />
                     </div>
-                    <h3 className="text-xl font-bold">{category.category}</h3>
+                    <h3 className="text-xl font-bold text-foreground">{category.category}</h3>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {category.features.map((feature, idx) => {
@@ -380,13 +380,13 @@ export default function SecurityPage() {
       </section>
 
       {/* Certifications */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Certifications & Compliance
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Meeting and exceeding industry standards for security and compliance
             </p>
           </div>
@@ -412,7 +412,7 @@ export default function SecurityPage() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-400">
                       {cert.status}
                     </span>
                   </CardContent>
@@ -436,10 +436,10 @@ export default function SecurityPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Our Security Practices
             </h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Best practices and methodologies we follow to ensure your security
             </p>
           </div>
@@ -454,8 +454,8 @@ export default function SecurityPage() {
                   <ul className="space-y-2">
                     {practice.points.map((point, idx) => (
                       <li key={idx} className="flex items-start space-x-2">
-                        <CheckCircle className="h-4 w-4 text-green-600 mt-0.5" />
-                        <span className="text-xs text-gray-700">{point}</span>
+                        <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
+                        <span className="text-xs text-muted-foreground">{point}</span>
                       </li>
                     ))}
                   </ul>
@@ -467,7 +467,7 @@ export default function SecurityPage() {
       </section>
 
       {/* Security Resources */}
-      <section className="py-16 lg:py-24 bg-black text-white">
+      <section className="py-16 lg:py-24 bg-black dark:bg-gray-950 text-white">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-2xl sm:text-3xl font-bold mb-4">
@@ -534,28 +534,28 @@ export default function SecurityPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
               Security Questions?
             </h2>
-            <p className="text-sm text-gray-600 mb-8">
+            <p className="text-sm text-muted-foreground mb-8">
               Our security team is here to answer your questions and provide additional information
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <div className="flex items-center space-x-2">
                 <Mail className="h-4 w-4 text-primary" />
-                <a href="mailto:security@enterprise.com" className="text-sm hover:text-primary">
+                <a href="mailto:security@enterprise.com" className="text-sm text-muted-foreground hover:text-primary">
                   security@enterprise.com
                 </a>
               </div>
               <div className="flex items-center space-x-2">
                 <Shield className="h-4 w-4 text-primary" />
-                <a href="/security/report" className="text-sm hover:text-primary">
+                <a href="/security/report" className="text-sm text-muted-foreground hover:text-primary">
                   Report a Security Issue
                 </a>
               </div>
               <div className="flex items-center space-x-2">
                 <FileText className="h-4 w-4 text-primary" />
-                <a href="/security/disclosure" className="text-sm hover:text-primary">
+                <a href="/security/disclosure" className="text-sm text-muted-foreground hover:text-primary">
                   Responsible Disclosure
                 </a>
               </div>

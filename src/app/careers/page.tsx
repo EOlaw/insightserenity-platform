@@ -330,9 +330,9 @@ export default function CareersPage() {
   })
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
@@ -340,19 +340,19 @@ export default function CareersPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <span className="text-black font-bold text-sm">E</span>
                 </div>
-                <span className="text-lg font-bold">Enterprise</span>
+                <span className="text-lg font-bold text-foreground">Enterprise</span>
               </Link>
               <div className="hidden md:flex items-center space-x-6">
-                <Link href="/about" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition">
                   About
                 </Link>
                 <Link href="/careers" className="text-xs text-primary font-medium">
                   Careers
                 </Link>
-                <Link href="/blog" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/blog" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Blog
                 </Link>
-                <Link href="/contact" className="text-xs text-gray-600 hover:text-gray-900 transition">
+                <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition">
                   Contact
                 </Link>
               </div>
@@ -370,14 +370,14 @@ export default function CareersPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-b from-gray-50 to-white py-16 lg:py-24">
+      <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto text-center">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
               Join Our Mission to
               <span className="text-primary"> Transform Enterprise Software</span>
             </h1>
-            <p className="text-base text-gray-600 mb-8">
+            <p className="text-base text-muted-foreground mb-8">
               We're building the future of work. Join a team of passionate innovators
               creating tools that empower businesses worldwide.
             </p>
@@ -395,7 +395,7 @@ export default function CareersPage() {
                 </Button>
               </Link>
             </div>
-            <div className="flex items-center justify-center gap-6 mt-8 text-sm text-gray-600">
+            <div className="flex items-center justify-center gap-6 mt-8 text-sm text-muted-foreground">
               <span className="flex items-center">
                 <Users className="h-4 w-4 mr-1" />
                 500+ employees
@@ -414,11 +414,11 @@ export default function CareersPage() {
       </section>
 
       {/* Company Values */}
-      <section className="py-16 lg:py-24 border-b">
+      <section className="py-16 lg:py-24 border-b border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Our Values</h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Our Values</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               The principles that guide how we work and make decisions
             </p>
           </div>
@@ -447,8 +447,8 @@ export default function CareersPage() {
       <section id="openings" className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Open Positions</h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Open Positions</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               Find your next role and help us build the future
             </p>
           </div>
@@ -457,19 +457,19 @@ export default function CareersPage() {
           <div className="max-w-4xl mx-auto mb-8">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
                   type="text"
                   placeholder="Search positions..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full pl-10 pr-4 py-2 text-sm border border-border bg-background text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
               <select
                 value={selectedDepartment}
                 onChange={(e) => setSelectedDepartment(e.target.value)}
-                className="px-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                className="px-4 py-2 text-sm border border-border bg-background text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 {departments.map(dept => (
                   <option key={dept} value={dept}>{dept}</option>
@@ -478,7 +478,7 @@ export default function CareersPage() {
               <select
                 value={selectedLocation}
                 onChange={(e) => setSelectedLocation(e.target.value)}
-                className="px-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                className="px-4 py-2 text-sm border border-border bg-background text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 {locations.map(loc => (
                   <option key={loc} value={loc}>{loc}</option>
@@ -499,7 +499,7 @@ export default function CareersPage() {
                     <div className="flex items-start justify-between">
                       <div>
                         <CardTitle className="text-lg">{job.title}</CardTitle>
-                        <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-600">
+                        <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-muted-foreground">
                           <span className="flex items-center">
                             <Briefcase className="h-3 w-3 mr-1" />
                             {job.department}
@@ -519,9 +519,9 @@ export default function CareersPage() {
                         </div>
                       </div>
                       {expandedJob === job.id ? (
-                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                        <ChevronDown className="h-5 w-5 text-muted-foreground" />
                       ) : (
-                        <ChevronRight className="h-5 w-5 text-gray-400" />
+                        <ChevronRight className="h-5 w-5 text-muted-foreground" />
                       )}
                     </div>
                   </CardHeader>
@@ -529,32 +529,32 @@ export default function CareersPage() {
                     <CardContent>
                       <div className="space-y-4">
                         <div>
-                          <h4 className="text-sm font-semibold mb-2">About the Role</h4>
-                          <p className="text-xs text-gray-600">{job.description}</p>
+                          <h4 className="text-sm font-semibold mb-2 text-foreground">About the Role</h4>
+                          <p className="text-xs text-muted-foreground">{job.description}</p>
                         </div>
                         <div>
-                          <h4 className="text-sm font-semibold mb-2">Requirements</h4>
+                          <h4 className="text-sm font-semibold mb-2 text-foreground">Requirements</h4>
                           <ul className="space-y-1">
                             {job.requirements.map((req, idx) => (
                               <li key={idx} className="flex items-start space-x-2">
-                                <CheckCircle className="h-3 w-3 text-green-600 mt-0.5" />
-                                <span className="text-xs text-gray-600">{req}</span>
+                                <CheckCircle className="h-3 w-3 text-green-600 dark:text-green-400 mt-0.5" />
+                                <span className="text-xs text-muted-foreground">{req}</span>
                               </li>
                             ))}
                           </ul>
                         </div>
                         <div>
-                          <h4 className="text-sm font-semibold mb-2">Benefits</h4>
+                          <h4 className="text-sm font-semibold mb-2 text-foreground">Benefits</h4>
                           <div className="flex flex-wrap gap-2">
                             {job.benefits.map((benefit, idx) => (
-                              <span key={idx} className="text-xs px-2 py-1 bg-gray-100 rounded-full">
+                              <span key={idx} className="text-xs px-2 py-1 bg-muted rounded-full text-foreground">
                                 {benefit}
                               </span>
                             ))}
                           </div>
                         </div>
-                        <div className="flex items-center justify-between pt-4 border-t">
-                          <span className="text-xs text-gray-500">Posted {job.posted}</span>
+                        <div className="flex items-center justify-between pt-4 border-t border-border">
+                          <span className="text-xs text-muted-foreground">Posted {job.posted}</span>
                           <Button size="sm">
                             Apply Now
                             <ArrowRight className="ml-2 h-3.5 w-3.5" />
@@ -567,9 +567,9 @@ export default function CareersPage() {
               ))
             ) : (
               <div className="text-center py-12">
-                <Briefcase className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500">No positions found</p>
-                <p className="text-sm text-gray-400 mt-1">Try adjusting your filters</p>
+                <Briefcase className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No positions found</p>
+                <p className="text-sm text-muted-foreground mt-1">Try adjusting your filters</p>
               </div>
             )}
           </div>
@@ -577,11 +577,11 @@ export default function CareersPage() {
       </section>
 
       {/* Benefits */}
-      <section className="py-16 lg:py-24 bg-gray-50">
+      <section className="py-16 lg:py-24 bg-muted/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Benefits & Perks</h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Benefits & Perks</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               We take care of our team so they can take care of our customers
             </p>
           </div>
@@ -594,8 +594,8 @@ export default function CareersPage() {
                     <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center mb-3">
                       <Icon className="h-5 w-5 text-primary" />
                     </div>
-                    <h3 className="text-sm font-semibold mb-1">{benefit.title}</h3>
-                    <p className="text-xs text-gray-600">{benefit.description}</p>
+                    <h3 className="text-sm font-semibold mb-1 text-foreground">{benefit.title}</h3>
+                    <p className="text-xs text-muted-foreground">{benefit.description}</p>
                   </CardContent>
                 </Card>
               )
@@ -608,15 +608,15 @@ export default function CareersPage() {
       <section className="py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">Our Hiring Process</h2>
-            <p className="text-sm text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Our Hiring Process</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
               We've designed our process to be transparent, efficient, and respectful of your time
             </p>
           </div>
           <div className="max-w-4xl mx-auto">
             <div className="relative">
               {/* Horizontal Line */}
-              <div className="absolute top-8 left-8 right-8 h-0.5 bg-gray-200 hidden lg:block" />
+              <div className="absolute top-8 left-8 right-8 h-0.5 bg-border hidden lg:block" />
 
               <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                 {hiringProcess.map((step, index) => (
@@ -625,8 +625,8 @@ export default function CareersPage() {
                       <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center text-black font-bold text-lg z-10">
                         {step.step}
                       </div>
-                      <h3 className="text-sm font-semibold mt-4">{step.title}</h3>
-                      <p className="text-xs text-gray-600 mt-1">{step.description}</p>
+                      <h3 className="text-sm font-semibold mt-4 text-foreground">{step.title}</h3>
+                      <p className="text-xs text-muted-foreground mt-1">{step.description}</p>
                       <span className="text-xs text-primary mt-2">{step.duration}</span>
                     </div>
                   </div>
@@ -638,7 +638,7 @@ export default function CareersPage() {
       </section>
 
       {/* Life at Company */}
-      <section className="py-16 lg:py-24 bg-black text-white">
+      <section className="py-16 lg:py-24 bg-black dark:bg-gray-950 text-white">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-2xl sm:text-3xl font-bold mb-4">Life at Enterprise</h2>
