@@ -165,27 +165,6 @@ router.post(
     AuthController.logoutAllDevices.bind(AuthController)
 );
 
-/**
- * POST /api/v1/auth/change-password
- * Change password for authenticated user
- * 
- * Headers required:
- * - Authorization: Bearer <access_token>
- * 
- * Request body:
- * - currentPassword: Current password for verification
- * - newPassword: New password
- * - confirmPassword: Password confirmation
- * 
- * All existing tokens are automatically invalidated after
- * successful password change for security.
- */
-router.post(
-    '/change-password',
-    authenticate,
-    AuthController.changePassword.bind(AuthController)
-);
-
 
 // ========== ADMIN ROUTES (EXAMPLE) ========== 
 // These routes require both authentication and admin role

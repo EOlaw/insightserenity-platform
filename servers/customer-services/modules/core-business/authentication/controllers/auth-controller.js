@@ -83,6 +83,61 @@ class AuthController {
      * Login user
      * POST /api/auth/login
      */
+    // async loginUser(req, res, next) {
+    //     try {
+    //         const { email, username, password } = req.body;
+
+    //         if (!password || (!email && !username)) {
+    //             return next(
+    //                 new AppError('Email/username and password are required', 400)
+    //             );
+    //         }
+
+    //         const credentials = {
+    //             email: email || username,
+    //             password
+    //         };
+
+    //         const options = {
+    //             ip: req.ip || req.connection.remoteAddress,
+    //             userAgent: req.headers['user-agent'],
+    //             device: req.body.device,
+    //             location: req.body.location
+    //         };
+
+    //         const result = await directAuthService.loginDirectUser(credentials, options);
+
+    //         if (result.requiresMFA) {
+    //             return res.status(200).json({
+    //                 success: true,
+    //                 requiresMFA: true,
+    //                 data: {
+    //                     tempToken: result.tempToken,
+    //                     mfaMethods: result.mfaMethods,
+    //                     challengeId: result.challengeId
+    //                 }
+    //             });
+    //         }
+
+    //         if (result.tokens?.refreshToken) {
+    //             res.cookie('refreshToken', result.tokens.refreshToken, {
+    //                 httpOnly: true,
+    //                 secure: process.env.NODE_ENV === 'production',
+    //                 sameSite: 'strict',
+    //                 maxAge: 30 * 24 * 60 * 60 * 1000
+    //             });
+    //         }
+
+    //         res.status(200).json({
+    //             success: true,
+    //             message: 'Login successful',
+    //             data: result
+    //         });
+
+    //     } catch (error) {
+    //         next(error);
+    //     }
+    // }
     async loginUser(req, res, next) {
         try {
             const { email, username, password } = req.body;
@@ -107,6 +162,7 @@ class AuthController {
 
             const result = await directAuthService.loginDirectUser(credentials, options);
 
+            // Handle MFA requirement
             if (result.requiresMFA) {
                 return res.status(200).json({
                     success: true,
@@ -119,6 +175,7 @@ class AuthController {
                 });
             }
 
+            // Set refresh token cookie
             if (result.tokens?.refreshToken) {
                 res.cookie('refreshToken', result.tokens.refreshToken, {
                     httpOnly: true,
@@ -135,6 +192,20 @@ class AuthController {
             });
 
         } catch (error) {
+            // Handle email verification error specifically
+            if (error.code === 'EMAIL_NOT_VERIFIED') {
+                return res.status(403).json({
+                    success: false,
+                    message: error.message,
+                    code: 'EMAIL_NOT_VERIFIED',
+                    data: {
+                        requiresEmailVerification: true,
+                        email: error.data?.email,
+                        verificationSent: error.data?.verificationSent || true
+                    }
+                });
+            }
+
             next(error);
         }
     }
@@ -387,44 +458,6 @@ class AuthController {
             res.status(200).json({
                 success: true,
                 message: 'Password reset successful'
-            });
-
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /**
-     * Change password
-     * POST /api/auth/change-password
-     */
-    async changePassword(req, res, next) {
-        try {
-            const { currentPassword, newPassword, confirmPassword } = req.body;
-
-            if (!req.user || !req.user.id) {
-                return next(new AppError('User not authenticated', 401));
-            }
-
-            if (!currentPassword || !newPassword) {
-                return next(
-                    new AppError('Current and new password are required', 400)
-                );
-            }
-
-            if (newPassword !== confirmPassword) {
-                return next(new AppError('Passwords do not match', 400));
-            }
-
-            await directAuthService.changePassword(
-                req.user.id,
-                currentPassword,
-                newPassword
-            );
-
-            res.status(200).json({
-                success: true,
-                message: 'Password changed successfully'
             });
 
         } catch (error) {

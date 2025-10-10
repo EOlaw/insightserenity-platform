@@ -56,7 +56,7 @@ class DirectAuthService {
         this.config = {
             companyTenantId: process.env.COMPANY_TENANT_ID || 'default',
             platformUrl: process.env.PLATFORM_URL || 'https://yourplatform.com',
-            requireEmailVerification: process.env.DIRECT_REQUIRE_EMAIL_VERIFICATION !== 'false',
+            requireEmailVerification: process.env.EMAIL_VERIFICATION !== 'false',
             passwordMinLength: 8,
             maxLoginAttempts: 5,
             sessionTimeout: 24 * 60 * 60 * 1000, // 24 hours
@@ -279,6 +279,114 @@ class DirectAuthService {
      * @param {Object} options - Login options
      * @returns {Promise<Object>} Authentication result
      */
+    // async loginDirectUser(credentials, options = {}) {
+    //     try {
+    //         const { email, password } = credentials;
+
+    //         logger.info('Starting direct user login', { email });
+
+    //         const dbService = this._getDatabaseService();
+
+    //         const user = await dbService.findUserByCredentials(
+    //             email,
+    //             this.config.companyTenantId
+    //         );
+
+    //         if (!user) {
+    //             await this._logFailedLogin(email, 'User not found', options);
+    //             throw AppError.unauthorized('Invalid credentials');
+    //         }
+
+    //         if (user.accountStatus?.status === 'suspended') {
+    //             throw AppError.forbidden('Account is suspended. Please contact support');
+    //         }
+
+    //         if (user.accountStatus?.status === 'blocked') {
+    //             throw AppError.forbidden('Account is blocked. Please contact support');
+    //         }
+
+    //         const isPasswordValid = await user.comparePassword(password);
+
+    //         if (!isPasswordValid) {
+    //             if (typeof user.incrementLoginAttempts === 'function') {
+    //                 await user.incrementLoginAttempts();
+    //             }
+    //             await this._logFailedLogin(email, 'Invalid password', options);
+    //             throw AppError.unauthorized('Invalid credentials');
+    //         }
+
+    //         if (user.mfa?.enabled) {
+    //             const tempToken = this._generateTempToken(user._id || user.id);
+    //             return {
+    //                 requiresMFA: true,
+    //                 tempToken: tempToken,
+    //                 mfaMethods: user.mfa.methods || [],
+    //                 challengeId: this._generateChallengeId()
+    //             };
+    //         }
+
+    //         if (typeof user.recordLogin === 'function') {
+    //             await user.recordLogin({
+    //                 ip: options.ip,
+    //                 userAgent: options.userAgent,
+    //                 device: options.device,
+    //                 location: options.location
+    //             });
+    //         }
+
+    //         const accessToken = this._generateAccessToken(user);
+    //         const refreshToken = this._generateRefreshToken(user);
+
+    //         const userType = this._getUserTypeFromUser(user);
+
+    //         let userSpecificData = {};
+    //         let pendingNotifications = [];
+
+    //         try {
+    //             userSpecificData = await this._loadUserSpecificData(
+    //                 user._id || user.id,
+    //                 userType
+    //             );
+    //         } catch (error) {
+    //             logger.error('Failed to load user-specific data', { error: error.message });
+    //         }
+
+    //         logger.info('Direct user login successful', {
+    //             userId: user._id || user.id,
+    //             email: user.email,
+    //             userType: userType
+    //         });
+
+    //         return {
+    //             user: this._sanitizeUserOutput(user),
+    //             tokens: {
+    //                 accessToken,
+    //                 refreshToken,
+    //                 expiresIn: 86400,
+    //                 tokenType: 'Bearer'
+    //             },
+    //             userType: userType,
+    //             userSpecificData: userSpecificData,
+    //             pendingNotifications: pendingNotifications,
+    //             dashboardUrl: this._getDashboardUrl(userType),
+    //             features: this._getAvailableFeatures(userType)
+    //         };
+
+    //     } catch (error) {
+    //         logger.error('Direct user login failed', {
+    //             error: error.message,
+    //             email: credentials?.email
+    //         });
+    //         throw error;
+    //     }
+    // }
+
+    /**
+     * Authenticate direct user with credentials (Enhanced with Email Verification)
+     * @param {Object} credentials - Login credentials
+     * @param {Object} options - Login options
+     * @returns {Promise<Object>} Authentication result
+     */
     async loginDirectUser(credentials, options = {}) {
         try {
             const { email, password } = credentials;
@@ -297,6 +405,7 @@ class DirectAuthService {
                 throw AppError.unauthorized('Invalid credentials');
             }
 
+            // Check account status
             if (user.accountStatus?.status === 'suspended') {
                 throw AppError.forbidden('Account is suspended. Please contact support');
             }
@@ -305,6 +414,7 @@ class DirectAuthService {
                 throw AppError.forbidden('Account is blocked. Please contact support');
             }
 
+            // Verify password first
             const isPasswordValid = await user.comparePassword(password);
 
             if (!isPasswordValid) {
@@ -315,6 +425,67 @@ class DirectAuthService {
                 throw AppError.unauthorized('Invalid credentials');
             }
 
+            // ========== EMAIL VERIFICATION CHECK (NEW) ==========
+            // Check if email verification is required and if email is not verified
+            if (this.config.requireEmailVerification && !user.verification?.email?.verified) {
+                logger.warn('Login attempt with unverified email', {
+                    userId: user._id || user.id,
+                    email: user.email
+                });
+
+                // Automatically resend verification email
+                try {
+                    // Check if we need to regenerate token (if expired or missing)
+                    const needsNewToken = !user.verification.email.token ||
+                        !user.verification.email.tokenExpires ||
+                        new Date() > new Date(user.verification.email.tokenExpires);
+
+                    if (needsNewToken) {
+                        // Generate new verification token
+                        user.verification.email.token = this._generateVerificationToken();
+                        user.verification.email.tokenExpires = new Date(Date.now() + 86400000); // 24 hours
+                        user.verification.email.attempts = (user.verification.email.attempts || 0) + 1;
+
+                        await user.save();
+
+                        logger.info('Generated new verification token for login attempt', {
+                            userId: user._id || user.id,
+                            email: user.email
+                        });
+                    }
+
+                    // Send verification email
+                    await this._sendVerificationEmail(user);
+
+                    logger.info('Verification email automatically sent on login attempt', {
+                        userId: user._id || user.id,
+                        email: user.email
+                    });
+
+                } catch (emailError) {
+                    // Log error but don't fail the response
+                    logger.error('Failed to send verification email on login', {
+                        error: emailError.message,
+                        userId: user._id || user.id
+                    });
+                }
+
+                // Return response requiring email verification
+                throw new AppError(
+                    'Email verification required. A verification link has been sent to your email address.',
+                    403,
+                    'EMAIL_NOT_VERIFIED',
+                    {
+                        requiresEmailVerification: true,
+                        email: user.email,
+                        userId: user._id || user.id,
+                        verificationSent: true
+                    }
+                );
+            }
+            // ========== END EMAIL VERIFICATION CHECK ==========
+
+            // Check MFA requirement
             if (user.mfa?.enabled) {
                 const tempToken = this._generateTempToken(user._id || user.id);
                 return {
@@ -325,6 +496,7 @@ class DirectAuthService {
                 };
             }
 
+            // Record successful login
             if (typeof user.recordLogin === 'function') {
                 await user.recordLogin({
                     ip: options.ip,
@@ -334,6 +506,7 @@ class DirectAuthService {
                 });
             }
 
+            // Generate tokens
             const accessToken = this._generateAccessToken(user);
             const refreshToken = this._generateRefreshToken(user);
 
@@ -526,60 +699,6 @@ class DirectAuthService {
      * @param {string} email - User email
      * @returns {Promise<Object>} Verification result
      */
-    // async verifyEmail(token, email) {
-    //     try {
-    //         logger.info('Verifying email', { email });
-
-    //         const dbService = this._getDatabaseService();
-    //         const user = await dbService.findUserByCredentials(
-    //             email,
-    //             this.config.companyTenantId
-    //         );
-
-    //         if (!user) {
-    //             throw new AppError('User not found', 404);
-    //         }
-
-    //         if (user.verification?.email?.verified) {
-    //             return {
-    //                 message: 'Email already verified',
-    //                 verified: true
-    //             };
-    //         }
-
-    //         const storedToken = user.verification?.email?.token;
-    //         const tokenExpires = user.verification?.email?.tokenExpires;
-
-    //         if (!storedToken || storedToken !== token) {
-    //             throw new AppError('Invalid verification token', 400);
-    //         }
-
-    //         if (new Date() > new Date(tokenExpires)) {
-    //             throw new AppError('Verification token has expired', 400);
-    //         }
-
-    //         user.verification.email.verified = true;
-    //         user.verification.email.verifiedAt = new Date();
-    //         user.accountStatus.status = 'active';
-    //         user.accountStatus.reason = 'Email verified';
-
-    //         await user.save();
-
-    //         logger.info('Email verified successfully', { userId: user._id || user.id });
-
-    //         return {
-    //             message: 'Email verified successfully',
-    //             verified: true,
-    //             user: this._sanitizeUserOutput(user)
-    //         };
-    //     } catch (error) {
-    //         logger.error('Email verification failed', {
-    //             error: error.message,
-    //             email
-    //         });
-    //         throw error;
-    //     }
-    // }
     async verifyEmail(token, email) {
         try {
             logger.info('Verifying email', { email });
