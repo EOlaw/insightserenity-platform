@@ -19,14 +19,14 @@ const ClientDocumentController = require('../controllers/client-document-control
 const ClientNoteController = require('../controllers/client-note-controller');
 
 // Import middleware
-const { authenticate } = require('../../../../../../shared/lib/middleware/auth');
-const { checkPermission } = require('../../../../../../shared/lib/middleware/permissions');
-const { rateLimiter } = require('../../../../../../shared/lib/middleware/rate-limiter');
+const { authenticate } = require('../../../../middleware/auth-middleware');
+const { checkPermission } = require('../../../../middleware/permissions');
+const { rateLimiter } = require('../../../../middleware/rate-limiter');
 
 /**
  * Mount main route modules
  */
-router.use('/clients', clientRoutes);
+router.use('/client', clientRoutes);
 router.use('/contacts', clientContactRoutes);
 router.use('/documents', clientDocumentRoutes);
 router.use('/notes', clientNoteRoutes);
@@ -85,10 +85,10 @@ router.get('/health', (req, res) => {
         status: 'operational',
         timestamp: new Date().toISOString(),
         routes: {
-            clients: '/api/v1/clients',
-            contacts: '/api/v1/contacts',
-            documents: '/api/v1/documents',
-            notes: '/api/v1/notes'
+            clients: '/api/v1/clients/',
+            contacts: '/api/v1/clients/contacts',
+            documents: '/api/v1/clients/documents',
+            notes: '/api/v1/clients/notes'
         }
     });
 });
@@ -104,9 +104,9 @@ router.get('/docs', (req, res) => {
         description: 'Client Management API',
         endpoints: {
             clients: {
-                base: '/api/v1/clients',
+                base: '/api/v1/clients/',
                 operations: [
-                    'POST /api/v1/clients - Create client',
+                    'POST /api/v1/clients/ - Create client',
                     'GET /api/v1/clients/:id - Get client by ID',
                     'GET /api/v1/clients/code/:code - Get client by code',
                     'PUT /api/v1/clients/:id - Update client',
@@ -118,49 +118,49 @@ router.get('/docs', (req, res) => {
                 ]
             },
             contacts: {
-                base: '/api/v1/contacts',
+                base: '/api/v1/clients/contacts',
                 operations: [
-                    'POST /api/v1/contacts - Create contact',
-                    'GET /api/v1/contacts/:id - Get contact by ID',
-                    'PUT /api/v1/contacts/:id - Update contact',
-                    'DELETE /api/v1/contacts/:id - Delete contact',
-                    'GET /api/v1/contacts/search - Search contacts',
-                    'POST /api/v1/contacts/:id/interactions - Record interaction',
-                    'GET /api/v1/contacts/:id/engagement - Get engagement metrics',
-                    'POST /api/v1/contacts/bulk - Bulk create contacts',
-                    'GET /api/v1/contacts/export - Export contacts'
+                    'POST /api/v1/clients/contacts - Create contact',
+                    'GET /api/v1/clients/contacts/:id - Get contact by ID',
+                    'PUT /api/v1/clients/contacts/:id - Update contact',
+                    'DELETE /api/v1/clients/contacts/:id - Delete contact',
+                    'GET /api/v1/clients/contacts/search - Search contacts',
+                    'POST /api/v1/clients/contacts/:id/interactions - Record interaction',
+                    'GET /api/v1/clients/contacts/:id/engagement - Get engagement metrics',
+                    'POST /api/v1/clients/contacts/bulk - Bulk create contacts',
+                    'GET /api/v1/clients/contacts/export - Export contacts'
                 ]
             },
             documents: {
-                base: '/api/v1/documents',
+                base: '/api/v1/clients/documents',
                 operations: [
-                    'POST /api/v1/documents - Create/upload document',
-                    'GET /api/v1/documents/:id - Get document by ID',
-                    'PUT /api/v1/documents/:id - Update document',
-                    'DELETE /api/v1/documents/:id - Delete document',
-                    'GET /api/v1/documents/search - Search documents',
-                    'POST /api/v1/documents/:id/share - Share document',
-                    'GET /api/v1/documents/:id/download - Download document',
-                    'GET /api/v1/documents/:id/versions - Get versions',
-                    'GET /api/v1/documents/:id/analytics - Get analytics',
-                    'POST /api/v1/documents/bulk - Bulk upload documents'
+                    'POST /api/v1/clients/documents - Create/upload document',
+                    'GET /api/v1/clients/documents/:id - Get document by ID',
+                    'PUT /api/v1/clients/documents/:id - Update document',
+                    'DELETE /api/v1/clients/documents/:id - Delete document',
+                    'GET /api/v1/clients/documents/search - Search documents',
+                    'POST /api/v1/clients/documents/:id/share - Share document',
+                    'GET /api/v1/clients/documents/:id/download - Download document',
+                    'GET /api/v1/clients/documents/:id/versions - Get versions',
+                    'GET /api/v1/clients/documents/:id/analytics - Get analytics',
+                    'POST /api/v1/clients/documents/bulk - Bulk upload documents'
                 ]
             },
             notes: {
-                base: '/api/v1/notes',
+                base: '/api/v1/clients/notes',
                 operations: [
-                    'POST /api/v1/notes - Create note',
-                    'GET /api/v1/notes/:id - Get note by ID',
-                    'PUT /api/v1/notes/:id - Update note',
-                    'DELETE /api/v1/notes/:id - Delete note',
-                    'GET /api/v1/notes/search - Search notes',
-                    'GET /api/v1/notes/recent - Get recent notes',
-                    'GET /api/v1/notes/tags/:tag - Get notes by tag',
-                    'GET /api/v1/notes/priority/:priority - Get notes by priority',
-                    'POST /api/v1/notes/:id/comments - Add comment',
-                    'GET /api/v1/notes/statistics - Get statistics',
-                    'POST /api/v1/notes/bulk - Bulk create notes',
-                    'GET /api/v1/notes/export - Export notes'
+                    'POST /api/v1/clients/notes - Create note',
+                    'GET /api/v1/clients/notes/:id - Get note by ID',
+                    'PUT /api/v1/clients/notes/:id - Update note',
+                    'DELETE /api/v1/clients/notes/:id - Delete note',
+                    'GET /api/v1/clients/notes/search - Search notes',
+                    'GET /api/v1/clients/notes/recent - Get recent notes',
+                    'GET /api/v1/clients/notes/tags/:tag - Get notes by tag',
+                    'GET /api/v1/clients/notes/priority/:priority - Get notes by priority',
+                    'POST /api/v1/clients/notes/:id/comments - Add comment',
+                    'GET /api/v1/clients/notes/statistics - Get statistics',
+                    'POST /api/v1/clients/notes/bulk - Bulk create notes',
+                    'GET /api/v1/clients/notes/export - Export notes'
                 ]
             },
             nested: {

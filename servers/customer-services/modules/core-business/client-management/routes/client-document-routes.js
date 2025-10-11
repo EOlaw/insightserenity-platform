@@ -9,10 +9,10 @@ const router = express.Router();
 const ClientDocumentController = require('../controllers/client-document-controller');
 
 // Import middleware
-const { authenticate } = require('../../../../../../shared/lib/middleware/auth');
-const { validateRequest } = require('../../../../../../shared/lib/middleware/validation');
-const { rateLimiter } = require('../../../../../../shared/lib/middleware/rate-limiter');
-const { checkPermission } = require('../../../../../../shared/lib/middleware/permissions');
+const { authenticate } = require('../../../../middleware/auth-middleware');
+const { validateRequest } = require('../../../../middleware/validation');
+const { rateLimiter } = require('../../../../middleware/rate-limiter');
+const { checkPermission } = require('../../../../middleware/permissions');
 
 // Apply authentication to all routes
 router.use(authenticate);

@@ -45,7 +45,7 @@ const apiVersioning = require('./middleware/api-versioning');
 // Import route modules - Core Business
 const authRoutes = require('./modules/core-business/authentication/routes'); // NEW: Authentication routes
 const userRoutes = require('./modules/core-business/user-management/routes/user-routes');
-const clientRoutes = require('./modules/core-business/client-management/routes/client.routes');
+const clientRoutes = require('./modules/core-business/client-management/routes/');
 const consultantRoutes = require('./modules/core-business/consultant-management/routes/consultant.routes');
 const projectRoutes = require('./modules/core-business/project-management/routes/project.routes');
 
