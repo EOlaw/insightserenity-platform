@@ -93,7 +93,7 @@ const userSchemaDefinition = {
   phoneNumber: {
     type: String,
     validate: {
-      validator: function(value) {
+      validator: function (value) {
         if (!value) return true;
         return CommonValidator.isPhoneNumber(value);
       },
@@ -114,7 +114,7 @@ const userSchemaDefinition = {
   // ==================== Authentication ====================
   password: {
     type: String,
-    required: function() {
+    required: function () {
       return !this.authProviders || this.authProviders.length === 0;
     },
     select: false,
@@ -238,6 +238,51 @@ const userSchemaDefinition = {
     connectedAt: Date,
     lastSyncAt: Date
   }],
+
+  // ==================== Client/Business Relationship ====================
+  // For users with userType='client', this links them to the business entity
+  clientId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Client',
+    index: true,
+    // Only required if userType is 'client'
+    validate: {
+      validator: function (value) {
+        if (this.userType === 'client') {
+          return value != null;
+        }
+        return true;
+      },
+      message: 'clientId is required for users with userType "client"'
+    }
+  },
+
+  // For consultants, this links to their consultant profile
+  consultantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Consultant',
+    index: true
+  },
+
+  // ==================== Flat Permissions for Quick Access ====================
+  // Cache of computed permissions from all organizations
+  // This should be automatically computed and updated
+  permissions: {
+    type: [String],
+    default: [],
+    index: true,
+    // This field is computed from organizations[].permissions
+    // and should not be directly modified
+    select: true
+  },
+
+  // Global roles (system-level, not organization-specific)
+  roles: {
+    type: [String],
+    default: [],
+    enum: ['super_admin', 'admin', 'manager', 'user', 'guest'],
+    index: true
+  },
 
   // ==================== Organization & Multi-Tenancy ====================
   organizations: [{
@@ -773,11 +818,11 @@ const userSchemaDefinition = {
     source: {
       type: String,
       enum: [
-        'registration', 
-        'invitation', 
-        'import', 
-        'migration', 
-        'api', 
+        'registration',
+        'invitation',
+        'import',
+        'migration',
+        'api',
         'admin',
         'web_client',
         'web_consultant',
@@ -815,9 +860,9 @@ const userSchemaDefinition = {
 };
 
 const userSchema = new Schema(userSchemaDefinition, {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true }
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 })
 
 // ==================== Indexes ====================
@@ -846,41 +891,41 @@ userSchema.index({
 });
 
 // ==================== Virtual Fields ====================
-userSchema.virtual('fullName').get(function() {
+userSchema.virtual('fullName').get(function () {
   if (this.profile.displayName) return this.profile.displayName;
   const parts = [this.profile.firstName, this.profile.middleName, this.profile.lastName].filter(Boolean);
   return parts.join(' ');
 });
 
-userSchema.virtual('isLocked').get(function() {
+userSchema.virtual('isLocked').get(function () {
   return this.security.loginAttempts.lockUntil && this.security.loginAttempts.lockUntil > Date.now();
 });
 
-userSchema.virtual('isActive').get(function() {
+userSchema.virtual('isActive').get(function () {
   return this.accountStatus.status === 'active' && !this.isLocked;
 });
 
-userSchema.virtual('hasPassword').get(function() {
+userSchema.virtual('hasPassword').get(function () {
   return !!this.password;
 });
 
-userSchema.virtual('primaryOrganization').get(function() {
+userSchema.virtual('primaryOrganization').get(function () {
   const primary = this.organizations.find(org => org.isPrimary);
   return primary || this.organizations[0];
 });
 
-userSchema.virtual('isEmailVerified').get(function() {
+userSchema.virtual('isEmailVerified').get(function () {
   return this.verification.email.verified;
 });
 
-userSchema.virtual('isFullyVerified').get(function() {
-  return this.verification.email.verified && 
-         (this.verification.phone.verified || !this.phoneNumber) &&
-         (!this.mfa.enabled || this.mfa.methods.some(m => m.enabled));
+userSchema.virtual('isFullyVerified').get(function () {
+  return this.verification.email.verified &&
+    (this.verification.phone.verified || !this.phoneNumber) &&
+    (!this.mfa.enabled || this.mfa.methods.some(m => m.enabled));
 });
 
 // ==================== Pre-save Middleware ====================
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
   try {
     // Hash password if modified
     if (this.isModified('password')) {
@@ -890,7 +935,7 @@ userSchema.pre('save', async function(next) {
       console.log('DEBUG - REGISTRATION: Password length:', this.password.length);
       console.log('DEBUG - REGISTRATION: Password bytes:', Buffer.from(this.password).toString('hex'));
       await this.validatePasswordPolicy(this.password);
-      
+
       // Add to password history
       if (this.password) {
         if (!this.passwordHistory) this.passwordHistory = [];
@@ -898,14 +943,19 @@ userSchema.pre('save', async function(next) {
           hash: await HashService.hashPassword(this.password),
           changedAt: new Date()
         });
-        
+
         // Keep only the last N passwords
         const historyLimit = this.passwordPolicy.preventReuse || 5;
         this.passwordHistory = this.passwordHistory.slice(0, historyLimit);
       }
-      
+
       this.password = await HashService.hashPassword(this.password);
       this.activity.lastPasswordChangeAt = new Date();
+    }
+
+    // Only compute if organizations have changed
+    if (this.isModified('organizations') || this.isModified('roles')) {
+      this.permissions = this.computePermissions();
     }
 
     // Generate username from email if not provided
@@ -928,77 +978,77 @@ userSchema.pre('save', async function(next) {
 });
 
 // ==================== Instance Methods ====================
-userSchema.methods.updateSearchTokens = function() {
+userSchema.methods.updateSearchTokens = function () {
   const tokens = new Set();
-  
+
   // Add name tokens
   if (this.profile.firstName) tokens.add(this.profile.firstName.toLowerCase());
   if (this.profile.lastName) tokens.add(this.profile.lastName.toLowerCase());
   if (this.profile.displayName) tokens.add(this.profile.displayName.toLowerCase());
-  
+
   // Add email tokens
   if (this.email) {
     tokens.add(this.email.toLowerCase());
     const emailParts = this.email.split('@')[0].split(/[._-]/);
     emailParts.forEach(part => tokens.add(part.toLowerCase()));
   }
-  
+
   // Add username tokens
   if (this.username) tokens.add(this.username.toLowerCase());
-  
+
   this.searchTokens = Array.from(tokens);
 };
 
-userSchema.methods.validatePasswordPolicy = async function(password) {
+userSchema.methods.validatePasswordPolicy = async function (password) {
   const policy = this.passwordPolicy;
-  
+
   if (password.length < policy.minLength) {
     throw new AppError(`Password must be at least ${policy.minLength} characters`, 400, 'PASSWORD_TOO_SHORT');
   }
-  
+
   if (policy.requireUppercase && !/[A-Z]/.test(password)) {
     throw new AppError('Password must contain uppercase letters', 400, 'PASSWORD_NO_UPPERCASE');
   }
-  
+
   if (policy.requireLowercase && !/[a-z]/.test(password)) {
     throw new AppError('Password must contain lowercase letters', 400, 'PASSWORD_NO_LOWERCASE');
   }
-  
+
   if (policy.requireNumbers && !/\d/.test(password)) {
     throw new AppError('Password must contain numbers', 400, 'PASSWORD_NO_NUMBERS');
   }
-  
+
   if (policy.requireSpecialChars && !/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
     throw new AppError('Password must contain special characters', 400, 'PASSWORD_NO_SPECIAL');
   }
-  
+
   // Check password history with safety validation
   if (this.passwordHistory && Array.isArray(this.passwordHistory) && policy.preventReuse > 0) {
     for (let i = 0; i < Math.min(policy.preventReuse, this.passwordHistory.length); i++) {
       const historyEntry = this.passwordHistory[i];
-      
+
       // CRITICAL FIX: Verify the hash exists and is valid before comparison
       if (!historyEntry || !historyEntry.hash || typeof historyEntry.hash !== 'string') {
         // Skip invalid entries rather than failing
         continue;
       }
-      
+
       const isReused = await HashService.comparePassword(password, historyEntry.hash);
       if (isReused) {
         throw new AppError(`Password cannot be one of your last ${policy.preventReuse} passwords`, 400, 'PASSWORD_REUSED');
       }
     }
   }
-  
+
   return true;
 };
 
-userSchema.methods.comparePassword = async function(candidatePassword) {
+userSchema.methods.comparePassword = async function (candidatePassword) {
   if (!this.password) return false;
   return await HashService.comparePassword(candidatePassword, this.password);
 };
 
-userSchema.methods.generatePasswordResetToken = async function() {
+userSchema.methods.generatePasswordResetToken = async function () {
   const resetToken = stringHelper.generateRandomString(32);
   this.security.passwordReset.token = await HashService.hashToken(resetToken);
   this.security.passwordReset.tokenExpires = new Date(Date.now() + 3600000); // 1 hour
@@ -1007,30 +1057,30 @@ userSchema.methods.generatePasswordResetToken = async function() {
   return resetToken;
 };
 
-userSchema.methods.resetPassword = async function(token, newPassword) {
+userSchema.methods.resetPassword = async function (token, newPassword) {
   const { passwordReset } = this.security;
-  
+
   if (!passwordReset.token || !passwordReset.tokenExpires) {
     throw new AppError('No reset token found', 400, 'NO_RESET_TOKEN');
   }
-  
+
   if (passwordReset.tokenExpires < new Date()) {
     throw new AppError('Reset token expired', 400, 'TOKEN_EXPIRED');
   }
-  
+
   const hashedToken = await HashService.hashToken(token);
   if (hashedToken !== passwordReset.token) {
     throw new AppError('Invalid reset token', 400, 'INVALID_TOKEN');
   }
-  
+
   this.password = newPassword;
   this.security.passwordReset = {};
   await this.save();
-  
+
   return true;
 };
 
-userSchema.methods.generateEmailVerificationToken = async function() {
+userSchema.methods.generateEmailVerificationToken = async function () {
   const verificationToken = stringHelper.generateRandomString(32);
   this.verification.email.token = await HashService.hashToken(verificationToken);
   this.verification.email.tokenExpires = new Date(Date.now() + 86400000); // 24 hours
@@ -1038,185 +1088,185 @@ userSchema.methods.generateEmailVerificationToken = async function() {
   return verificationToken;
 };
 
-userSchema.methods.verifyEmail = async function(token) {
+userSchema.methods.verifyEmail = async function (token) {
   const { email } = this.verification;
-  
+
   if (!email.token || !email.tokenExpires) {
     throw new AppError('No verification token found', 400, 'NO_VERIFICATION_TOKEN');
   }
-  
+
   if (email.tokenExpires < new Date()) {
     throw new AppError('Verification token expired', 400, 'TOKEN_EXPIRED');
   }
-  
+
   const hashedToken = await HashService.hashToken(token);
   if (hashedToken !== email.token) {
     throw new AppError('Invalid verification token', 400, 'INVALID_TOKEN');
   }
-  
+
   this.verification.email.verified = true;
   this.verification.email.verifiedAt = new Date();
   this.verification.email.token = undefined;
   this.verification.email.tokenExpires = undefined;
-  
+
   if (this.accountStatus.status === 'pending') {
     this.accountStatus.status = 'active';
     this.accountStatus.activatedAt = new Date();
   }
-  
+
   await this.save();
   return true;
 };
 
-userSchema.methods.setupTwoFactor = async function(method = 'totp') {
+userSchema.methods.setupTwoFactor = async function (method = 'totp') {
   const secret = await TwoFactorService.generateSecret(this.email);
-  
+
   const mfaMethod = {
     type: method,
     enabled: false,
     secret: secret.base32,
     verifiedAt: null
   };
-  
+
   if (method === 'totp') {
     mfaMethod.qrCode = secret.qr;
   }
-  
+
   this.mfa.methods.push(mfaMethod);
   await this.save();
-  
+
   return mfaMethod;
 };
 
-userSchema.methods.verifyTwoFactor = async function(method, code) {
+userSchema.methods.verifyTwoFactor = async function (method, code) {
   const mfaMethod = this.mfa.methods.find(m => m.type === method);
-  
+
   if (!mfaMethod) {
     throw new AppError('MFA method not found', 404, 'MFA_METHOD_NOT_FOUND');
   }
-  
+
   const isValid = await TwoFactorService.verifyToken(mfaMethod.secret, code);
-  
+
   if (!isValid) {
     throw new AppError('Invalid MFA code', 401, 'INVALID_MFA_CODE');
   }
-  
+
   mfaMethod.enabled = true;
   mfaMethod.verifiedAt = new Date();
   this.mfa.enabled = true;
   this.mfa.lastUsedMethod = method;
   this.mfa.lastUsedAt = new Date();
-  
+
   await this.save();
   return true;
 };
 
-userSchema.methods.addToOrganization = async function(organizationId, roleNames = ['member']) {
+userSchema.methods.addToOrganization = async function (organizationId, roleNames = ['member']) {
   const orgMembership = {
     organizationId,
     roles: roleNames.map(name => ({ roleName: name, assignedAt: new Date() })),
     joinedAt: new Date(),
     status: 'active'
   };
-  
+
   // Check if already member
   const existing = this.organizations.find(
     org => org.organizationId.toString() === organizationId.toString()
   );
-  
+
   if (existing) {
     throw new AppError('Already a member of this organization', 409, 'ALREADY_MEMBER');
   }
-  
+
   this.organizations.push(orgMembership);
-  
+
   // Set as default if first organization
   if (this.organizations.length === 1) {
     this.defaultOrganizationId = organizationId;
     orgMembership.isPrimary = true;
   }
-  
+
   await this.save();
   return orgMembership;
 };
 
-userSchema.methods.removeFromOrganization = async function(organizationId) {
+userSchema.methods.removeFromOrganization = async function (organizationId) {
   const index = this.organizations.findIndex(
     org => org.organizationId.toString() === organizationId.toString()
   );
-  
+
   if (index === -1) {
     throw new AppError('Not a member of this organization', 404, 'NOT_MEMBER');
   }
-  
+
   this.organizations.splice(index, 1);
-  
+
   // Update default organization if needed
   if (this.defaultOrganizationId?.toString() === organizationId.toString()) {
     this.defaultOrganizationId = this.organizations[0]?.organizationId;
   }
-  
+
   await this.save();
   return true;
 };
 
-userSchema.methods.hasPermissionInOrganization = function(organizationId, resource, action) {
+userSchema.methods.hasPermissionInOrganization = function (organizationId, resource, action) {
   const membership = this.organizations.find(
     org => org.organizationId.toString() === organizationId.toString()
   );
-  
+
   if (!membership || membership.status !== 'active') {
     return false;
   }
-  
+
   // Check direct permissions
   const hasDirectPermission = membership.permissions.some(
     p => p.resource === resource && p.actions.includes(action)
   );
-  
+
   if (hasDirectPermission) return true;
-  
+
   // Check role-based permissions (would need to populate roles)
   // This is simplified - in practice would check populated role permissions
   return membership.roles.some(r => r.roleName === 'admin');
 };
 
-userSchema.methods.incrementLoginAttempts = async function() {
+userSchema.methods.incrementLoginAttempts = async function () {
   const lockTime = 2 * 60 * 60 * 1000; // 2 hours
   const maxAttempts = 5;
-  
+
   // Reset attempts if lock has expired
   if (this.security.loginAttempts.lockUntil && this.security.loginAttempts.lockUntil < Date.now()) {
     this.security.loginAttempts = { count: 1, lastAttempt: new Date() };
   } else {
     this.security.loginAttempts.count += 1;
     this.security.loginAttempts.lastAttempt = new Date();
-    
+
     // Lock account after max attempts
     if (this.security.loginAttempts.count >= maxAttempts) {
       this.security.loginAttempts.lockUntil = new Date(Date.now() + lockTime);
     }
   }
-  
+
   await this.save();
   return this.security.loginAttempts;
 };
 
-userSchema.methods.resetLoginAttempts = async function() {
+userSchema.methods.resetLoginAttempts = async function () {
   this.security.loginAttempts = { count: 0 };
   await this.save();
   return true;
 };
 
-userSchema.methods.recordLogin = async function(loginData) {
+userSchema.methods.recordLogin = async function (loginData) {
   const { ipAddress, userAgent, location, sessionId, authMethod, success = true } = loginData;
-  
+
   this.activity.lastLoginAt = new Date();
   this.activity.loginCount += 1;
-  
+
   // Update login history
   if (!this.activity.loginHistory) this.activity.loginHistory = [];
-  
+
   this.activity.loginHistory.unshift({
     timestamp: new Date(),
     ipAddress,
@@ -1226,22 +1276,22 @@ userSchema.methods.recordLogin = async function(loginData) {
     success,
     authMethod
   });
-  
+
   // Keep only last 50 login records
   this.activity.loginHistory = this.activity.loginHistory.slice(0, 50);
-  
+
   if (success) {
     await this.resetLoginAttempts();
   }
-  
+
   await this.save();
   return true;
 };
 
-userSchema.methods.generateApiKey = async function(name, scopes = []) {
+userSchema.methods.generateApiKey = async function (name, scopes = []) {
   const apiKey = `sk_${stringHelper.generateRandomString(32)}`;
   const hashedKey = await HashService.hashToken(apiKey);
-  
+
   const keyData = {
     keyId: stringHelper.generateRandomString(16),
     name,
@@ -1250,106 +1300,183 @@ userSchema.methods.generateApiKey = async function(name, scopes = []) {
     active: true,
     createdAt: new Date()
   };
-  
+
   if (!this.apiAccess.keys) this.apiAccess.keys = [];
   this.apiAccess.keys.push(keyData);
   this.apiAccess.enabled = true;
-  
+
   await this.save();
-  
+
   return { ...keyData, key: apiKey };
 };
 
-userSchema.methods.revokeApiKey = async function(keyId) {
+userSchema.methods.revokeApiKey = async function (keyId) {
   const key = this.apiAccess.keys.find(k => k.keyId === keyId);
-  
+
   if (!key) {
     throw new AppError('API key not found', 404, 'API_KEY_NOT_FOUND');
   }
-  
+
   key.active = false;
   await this.save();
-  
+
   return true;
 };
 
-userSchema.methods.acceptTerms = async function(version, ipAddress) {
+userSchema.methods.acceptTerms = async function (version, ipAddress) {
   this.compliance.terms = {
     accepted: true,
     acceptedAt: new Date(),
     version,
     ipAddress
   };
-  
+
   await this.save();
   return true;
 };
 
-userSchema.methods.requestDataExport = async function() {
+userSchema.methods.requestDataExport = async function () {
   if (!this.compliance.gdpr.dataExportRequests) {
     this.compliance.gdpr.dataExportRequests = [];
   }
-  
+
   this.compliance.gdpr.dataExportRequests.push({
     requestedAt: new Date()
   });
-  
+
   await this.save();
-  
+
   // Trigger async export job
   logger.info('Data export requested', { userId: this._id });
-  
+
   return true;
 };
 
-userSchema.methods.scheduleAccountDeletion = async function(reason, daysUntilDeletion = 30) {
+userSchema.methods.scheduleAccountDeletion = async function (reason, daysUntilDeletion = 30) {
   const deletionDate = new Date(Date.now() + daysUntilDeletion * 24 * 60 * 60 * 1000);
-  
+
   this.accountStatus.scheduledDeletionDate = deletionDate;
-  
+
   if (!this.compliance.gdpr.deletionRequests) {
     this.compliance.gdpr.deletionRequests = [];
   }
-  
+
   this.compliance.gdpr.deletionRequests.push({
     requestedAt: new Date(),
     scheduledFor: deletionDate,
     reason,
     status: 'scheduled'
   });
-  
+
   await this.save();
-  
+
   logger.info('Account deletion scheduled', {
     userId: this._id,
     scheduledFor: deletionDate
   });
-  
+
   return deletionDate;
 };
 
+/**
+ * Compute and cache flat permissions array from all organizations
+ * This ensures the permissions middleware can access them easily
+ */
+userSchema.methods.computePermissions = function () {
+  const allPermissions = new Set();
+
+  // Add global permissions based on system roles
+  if (this.roles && this.roles.includes('super_admin')) {
+    allPermissions.add('*:*'); // Wildcard for all permissions
+  }
+
+  // Collect permissions from all active organization memberships
+  if (this.organizations && Array.isArray(this.organizations)) {
+    this.organizations.forEach(org => {
+      if (org.status === 'active' && org.permissions) {
+        org.permissions.forEach(perm => {
+          if (perm.resource && perm.actions) {
+            perm.actions.forEach(action => {
+              allPermissions.add(`${perm.resource}:${action}`);
+            });
+          }
+        });
+      }
+    });
+  }
+
+  return Array.from(allPermissions);
+};
+
+/**
+ * Update cached permissions field
+ * Call this after modifying organization permissions
+ */
+userSchema.methods.updatePermissionsCache = async function () {
+  this.permissions = this.computePermissions();
+  await this.save();
+  return this.permissions;
+};
+
+/**
+ * Check if user has a specific permission
+ * Checks both flat permissions and organization-scoped permissions
+ */
+userSchema.methods.hasPermission = function (permission, organizationId = null) {
+  // Check super admin
+  if (this.roles && this.roles.includes('super_admin')) {
+    return true;
+  }
+
+  // Check flat permissions cache
+  if (this.permissions && this.permissions.includes(permission)) {
+    return true;
+  }
+
+  // Check wildcard permissions
+  const [resource] = permission.split(':');
+  if (this.permissions && this.permissions.includes(`${resource}:*`)) {
+    return true;
+  }
+
+  // If organization specified, check organization-specific permissions
+  if (organizationId && this.organizations) {
+    const org = this.organizations.find(
+      o => o.organizationId.toString() === organizationId.toString()
+    );
+
+    if (org && org.status === 'active') {
+      return org.permissions.some(
+        p => p.resource === resource && p.actions.includes(permission.split(':')[1])
+      );
+    }
+  }
+
+  return false;
+};
+
 // ==================== Static Methods ====================
-userSchema.statics.findByEmail = async function(email, options = {}) {
+userSchema.statics.findByEmail = async function (email, options = {}) {
   const query = { email: email.toLowerCase() };
-  
+
   if (options.includeDeleted !== true) {
     query['accountStatus.status'] = { $ne: 'deleted' };
   }
-  
+
   return await this.findOne(query);
 };
 
-userSchema.statics.findByUsername = async function(username, options = {}) {
+userSchema.statics.findByUsername = async function (username, options = {}) {
   const query = { username: username.toLowerCase() };
-  
+
   if (options.includeDeleted !== true) {
     query['accountStatus.status'] = { $ne: 'deleted' };
   }
-  
+
   return await this.findOne(query);
 };
 
-userSchema.statics.findByCredentials = async function(credential, password) {
+userSchema.statics.findByCredentials = async function (credential, password) {
   const user = await this.findOne({
     $and: [
       {
@@ -1361,38 +1488,38 @@ userSchema.statics.findByCredentials = async function(credential, password) {
       { 'accountStatus.status': { $ne: 'deleted' } }
     ]
   }).select('+password +security.loginAttempts');
-  
+
   if (!user) {
     throw new AppError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
   }
-  
+
   // Check if account is locked
   if (user.isLocked) {
     const remainingTime = Math.ceil((user.security.loginAttempts.lockUntil - Date.now()) / 1000 / 60);
     throw new AppError(`Account locked. Try again in ${remainingTime} minutes`, 423, 'ACCOUNT_LOCKED');
   }
-  
+
   // Verify password
   const isPasswordValid = await user.comparePassword(password);
-  
+
   if (!isPasswordValid) {
     await user.incrementLoginAttempts();
     throw new AppError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
   }
-  
+
   // Check account status
   if (user.accountStatus.status === 'suspended') {
     throw new AppError('Account suspended', 403, 'ACCOUNT_SUSPENDED');
   }
-  
+
   if (user.accountStatus.status === 'inactive') {
     throw new AppError('Account inactive', 403, 'ACCOUNT_INACTIVE');
   }
-  
+
   return user;
 };
 
-userSchema.statics.findByOAuthProvider = async function(provider, providerId) {
+userSchema.statics.findByOAuthProvider = async function (provider, providerId) {
   return await this.findOne({
     'authProviders.provider': provider,
     'authProviders.providerId': providerId,
@@ -1400,9 +1527,9 @@ userSchema.statics.findByOAuthProvider = async function(provider, providerId) {
   });
 };
 
-userSchema.statics.findByApiKey = async function(apiKey) {
+userSchema.statics.findByApiKey = async function (apiKey) {
   const hashedKey = await HashService.hashToken(apiKey);
-  
+
   const user = await this.findOne({
     'apiAccess.keys': {
       $elemMatch: {
@@ -1416,41 +1543,41 @@ userSchema.statics.findByApiKey = async function(apiKey) {
     },
     'accountStatus.status': 'active'
   }).select('+apiAccess.keys.key');
-  
+
   if (!user) {
     throw new AppError('Invalid API key', 401, 'INVALID_API_KEY');
   }
-  
+
   // Update last used
   const key = user.apiAccess.keys.find(k => k.key === hashedKey);
   key.lastUsedAt = new Date();
   await user.save();
-  
+
   return { user, apiKey: key };
 };
 
-userSchema.statics.generateUniqueUsername = async function(baseUsername) {
+userSchema.statics.generateUniqueUsername = async function (baseUsername) {
   // Extract base from email
   let username = baseUsername.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  
+
   // Ensure minimum length
   if (username.length < 3) {
     username = username.padEnd(3, '0');
   }
-  
+
   // Check uniqueness
   let counter = 0;
   let uniqueUsername = username;
-  
+
   while (await this.exists({ username: uniqueUsername })) {
     counter++;
     uniqueUsername = `${username}${counter}`;
   }
-  
+
   return uniqueUsername;
 };
 
-userSchema.statics.searchUsers = async function(query, options = {}) {
+userSchema.statics.searchUsers = async function (query, options = {}) {
   const {
     organizationId,
     status = 'active',
@@ -1459,7 +1586,7 @@ userSchema.statics.searchUsers = async function(query, options = {}) {
     skip = 0,
     sort = { createdAt: -1 }
   } = options;
-  
+
   const searchQuery = {
     $and: [
       { 'accountStatus.status': status },
@@ -1475,20 +1602,20 @@ userSchema.statics.searchUsers = async function(query, options = {}) {
       }
     ]
   };
-  
+
   if (organizationId) {
     searchQuery.$and.push({
       'organizations.organizationId': organizationId,
       'organizations.status': 'active'
     });
   }
-  
+
   if (roles && roles.length > 0) {
     searchQuery.$and.push({
       'organizations.roles.roleName': { $in: roles }
     });
   }
-  
+
   const [users, total] = await Promise.all([
     this.find(searchQuery)
       .limit(limit)
@@ -1497,7 +1624,7 @@ userSchema.statics.searchUsers = async function(query, options = {}) {
       .select('-searchTokens'),
     this.countDocuments(searchQuery)
   ]);
-  
+
   return {
     users,
     total,
@@ -1505,11 +1632,11 @@ userSchema.statics.searchUsers = async function(query, options = {}) {
   };
 };
 
-userSchema.statics.getUserStatistics = async function(organizationId) {
-  const match = organizationId 
+userSchema.statics.getUserStatistics = async function (organizationId) {
+  const match = organizationId
     ? { 'organizations.organizationId': organizationId }
     : {};
-  
+
   const stats = await this.aggregate([
     { $match: match },
     {
@@ -1571,9 +1698,9 @@ userSchema.statics.getUserStatistics = async function(organizationId) {
       }
     }
   ]);
-  
+
   const result = stats[0];
-  
+
   return {
     overview: result.overview[0] || {
       total: 0,
@@ -1592,25 +1719,25 @@ userSchema.statics.getUserStatistics = async function(organizationId) {
   };
 };
 
-userSchema.statics.bulkInvite = async function(invitations, invitedBy) {
+userSchema.statics.bulkInvite = async function (invitations, invitedBy) {
   const results = {
     successful: [],
     failed: []
   };
-  
+
   for (const invitation of invitations) {
     try {
       const { email, organizationId, roles, metadata } = invitation;
-      
+
       // Check if user exists
       let user = await this.findByEmail(email);
-      
+
       if (user) {
         // Add to organization if not already member
         const isMember = user.organizations.some(
           org => org.organizationId.toString() === organizationId.toString()
         );
-        
+
         if (!isMember) {
           await user.addToOrganization(organizationId, roles);
           results.successful.push({ email, status: 'added_to_organization' });
@@ -1640,12 +1767,12 @@ userSchema.statics.bulkInvite = async function(invitations, invitedBy) {
             ...metadata
           }
         });
-        
+
         await user.save();
-        
+
         // Generate verification token
         const verificationToken = await user.generateEmailVerificationToken();
-        
+
         results.successful.push({
           email,
           status: 'invited',
@@ -1660,8 +1787,94 @@ userSchema.statics.bulkInvite = async function(invitations, invitedBy) {
       });
     }
   }
-  
+
   return results;
+};
+
+/*
+ * Create user with default permissions based on userType
+ */
+userSchema.statics.createWithDefaults = async function(userData, options = {}) {
+  const { organizationId, tenantId, autoCreateClient = false } = options;
+  
+  // Define default permissions by userType
+  const defaultPermissionsByType = {
+    client: [
+      { resource: 'clients', actions: ['read', 'update'] },
+      { resource: 'projects', actions: ['read'] },
+      { resource: 'documents', actions: ['read', 'create'] },
+      { resource: 'contacts', actions: ['read', 'update'] },
+      { resource: 'invoices', actions: ['read'] }
+    ],
+    consultant: [
+      { resource: 'projects', actions: ['read', 'update'] },
+      { resource: 'clients', actions: ['read'] },
+      { resource: 'timesheets', actions: ['create', 'read', 'update'] },
+      { resource: 'documents', actions: ['read', 'create'] }
+    ],
+    admin: [
+      { resource: '*', actions: ['*'] }
+    ],
+    partner: [
+      { resource: 'jobs', actions: ['read', 'create'] },
+      { resource: 'candidates', actions: ['read', 'create', 'update'] },
+      { resource: 'applications', actions: ['read', 'create'] }
+    ]
+  };
+  
+  // Get default permissions for userType
+  const defaultPermissions = defaultPermissionsByType[userData.userType] || [];
+  
+  // Create organization membership with default permissions
+  if (organizationId) {
+    userData.organizations = [{
+      organizationId,
+      tenantId: tenantId || userData.tenantId,
+      permissions: defaultPermissions.map(p => ({
+        resource: p.resource,
+        actions: p.actions,
+        grantedAt: new Date(),
+        grantedBy: options.grantedBy
+      })),
+      roles: options.roles || [{ roleName: 'user', assignedAt: new Date() }],
+      status: 'active',
+      joinedAt: new Date()
+    }];
+    
+    userData.defaultOrganizationId = organizationId;
+  }
+  
+  // Create the user
+  const user = new this(userData);
+  await user.save();
+  
+  // Auto-create Client document if userType is 'client' and requested
+  if (userData.userType === 'client' && autoCreateClient && !userData.clientId) {
+    const Client = mongoose.model('Client');
+    const client = await Client.create({
+      companyName: userData.companyName || `${userData.firstName} ${userData.lastName}'s Company`,
+      tenantId: userData.tenantId || tenantId,
+      organizationId,
+      primaryContact: {
+        name: `${userData.firstName} ${userData.lastName}`,
+        email: userData.email,
+        phone: userData.phone
+      },
+      relationship: {
+        status: 'prospect',
+        accountManager: options.accountManager
+      },
+      metadata: {
+        source: 'user_registration',
+        linkedUserId: user._id
+      }
+    });
+    
+    user.clientId = client._id;
+    await user.save();
+  }
+  
+  return user;
 };
 
 /**
@@ -1669,19 +1882,19 @@ userSchema.statics.bulkInvite = async function(invitations, invitedBy) {
  * This allows the ConnectionManager to create the model with specific database connections
  */
 module.exports = {
-    schema: userSchema,
-    modelName: 'User',
+  schema: userSchema,
+  modelName: 'User',
 
-    // Legacy export for backward compatibility
-    // This will be used if imported directly in environments without ConnectionManager
-    createModel: function (connection) {
-        if (connection) {
-            return connection.model('User', userSchema);
-        } else {
-            // Fallback to default mongoose connection
-            return mongoose.model('User', userSchema);
-        }
+  // Legacy export for backward compatibility
+  // This will be used if imported directly in environments without ConnectionManager
+  createModel: function (connection) {
+    if (connection) {
+      return connection.model('User', userSchema);
+    } else {
+      // Fallback to default mongoose connection
+      return mongoose.model('User', userSchema);
     }
+  }
 }
 
 // For backward compatibility, also export as direct model

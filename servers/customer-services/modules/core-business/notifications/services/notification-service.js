@@ -9,7 +9,9 @@
  * TODO: Implement actual notification logic with email provider, SMS provider, etc.
  */
 
-const logger = require('../../../../../../shared/lib/utils/logger');
+const logger = require('../../../../../../shared/lib/utils/logger').createLogger({
+    serviceName: 'notification-service'
+});
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
 
 /**

@@ -9,7 +9,9 @@
  * TODO: Implement actual analytics logic with analytics providers (Google Analytics, Mixpanel, Segment, etc.)
  */
 
-const logger = require('../../../../../../shared/lib/utils/logger');
+const logger = require('../../../../../../shared/lib/utils/logger').createLogger({
+    serviceName: 'analytics-service'
+});
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
 
 /**

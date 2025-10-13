@@ -9,7 +9,9 @@
  * TODO: Implement actual onboarding logic with step tracking, completion tracking, etc.
  */
 
-const logger = require('../../../../../../shared/lib/utils/logger');
+const logger = require('../../../../../../shared/lib/utils/logger').createLogger({
+    serviceName: 'onboarding-service'
+});
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
 
 /**

@@ -1,5 +1,5 @@
 /**
- * @fileoverview Customer Services Server
+ * @fileoverview Customer Services Server with Universal Transaction Service
  * @module servers/customer-services/server
  * @requires http
  * @requires https
@@ -19,7 +19,7 @@ const path = require('path');
 
 /**
  * @class CustomerServicesServer
- * @description Main server class for Customer Services
+ * @description Main server class for Customer Services with transaction support
  */
 class CustomerServicesServer {
     /**
@@ -51,6 +51,7 @@ class CustomerServicesServer {
         this.isRunning = false;
         this.startTime = null;
         this.shutdownInProgress = false;
+        this.infrastructureInitialized = false;
 
         // Logger setup
         this.logger = this._setupLogger();
@@ -61,7 +62,8 @@ class CustomerServicesServer {
             restarts: 0,
             errors: 0,
             connections: 0,
-            peakConnections: 0
+            peakConnections: 0,
+            transactionMetrics: {}
         };
 
         // Server metadata
@@ -71,7 +73,13 @@ class CustomerServicesServer {
             pid: process.pid,
             node: process.version,
             platform: process.platform,
-            arch: process.arch
+            arch: process.arch,
+            features: {
+                clustering: this.useCluster,
+                ssl: this.useSSL,
+                transactions: true,
+                entityStrategies: true
+            }
         };
     }
 
@@ -106,12 +114,19 @@ class CustomerServicesServer {
 
         // Add file transport in production
         if (this.isProduction) {
+            const logDir = path.join(__dirname, '..', '..', 'logs');
+            
+            // Ensure log directory exists
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+
             logger.add(new winston.transports.File({
-                filename: 'logs/error.log',
+                filename: path.join(logDir, 'error.log'),
                 level: 'error'
             }));
             logger.add(new winston.transports.File({
-                filename: 'logs/combined.log'
+                filename: path.join(logDir, 'combined.log')
             }));
         }
 
@@ -143,6 +158,120 @@ class CustomerServicesServer {
     }
 
     /**
+     * Initialize infrastructure services
+     * CRITICAL: This should ONLY be called in worker processes, not in master
+     * @private
+     */
+    async _initializeInfrastructure() {
+        if (this.infrastructureInitialized) {
+            this.logger.debug('Infrastructure already initialized');
+            return;
+        }
+
+        // CRITICAL: Prevent infrastructure initialization in master process
+        if (cluster.isMaster && this.useCluster) {
+            this.logger.warn('Skipping infrastructure initialization in master process');
+            return;
+        }
+
+        const initStartTime = Date.now();
+        this.logger.info('Initializing infrastructure services...', {
+            environment: this.environment,
+            pid: process.pid
+        });
+
+        try {
+            // Step 1: Initialize Database Connections
+            this.logger.info('Step 1/3: Initializing database connections...', {
+                environment: this.environment,
+                pid: process.pid
+            });
+
+            const database = require('../../shared/lib/database');
+            
+            // CRITICAL: Initialize database ONCE per worker
+            await database.initialize({
+                environment: this.environment,
+                autoDiscoverModels: true,
+                enableHealthChecks: true,
+                enableMetrics: true
+            });
+
+            // Verify the database is ready
+            const connectionManager = database.getInstance();
+            if (!connectionManager || !connectionManager.state || !connectionManager.state.ready) {
+                throw new Error('Database not ready after initialization');
+            }
+
+            this.logger.info('✓ Database connections initialized', {
+                environment: this.environment,
+                pid: process.pid
+            });
+
+            // Step 2: Initialize Entity Strategy Registry
+            this.logger.info('Step 2/3: Initializing entity strategy registry...', {
+                environment: this.environment,
+                pid: process.pid
+            });
+
+            const EntityStrategyRegistry = require('../../shared/lib/database/services/entity-strategy-registry');
+            await EntityStrategyRegistry.initialize();
+            
+            const strategies = EntityStrategyRegistry.getAllStrategies();
+            this.logger.info('✓ Entity strategy registry initialized', {
+                strategiesRegistered: strategies.length,
+                strategies: strategies.map(s => ({
+                    userType: s.userType,
+                    entityType: s.entityType
+                })),
+                environment: this.environment,
+                pid: process.pid
+            });
+
+            // Step 3: Initialize Universal Transaction Service
+            this.logger.info('Step 3/3: Initializing universal transaction service...', {
+                environment: this.environment,
+                pid: process.pid
+            });
+
+            const UniversalTransactionService = require('../../shared/lib/database/services/universal-transaction-service');
+            
+            // Get initial metrics
+            const initialMetrics = UniversalTransactionService.getMetrics();
+            this.metrics.transactionMetrics = initialMetrics;
+            
+            this.logger.info('✓ Universal transaction service initialized', {
+                environment: this.environment,
+                metrics: initialMetrics,
+                pid: process.pid
+            });
+
+            this.infrastructureInitialized = true;
+
+            const initDuration = Date.now() - initStartTime;
+            this.logger.info('Infrastructure initialization completed', {
+                duration: `${initDuration}ms`,
+                environment: this.environment,
+                pid: process.pid,
+                components: [
+                    'Database Connections',
+                    'Entity Strategy Registry',
+                    'Universal Transaction Service'
+                ]
+            });
+
+        } catch (error) {
+            this.logger.error('Infrastructure initialization failed', {
+                error: error.message,
+                stack: error.stack,
+                environment: this.environment,
+                pid: process.pid
+            });
+            throw new Error(`Infrastructure initialization failed: ${error.message}`);
+        }
+    }
+
+    /**
      * Start the server
      * @returns {Promise<void>}
      */
@@ -161,7 +290,8 @@ class CustomerServicesServer {
                 host: this.host,
                 environment: this.environment,
                 cluster: this.useCluster,
-                ssl: this.useSSL
+                ssl: this.useSSL,
+                workers: this.useCluster ? this.workerCount : 1
             });
 
             // Start with clustering if enabled and we're the master
@@ -172,7 +302,10 @@ class CustomerServicesServer {
             }
 
             this.metrics.startupTime = Date.now() - startTime;
-            this.logger.info(`Server startup completed in ${this.metrics.startupTime}ms`);
+            this.logger.info(`Server startup completed in ${this.metrics.startupTime}ms`, {
+                environment: this.environment,
+                pid: process.pid
+            });
 
         } catch (error) {
             this.logger.error('Failed to start server', {
@@ -186,12 +319,18 @@ class CustomerServicesServer {
 
     /**
      * Start cluster master
+     * CRITICAL: Master process should NOT initialize database connections
      * @private
      */
     async _startClusterMaster() {
-        this.logger.info(`Starting cluster master with ${this.workerCount} workers`);
+        this.logger.info(`Starting cluster master with ${this.workerCount} workers`, {
+            pid: process.pid
+        });
 
-        // Fork workers
+        // CRITICAL: DO NOT initialize infrastructure in master
+        // The master only manages worker lifecycle, not database connections
+
+        // Fork workers - they will initialize infrastructure independently
         for (let i = 0; i < this.workerCount; i++) {
             this._forkWorker();
         }
@@ -216,6 +355,10 @@ class CustomerServicesServer {
             });
         });
 
+        cluster.on('online', (worker) => {
+            this.logger.info(`Worker ${worker.process.pid} is online`);
+        });
+
         // Handle master process signals
         this._setupMasterSignalHandlers();
 
@@ -224,6 +367,9 @@ class CustomerServicesServer {
 
         // Display startup banner
         this._displayBanner();
+
+        // Start periodic metrics collection
+        this._startMetricsCollection();
     }
 
     /**
@@ -232,10 +378,20 @@ class CustomerServicesServer {
      */
     _forkWorker() {
         const worker = cluster.fork();
-        this.workers.set(worker.id, worker);
+        this.workers.set(worker.id, {
+            worker,
+            startedAt: new Date(),
+            metrics: {}
+        });
 
         worker.on('message', (message) => {
             this._handleWorkerMessage(worker, message);
+        });
+
+        worker.on('error', (error) => {
+            this.logger.error(`Worker ${worker.process.pid} error`, {
+                error: error.message
+            });
         });
 
         return worker;
@@ -246,68 +402,131 @@ class CustomerServicesServer {
      * @private
      */
     _handleWorkerMessage(worker, message) {
-        if (message.type === 'metrics') {
-            // Aggregate metrics from workers
-            this.metrics.connections += message.data.connections || 0;
-            this.metrics.peakConnections = Math.max(
-                this.metrics.peakConnections,
-                message.data.connections || 0
-            );
+        const workerInfo = this.workers.get(worker.id);
+        
+        if (!workerInfo) return;
+
+        switch (message.type) {
+            case 'metrics':
+                // Aggregate metrics from workers
+                workerInfo.metrics = message.data;
+                this.metrics.connections += message.data.connections || 0;
+                this.metrics.peakConnections = Math.max(
+                    this.metrics.peakConnections,
+                    message.data.connections || 0
+                );
+                break;
+
+            case 'transaction-metrics':
+                // Update transaction metrics
+                this.metrics.transactionMetrics = message.data;
+                break;
+
+            case 'ready':
+                this.logger.info(`Worker ${message.pid} is ready`, {
+                    infrastructureInitialized: message.infrastructureInitialized
+                });
+                break;
+
+            case 'error':
+                this.logger.error(`Worker ${worker.process.pid} reported error`, {
+                    error: message.error
+                });
+                break;
+
+            default:
+                this.logger.debug(`Unknown message type from worker: ${message.type}`);
         }
     }
 
     /**
      * Start worker process
+     * CRITICAL: Workers should initialize infrastructure independently
      * @private
      */
     async _startWorker() {
-        // Create application instance
-        const CustomerServicesApp = require('./app');
-        const appInstance = new CustomerServicesApp();
-        this.app = appInstance.getApp();
+        try {
+            // CRITICAL: Initialize infrastructure in worker process
+            // Each worker gets its own database connection pool
+            await this._initializeInfrastructure();
 
-        // Create server
-        if (this.useSSL && this.sslOptions) {
-            this.server = https.createServer(this.sslOptions, this.app);
-        } else {
-            this.server = http.createServer(this.app);
-        }
+            // Create application instance AFTER infrastructure is ready
+            const CustomerServicesApp = require('./app');
+            const appInstance = new CustomerServicesApp();
+            this.app = appInstance.getApp();
 
-        // Setup server event handlers
-        this._setupServerEventHandlers();
+            // Create server
+            if (this.useSSL && this.sslOptions) {
+                this.server = https.createServer(this.sslOptions, this.app);
+            } else {
+                this.server = http.createServer(this.app);
+            }
 
-        // Start listening
-        await new Promise((resolve, reject) => {
-            this.server.listen(this.port, this.host, (error) => {
-                if (error) {
-                    reject(error);
-                } else {
-                    resolve();
-                }
+            // Setup server event handlers
+            this._setupServerEventHandlers();
+
+            // Start listening
+            await new Promise((resolve, reject) => {
+                this.server.listen(this.port, this.host, (error) => {
+                    if (error) {
+                        reject(error);
+                    } else {
+                        resolve();
+                    }
+                });
             });
-        });
 
-        this.isRunning = true;
-        this.startTime = new Date();
+            this.isRunning = true;
+            this.startTime = new Date();
 
-        // Setup signal handlers for worker
-        this._setupWorkerSignalHandlers();
+            // Setup signal handlers for worker
+            this._setupWorkerSignalHandlers();
 
-        // Display banner for single instance
-        if (!cluster.isWorker) {
-            this._displayBanner();
+            // Display banner for single instance
+            if (!cluster.isWorker) {
+                this._displayBanner();
+            }
+
+            // Send ready message to master if in cluster
+            if (cluster.isWorker) {
+                process.send({ 
+                    type: 'ready', 
+                    pid: process.pid,
+                    infrastructureInitialized: this.infrastructureInitialized
+                });
+            }
+
+            this.logger.info('Customer Services worker started', {
+                pid: process.pid,
+                port: this.port,
+                host: this.host,
+                environment: this.environment,
+                infrastructureInitialized: this.infrastructureInitialized
+            });
+
+            // Start periodic metrics reporting for workers
+            if (cluster.isWorker) {
+                this._startWorkerMetricsReporting();
+            }
+
+        } catch (error) {
+            this.logger.error('Worker startup failed', {
+                error: error.message,
+                stack: error.stack,
+                pid: process.pid
+            });
+            
+            // Notify master of failure if in cluster
+            if (cluster.isWorker) {
+                process.send({ 
+                    type: 'error', 
+                    error: error.message,
+                    pid: process.pid
+                });
+            }
+            
+            throw error;
         }
-
-        // Send ready message to master if in cluster
-        if (cluster.isWorker) {
-            process.send({ type: 'ready', pid: process.pid });
-        }
-
-        this.logger.info('Customer Services worker started', {
-            pid: process.pid,
-            port: this.port,
-            host: this.host
-        });
     }
 
     /**
@@ -327,13 +546,16 @@ class CustomerServicesServer {
                 connections--;
             });
 
-            // Send metrics to master if in cluster
-            if (cluster.isWorker) {
-                process.send({
-                    type: 'metrics',
-                    data: { connections }
+            // Set socket timeout
+            socket.setTimeout(parseInt(process.env.SOCKET_TIMEOUT) || 120000);
+            
+            socket.on('timeout', () => {
+                this.logger.warn('Socket timeout, destroying connection', {
+                    environment: this.environment,
+                    pid: process.pid
                 });
-            }
+                socket.destroy();
+            });
         });
 
         // Handle server errors
@@ -343,7 +565,10 @@ class CustomerServicesServer {
 
         // Handle server close
         this.server.on('close', () => {
-            this.logger.info('Server closed');
+            this.logger.info('Server closed', {
+                environment: this.environment,
+                pid: process.pid
+            });
             this.isRunning = false;
         });
     }
@@ -356,7 +581,11 @@ class CustomerServicesServer {
         this.metrics.errors++;
 
         if (error.syscall !== 'listen') {
-            this.logger.error('Server error', { error: error.message });
+            this.logger.error('Server error', { 
+                error: error.message,
+                environment: this.environment,
+                pid: process.pid
+            });
             throw error;
         }
 
@@ -381,9 +610,65 @@ class CustomerServicesServer {
                 break;
 
             default:
-                this.logger.error('Server error', { code: error.code });
+                this.logger.error('Server error', { 
+                    code: error.code,
+                    environment: this.environment,
+                    pid: process.pid
+                });
                 throw error;
         }
+    }
+
+    /**
+     * Start periodic metrics collection (master only)
+     * @private
+     */
+    _startMetricsCollection() {
+        const interval = parseInt(process.env.METRICS_INTERVAL) || 60000; // 1 minute default
+
+        setInterval(() => {
+            try {
+                this.logger.debug('Metrics collected', {
+                    connections: this.metrics.connections,
+                    peakConnections: this.metrics.peakConnections,
+                    transactions: this.metrics.transactionMetrics,
+                    environment: this.environment,
+                    pid: process.pid
+                });
+            } catch (error) {
+                this.logger.error('Metrics collection failed', {
+                    error: error.message,
+                    environment: this.environment,
+                    pid: process.pid
+                });
+            }
+        }, interval);
+    }
+
+    /**
+     * Start worker metrics reporting
+     * @private
+     */
+    _startWorkerMetricsReporting() {
+        const interval = parseInt(process.env.WORKER_METRICS_INTERVAL) || 30000; // 30 seconds
+
+        setInterval(() => {
+            try {
+                const UniversalTransactionService = require('../../shared/lib/database/services/universal-transaction-service');
+                const transactionMetrics = UniversalTransactionService.getMetrics();
+
+                process.send({
+                    type: 'transaction-metrics',
+                    data: transactionMetrics,
+                    pid: process.pid
+                });
+            } catch (error) {
+                this.logger.error('Worker metrics reporting failed', {
+                    error: error.message,
+                    pid: process.pid
+                });
+            }
+        }, interval);
     }
 
     /**
@@ -395,7 +680,9 @@ class CustomerServicesServer {
 
         signals.forEach(signal => {
             process.on(signal, async () => {
-                this.logger.info(`Master received ${signal} signal`);
+                this.logger.info(`Master received ${signal} signal`, {
+                    pid: process.pid
+                });
                 await this._gracefulShutdown();
             });
         });
@@ -403,7 +690,8 @@ class CustomerServicesServer {
         process.on('uncaughtException', (error) => {
             this.logger.error('Uncaught exception in master', {
                 error: error.message,
-                stack: error.stack
+                stack: error.stack,
+                pid: process.pid
             });
             this._gracefulShutdown();
         });
@@ -411,7 +699,8 @@ class CustomerServicesServer {
         process.on('unhandledRejection', (reason, promise) => {
             this.logger.error('Unhandled rejection in master', {
                 reason,
-                promise
+                promise,
+                pid: process.pid
             });
         });
     }
@@ -450,7 +739,9 @@ class CustomerServicesServer {
         // Handle disconnect from master
         if (cluster.isWorker) {
             process.on('disconnect', () => {
-                this.logger.warn('Worker disconnected from master');
+                this.logger.warn('Worker disconnected from master', {
+                    pid: process.pid
+                });
                 this._gracefulShutdown();
             });
         }
@@ -466,13 +757,19 @@ class CustomerServicesServer {
         }
 
         this.shutdownInProgress = true;
-        this.logger.info('Starting graceful shutdown...');
+        this.logger.info('Starting graceful shutdown...', {
+            environment: this.environment,
+            pid: process.pid
+        });
 
         const shutdownTimeout = parseInt(process.env.SHUTDOWN_TIMEOUT) || 30000;
 
         // Set timeout for forced shutdown
         const forceShutdown = setTimeout(() => {
-            this.logger.error('Forced shutdown due to timeout');
+            this.logger.error('Forced shutdown due to timeout', {
+                environment: this.environment,
+                pid: process.pid
+            });
             process.exit(1);
         }, shutdownTimeout);
 
@@ -483,16 +780,60 @@ class CustomerServicesServer {
             } else {
                 // Shutdown server
                 await this._shutdownServer();
+                
+                // Cleanup infrastructure
+                await this._cleanupInfrastructure();
             }
 
             clearTimeout(forceShutdown);
-            this.logger.info('Graceful shutdown completed');
+            this.logger.info('Graceful shutdown completed', {
+                environment: this.environment,
+                pid: process.pid
+            });
             process.exit(0);
 
         } catch (error) {
-            this.logger.error('Error during shutdown', { error: error.message });
+            this.logger.error('Error during shutdown', { 
+                error: error.message,
+                environment: this.environment,
+                pid: process.pid
+            });
             clearTimeout(forceShutdown);
             process.exit(1);
+        }
+    }
+
+    /**
+     * Cleanup infrastructure services
+     * @private
+     */
+    async _cleanupInfrastructure() {
+        if (!this.infrastructureInitialized) {
+            return;
+        }
+
+        this.logger.info('Cleaning up infrastructure services...', {
+            environment: this.environment,
+            pid: process.pid
+        });
+
+        try {
+            // Close database connections
+            const database = require('../../shared/lib/database');
+            await database.shutdown();
+            this.logger.info('✓ Database connections closed', {
+                environment: this.environment,
+                pid: process.pid
+            });
+
+            this.infrastructureInitialized = false;
+
+        } catch (error) {
+            this.logger.error('Infrastructure cleanup failed', {
+                error: error.message,
+                environment: this.environment,
+                pid: process.pid
+            });
         }
     }
 
@@ -503,7 +844,9 @@ class CustomerServicesServer {
     async _shutdownWorkers() {
         const promises = [];
 
-        for (const [id, worker] of this.workers) {
+        for (const [id, workerInfo] of this.workers) {
+            const worker = workerInfo.worker;
+            
             promises.push(new Promise((resolve) => {
                 const timeout = setTimeout(() => {
                     this.logger.warn(`Worker ${worker.process.pid} shutdown timeout, killing...`);
@@ -521,7 +864,10 @@ class CustomerServicesServer {
         }
 
         await Promise.all(promises);
-        this.logger.info('All workers shut down');
+        this.logger.info('All workers shut down', {
+            environment: this.environment,
+            pid: process.pid
+        });
     }
 
     /**
@@ -533,13 +879,18 @@ class CustomerServicesServer {
 
         return new Promise((resolve) => {
             this.server.close(() => {
-                this.logger.info('HTTP server closed');
+                this.logger.info('HTTP server closed', {
+                    environment: this.environment,
+                    pid: process.pid
+                });
                 resolve();
             });
 
             // Force close connections after timeout
             setTimeout(() => {
-                this.server.closeAllConnections();
+                if (this.server.closeAllConnections) {
+                    this.server.closeAllConnections();
+                }
             }, 5000);
         });
     }
@@ -564,6 +915,8 @@ class CustomerServicesServer {
 ║     ___) |  __/ |   \\ V /| | (_|  __/\\__ \\             ║
 ║    |____/ \\___|_|    \\_/ |_|\\___\\___||___/             ║
 ║                                                          ║
+║            with Transaction Support                     ║
+║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
 `;
 
@@ -583,6 +936,21 @@ class CustomerServicesServer {
         }
 
         console.log(`🕐 Started:      ${new Date().toISOString()}`);
+        console.log('------------------------------------------------------------');
+        console.log('🔄 Infrastructure Status:');
+        console.log(`   ✓ Database Connections`);
+        console.log(`   ✓ Entity Strategy Registry`);
+        console.log(`   ✓ Universal Transaction Service`);
+        
+        if (this.metrics.transactionMetrics) {
+            console.log('------------------------------------------------------------');
+            console.log('📈 Transaction Service Metrics:');
+            console.log(`   Total: ${this.metrics.transactionMetrics.total || 0}`);
+            console.log(`   Successful: ${this.metrics.transactionMetrics.successful || 0}`);
+            console.log(`   Failed: ${this.metrics.transactionMetrics.failed || 0}`);
+            console.log(`   Active: ${this.metrics.transactionMetrics.activeTransactions || 0}`);
+        }
+        
         console.log('============================================================\n');
 
         // Log additional information
@@ -595,7 +963,8 @@ class CustomerServicesServer {
             protocol: this.useSSL ? 'https' : 'http',
             host: this.host,
             port: this.port,
-            metadata: this.metadata
+            metadata: this.metadata,
+            infrastructureInitialized: this.infrastructureInitialized
         });
     }
 
@@ -613,16 +982,52 @@ class CustomerServicesServer {
             ssl: this.useSSL,
             cluster: this.useCluster,
             workers: this.workers.size,
+            infrastructureInitialized: this.infrastructureInitialized,
             metrics: this.metrics,
             metadata: this.metadata
         };
     }
 
     /**
+     * Get transaction metrics
+     * @returns {Object} Transaction metrics
+     */
+    getTransactionMetrics() {
+        try {
+            const UniversalTransactionService = require('../../shared/lib/database/services/universal-transaction-service');
+            return UniversalTransactionService.getMetrics();
+        } catch (error) {
+            this.logger.error('Failed to get transaction metrics', {
+                error: error.message
+            });
+            return null;
+        }
+    }
+
+    /**
+     * Get active transactions
+     * @returns {Array} Active transactions
+     */
+    getActiveTransactions() {
+        try {
+            const UniversalTransactionService = require('../../shared/lib/database/services/universal-transaction-service');
+            return UniversalTransactionService.getActiveTransactions();
+        } catch (error) {
+            this.logger.error('Failed to get active transactions', {
+                error: error.message
+            });
+            return [];
+        }
+    }
+
+    /**
      * Restart the server
      */
     async restart() {
-        this.logger.info('Restarting server...');
+        this.logger.info('Restarting server...', {
+            environment: this.environment,
+            pid: process.pid
+        });
         await this._gracefulShutdown();
         await this.start();
     }

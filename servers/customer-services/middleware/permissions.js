@@ -1,7 +1,7 @@
 /**
- * @fileoverview Authorization and Permission Middleware
+ * @fileoverview Complete Enhanced Authorization and Permission Middleware
  * @module shared/lib/middleware/permissions
- * @description Comprehensive permission checking middleware with role-based and attribute-based access control
+ * @description Enterprise-grade permission checking supporting both flat and nested permission structures
  */
 
 const { AppError } = require('../../../shared/lib/utils/app-error');
@@ -49,7 +49,8 @@ const RoleHierarchy = {
 };
 
 /**
- * Permission checker class
+ * Enhanced Permission Checker Class
+ * Supports both flat permission arrays and organization-scoped permissions
  */
 class PermissionChecker {
     /**
@@ -67,7 +68,7 @@ class PermissionChecker {
 
         // Super admins have all permissions
         if (this._isSuperAdmin(user)) {
-            logger.debug('Super admin access granted', { userId: user.id });
+            logger.debug('Super admin access granted', { userId: user.id || user._id });
             return true;
         }
 
@@ -79,9 +80,10 @@ class PermissionChecker {
             
             if (!hasAny) {
                 logger.warn('User lacks required permissions', {
-                    userId: user.id,
+                    userId: user.id || user._id,
                     required: requiredPermission,
-                    userPermissions: user.permissions
+                    userPermissions: user.permissions,
+                    userRoles: user.roles
                 });
             }
             
@@ -114,13 +116,140 @@ class PermissionChecker {
     }
 
     /**
+     * Check single permission with four-strategy approach
+     * Strategy 1: Flat permissions array (fastest)
+     * Strategy 2: Organization-scoped permissions
+     * Strategy 3: Role-based permissions
+     * Strategy 4: Organization role-based permissions
+     * @private
+     */
+    static _checkSinglePermission(user, permission, options) {
+        // STRATEGY 1: Check flat permissions array (primary method - fastest)
+        if (user.permissions && Array.isArray(user.permissions)) {
+            // Direct match
+            if (user.permissions.includes(permission)) {
+                return true;
+            }
+
+            // Check wildcard permissions
+            const [resource, action] = permission.split(':');
+            
+            // Resource-level wildcard (e.g., "clients:*")
+            if (user.permissions.includes(`${resource}:*`)) {
+                return true;
+            }
+
+            // Global wildcard (e.g., "*:*" or "*")
+            if (user.permissions.includes('*:*') || user.permissions.includes('*')) {
+                return true;
+            }
+
+            // Check if permission without action exists (e.g., "clients")
+            if (user.permissions.includes(resource)) {
+                return true;
+            }
+        }
+
+        // STRATEGY 2: Check organization-scoped permissions (fallback for nested structure)
+        if (user.organizations && Array.isArray(user.organizations)) {
+            const [resource, action] = permission.split(':');
+            
+            const hasOrgPermission = user.organizations.some(org => {
+                // Only check active organization memberships
+                if (org.status !== 'active') {
+                    return false;
+                }
+
+                // Check organization permissions
+                if (org.permissions && Array.isArray(org.permissions)) {
+                    return org.permissions.some(p => {
+                        // Handle both string and object permission formats
+                        if (typeof p === 'string') {
+                            return p === permission || 
+                                   p === `${resource}:*` || 
+                                   p === '*:*' ||
+                                   p === resource;
+                        }
+
+                        // Object format: { resource: 'clients', actions: ['read', 'update'] }
+                        if (typeof p === 'object' && p.resource && p.actions) {
+                            // Check if resource matches
+                            if (p.resource !== resource && p.resource !== '*') {
+                                return false;
+                            }
+
+                            // Check if action matches
+                            if (!Array.isArray(p.actions)) {
+                                return false;
+                            }
+
+                            // Check for exact action match or wildcard
+                            return p.actions.includes(action) || 
+                                   p.actions.includes('*') ||
+                                   (p.resource === '*' && p.actions.includes('*'));
+                        }
+
+                        return false;
+                    });
+                }
+
+                return false;
+            });
+
+            if (hasOrgPermission) {
+                return true;
+            }
+        }
+
+        // STRATEGY 3: Check role-based permissions (if provided in options)
+        if (options.rolePermissions && user.roles) {
+            const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
+            const hasRolePermission = userRoles.some(role => {
+                const rolePerms = options.rolePermissions[role] || [];
+                return rolePerms.includes(permission);
+            });
+
+            if (hasRolePermission) {
+                return true;
+            }
+        }
+
+        // STRATEGY 4: Check organization role-based permissions
+        // Admin-level roles in organizations get broader access
+        if (user.organizations && Array.isArray(user.organizations)) {
+            const hasOrgRolePermission = user.organizations.some(org => {
+                if (org.status !== 'active' || !org.roles) {
+                    return false;
+                }
+
+                const orgRoles = Array.isArray(org.roles) ? org.roles : [org.roles];
+                
+                // Check if any organization role has admin-level access
+                return orgRoles.some(role => {
+                    const roleName = typeof role === 'string' ? role : role.roleName;
+                    return roleName === 'admin' || 
+                           roleName === 'super_admin' || 
+                           roleName === 'owner' ||
+                           roleName === 'manager';
+                });
+            });
+
+            if (hasOrgRolePermission) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Check if user has required role
      * @param {Object} user - User object
      * @param {string|Array} requiredRole - Required role(s)
      * @returns {boolean} Whether user has role
      */
     static hasRole(user, requiredRole) {
-        if (!user || !user.roles) {
+        if (!user) {
             return false;
         }
 
@@ -128,13 +257,40 @@ class PermissionChecker {
             return true;
         }
 
-        const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
+        // Check global roles
+        if (user.roles) {
+            const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
 
-        if (Array.isArray(requiredRole)) {
-            return requiredRole.some(role => userRoles.includes(role));
+            if (Array.isArray(requiredRole)) {
+                if (requiredRole.some(role => userRoles.includes(role))) {
+                    return true;
+                }
+            } else {
+                if (userRoles.includes(requiredRole)) {
+                    return true;
+                }
+            }
         }
 
-        return userRoles.includes(requiredRole);
+        // Check organization roles
+        if (user.organizations && Array.isArray(user.organizations)) {
+            return user.organizations.some(org => {
+                if (org.status !== 'active' || !org.roles) {
+                    return false;
+                }
+
+                const orgRoles = Array.isArray(org.roles) ? org.roles : [org.roles];
+                const orgRoleNames = orgRoles.map(r => typeof r === 'string' ? r : r.roleName);
+
+                if (Array.isArray(requiredRole)) {
+                    return requiredRole.some(role => orgRoleNames.includes(role));
+                } else {
+                    return orgRoleNames.includes(requiredRole);
+                }
+            });
+        }
+
+        return false;
     }
 
     /**
@@ -144,7 +300,7 @@ class PermissionChecker {
      * @returns {boolean} Whether user meets minimum role level
      */
     static hasMinimumRole(user, minimumRole) {
-        if (!user || !user.roles) {
+        if (!user) {
             return false;
         }
 
@@ -152,45 +308,34 @@ class PermissionChecker {
             return true;
         }
 
-        const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
         const minimumLevel = RoleHierarchy[minimumRole] || 0;
 
-        return userRoles.some(role => {
-            const roleLevel = RoleHierarchy[role] || 0;
-            return roleLevel >= minimumLevel;
-        });
-    }
+        // Check global roles
+        if (user.roles) {
+            const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
+            const meetsMinimum = userRoles.some(role => {
+                const roleLevel = RoleHierarchy[role] || 0;
+                return roleLevel >= minimumLevel;
+            });
 
-    /**
-     * Check single permission
-     * @private
-     */
-    static _checkSinglePermission(user, permission, options) {
-        // Check direct permissions
-        if (user.permissions && Array.isArray(user.permissions)) {
-            if (user.permissions.includes(permission)) {
-                return true;
-            }
-
-            // Check wildcard permissions
-            const permissionParts = permission.split(':');
-            const wildcardPermission = `${permissionParts[0]}:*`;
-            if (user.permissions.includes(wildcardPermission)) {
-                return true;
-            }
-
-            // Check global wildcard
-            if (user.permissions.includes('*:*') || user.permissions.includes('*')) {
+            if (meetsMinimum) {
                 return true;
             }
         }
 
-        // Check role-based permissions
-        if (options.rolePermissions && user.roles) {
-            const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
-            return userRoles.some(role => {
-                const rolePerms = options.rolePermissions[role] || [];
-                return rolePerms.includes(permission);
+        // Check organization roles
+        if (user.organizations && Array.isArray(user.organizations)) {
+            return user.organizations.some(org => {
+                if (org.status !== 'active' || !org.roles) {
+                    return false;
+                }
+
+                const orgRoles = Array.isArray(org.roles) ? org.roles : [org.roles];
+                return orgRoles.some(role => {
+                    const roleName = typeof role === 'string' ? role : role.roleName;
+                    const roleLevel = RoleHierarchy[roleName] || 0;
+                    return roleLevel >= minimumLevel;
+                });
             });
         }
 
@@ -202,12 +347,34 @@ class PermissionChecker {
      * @private
      */
     static _isSuperAdmin(user) {
-        if (!user || !user.roles) {
+        if (!user) {
             return false;
         }
 
-        const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
-        return userRoles.includes(SystemRoles.SUPER_ADMIN);
+        // Check global roles
+        if (user.roles) {
+            const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
+            if (userRoles.includes(SystemRoles.SUPER_ADMIN)) {
+                return true;
+            }
+        }
+
+        // Check organization roles
+        if (user.organizations && Array.isArray(user.organizations)) {
+            return user.organizations.some(org => {
+                if (org.status !== 'active' || !org.roles) {
+                    return false;
+                }
+
+                const orgRoles = Array.isArray(org.roles) ? org.roles : [org.roles];
+                return orgRoles.some(role => {
+                    const roleName = typeof role === 'string' ? role : role.roleName;
+                    return roleName === SystemRoles.SUPER_ADMIN;
+                });
+            });
+        }
+
+        return false;
     }
 
     /**
@@ -227,10 +394,10 @@ class PermissionChecker {
         }
 
         const ownerField = options.ownerField || 'createdBy';
-        const userId = user.id || user._id;
-        const resourceOwnerId = resource[ownerField]?.toString() || resource[ownerField];
+        const userId = (user.id || user._id)?.toString();
+        const resourceOwnerId = (resource[ownerField]?._id || resource[ownerField])?.toString();
 
-        return userId?.toString() === resourceOwnerId;
+        return userId === resourceOwnerId;
     }
 
     /**
@@ -266,7 +433,53 @@ class PermissionChecker {
             return true;
         }
 
-        return user.organizationId?.toString() === organizationId.toString();
+        // Check default organization
+        if (user.defaultOrganizationId?.toString() === organizationId.toString()) {
+            return true;
+        }
+
+        // Check organization memberships
+        if (user.organizations && Array.isArray(user.organizations)) {
+            return user.organizations.some(org => 
+                org.organizationId?.toString() === organizationId.toString() &&
+                org.status === 'active'
+            );
+        }
+
+        return false;
+    }
+
+    /**
+     * Get user's active permissions across all organizations
+     * @param {Object} user - User object
+     * @returns {Array} Flat array of all active permissions
+     */
+    static getAllPermissions(user) {
+        const permissions = new Set();
+
+        // Add flat permissions
+        if (user.permissions && Array.isArray(user.permissions)) {
+            user.permissions.forEach(p => permissions.add(p));
+        }
+
+        // Add organization permissions
+        if (user.organizations && Array.isArray(user.organizations)) {
+            user.organizations.forEach(org => {
+                if (org.status === 'active' && org.permissions) {
+                    org.permissions.forEach(p => {
+                        if (typeof p === 'string') {
+                            permissions.add(p);
+                        } else if (p.resource && p.actions) {
+                            p.actions.forEach(action => {
+                                permissions.add(`${p.resource}:${action}`);
+                            });
+                        }
+                    });
+                }
+            });
+        }
+
+        return Array.from(permissions);
     }
 }
 
@@ -282,7 +495,8 @@ function checkPermission(permission, options = {}) {
         allowOwner = false,
         ownerField = 'createdBy',
         errorMessage = 'Insufficient permissions',
-        rolePermissions = null
+        rolePermissions = null,
+        organizationId = null
     } = options;
 
     return async (req, res, next) => {
@@ -303,7 +517,7 @@ function checkPermission(permission, options = {}) {
                 const allowed = await permission(req, user);
                 if (!allowed) {
                     logger.warn('Custom permission check failed', {
-                        userId: user.id,
+                        userId: user.id || user._id,
                         path: req.path
                     });
                     throw AppError.forbidden(errorMessage);
@@ -316,32 +530,32 @@ function checkPermission(permission, options = {}) {
 
             if (requireAll && Array.isArray(permission)) {
                 hasPermission = PermissionChecker.hasAllPermissions(user, permission, {
-                    rolePermissions
+                    rolePermissions,
+                    organizationId
                 });
             } else {
                 hasPermission = PermissionChecker.hasPermission(user, permission, {
-                    rolePermissions
+                    rolePermissions,
+                    organizationId
                 });
             }
 
             // If user doesn't have permission, check ownership if allowed
             if (!hasPermission && allowOwner) {
-                // Try to determine resource from request
                 const resourceId = req.params.id || req.params.resourceId;
                 if (resourceId) {
-                    // In a real implementation, you would fetch the resource
-                    // and check ownership. This is a simplified example.
-                    logger.debug('Checking resource ownership', {
-                        userId: user.id,
+                    logger.debug('Permission denied, checking resource ownership', {
+                        userId: user.id || user._id,
                         resourceId
                     });
+                    // In production, implement actual resource ownership check
                     // hasPermission = await checkResourceOwnership(user, resourceId, ownerField);
                 }
             }
 
             if (!hasPermission) {
                 logger.warn('Permission denied', {
-                    userId: user.id,
+                    userId: user.id || user._id,
                     required: permission,
                     userPermissions: user.permissions,
                     userRoles: user.roles,
@@ -352,14 +566,14 @@ function checkPermission(permission, options = {}) {
                 throw AppError.forbidden(errorMessage, {
                     context: {
                         required: permission,
-                        userId: user.id
+                        userId: user.id || user._id
                     }
                 });
             }
 
             // Permission granted
             logger.debug('Permission granted', {
-                userId: user.id,
+                userId: user.id || user._id,
                 permission,
                 path: req.path
             });
@@ -404,7 +618,7 @@ function checkRole(role, options = {}) {
 
             if (!hasRole) {
                 logger.warn('Role check failed', {
-                    userId: req.user.id,
+                    userId: req.user.id || req.user._id,
                     required: role,
                     userRoles: req.user.roles
                 });
@@ -438,7 +652,7 @@ function checkMinimumRole(minimumRole, options = {}) {
 
             if (!PermissionChecker.hasMinimumRole(req.user, minimumRole)) {
                 logger.warn('Minimum role check failed', {
-                    userId: req.user.id,
+                    userId: req.user.id || req.user._id,
                     required: minimumRole,
                     userRoles: req.user.roles
                 });
@@ -482,13 +696,12 @@ function checkOwnership(options = {}) {
                 throw AppError.validation('Resource ID is required');
             }
 
-            // In a real implementation, fetch the resource and check ownership
-            // This is a simplified example
             logger.debug('Checking resource ownership', {
-                userId: req.user.id,
+                userId: req.user.id || req.user._id,
                 resourceId
             });
 
+            // In production, implement actual resource fetch and ownership check
             // const resource = await fetchResource(resourceId);
             // if (!PermissionChecker.ownsResource(req.user, resource, { ownerField })) {
             //     throw AppError.forbidden(errorMessage);
@@ -509,7 +722,7 @@ function checkOwnership(options = {}) {
  */
 function checkTenantAccess(options = {}) {
     const {
-        tenantIdSource = 'params', // 'params', 'body', 'query', 'headers'
+        tenantIdSource = 'params',
         tenantIdField = 'tenantId',
         errorMessage = 'Access denied to this tenant'
     } = options;
@@ -520,7 +733,6 @@ function checkTenantAccess(options = {}) {
                 throw AppError.unauthorized('Authentication required');
             }
 
-            // Super admins have access to all tenants
             if (PermissionChecker._isSuperAdmin(req.user)) {
                 return next();
             }
@@ -544,13 +756,12 @@ function checkTenantAccess(options = {}) {
             }
 
             if (!tenantId) {
-                // If no tenant ID specified, use user's tenant
                 return next();
             }
 
             if (!PermissionChecker.hasTenantAccess(req.user, tenantId)) {
                 logger.warn('Tenant access denied', {
-                    userId: req.user.id,
+                    userId: req.user.id || req.user._id,
                     userTenantId: req.user.tenantId,
                     requestedTenantId: tenantId
                 });
@@ -575,16 +786,12 @@ function combinePermissions(checks, options = {}) {
     const { requireAll = true } = options;
 
     if (requireAll) {
-        // All checks must pass
         return (req, res, next) => {
             let index = 0;
             
             const runNext = (err) => {
                 if (err) return next(err);
-                
-                if (index >= checks.length) {
-                    return next();
-                }
+                if (index >= checks.length) return next();
                 
                 const check = checks[index++];
                 check(req, res, runNext);
@@ -593,7 +800,6 @@ function combinePermissions(checks, options = {}) {
             runNext();
         };
     } else {
-        // At least one check must pass
         return async (req, res, next) => {
             let lastError = null;
             
@@ -605,13 +811,12 @@ function combinePermissions(checks, options = {}) {
                             else resolve();
                         });
                     });
-                    return next(); // One check passed, continue
+                    return next();
                 } catch (error) {
                     lastError = error;
                 }
             }
             
-            // All checks failed
             next(lastError || AppError.forbidden('Permission denied'));
         };
     }
@@ -621,29 +826,14 @@ function combinePermissions(checks, options = {}) {
  * Permission presets for common scenarios
  */
 const PermissionPresets = {
-    /**
-     * Admin only access
-     */
     adminOnly: () => checkMinimumRole(SystemRoles.ADMIN),
-
-    /**
-     * Manager or above access
-     */
     managerAccess: () => checkMinimumRole(SystemRoles.MANAGER),
-
-    /**
-     * Authenticated user access
-     */
     authenticatedAccess: () => (req, res, next) => {
         if (!req.user) {
             return next(AppError.unauthorized('Authentication required'));
         }
         next();
     },
-
-    /**
-     * Owner or admin access
-     */
     ownerOrAdmin: (options = {}) => combinePermissions([
         checkOwnership(options),
         checkMinimumRole(SystemRoles.ADMIN)
