@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "logs/.936eaf9d176f6257fc910eaff0190389db168db6-audit.json",
+    "files": [
+        {
+            "date": 1758007693037,
+            "name": "logs/gateway-server-error-2025-09-16.log",
+            "hash": "fe843cc6e78e78be958bfdeab33e5c50fb3387dae7c834c0803f9d40c5e5afc7"
+        }
+    ],
+    "hashType": "sha256"
+}

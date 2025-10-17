@@ -1,0 +1,680 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Customer Services Tests" tests="123" failures="22" errors="0" time="336.447">
+  <testsuite name="DirectAuthService Unit Tests" errors="0" failures="0" skipped="0" timestamp="2025-10-16T12:32:09" time="0.645" tests="12">
+    <testcase classname="DirectAuthService Unit Tests registerDirectUser should successfully register a new user with hashed password" name="DirectAuthService Unit Tests registerDirectUser should successfully register a new user with hashed password" time="0.002">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests registerDirectUser should throw error when user already exists" name="DirectAuthService Unit Tests registerDirectUser should throw error when user already exists" time="0">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests registerDirectUser should hash password with correct salt rounds" name="DirectAuthService Unit Tests registerDirectUser should hash password with correct salt rounds" time="0.001">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests registerDirectUser should generate verification token for email verification" name="DirectAuthService Unit Tests registerDirectUser should generate verification token for email verification" time="0">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests loginDirectUser - Authentication Patterns should successfully authenticate user with valid credentials" name="DirectAuthService Unit Tests loginDirectUser - Authentication Patterns should successfully authenticate user with valid credentials" time="0">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests loginDirectUser - Authentication Patterns should handle MFA requirement correctly" name="DirectAuthService Unit Tests loginDirectUser - Authentication Patterns should handle MFA requirement correctly" time="0">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests loginDirectUser - Authentication Patterns should reject invalid credentials" name="DirectAuthService Unit Tests loginDirectUser - Authentication Patterns should reject invalid credentials" time="0.001">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests Token and Password Management Patterns should generate access token with correct payload" name="DirectAuthService Unit Tests Token and Password Management Patterns should generate access token with correct payload" time="0">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests Token and Password Management Patterns should hash passwords with bcrypt" name="DirectAuthService Unit Tests Token and Password Management Patterns should hash passwords with bcrypt" time="0">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests Token and Password Management Patterns should verify passwords correctly" name="DirectAuthService Unit Tests Token and Password Management Patterns should verify passwords correctly" time="0">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests Token and Password Management Patterns should blacklist tokens on logout" name="DirectAuthService Unit Tests Token and Password Management Patterns should blacklist tokens on logout" time="0.001">
+    </testcase>
+    <testcase classname="DirectAuthService Unit Tests Token and Password Management Patterns should handle session creation" name="DirectAuthService Unit Tests Token and Password Management Patterns should handle session creation" time="0.001">
+    </testcase>
+  </testsuite>
+  <testsuite name="Authentication Validators Unit Tests" errors="0" failures="3" skipped="0" timestamp="2025-10-16T12:32:09" time="0.781" tests="45">
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should accept valid registration data with all required fields" name="Authentication Validators Unit Tests validateRegistration should accept valid registration data with all required fields" time="0.004">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should reject invalid email formats" name="Authentication Validators Unit Tests validateRegistration should reject invalid email formats" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should reject passwords that are too short" name="Authentication Validators Unit Tests validateRegistration should reject passwords that are too short" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should reject passwords without uppercase letters" name="Authentication Validators Unit Tests validateRegistration should reject passwords without uppercase letters" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should reject passwords without lowercase letters" name="Authentication Validators Unit Tests validateRegistration should reject passwords without lowercase letters" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should reject passwords without numbers" name="Authentication Validators Unit Tests validateRegistration should reject passwords without numbers" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should reject passwords without special characters" name="Authentication Validators Unit Tests validateRegistration should reject passwords without special characters" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should accept passwords meeting all requirements" name="Authentication Validators Unit Tests validateRegistration should accept passwords meeting all requirements" time="0.002">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: true
+Received: false
+    at Object.toBe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/modules/core-business/authentication/__tests__/validators/auth-validators.test.js:223:34)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should normalize email to lowercase" name="Authentication Validators Unit Tests validateRegistration should normalize email to lowercase" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should trim whitespace from names" name="Authentication Validators Unit Tests validateRegistration should trim whitespace from names" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should allow optional fields to be omitted" name="Authentication Validators Unit Tests validateRegistration should allow optional fields to be omitted" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should validate phone number format when provided" name="Authentication Validators Unit Tests validateRegistration should validate phone number format when provided" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should accept valid phone number formats" name="Authentication Validators Unit Tests validateRegistration should accept valid phone number formats" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should require terms acceptance" name="Authentication Validators Unit Tests validateRegistration should require terms acceptance" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should send 400 response when validation fails" name="Authentication Validators Unit Tests validateRegistration should send 400 response when validation fails" time="0">
+      <failure>Error: expect(jest.fn()).not.toHaveBeenCalled()
+
+Expected number of calls: 0
+Received number of calls: 9
+
+1: called with 0 arguments
+2: called with 0 arguments
+3: called with 0 arguments
+    at Object.toHaveBeenCalled (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/modules/core-business/authentication/__tests__/validators/auth-validators.test.js:378:28)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateRegistration should call next when validation passes" name="Authentication Validators Unit Tests validateRegistration should call next when validation passes" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateLogin should accept valid login credentials" name="Authentication Validators Unit Tests validateLogin should accept valid login credentials" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateLogin should require email field" name="Authentication Validators Unit Tests validateLogin should require email field" time="0.002">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateLogin should require password field" name="Authentication Validators Unit Tests validateLogin should require password field" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateLogin should reject empty email" name="Authentication Validators Unit Tests validateLogin should reject empty email" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateLogin should reject empty password" name="Authentication Validators Unit Tests validateLogin should reject empty password" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateLogin should normalize email for login" name="Authentication Validators Unit Tests validateLogin should normalize email for login" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateLogin should accept optional rememberMe field" name="Authentication Validators Unit Tests validateLogin should accept optional rememberMe field" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateLogin should accept optional deviceInfo field" name="Authentication Validators Unit Tests validateLogin should accept optional deviceInfo field" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateEmail should accept valid email addresses" name="Authentication Validators Unit Tests validateEmail should accept valid email addresses" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateEmail should reject invalid email addresses" name="Authentication Validators Unit Tests validateEmail should reject invalid email addresses" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validatePassword should accept strong passwords" name="Authentication Validators Unit Tests validatePassword should accept strong passwords" time="0">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: 0
+Received: 1
+    at Object.toBe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/modules/core-business/authentication/__tests__/validators/auth-validators.test.js:567:39)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validatePassword should reject weak passwords" name="Authentication Validators Unit Tests validatePassword should reject weak passwords" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validatePassword should enforce minimum length requirement" name="Authentication Validators Unit Tests validatePassword should enforce minimum length requirement" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validatePassword should enforce maximum length requirement" name="Authentication Validators Unit Tests validatePassword should enforce maximum length requirement" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validatePasswordReset should accept valid password reset data" name="Authentication Validators Unit Tests validatePasswordReset should accept valid password reset data" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validatePasswordReset should require reset token" name="Authentication Validators Unit Tests validatePasswordReset should require reset token" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validatePasswordReset should require new password" name="Authentication Validators Unit Tests validatePasswordReset should require new password" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validatePasswordReset should require password confirmation" name="Authentication Validators Unit Tests validatePasswordReset should require password confirmation" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validatePasswordReset should reject mismatched password confirmation" name="Authentication Validators Unit Tests validatePasswordReset should reject mismatched password confirmation" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validatePasswordReset should validate new password strength" name="Authentication Validators Unit Tests validatePasswordReset should validate new password strength" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateTokenRefresh should accept valid refresh token" name="Authentication Validators Unit Tests validateTokenRefresh should accept valid refresh token" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateTokenRefresh should require refresh token" name="Authentication Validators Unit Tests validateTokenRefresh should require refresh token" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateTokenRefresh should reject empty refresh token" name="Authentication Validators Unit Tests validateTokenRefresh should reject empty refresh token" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateTokenRefresh should trim whitespace from refresh token" name="Authentication Validators Unit Tests validateTokenRefresh should trim whitespace from refresh token" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests validateTokenRefresh should reject tokens shorter than minimum length" name="Authentication Validators Unit Tests validateTokenRefresh should reject tokens shorter than minimum length" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests Edge Cases and Security should handle SQL injection attempts in email" name="Authentication Validators Unit Tests Edge Cases and Security should handle SQL injection attempts in email" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests Edge Cases and Security should handle XSS attempts in input fields" name="Authentication Validators Unit Tests Edge Cases and Security should handle XSS attempts in input fields" time="0">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests Edge Cases and Security should handle extremely long input strings" name="Authentication Validators Unit Tests Edge Cases and Security should handle extremely long input strings" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Validators Unit Tests Edge Cases and Security should handle unicode characters appropriately" name="Authentication Validators Unit Tests Edge Cases and Security should handle unicode characters appropriately" time="0">
+    </testcase>
+  </testsuite>
+  <testsuite name="AuthController Unit Tests" errors="0" failures="0" skipped="0" timestamp="2025-10-16T12:32:09" time="1.108" tests="22">
+    <testcase classname="AuthController Unit Tests registerUser should successfully register a new user with complete profile data" name="AuthController Unit Tests registerUser should successfully register a new user with complete profile data" time="0.003">
+    </testcase>
+    <testcase classname="AuthController Unit Tests registerUser should return validation errors when registration data is invalid" name="AuthController Unit Tests registerUser should return validation errors when registration data is invalid" time="0.001">
+    </testcase>
+    <testcase classname="AuthController Unit Tests registerUser should handle service errors during registration" name="AuthController Unit Tests registerUser should handle service errors during registration" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests registerUser should include optional marketing data when provided" name="AuthController Unit Tests registerUser should include optional marketing data when provided" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests loginUser should successfully authenticate user with valid credentials" name="AuthController Unit Tests loginUser should successfully authenticate user with valid credentials" time="0.001">
+    </testcase>
+    <testcase classname="AuthController Unit Tests loginUser should return MFA challenge when MFA is required" name="AuthController Unit Tests loginUser should return MFA challenge when MFA is required" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests loginUser should return error when credentials are missing" name="AuthController Unit Tests loginUser should return error when credentials are missing" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests loginUser should accept username instead of email for login" name="AuthController Unit Tests loginUser should accept username instead of email for login" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests loginUser should include device and location information when provided" name="AuthController Unit Tests loginUser should include device and location information when provided" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests logoutUser should successfully logout user and invalidate tokens" name="AuthController Unit Tests logoutUser should successfully logout user and invalidate tokens" time="0.001">
+    </testcase>
+    <testcase classname="AuthController Unit Tests logoutUser should return error when user is not authenticated" name="AuthController Unit Tests logoutUser should return error when user is not authenticated" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests logoutUser should handle logout when only access token is present" name="AuthController Unit Tests logoutUser should handle logout when only access token is present" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests logoutUser should handle service errors during logout gracefully" name="AuthController Unit Tests logoutUser should handle service errors during logout gracefully" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests logoutAllDevices should successfully logout user from all devices" name="AuthController Unit Tests logoutAllDevices should successfully logout user from all devices" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests logoutAllDevices should return error when user is not authenticated" name="AuthController Unit Tests logoutAllDevices should return error when user is not authenticated" time="0.001">
+    </testcase>
+    <testcase classname="AuthController Unit Tests getCurrentUser should successfully return authenticated user data" name="AuthController Unit Tests getCurrentUser should successfully return authenticated user data" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests getCurrentUser should return error when user is not authenticated" name="AuthController Unit Tests getCurrentUser should return error when user is not authenticated" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests getCurrentUser should handle user not found scenario" name="AuthController Unit Tests getCurrentUser should handle user not found scenario" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests Error Handling should properly propagate service layer errors" name="AuthController Unit Tests Error Handling should properly propagate service layer errors" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests Error Handling should handle unexpected errors gracefully" name="AuthController Unit Tests Error Handling should handle unexpected errors gracefully" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests Request Context Handling should extract IP address from various request properties" name="AuthController Unit Tests Request Context Handling should extract IP address from various request properties" time="0">
+    </testcase>
+    <testcase classname="AuthController Unit Tests Request Context Handling should handle missing user agent gracefully" name="AuthController Unit Tests Request Context Handling should handle missing user agent gracefully" time="0">
+    </testcase>
+  </testsuite>
+  <testsuite name="Authentication Routes Test Suite" errors="0" failures="0" skipped="0" timestamp="2025-10-16T12:32:09" time="1.694" tests="25">
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/register - User Registration should successfully register a new user with valid credentials" name="Authentication Routes Test Suite POST /api/v1/auth/register - User Registration should successfully register a new user with valid credentials" time="0.015">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/register - User Registration should return 400 when email format is invalid" name="Authentication Routes Test Suite POST /api/v1/auth/register - User Registration should return 400 when email format is invalid" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/register - User Registration should return 400 when password does not meet requirements" name="Authentication Routes Test Suite POST /api/v1/auth/register - User Registration should return 400 when password does not meet requirements" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/register - User Registration should return 409 when user already exists" name="Authentication Routes Test Suite POST /api/v1/auth/register - User Registration should return 409 when user already exists" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/register - User Registration should return 400 when tenant ID is missing" name="Authentication Routes Test Suite POST /api/v1/auth/register - User Registration should return 400 when tenant ID is missing" time="0.002">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/login - User Login should successfully login with valid credentials" name="Authentication Routes Test Suite POST /api/v1/auth/login - User Login should successfully login with valid credentials" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/login - User Login should return 401 with invalid credentials" name="Authentication Routes Test Suite POST /api/v1/auth/login - User Login should return 401 with invalid credentials" time="0.004">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/login - User Login should return 403 when account is locked" name="Authentication Routes Test Suite POST /api/v1/auth/login - User Login should return 403 when account is locked" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/login - User Login should return 200 with MFA required status when MFA is enabled" name="Authentication Routes Test Suite POST /api/v1/auth/login - User Login should return 200 with MFA required status when MFA is enabled" time="0.002">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/logout - User Logout should successfully logout authenticated user" name="Authentication Routes Test Suite POST /api/v1/auth/logout - User Logout should successfully logout authenticated user" time="0.002">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/logout - User Logout should return 401 when no authentication token provided" name="Authentication Routes Test Suite POST /api/v1/auth/logout - User Logout should return 401 when no authentication token provided" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/logout - User Logout should return 401 when token is invalid or expired" name="Authentication Routes Test Suite POST /api/v1/auth/logout - User Logout should return 401 when token is invalid or expired" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/logout-all - Logout All Sessions should successfully logout all user sessions" name="Authentication Routes Test Suite POST /api/v1/auth/logout-all - Logout All Sessions should successfully logout all user sessions" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/refresh - Refresh Access Token should successfully refresh access token with valid refresh token" name="Authentication Routes Test Suite POST /api/v1/auth/refresh - Refresh Access Token should successfully refresh access token with valid refresh token" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/refresh - Refresh Access Token should return 401 when refresh token is invalid" name="Authentication Routes Test Suite POST /api/v1/auth/refresh - Refresh Access Token should return 401 when refresh token is invalid" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/refresh - Refresh Access Token should return 401 when refresh token is expired" name="Authentication Routes Test Suite POST /api/v1/auth/refresh - Refresh Access Token should return 401 when refresh token is expired" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite GET /api/v1/auth/me - Get Current User should successfully return current user profile" name="Authentication Routes Test Suite GET /api/v1/auth/me - Get Current User should successfully return current user profile" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite GET /api/v1/auth/me - Get Current User should return 401 when not authenticated" name="Authentication Routes Test Suite GET /api/v1/auth/me - Get Current User should return 401 when not authenticated" time="0">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/verify-email - Verify Email Address should successfully verify email with valid token" name="Authentication Routes Test Suite POST /api/v1/auth/verify-email - Verify Email Address should successfully verify email with valid token" time="0.002">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/verify-email - Verify Email Address should return 400 when verification token is invalid" name="Authentication Routes Test Suite POST /api/v1/auth/verify-email - Verify Email Address should return 400 when verification token is invalid" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/verify-email - Verify Email Address should return 410 when verification token is expired" name="Authentication Routes Test Suite POST /api/v1/auth/verify-email - Verify Email Address should return 410 when verification token is expired" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/resend-verification - Resend Email Verification should successfully resend verification email" name="Authentication Routes Test Suite POST /api/v1/auth/resend-verification - Resend Email Verification should successfully resend verification email" time="0">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/resend-verification - Resend Email Verification should return 404 when user not found" name="Authentication Routes Test Suite POST /api/v1/auth/resend-verification - Resend Email Verification should return 404 when user not found" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite POST /api/v1/auth/resend-verification - Resend Email Verification should return 429 when rate limit exceeded" name="Authentication Routes Test Suite POST /api/v1/auth/resend-verification - Resend Email Verification should return 429 when rate limit exceeded" time="0.001">
+    </testcase>
+    <testcase classname="Authentication Routes Test Suite Test Suite Summary should have all critical authentication endpoints covered" name="Authentication Routes Test Suite Test Suite Summary should have all critical authentication endpoints covered" time="0">
+    </testcase>
+  </testsuite>
+  <testsuite name="Authentication Integration Tests" errors="0" failures="19" skipped="0" timestamp="2025-10-16T12:32:09" time="335.766" tests="19">
+    <testcase classname="Authentication Integration Tests Complete User Registration Flow should complete full registration process with email verification" name="Authentication Integration Tests Complete User Registration Flow should complete full registration process with email verification" time="15.002">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 15000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:46:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:45:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Complete User Registration Flow should prevent duplicate registration with same email" name="Authentication Integration Tests Complete User Registration Flow should prevent duplicate registration with same email" time="10">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:110:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:45:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Complete User Registration Flow should validate registration data and return detailed errors" name="Authentication Integration Tests Complete User Registration Flow should validate registration data and return detailed errors" time="10.001">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:135:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:45:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Complete Login and Session Management Flow should complete full login process and create session" name="Authentication Integration Tests Complete Login and Session Management Flow should complete full login process and create session" time="10">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a hook.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at beforeEach (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:155:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:154:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Complete Login and Session Management Flow should handle failed login attempts and account locking" name="Authentication Integration Tests Complete Login and Session Management Flow should handle failed login attempts and account locking" time="10.001">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a hook.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at beforeEach (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:155:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:154:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Complete Login and Session Management Flow should reject login without required credentials" name="Authentication Integration Tests Complete Login and Session Management Flow should reject login without required credentials" time="10.001">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a hook.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at beforeEach (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:155:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:154:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Token Refresh and Rotation Flow should successfully refresh access token with valid refresh token" name="Authentication Integration Tests Token Refresh and Rotation Flow should successfully refresh access token with valid refresh token" time="10.001">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a hook.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at beforeEach (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:279:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:278:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Token Refresh and Rotation Flow should reject refresh with invalid token" name="Authentication Integration Tests Token Refresh and Rotation Flow should reject refresh with invalid token" time="10.001">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a hook.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at beforeEach (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:279:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:278:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Token Refresh and Rotation Flow should reject refresh without token" name="Authentication Integration Tests Token Refresh and Rotation Flow should reject refresh without token" time="10.001">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a hook.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at beforeEach (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:279:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:278:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Multi-Device Logout Flow should logout from all devices simultaneously" name="Authentication Integration Tests Multi-Device Logout Flow should logout from all devices simultaneously" time="10">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a hook.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at beforeEach (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:363:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:360:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Multi-Device Logout Flow should only logout current device with standard logout" name="Authentication Integration Tests Multi-Device Logout Flow should only logout current device with standard logout" time="10.001">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a hook.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at beforeEach (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:363:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:360:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Email Verification Flow should resend verification email when requested" name="Authentication Integration Tests Email Verification Flow should resend verification email when requested" time="10.001">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:489:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:488:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Email Verification Flow should prevent too many verification email requests" name="Authentication Integration Tests Email Verification Flow should prevent too many verification email requests" time="148.572">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 15000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:514:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:488:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Protected Routes Authorization should prevent access to protected routes without authentication" name="Authentication Integration Tests Protected Routes Authorization should prevent access to protected routes without authentication" time="10.001">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:544:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:543:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Protected Routes Authorization should prevent access with expired or invalid tokens" name="Authentication Integration Tests Protected Routes Authorization should prevent access with expired or invalid tokens" time="10">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:551:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:543:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Protected Routes Authorization should allow access with valid authentication token" name="Authentication Integration Tests Protected Routes Authorization should allow access with valid authentication token" time="10.01">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:561:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:543:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Error Handling and Edge Cases should handle database errors gracefully" name="Authentication Integration Tests Error Handling and Edge Cases should handle database errors gracefully" time="10">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:595:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:594:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Error Handling and Edge Cases should handle malformed request bodies" name="Authentication Integration Tests Error Handling and Edge Cases should handle malformed request bodies" time="10.001">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:616:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:594:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+    <testcase classname="Authentication Integration Tests Error Handling and Edge Cases should handle missing tenant ID" name="Authentication Integration Tests Error Handling and Edge Cases should handle missing tenant ID" time="10">
+      <failure>TypeError: Class constructor CustomerServicesApp cannot be invoked without &apos;new&apos;
+    at Server.emit (node:events:508:28)
+    at parserOnIncoming (node:_http_server:1184:12)
+    at HTTPParser.parserOnHeadersComplete (node:_http_common:122:17)</failure>
+      <failure>Error: thrown: &quot;Exceeded timeout of 10000 ms for a test.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.&quot;
+    at test (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:627:5)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:594:3)
+    at _dispatchDescribe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:604:26)
+    at describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/jestAdapterInit.js:572:44)
+    at Object.describe (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/tests/integration/authentication.integration.test.js:12:1)
+    at Runtime._execModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:1268:24)
+    at Runtime._loadModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:944:12)
+    at Runtime.requireModule (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runtime/build/index.js:832:12)
+    at jestAdapter (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-circus/build/runner.js:95:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runTestInternal (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:275:16)
+    at runTest (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:343:7)
+    at Object.worker (/Users/eolaw/Desktop/insightserenity-platform/servers/customer-services/node_modules/jest-runner/build/testWorker.js:497:12)</failure>
+    </testcase>
+  </testsuite>
+</testsuites>
