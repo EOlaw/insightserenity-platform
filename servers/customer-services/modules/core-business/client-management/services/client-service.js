@@ -70,7 +70,6 @@ class ClientService {
      */
     _getDatabaseService() {
         if (!this._dbService) {
-            // CORRECTED: Get the actual DatabaseService instance, not the module
             this._dbService = database.getDatabaseService();
         }
         return this._dbService;
@@ -159,6 +158,7 @@ class ClientService {
      * Get client by ID
      * @param {string} clientId - Client ID
      * @param {Object} options - Query options
+     * @param {boolean} options.skipTenantCheck - Skip tenant verification (for self-service operations)
      * @returns {Promise<Object>} Client data
      */
     async getClientById(clientId, options = {}) {
@@ -190,8 +190,9 @@ class ClientService {
                 });
             }
 
-            // Check tenant access
-            if (options.tenantId && client.tenantId.toString() !== options.tenantId) {
+            // Check tenant access - skip for self-service operations
+            // Self-service operations verify ownership at the controller level
+            if (options.tenantId && !options.skipTenantCheck && client.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this client');
             }
 
@@ -210,6 +211,7 @@ class ClientService {
      * Get client by client code
      * @param {string} clientCode - Client code
      * @param {Object} options - Query options
+     * @param {boolean} options.skipTenantCheck - Skip tenant verification (for self-service operations)
      * @returns {Promise<Object>} Client data
      */
     async getClientByCode(clientCode, options = {}) {
@@ -219,10 +221,15 @@ class ClientService {
             const dbService = this._getDatabaseService();
             const Client = dbService.getModel('Client', 'customer');
 
+            // Build query based on whether tenant checking is needed
             const query = {
-                clientCode: clientCode.toUpperCase(),
-                tenantId: options.tenantId || this.config.companyTenantId
+                clientCode: clientCode.toUpperCase()
             };
+
+            // Only add tenant filter if not skipping tenant check
+            if (!options.skipTenantCheck) {
+                query.tenantId = options.tenantId || this.config.companyTenantId;
+            }
 
             let clientQuery = Client.findOne(query);
 
@@ -250,71 +257,19 @@ class ClientService {
     }
 
     /**
-     * List clients with filters and pagination
-     * @param {Object} filters - Filter criteria
-     * @param {Object} options - Query options
-     * @returns {Promise<Object>} Paginated client list
-     */
-    async listClients(filters = {}, options = {}) {
-        try {
-            logger.info('Listing clients', { filters, options });
-
-            const dbService = this._getDatabaseService();
-            const Client = dbService.getModel('Client', 'customer');
-
-            // Build query
-            const query = this._buildClientQuery(filters);
-
-            // Pagination
-            const page = parseInt(options.page, 10) || 1;
-            const limit = parseInt(options.limit, 10) || 20;
-            const skip = (page - 1) * limit;
-
-            // Sort
-            const sort = options.sort || { createdAt: -1 };
-
-            // Execute query with pagination
-            const [clients, total] = await Promise.all([
-                Client.find(query)
-                    .sort(sort)
-                    .skip(skip)
-                    .limit(limit)
-                    .populate(options.populate || '')
-                    .lean(),
-                Client.countDocuments(query)
-            ]);
-
-            return {
-                data: clients.map(client => this._sanitizeClientOutput(client)),
-                pagination: {
-                    page,
-                    limit,
-                    total,
-                    pages: Math.ceil(total / limit),
-                    hasNext: page < Math.ceil(total / limit),
-                    hasPrev: page > 1
-                }
-            };
-
-        } catch (error) {
-            logger.error('Failed to list clients', {
-                error: error.message,
-                filters
-            });
-            throw error;
-        }
-    }
-
-    /**
      * Update client
      * @param {string} clientId - Client ID
-     * @param {Object} updateData - Update data
+     * @param {Object} updateData - Data to update
      * @param {Object} options - Update options
+     * @param {boolean} options.skipTenantCheck - Skip tenant verification (for self-service operations)
      * @returns {Promise<Object>} Updated client
      */
     async updateClient(clientId, updateData, options = {}) {
         try {
-            logger.info('Updating client', { clientId });
+            logger.info('Starting client update', {
+                clientId,
+                updateFields: Object.keys(updateData)
+            });
 
             // Validate update data
             await this._validateClientUpdateData(updateData);
@@ -322,7 +277,7 @@ class ClientService {
             const dbService = this._getDatabaseService();
             const Client = dbService.getModel('Client', 'customer');
 
-            // Find client
+            // Get existing client
             const client = await Client.findById(clientId);
 
             if (!client) {
@@ -331,34 +286,43 @@ class ClientService {
                 });
             }
 
-            // Check tenant access
-            if (options.tenantId && client.tenantId.toString() !== options.tenantId) {
+            // Check tenant access - skip for self-service operations
+            if (options.tenantId && !options.skipTenantCheck && client.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this client');
+            }
+
+            // Handle tier changes with approval requirement
+            if (updateData.relationship?.tier && 
+                updateData.relationship.tier !== client.relationship.tier &&
+                this.config.requireApprovalForTierChange) {
+                await this._requestTierChangeApproval(clientId, updateData.relationship.tier, options);
+                delete updateData.relationship.tier; // Remove until approved
             }
 
             // Apply updates
             Object.keys(updateData).forEach(key => {
-                if (updateData[key] !== undefined) {
+                if (typeof updateData[key] === 'object' && !Array.isArray(updateData[key])) {
+                    // Merge nested objects
+                    client[key] = { ...client[key], ...updateData[key] };
+                } else {
                     client[key] = updateData[key];
                 }
             });
 
-            // Update metadata
-            client.metadata = client.metadata || {};
-            client.metadata.lastModifiedAt = new Date();
-            client.metadata.lastModifiedBy = options.userId;
+            client.updatedAt = new Date();
 
+            // Save updated client
             await client.save();
 
             logger.info('Client updated successfully', {
-                clientId: client._id,
-                updatedFields: Object.keys(updateData)
+                clientId,
+                userId: options.userId
             });
 
             // Track update event
             await this._trackClientEvent(client, 'client_updated', {
                 userId: options.userId,
-                fields: Object.keys(updateData)
+                updatedFields: Object.keys(updateData)
             });
 
             return this._sanitizeClientOutput(client);
@@ -366,7 +330,180 @@ class ClientService {
         } catch (error) {
             logger.error('Client update failed', {
                 error: error.message,
-                clientId
+                clientId,
+                stack: error.stack
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Get client statistics
+     * @param {Object} filters - Filter criteria
+     * @param {Object} options - Query options
+     * @param {boolean} options.skipTenantCheck - Skip tenant verification (for self-service operations)
+     * @returns {Promise<Object>} Client statistics
+     */
+    async getClientStatistics(filters = {}, options = {}) {
+        try {
+            logger.info('Fetching client statistics', { filters });
+
+            const dbService = this._getDatabaseService();
+            const Client = dbService.getModel('Client', 'customer');
+
+            // Build query
+            const query = {};
+
+            // Add client ID filter if provided
+            if (filters.clientId) {
+                query._id = filters.clientId;
+            }
+
+            // Add tenant filter only if not skipping tenant check
+            if (options.tenantId && !options.skipTenantCheck) {
+                query.tenantId = options.tenantId;
+            }
+
+            // Add date filters if provided
+            if (filters.dateFrom || filters.dateTo) {
+                query.createdAt = {};
+                if (filters.dateFrom) {
+                    query.createdAt.$gte = new Date(filters.dateFrom);
+                }
+                if (filters.dateTo) {
+                    query.createdAt.$lte = new Date(filters.dateTo);
+                }
+            }
+
+            // Get client data
+            const client = await Client.findOne(query);
+
+            if (!client) {
+                throw AppError.notFound('Client not found for statistics', {
+                    context: { filters }
+                });
+            }
+
+            // Compile statistics
+            const statistics = {
+                overview: {
+                    clientId: client._id,
+                    clientCode: client.clientCode,
+                    companyName: client.companyName,
+                    status: client.relationship?.status,
+                    tier: client.relationship?.tier
+                },
+                financial: {
+                    totalRevenue: client.analytics?.lifetime?.totalRevenue || 0,
+                    outstandingBalance: client.billing?.outstandingBalance || 0,
+                    currency: client.billing?.currency || this.config.defaultCurrency
+                },
+                engagement: {
+                    totalProjects: client.analytics?.lifetime?.totalProjects || 0,
+                    activeProjects: client.analytics?.current?.activeProjects || 0,
+                    totalEngagements: client.analytics?.lifetime?.totalEngagements || 0,
+                    portalLogins: client.analytics?.engagement?.portalLogins || 0
+                },
+                activity: {
+                    lastActivityDate: client.analytics?.engagement?.lastActivityDate,
+                    totalInteractions: client.analytics?.engagement?.totalInteractions || 0
+                },
+                health: {
+                    healthScore: client.analytics?.health?.score,
+                    churnRisk: client.relationship?.churnRisk?.level,
+                    satisfaction: client.analytics?.satisfaction?.score
+                }
+            };
+
+            logger.info('Client statistics retrieved successfully', {
+                clientId: client._id
+            });
+
+            return statistics;
+
+        } catch (error) {
+            logger.error('Failed to fetch client statistics', {
+                error: error.message,
+                filters,
+                stack: error.stack
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Search clients
+     * @param {Object} searchCriteria - Search parameters
+     * @param {Object} options - Search options
+     * @returns {Promise<Object>} Search results
+     */
+    async searchClients(searchCriteria, options = {}) {
+        try {
+            logger.info('Searching clients', { searchCriteria });
+
+            const dbService = this._getDatabaseService();
+            const Client = dbService.getModel('Client', 'customer');
+
+            // Build search query
+            const query = {
+                tenantId: options.tenantId || this.config.companyTenantId
+            };
+
+            // Text search
+            if (searchCriteria.searchTerm) {
+                query.$or = [
+                    { companyName: { $regex: searchCriteria.searchTerm, $options: 'i' } },
+                    { clientCode: { $regex: searchCriteria.searchTerm, $options: 'i' } },
+                    { 'contact.primaryEmail': { $regex: searchCriteria.searchTerm, $options: 'i' } }
+                ];
+            }
+
+            // Status filter
+            if (searchCriteria.status) {
+                query['relationship.status'] = searchCriteria.status;
+            }
+
+            // Tier filter
+            if (searchCriteria.tier) {
+                query['relationship.tier'] = searchCriteria.tier;
+            }
+
+            // Pagination
+            const page = parseInt(searchCriteria.page, 10) || 1;
+            const limit = parseInt(searchCriteria.limit, 10) || 20;
+            const skip = (page - 1) * limit;
+
+            // Execute query
+            const [clients, total] = await Promise.all([
+                Client.find(query)
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(limit)
+                    .exec(),
+                Client.countDocuments(query)
+            ]);
+
+            logger.info('Client search completed', {
+                total,
+                returned: clients.length,
+                page
+            });
+
+            return {
+                clients: clients.map(client => this._sanitizeClientOutput(client)),
+                pagination: {
+                    total,
+                    page,
+                    limit,
+                    pages: Math.ceil(total / limit)
+                }
+            };
+
+        } catch (error) {
+            logger.error('Client search failed', {
+                error: error.message,
+                searchCriteria,
+                stack: error.stack
             });
             throw error;
         }
@@ -376,11 +513,11 @@ class ClientService {
      * Delete client (soft delete)
      * @param {string} clientId - Client ID
      * @param {Object} options - Delete options
-     * @returns {Promise<Object>} Deletion result
+     * @returns {Promise<Object>} Deleted client
      */
     async deleteClient(clientId, options = {}) {
         try {
-            logger.info('Deleting client', { clientId });
+            logger.info('Starting client deletion', { clientId });
 
             const dbService = this._getDatabaseService();
             const Client = dbService.getModel('Client', 'customer');
@@ -398,16 +535,15 @@ class ClientService {
                 throw AppError.forbidden('Access denied to this client');
             }
 
-            // Perform soft delete
-            client.metadata = client.metadata || {};
-            client.metadata.deletedAt = new Date();
-            client.metadata.deletedBy = options.userId;
-            client.metadata.isDeleted = true;
-
+            // Soft delete
+            client.isDeleted = true;
+            client.deletedAt = new Date();
+            client.deletedBy = options.userId;
             await client.save();
 
             logger.info('Client deleted successfully', {
-                clientId: client._id
+                clientId,
+                userId: options.userId
             });
 
             // Track deletion event
@@ -415,334 +551,19 @@ class ClientService {
                 userId: options.userId
             });
 
-            return {
-                success: true,
-                clientId: client._id,
-                deletedAt: client.metadata.deletedAt
-            };
+            return this._sanitizeClientOutput(client);
 
         } catch (error) {
             logger.error('Client deletion failed', {
                 error: error.message,
-                clientId
+                clientId,
+                stack: error.stack
             });
             throw error;
         }
     }
 
-    /**
-     * Search clients with advanced search capabilities
-     * @param {Object} searchParams - Search parameters
-     * @param {Object} options - Query options
-     * @returns {Promise<Object>} Search results
-     */
-    async searchClients(searchParams = {}, options = {}) {
-        try {
-            logger.info('Searching clients', { searchParams });
-
-            const dbService = this._getDatabaseService();
-            const Client = dbService.getModel('Client', 'customer');
-
-            // Build search query
-            const query = this._buildSearchQuery(searchParams);
-
-            // Pagination
-            const page = parseInt(options.page, 10) || 1;
-            const limit = parseInt(options.limit, 10) || 20;
-            const skip = (page - 1) * limit;
-
-            // Sort
-            const sort = options.sort || { relevance: -1, createdAt: -1 };
-
-            // Execute search
-            const [clients, total] = await Promise.all([
-                Client.find(query)
-                    .sort(sort)
-                    .skip(skip)
-                    .limit(limit)
-                    .populate(options.populate || '')
-                    .lean(),
-                Client.countDocuments(query)
-            ]);
-
-            logger.info('Client search completed', {
-                resultsFound: total,
-                page,
-                limit
-            });
-
-            return {
-                data: clients.map(client => this._sanitizeClientOutput(client)),
-                pagination: {
-                    page,
-                    limit,
-                    total,
-                    pages: Math.ceil(total / limit),
-                    hasNext: page < Math.ceil(total / limit),
-                    hasPrev: page > 1
-                },
-                searchParams
-            };
-
-        } catch (error) {
-            logger.error('Client search failed', {
-                error: error.message,
-                searchParams
-            });
-            throw error;
-        }
-    }
-
-    /**
-     * Get client statistics
-     * @param {Object} filters - Filter criteria
-     * @returns {Promise<Object>} Client statistics
-     */
-    async getClientStatistics(filters = {}) {
-        try {
-            logger.info('Fetching client statistics');
-
-            const dbService = this._getDatabaseService();
-            const Client = dbService.getModel('Client', 'customer');
-
-            const query = this._buildClientQuery(filters);
-
-            const stats = await Client.aggregate([
-                { $match: query },
-                {
-                    $group: {
-                        _id: null,
-                        total: { $sum: 1 },
-                        activeClients: {
-                            $sum: { $cond: [{ $eq: ['$relationship.status', 'active'] }, 1, 0] }
-                        },
-                        prospects: {
-                            $sum: { $cond: [{ $eq: ['$relationship.status', 'prospect'] }, 1, 0] }
-                        },
-                        leads: {
-                            $sum: { $cond: [{ $eq: ['$relationship.status', 'lead'] }, 1, 0] }
-                        },
-                        inactive: {
-                            $sum: { $cond: [{ $eq: ['$relationship.status', 'inactive'] }, 1, 0] }
-                        },
-                        totalRevenue: { $sum: '$analytics.lifetime.totalRevenue' },
-                        totalProjects: { $sum: '$analytics.lifetime.totalProjects' }
-                    }
-                }
-            ]);
-
-            const result = stats[0] || {
-                total: 0,
-                activeClients: 0,
-                prospects: 0,
-                leads: 0,
-                inactive: 0,
-                totalRevenue: 0,
-                totalProjects: 0
-            };
-
-            logger.info('Client statistics fetched successfully', { stats: result });
-
-            return result;
-
-        } catch (error) {
-            logger.error('Failed to fetch client statistics', {
-                error: error.message
-            });
-            throw error;
-        }
-    }
-
-    // ============= HELPER & VALIDATION METHODS =============
-
-    /**
-     * Build client query from filters
-     * @private
-     */
-    _buildClientQuery(filters) {
-        const query = {};
-
-        // Tenant filter (always required)
-        if (filters.tenantId) {
-            query.tenantId = filters.tenantId;
-        }
-
-        // Organization filter
-        if (filters.organizationId) {
-            query.organizationId = filters.organizationId;
-        }
-
-        // Status filter
-        if (filters.status) {
-            query['relationship.status'] = filters.status;
-        }
-
-        // Tier filter
-        if (filters.tier) {
-            query['relationship.tier'] = filters.tier;
-        }
-
-        // Search by company name
-        if (filters.search) {
-            query.companyName = { $regex: filters.search, $options: 'i' };
-        }
-
-        // Industry filter
-        if (filters.industry) {
-            query['businessDetails.industry'] = filters.industry;
-        }
-
-        // Date range filters
-        if (filters.createdFrom || filters.createdTo) {
-            query.createdAt = {};
-            if (filters.createdFrom) {
-                query.createdAt.$gte = new Date(filters.createdFrom);
-            }
-            if (filters.createdTo) {
-                query.createdAt.$lte = new Date(filters.createdTo);
-            }
-        }
-
-        // Exclude deleted clients
-        query['metadata.isDeleted'] = { $ne: true };
-
-        return query;
-    }
-
-    /**
-     * Build advanced search query for client search
-     * @private
-     */
-    _buildSearchQuery(searchParams) {
-        const query = {};
-        const orConditions = [];
-
-        // Tenant filter (always required for security)
-        if (searchParams.tenantId) {
-            query.tenantId = searchParams.tenantId;
-        }
-
-        // Organization filter
-        if (searchParams.organizationId) {
-            query.organizationId = searchParams.organizationId;
-        }
-
-        // Full-text search across multiple fields
-        if (searchParams.q || searchParams.query || searchParams.search) {
-            const searchTerm = searchParams.q || searchParams.query || searchParams.search;
-            const searchRegex = { $regex: searchTerm, $options: 'i' };
-
-            orConditions.push(
-                { companyName: searchRegex },
-                { clientCode: searchRegex },
-                { 'contact.primaryEmail': searchRegex },
-                { 'contact.primaryPhone': searchRegex },
-                { 'businessDetails.industry': searchRegex },
-                { 'contact.address.city': searchRegex },
-                { 'contact.address.country': searchRegex }
-            );
-        }
-
-        // Company name search
-        if (searchParams.companyName) {
-            query.companyName = { $regex: searchParams.companyName, $options: 'i' };
-        }
-
-        // Client code search
-        if (searchParams.clientCode) {
-            query.clientCode = { $regex: searchParams.clientCode, $options: 'i' };
-        }
-
-        // Email search
-        if (searchParams.email) {
-            query['contact.primaryEmail'] = { $regex: searchParams.email, $options: 'i' };
-        }
-
-        // Phone search
-        if (searchParams.phone) {
-            query['contact.primaryPhone'] = { $regex: searchParams.phone, $options: 'i' };
-        }
-
-        // Status filter
-        if (searchParams.status) {
-            if (Array.isArray(searchParams.status)) {
-                query['relationship.status'] = { $in: searchParams.status };
-            } else {
-                query['relationship.status'] = searchParams.status;
-            }
-        }
-
-        // Tier filter
-        if (searchParams.tier) {
-            if (Array.isArray(searchParams.tier)) {
-                query['relationship.tier'] = { $in: searchParams.tier };
-            } else {
-                query['relationship.tier'] = searchParams.tier;
-            }
-        }
-
-        // Industry filter
-        if (searchParams.industry) {
-            if (Array.isArray(searchParams.industry)) {
-                query['businessDetails.industry'] = { $in: searchParams.industry };
-            } else {
-                query['businessDetails.industry'] = searchParams.industry;
-            }
-        }
-
-        // Country filter
-        if (searchParams.country) {
-            query['contact.address.country'] = searchParams.country;
-        }
-
-        // City filter
-        if (searchParams.city) {
-            query['contact.address.city'] = { $regex: searchParams.city, $options: 'i' };
-        }
-
-        // Account manager filter
-        if (searchParams.accountManager) {
-            query['relationship.accountManager'] = searchParams.accountManager;
-        }
-
-        // Date range filters
-        if (searchParams.createdFrom || searchParams.createdTo) {
-            query.createdAt = {};
-            if (searchParams.createdFrom) {
-                query.createdAt.$gte = new Date(searchParams.createdFrom);
-            }
-            if (searchParams.createdTo) {
-                query.createdAt.$lte = new Date(searchParams.createdTo);
-            }
-        }
-
-        // Revenue range filters
-        if (searchParams.revenueMin || searchParams.revenueMax) {
-            query['analytics.lifetime.totalRevenue'] = {};
-            if (searchParams.revenueMin) {
-                query['analytics.lifetime.totalRevenue'].$gte = parseFloat(searchParams.revenueMin);
-            }
-            if (searchParams.revenueMax) {
-                query['analytics.lifetime.totalRevenue'].$lte = parseFloat(searchParams.revenueMax);
-            }
-        }
-
-        // Tags filter
-        if (searchParams.tags) {
-            const tags = Array.isArray(searchParams.tags) ? searchParams.tags : [searchParams.tags];
-            query['metadata.tags'] = { $in: tags };
-        }
-
-        // Combine OR conditions if any exist
-        if (orConditions.length > 0) {
-            query.$or = orConditions;
-        }
-
-        // Exclude deleted clients
-        query['metadata.isDeleted'] = { $ne: true };
-
-        return query;
-    }
+    // ============= VALIDATION METHODS =============
 
     /**
      * Validate client data

@@ -1,7 +1,8 @@
 /**
- * @fileoverview Client Management Controller
+ * @fileoverview Client Self-Service Controller
  * @module servers/customer-services/modules/core-business/client-management/controllers/client-controller
- * @description HTTP request handlers for client operations
+ * @description HTTP request handlers for client self-service operations
+ * @note Clients can only access and modify their own data
  */
 
 const ClientService = require('../services/client-service');
@@ -15,67 +16,86 @@ const logger = require('../../../../../../shared/lib/utils/logger').createLogger
  * @class ClientController
  */
 class ClientController {
+    constructor() {
+        // Bind all methods to ensure 'this' context is preserved when used as route handlers
+        this.getClientById = this.getClientById.bind(this);
+        this.getClientByCode = this.getClientByCode.bind(this);
+        this.updateClient = this.updateClient.bind(this);
+        this.getStatistics = this.getStatistics.bind(this);
+        this.getClientDashboard = this.getClientDashboard.bind(this);
+    }
+
     /**
-     * Create a new client
-     * @route POST /api/v1/clients
+     * Verify that the authenticated user owns the requested client resource
+     * @private
      */
-    async createClient(req, res, next) {
-        try {
-            logger.info('Create client request received', {
-                companyName: req.body.companyName,
-                userId: req.user?.id
-            });
-
-            const clientData = {
-                ...req.body,
-                tenantId: req.user?.tenantId || req.body.tenantId,
-                organizationId: req.user?.organizationId || req.body.organizationId
-            };
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                organizationId: req.user?.organizationId,
+    _verifyClientOwnership(req, requestedClientId) {
+        const authenticatedClientId = req.user?.clientId || req.user?.client?.id || req.user?.client?._id;
+        
+        if (!authenticatedClientId) {
+            logger.error('Client ID not found in authenticated user', {
                 userId: req.user?.id,
-                source: req.body.source || 'web'
-            };
-
-            const client = await ClientService.createClient(clientData, options);
-
-            logger.info('Client created successfully', {
-                clientId: client.clientCode,
-                userId: req.user?.id
+                userObject: JSON.stringify(req.user)
             });
-
-            res.status(201).json({
-                success: true,
-                message: 'Client created successfully',
-                data: {
-                    client
-                }
-            });
-
-        } catch (error) {
-            logger.error('Create client failed', {
-                error: error.message,
-                userId: req.user?.id
-            });
-            next(error);
+            throw AppError.unauthorized('Client information not found in your session');
         }
+
+        // Convert both to strings for comparison to handle ObjectId vs String
+        const authClientIdStr = String(authenticatedClientId);
+        const requestedClientIdStr = String(requestedClientId);
+
+        if (authClientIdStr !== requestedClientIdStr) {
+            logger.warn('Unauthorized access attempt', {
+                authenticatedClientId: authClientIdStr,
+                requestedClientId: requestedClientIdStr,
+                userId: req.user?.id
+            });
+            throw AppError.forbidden('You can only access your own client data');
+        }
+
+        return true;
+    }
+
+    /**
+     * Get authenticated client's own ID
+     * @private
+     */
+    _getAuthenticatedClientId(req) {
+        const clientId = req.user?.clientId || req.user?.client?.id || req.user?.client?._id;
+        
+        if (!clientId) {
+            logger.error('Client ID not found in authenticated user', {
+                userId: req.user?.id,
+                userObject: JSON.stringify(req.user)
+            });
+            throw AppError.unauthorized('Client information not found in your session');
+        }
+
+        return String(clientId);
     }
 
     /**
      * Get client by ID
      * @route GET /api/v1/clients/:id
+     * @note Client can only retrieve their own record
      */
     async getClientById(req, res, next) {
         try {
             const { id } = req.params;
+            
+            // Verify client can only access their own data
+            this._verifyClientOwnership(req, id);
+
             const options = {
                 tenantId: req.user?.tenantId,
-                populate: req.query.populate === 'true'
+                populate: req.query.populate === 'true',
+                skipTenantCheck: true // Self-service operation - ownership already verified
             };
 
-            logger.info('Get client by ID request', { clientId: id, userId: req.user?.id });
+            logger.info('Get client by ID request', { 
+                clientId: id, 
+                userId: req.user?.id 
+            });
 
             const client = await ClientService.getClientById(id, options);
 
@@ -89,7 +109,8 @@ class ClientController {
         } catch (error) {
             logger.error('Get client by ID failed', {
                 error: error.message,
-                clientId: req.params.id
+                clientId: req.params.id,
+                stack: error.stack
             });
             next(error);
         }
@@ -98,18 +119,29 @@ class ClientController {
     /**
      * Get client by code
      * @route GET /api/v1/clients/code/:code
+     * @note Client can only retrieve their own record
      */
     async getClientByCode(req, res, next) {
         try {
             const { code } = req.params;
             const options = {
                 tenantId: req.user?.tenantId,
-                populate: req.query.populate === 'true'
+                populate: req.query.populate === 'true',
+                skipTenantCheck: true // Self-service operation - will verify ownership after retrieval
             };
 
-            logger.info('Get client by code request', { clientCode: code, userId: req.user?.id });
+            logger.info('Get client by code request', { 
+                clientCode: code, 
+                userId: req.user?.id 
+            });
 
             const client = await ClientService.getClientByCode(code, options);
+
+            // Verify the retrieved client belongs to the authenticated user
+            if (client) {
+                const clientId = client.id || client._id;
+                this._verifyClientOwnership(req, clientId);
+            }
 
             res.status(200).json({
                 success: true,
@@ -121,7 +153,8 @@ class ClientController {
         } catch (error) {
             logger.error('Get client by code failed', {
                 error: error.message,
-                clientCode: req.params.code
+                clientCode: req.params.code,
+                stack: error.stack
             });
             next(error);
         }
@@ -131,15 +164,47 @@ class ClientController {
      * Update client
      * @route PUT /api/v1/clients/:id
      * @route PATCH /api/v1/clients/:id
+     * @note Client can only update their own record
      */
     async updateClient(req, res, next) {
         try {
             const { id } = req.params;
-            const updateData = req.body;
+            
+            // Verify client can only update their own data
+            this._verifyClientOwnership(req, id);
+
+            const updateData = { ...req.body };
+
+            // Remove fields that clients shouldn't be able to modify
+            const restrictedFields = [
+                'tenantId', 
+                'organizationId', 
+                'clientCode', 
+                'createdAt', 
+                'createdBy',
+                'isDeleted',
+                'deletedAt',
+                'deletedBy',
+                'relationship.status',
+                'relationship.tier',
+                'analytics',
+                'billing.outstandingBalance',
+                'billing.totalRevenue'
+            ];
+            
+            restrictedFields.forEach(field => {
+                const fieldParts = field.split('.');
+                if (fieldParts.length === 1) {
+                    delete updateData[field];
+                } else if (fieldParts.length === 2 && updateData[fieldParts[0]]) {
+                    delete updateData[fieldParts[0]][fieldParts[1]];
+                }
+            });
 
             const options = {
                 tenantId: req.user?.tenantId,
-                userId: req.user?.id
+                userId: req.user?.id,
+                skipTenantCheck: true // Self-service operation - ownership already verified
             };
 
             logger.info('Update client request', {
@@ -166,97 +231,8 @@ class ClientController {
         } catch (error) {
             logger.error('Update client failed', {
                 error: error.message,
-                clientId: req.params.id
-            });
-            next(error);
-        }
-    }
-
-    /**
-     * Delete client
-     * @route DELETE /api/v1/clients/:id
-     */
-    async deleteClient(req, res, next) {
-        try {
-            const { id } = req.params;
-            const options = {
-                tenantId: req.user?.tenantId,
-                userId: req.user?.id,
-                softDelete: req.query.soft !== 'false',
-                forceDelete: req.query.force === 'true'
-            };
-
-            logger.info('Delete client request', {
-                clientId: id,
-                softDelete: options.softDelete,
-                userId: req.user?.id
-            });
-
-            const result = await ClientService.deleteClient(id, options);
-
-            logger.info('Client deleted successfully', {
-                clientId: id,
-                deletionType: result.deletionType,
-                userId: req.user?.id
-            });
-
-            res.status(200).json({
-                success: true,
-                message: 'Client deleted successfully',
-                data: result
-            });
-
-        } catch (error) {
-            logger.error('Delete client failed', {
-                error: error.message,
-                clientId: req.params.id
-            });
-            next(error);
-        }
-    }
-
-    /**
-     * Search clients
-     * @route GET /api/v1/clients/search
-     * @route POST /api/v1/clients/search
-     */
-    async searchClients(req, res, next) {
-        try {
-            const filters = req.method === 'POST' ? req.body.filters || {} : {
-                status: req.query.status,
-                tier: req.query.tier,
-                accountManager: req.query.accountManager,
-                industry: req.query.industry,
-                search: req.query.q || req.query.search,
-                revenueMin: req.query.revenueMin ? parseFloat(req.query.revenueMin) : undefined,
-                revenueMax: req.query.revenueMax ? parseFloat(req.query.revenueMax) : undefined
-            };
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                page: parseInt(req.query.page, 10) || 1,
-                limit: parseInt(req.query.limit, 10) || 20,
-                sortBy: req.query.sortBy,
-                sortOrder: req.query.sortOrder
-            };
-
-            logger.info('Search clients request', {
-                filters,
-                page: options.page,
-                userId: req.user?.id
-            });
-
-            const result = await ClientService.searchClients(filters, options);
-
-            res.status(200).json({
-                success: true,
-                data: result
-            });
-
-        } catch (error) {
-            logger.error('Search clients failed', {
-                error: error.message,
-                userId: req.user?.id
+                clientId: req.params.id,
+                stack: error.stack
             });
             next(error);
         }
@@ -265,19 +241,26 @@ class ClientController {
     /**
      * Get client statistics
      * @route GET /api/v1/clients/statistics
+     * @note Returns statistics for the authenticated client only
      */
     async getStatistics(req, res, next) {
         try {
+            // Get authenticated client's ID
+            const clientId = this._getAuthenticatedClientId(req);
+
             const filters = {
+                clientId: clientId, // Force filter to authenticated client only
                 dateFrom: req.query.dateFrom,
                 dateTo: req.query.dateTo
             };
 
             const options = {
-                tenantId: req.user?.tenantId
+                tenantId: req.user?.tenantId,
+                skipTenantCheck: true // Self-service operation - accessing own statistics
             };
 
             logger.info('Get client statistics request', {
+                clientId,
                 filters,
                 userId: req.user?.id
             });
@@ -294,129 +277,8 @@ class ClientController {
         } catch (error) {
             logger.error('Get client statistics failed', {
                 error: error.message,
-                userId: req.user?.id
-            });
-            next(error);
-        }
-    }
-
-    /**
-     * Bulk create clients
-     * @route POST /api/v1/clients/bulk
-     */
-    async bulkCreateClients(req, res, next) {
-        try {
-            const { clients } = req.body;
-
-            if (!Array.isArray(clients) || clients.length === 0) {
-                throw AppError.validation('Invalid bulk client data');
-            }
-
-            logger.info('Bulk create clients request', {
-                count: clients.length,
-                userId: req.user?.id
-            });
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                organizationId: req.user?.organizationId,
                 userId: req.user?.id,
-                source: 'bulk_import'
-            };
-
-            const results = {
-                success: [],
-                failed: []
-            };
-
-            for (const clientData of clients) {
-                try {
-                    const client = await ClientService.createClient(clientData, options);
-                    results.success.push({
-                        clientCode: client.clientCode,
-                        companyName: client.companyName
-                    });
-                } catch (error) {
-                    results.failed.push({
-                        companyName: clientData.companyName,
-                        error: error.message
-                    });
-                }
-            }
-
-            logger.info('Bulk create clients completed', {
-                successCount: results.success.length,
-                failedCount: results.failed.length,
-                userId: req.user?.id
-            });
-
-            res.status(201).json({
-                success: true,
-                message: `Bulk client creation completed: ${results.success.length} succeeded, ${results.failed.length} failed`,
-                data: results
-            });
-
-        } catch (error) {
-            logger.error('Bulk create clients failed', {
-                error: error.message,
-                userId: req.user?.id
-            });
-            next(error);
-        }
-    }
-
-    /**
-     * Export clients
-     * @route GET /api/v1/clients/export
-     */
-    async exportClients(req, res, next) {
-        try {
-            const filters = {
-                status: req.query.status,
-                tier: req.query.tier,
-                dateFrom: req.query.dateFrom,
-                dateTo: req.query.dateTo
-            };
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                format: req.query.format || 'json'
-            };
-
-            logger.info('Export clients request', {
-                filters,
-                format: options.format,
-                userId: req.user?.id
-            });
-
-            const result = await ClientService.searchClients(filters, {
-                tenantId: options.tenantId,
-                limit: 10000 // Large limit for export
-            });
-
-            if (options.format === 'csv') {
-                // Set CSV headers
-                res.setHeader('Content-Type', 'text/csv');
-                res.setHeader('Content-Disposition', 'attachment; filename=clients-export.csv');
-                
-                // Simple CSV conversion
-                const csv = this._convertToCSV(result.clients);
-                res.status(200).send(csv);
-            } else {
-                // JSON export
-                res.setHeader('Content-Type', 'application/json');
-                res.setHeader('Content-Disposition', 'attachment; filename=clients-export.json');
-                res.status(200).json({
-                    success: true,
-                    exportDate: new Date().toISOString(),
-                    data: result
-                });
-            }
-
-        } catch (error) {
-            logger.error('Export clients failed', {
-                error: error.message,
-                userId: req.user?.id
+                stack: error.stack
             });
             next(error);
         }
@@ -425,12 +287,18 @@ class ClientController {
     /**
      * Get client dashboard data
      * @route GET /api/v1/clients/:id/dashboard
+     * @note Returns dashboard data for the authenticated client only
      */
     async getClientDashboard(req, res, next) {
         try {
             const { id } = req.params;
+            
+            // Verify client can only access their own dashboard
+            this._verifyClientOwnership(req, id);
+
             const options = {
-                tenantId: req.user?.tenantId
+                tenantId: req.user?.tenantId,
+                skipTenantCheck: true // Self-service operation - ownership already verified
             };
 
             logger.info('Get client dashboard request', {
@@ -454,37 +322,11 @@ class ClientController {
         } catch (error) {
             logger.error('Get client dashboard failed', {
                 error: error.message,
-                clientId: req.params.id
+                clientId: req.params.id,
+                stack: error.stack
             });
             next(error);
         }
-    }
-
-    /**
-     * Convert clients array to CSV
-     * @private
-     */
-    _convertToCSV(clients) {
-        if (!clients || clients.length === 0) return '';
-
-        const headers = ['Client Code', 'Company Name', 'Status', 'Tier', 'Email', 'Phone', 'Revenue', 'Created Date'];
-        const rows = clients.map(client => [
-            client.clientCode || '',
-            client.companyName || '',
-            client.relationship?.status || '',
-            client.relationship?.tier || '',
-            client.contact?.primaryEmail || '',
-            client.contact?.primaryPhone || '',
-            client.analytics?.lifetime?.totalRevenue || 0,
-            client.createdAt ? new Date(client.createdAt).toISOString() : ''
-        ]);
-
-        const csvContent = [
-            headers.join(','),
-            ...rows.map(row => row.map(field => `"${field}"`).join(','))
-        ].join('\n');
-
-        return csvContent;
     }
 }
 

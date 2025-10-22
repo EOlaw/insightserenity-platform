@@ -152,6 +152,8 @@ const authenticate = async (req, res, next) => {
                     tenantId: tokenPayload.tenantId || dbUser?.tenantId,
                     organizationId: tokenPayload.organizationId || dbUser?.defaultOrganizationId,
                     userType: tokenPayload.userType || dbUser?.metadata?.userType,
+
+                    clientId: dbUser?.clientId || tokenPayload.clientId,
                     
                     // Permission fields (PRIORITIZE DATABASE OVER TOKEN)
                     roles: dbUser?.roles || (Array.isArray(tokenPayload.roles) ? tokenPayload.roles : []),
@@ -295,6 +297,7 @@ const optionalAuthenticate = async (req, res, next) => {
                     userId: userId,
                     email: dbUser?.email || tokenPayload.email,
                     username: dbUser?.username || tokenPayload.username,
+                    clientId: dbUser?.clientId || tokenPayload.clientId,
                     tenantId: tokenPayload.tenantId || dbUser?.tenantId,
                     organizationId: tokenPayload.organizationId || dbUser?.defaultOrganizationId,
                     userType: tokenPayload.userType || dbUser?.metadata?.userType,

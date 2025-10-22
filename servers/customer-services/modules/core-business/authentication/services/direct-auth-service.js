@@ -267,9 +267,9 @@ class DirectAuthService {
     // ============= ENHANCED REGISTRATION WITH PERMISSIONS =============
 
     /**
-     * Register a new direct user with automatic permission assignment
+     * Register a new direct business user
      * @param {Object} userData - User registration data
-     * @param {string} userType - Type of user (client, consultant, candidate, partner)
+     * @param {string} userType - Type of user (client, consultant, etc.)
      * @param {Object} options - Registration options
      * @returns {Promise<Object>} Registration result
      */
@@ -466,26 +466,30 @@ class DirectAuthService {
     //             });
     //         }
 
-    //         // Generate authentication tokens
-    //         const accessToken = this._generateAccessToken(newUser);
-    //         const refreshToken = this._generateRefreshToken(newUser);
-
-    //         return {
-    //             user: this._sanitizeUserOutput(newUser),
-    //             relatedEntity: relatedEntity ? this._sanitizeEntityOutput(relatedEntity, userType) : null,
-    //             tokens: {
+    //         // CRITICAL CHANGE: Only generate tokens if email verification is NOT required
+    //         // This ensures users must verify their email before they can access the system
+    //         let tokens = null;
+    //         if (!this.config.requireEmailVerification || newUser.verification?.email?.verified) {
+    //             const accessToken = this._generateAccessToken(newUser);
+    //             const refreshToken = this._generateRefreshToken(newUser);
+    //             tokens = {
     //                 accessToken,
     //                 refreshToken,
     //                 expiresIn: 86400,
     //                 tokenType: 'Bearer'
-    //             },
+    //             };
+    //         }
+
+    //         // Build response based on whether email verification is required
+    //         const response = {
+    //             user: this._sanitizeUserOutput(newUser),
+    //             relatedEntity: relatedEntity ? this._sanitizeEntityOutput(relatedEntity, userType) : null,
     //             userType: userType,
     //             permissions: newUser.permissions,
     //             roles: newUser.roles,
     //             onboarding: onboardingData,
     //             nextSteps: this._getRegistrationNextSteps(userType, newUser),
     //             dashboardUrl: this._getDashboardUrl(userType),
-    //             requiresAction: !newUser.verification?.email?.verified ? ['VERIFY_EMAIL'] : [],
     //             transaction: {
     //                 id: transaction.id,
     //                 status: transaction.status,
@@ -493,6 +497,19 @@ class DirectAuthService {
     //                 duration: transaction.duration
     //             }
     //         };
+
+    //         // Add tokens only if they were generated
+    //         if (tokens) {
+    //             response.tokens = tokens;
+    //             response.requiresAction = [];
+    //         } else {
+    //             // Email verification is required
+    //             response.requiresAction = ['VERIFY_EMAIL'];
+    //             response.message = 'Registration successful. Please check your email to verify your account before logging in.';
+    //             response.verificationEmailSent = true;
+    //         }
+
+    //         return response;
 
     //     } catch (error) {
     //         logger.error('Direct user registration failed', {
@@ -594,47 +611,72 @@ class DirectAuthService {
             };
 
             const relatedEntities = [];
+            let useStrategyForClient = false;
 
-            // Check if this user type requires a related entity
+            // Check if this user type requires a related entity through strategy
             if (EntityStrategyRegistry.hasStrategy(userType)) {
                 const strategy = EntityStrategyRegistry.getStrategy(userType);
                 const entityType = EntityStrategyRegistry.getEntityType(userType);
 
-                // Validate entity-specific data
-                const validation = await strategy.validate(userData, options);
+                // Verify strategy has required methods
+                const strategyConfig = strategy.getConfig ? strategy.getConfig() : null;
+                const hasValidStrategy = strategyConfig &&
+                    strategyConfig.linkingField &&
+                    typeof strategy.prepare === 'function' &&
+                    typeof strategy.link === 'function';
 
-                if (!validation.valid) {
-                    throw AppError.validation(
-                        `${entityType} validation failed`,
-                        validation.errors
-                    );
-                }
-
-                // Log warnings if any
-                if (validation.warnings && validation.warnings.length > 0) {
-                    logger.warn('Entity validation warnings', {
+                if (hasValidStrategy) {
+                    logger.info('Using entity strategy for related entity creation', {
                         userType,
                         entityType,
-                        warnings: validation.warnings
+                        linkingField: strategyConfig.linkingField
+                    });
+
+                    // Validate entity-specific data
+                    const validation = await strategy.validate(userData, options);
+
+                    if (!validation.valid) {
+                        throw AppError.validation(
+                            `${entityType} validation failed`,
+                            validation.errors
+                        );
+                    }
+
+                    // Log warnings if any
+                    if (validation.warnings && validation.warnings.length > 0) {
+                        logger.warn('Entity validation warnings', {
+                            userType,
+                            entityType,
+                            warnings: validation.warnings
+                        });
+                    }
+
+                    relatedEntities.push({
+                        type: entityType,
+                        strategy: strategy,
+                        userData: userData,
+                        options: {
+                            tenantId: this._getDefaultTenantObjectId(),
+                            organizationId: this._getDefaultOrganizationObjectId(),
+                            accountManager: options.accountManager,
+                            utmParams: options.utmParams
+                        }
+                    });
+
+                    useStrategyForClient = true;
+                } else {
+                    logger.warn('Strategy exists but is incomplete, will use fallback creation', {
+                        userType,
+                        entityType,
+                        hasConfig: !!strategyConfig,
+                        hasLinkingField: !!(strategyConfig?.linkingField),
+                        hasPrepare: typeof strategy.prepare === 'function',
+                        hasLink: typeof strategy.link === 'function'
                     });
                 }
-
-                // Prepare related entity document using strategy
-                // Note: We'll prepare it after user is created in transaction
-                relatedEntities.push({
-                    type: entityType,
-                    strategy: strategy,
-                    userData: userData,
-                    options: {
-                        tenantId: this._getDefaultTenantObjectId(),
-                        organizationId: this._getDefaultOrganizationObjectId(),
-                        accountManager: options.accountManager,
-                        utmParams: options.utmParams
-                    }
-                });
             }
 
-            // Execute universal transaction
+            // Execute universal transaction to create User
             const result = await UniversalTransactionService.executeTransaction(
                 {
                     type: 'User',
@@ -643,9 +685,8 @@ class DirectAuthService {
                 },
                 relatedEntities.map(entity => ({
                     type: entity.type,
-                    data: null, // Will be prepared by strategy
+                    data: null,
                     prepareUsing: async (user) => {
-                        // Prepare related entity document using strategy after user is created
                         return await entity.strategy.prepare(entity.userData, user, entity.options);
                     },
                     linkingField: entity.strategy.getConfig().linkingField,
@@ -663,18 +704,67 @@ class DirectAuthService {
             );
 
             const { entities, transaction } = result;
-            const newUser = entities.primary;
-            const relatedEntity = entities.related && entities.related.length > 0
+            let newUser = entities.primary;
+            let relatedEntity = entities.related && entities.related.length > 0
                 ? entities.related[0].entity
                 : null;
 
-            logger.info('User registered successfully with universal transaction', {
+            // Handle Client creation for client userType if strategy was not used
+            if (userType === DIRECT_USER_TYPES.CLIENT && !useStrategyForClient) {
+                logger.info('Creating Client using fallback method after User creation', {
+                    userId: newUser._id,
+                    email: newUser.email
+                });
+
+                try {
+                    relatedEntity = await this._createClientDocument(newUser, userData, options);
+
+                    if (relatedEntity) {
+                        logger.info('Client created successfully via fallback method', {
+                            userId: newUser._id,
+                            clientId: relatedEntity._id,
+                            clientCode: relatedEntity.clientCode
+                        });
+
+                        // Fetch updated user with clientId populated
+                        const User = dbService.getModel('User', 'customer');
+                        const updatedUser = await User.findById(newUser._id);
+
+                        if (updatedUser) {
+                            newUser = updatedUser;
+                            logger.debug('User document refreshed with clientId', {
+                                userId: newUser._id,
+                                clientId: newUser.clientId
+                            });
+                        } else {
+                            logger.warn('Could not fetch updated user after clientId assignment', {
+                                userId: newUser._id
+                            });
+                        }
+                    } else {
+                        logger.warn('Client creation returned null', {
+                            userId: newUser._id
+                        });
+                    }
+                } catch (clientError) {
+                    logger.error('Fallback Client creation failed', {
+                        error: clientError.message,
+                        stack: clientError.stack,
+                        userId: newUser._id
+                    });
+                    // Continue with registration - user account is still valid
+                }
+            }
+
+            logger.info('User registered successfully', {
                 userId: newUser._id,
                 relatedEntityId: relatedEntity?._id,
                 email: newUser.email,
                 userType: userType,
                 transactionId: transaction.id,
-                duration: transaction.duration
+                duration: transaction.duration,
+                hasClientId: !!newUser.clientId,
+                methodUsed: useStrategyForClient ? 'strategy' : 'fallback'
             });
 
             // Verify transaction integrity
@@ -705,8 +795,7 @@ class DirectAuthService {
                 });
             }
 
-            // CRITICAL CHANGE: Only generate tokens if email verification is NOT required
-            // This ensures users must verify their email before they can access the system
+            // Generate tokens based on email verification requirement
             let tokens = null;
             if (!this.config.requireEmailVerification || newUser.verification?.email?.verified) {
                 const accessToken = this._generateAccessToken(newUser);
@@ -719,7 +808,7 @@ class DirectAuthService {
                 };
             }
 
-            // Build response based on whether email verification is required
+            // Build response
             const response = {
                 user: this._sanitizeUserOutput(newUser),
                 relatedEntity: relatedEntity ? this._sanitizeEntityOutput(relatedEntity, userType) : null,
@@ -737,12 +826,10 @@ class DirectAuthService {
                 }
             };
 
-            // Add tokens only if they were generated
             if (tokens) {
                 response.tokens = tokens;
                 response.requiresAction = [];
             } else {
-                // Email verification is required
                 response.requiresAction = ['VERIFY_EMAIL'];
                 response.message = 'Registration successful. Please check your email to verify your account before logging in.';
                 response.verificationEmailSent = true;
