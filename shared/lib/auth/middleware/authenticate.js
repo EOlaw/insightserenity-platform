@@ -677,6 +677,7 @@ function authenticate(options = {}) {
                 tenantId: decoded.tenantId,
                 organizationId: decoded.organizationId,
                 permissions: user.permissions || [],
+                organizations: user.organizations || [],  // ✅ ADD THIS LINE
                 mfaEnabled: user.mfa?.enabled || false,
                 emailVerified: user.verification?.email?.verified || false,
                 phoneVerified: user.verification?.phone?.verified || false,

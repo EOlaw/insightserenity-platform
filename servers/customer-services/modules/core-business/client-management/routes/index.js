@@ -25,8 +25,9 @@ const { rateLimiter } = require('../../../../middleware/rate-limiter');
 
 /**
  * Mount main route modules
+ * Note: clientRoutes is mounted at '/' because this router is already mounted at '/clients' in app.js
  */
-router.use('/client', clientRoutes);
+router.use('/', clientRoutes);
 router.use('/contacts', clientContactRoutes);
 router.use('/documents', clientDocumentRoutes);
 router.use('/notes', clientNoteRoutes);

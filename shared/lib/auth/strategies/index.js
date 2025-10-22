@@ -26,15 +26,20 @@ function configureStrategies(passport, options = {}) {
     const strategies = {};
 
     // Configure JWT Strategy
+    // FIXED: This now properly instantiates and registers the JWT strategy
     if (options.jwt !== false) {
-        const jwtStrategy = new JWTAuthStrategy({
-            secretOrKey: options.jwt?.secretOrKey || options.jwtSecret,
-            jwtOptions: options.jwt?.jwtOptions,
-            getUserById: options.getUserById,
-            logger: options.logger
-        });
+        // Create JWT strategy instance with proper options
+        const jwtStrategyOptions = {
+            secret: options.jwt?.secret || options.jwt?.secretOrKey,
+            issuer: options.jwt?.issuer,
+            audience: options.jwt?.audience
+        };
 
-        passport.use('jwt', jwtStrategy.createStrategy());
+        const jwtStrategy = new JWTAuthStrategy(jwtStrategyOptions);
+
+        // CRITICAL FIX: Use getStrategy() not createStrategy()
+        // The JWTAuthStrategy class defines getStrategy(), not createStrategy()
+        passport.use('jwt', jwtStrategy.getStrategy());
         strategies.jwt = jwtStrategy;
     }
 
@@ -49,7 +54,12 @@ function configureStrategies(passport, options = {}) {
             logger: options.logger
         });
 
-        passport.use('github', githubStrategy.createStrategy());
+        // Check if GitHubAuthStrategy uses createStrategy or getStrategy
+        const githubStrategyInstance = githubStrategy.createStrategy 
+            ? githubStrategy.createStrategy() 
+            : githubStrategy.getStrategy();
+        
+        passport.use('github', githubStrategyInstance);
         strategies.github = githubStrategy;
     }
 
@@ -64,7 +74,12 @@ function configureStrategies(passport, options = {}) {
             logger: options.logger
         });
 
-        passport.use('linkedin', linkedinStrategy.createStrategy());
+        // Check if LinkedInAuthStrategy uses createStrategy or getStrategy
+        const linkedinStrategyInstance = linkedinStrategy.createStrategy 
+            ? linkedinStrategy.createStrategy() 
+            : linkedinStrategy.getStrategy();
+        
+        passport.use('linkedin', linkedinStrategyInstance);
         strategies.linkedin = linkedinStrategy;
     }
 
@@ -82,7 +97,12 @@ function configureStrategies(passport, options = {}) {
             logger: options.logger
         });
 
-        passport.use('passkey', passkeyStrategy.createStrategy());
+        // Check if PasskeyAuthStrategy uses createStrategy or getStrategy
+        const passkeyStrategyInstance = passkeyStrategy.createStrategy 
+            ? passkeyStrategy.createStrategy() 
+            : passkeyStrategy.getStrategy();
+        
+        passport.use('passkey', passkeyStrategyInstance);
         strategies.passkey = passkeyStrategy;
     }
 
