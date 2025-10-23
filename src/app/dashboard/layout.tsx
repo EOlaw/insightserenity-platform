@@ -153,29 +153,43 @@ export default function DashboardLayout({
               {navigation.map((item) => (
                 <li key={item.name}>
                   <div>
-                    <Link
-                      href={item.href}
-                      onClick={() => item.children && toggleExpanded(item.name)}
-                      className={cn(
-                        "flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors",
-                        isActive(item.href)
-                          ? "bg-primary text-black"
-                          : "text-white/70 hover:bg-white/10 hover:text-white"
-                      )}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.name}</span>
-                      </div>
-                      {item.children && (
+                    {item.children ? (
+                      <button
+                        onClick={() => toggleExpanded(item.name)}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors",
+                          isActive(item.href)
+                            ? "bg-primary text-black"
+                            : "text-white/70 hover:bg-white/10 hover:text-white"
+                        )}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.name}</span>
+                        </div>
                         <ChevronDown
                           className={cn(
                             "h-3.5 w-3.5 transition-transform",
                             expandedItems.includes(item.name) && "rotate-180"
                           )}
                         />
-                      )}
-                    </Link>
+                      </button>
+                    ) : (
+                      <Link
+                        href={item.href}
+                        className={cn(
+                          "flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors",
+                          isActive(item.href)
+                            ? "bg-primary text-black"
+                            : "text-white/70 hover:bg-white/10 hover:text-white"
+                        )}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.name}</span>
+                        </div>
+                      </Link>
+                    )}
                   </div>
                   {item.children && expandedItems.includes(item.name) && (
                     <ul className="mt-1 ml-7 space-y-1">
@@ -184,7 +198,7 @@ export default function DashboardLayout({
                           <Link
                             href={child.href}
                             className={cn(
-                              "block px-3 py-1.5 rounded-md text-2xs transition-colors",
+                              "block px-3 py-1.5 rounded-md text-xs transition-colors",
                               isActive(child.href)
                                 ? "bg-white/10 text-white"
                                 : "text-white/60 hover:bg-white/5 hover:text-white/90"

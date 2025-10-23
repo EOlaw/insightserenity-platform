@@ -11,6 +11,7 @@ import {
   Calendar,
   DollarSign,
   TrendingUp,
+  TrendingDown,
   Bell,
   Settings,
   LogOut,
@@ -25,7 +26,21 @@ import {
   BarChart3,
   PieChart,
   Target,
-  Briefcase
+  Briefcase,
+  FileText,
+  Upload,
+  Download,
+  Award,
+  Zap,
+  Shield,
+  CreditCard,
+  CalendarCheck,
+  MessageSquare,
+  TrendingUpIcon,
+  ArrowUpRight,
+  ArrowDownRight,
+  MoreVertical,
+  RefreshCw
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { auth, api } from '@/lib/api/client'
@@ -65,6 +80,14 @@ interface UserData {
   status: string
   emailVerified: boolean
   phoneVerified: boolean
+  verification?: {
+    email?: {
+      verified: boolean
+    }
+    phone?: {
+      verified: boolean
+    }
+  }
   createdAt: string
   updatedAt: string
 }
@@ -108,6 +131,37 @@ const stats = [
   },
 ]
 
+const performanceMetrics = [
+  {
+    label: 'Task Completion Rate',
+    value: '94%',
+    change: '+5%',
+    trend: 'up',
+    color: 'text-green-600',
+  },
+  {
+    label: 'Client Satisfaction',
+    value: '4.8/5',
+    change: '+0.3',
+    trend: 'up',
+    color: 'text-green-600',
+  },
+  {
+    label: 'Response Time',
+    value: '2.4h',
+    change: '-0.8h',
+    trend: 'up',
+    color: 'text-green-600',
+  },
+  {
+    label: 'Project Delivery',
+    value: '98%',
+    change: '+2%',
+    trend: 'up',
+    color: 'text-green-600',
+  },
+]
+
 const recentActivities = [
   {
     id: 1,
@@ -116,6 +170,7 @@ const recentActivities = [
     description: 'Website redesign for TechCorp',
     time: '2 hours ago',
     icon: Briefcase,
+    color: 'bg-blue-100 text-blue-600',
   },
   {
     id: 2,
@@ -124,6 +179,7 @@ const recentActivities = [
     description: 'Strategy session with StartupXYZ',
     time: '4 hours ago',
     icon: Users,
+    color: 'bg-green-100 text-green-600',
   },
   {
     id: 3,
@@ -132,6 +188,7 @@ const recentActivities = [
     description: 'Market research analysis',
     time: '6 hours ago',
     icon: CheckCircle,
+    color: 'bg-purple-100 text-purple-600',
   },
   {
     id: 4,
@@ -140,6 +197,71 @@ const recentActivities = [
     description: '$5,000 from RetailCorp project',
     time: '1 day ago',
     icon: DollarSign,
+    color: 'bg-primary/10 text-primary',
+  },
+  {
+    id: 5,
+    type: 'document',
+    title: 'Document uploaded',
+    description: 'Q4 Financial Report.pdf',
+    time: '2 days ago',
+    icon: FileText,
+    color: 'bg-orange-100 text-orange-600',
+  },
+]
+
+const upcomingTasks = [
+  {
+    id: 1,
+    title: 'Review project proposal',
+    dueDate: 'Today, 3:00 PM',
+    priority: 'high',
+    status: 'pending',
+  },
+  {
+    id: 2,
+    title: 'Team standup meeting',
+    dueDate: 'Today, 4:30 PM',
+    priority: 'medium',
+    status: 'pending',
+  },
+  {
+    id: 3,
+    title: 'Submit timesheet',
+    dueDate: 'Tomorrow',
+    priority: 'medium',
+    status: 'pending',
+  },
+  {
+    id: 4,
+    title: 'Client presentation',
+    dueDate: 'Oct 25, 2:00 PM',
+    priority: 'high',
+    status: 'pending',
+  },
+]
+
+const recentDocuments = [
+  {
+    id: 1,
+    name: 'Project Proposal - TechCorp.pdf',
+    size: '2.4 MB',
+    uploadedAt: '2 hours ago',
+    type: 'pdf',
+  },
+  {
+    id: 2,
+    name: 'Financial Report Q3.xlsx',
+    size: '1.8 MB',
+    uploadedAt: '1 day ago',
+    type: 'excel',
+  },
+  {
+    id: 3,
+    name: 'Client Contract - StartupXYZ.docx',
+    size: '856 KB',
+    uploadedAt: '3 days ago',
+    type: 'word',
   },
 ]
 
@@ -158,24 +280,17 @@ export default function DashboardPage() {
     setError('')
 
     try {
-      // Get current user data from backend
       const userData = await auth.getCurrentUser()
       
       console.log('User data received:', userData)
       
-      // ========================================
-      // FIX: Handle different response structures
-      // ========================================
       let actualUserData: UserData
       
       if (userData.data?.user) {
-        // Response structure: { success: true, data: { user: {...} } }
         actualUserData = userData.data.user
       } else if (userData.user) {
-        // Response structure: { user: {...} }
         actualUserData = userData.user
       } else if (userData._id || userData.email) {
-        // Response is the user object directly
         actualUserData = userData as UserData
       } else {
         console.error('Unexpected user data structure:', userData)
@@ -188,7 +303,6 @@ export default function DashboardPage() {
       console.error('Failed to load user data:', error)
 
       if (error.response?.status === 401) {
-        // User not authenticated, redirect to login
         toast.error('Please sign in to access the dashboard')
         router.push('/login')
       } else {
@@ -207,9 +321,34 @@ export default function DashboardPage() {
       router.push('/')
     } catch (error) {
       console.error('Logout failed:', error)
-      // Even if logout fails, redirect to home
       router.push('/')
     }
+  }
+
+  // Check email verification from multiple possible locations
+  const isEmailVerified = () => {
+    if (!user) return false
+    
+    // Check direct field
+    if (user.emailVerified === true) return true
+    
+    // Check nested verification object
+    if (user.verification?.email?.verified === true) return true
+    
+    return false
+  }
+
+  // Check phone verification from multiple possible locations
+  const isPhoneVerified = () => {
+    if (!user) return false
+    
+    // Check direct field
+    if (user.phoneVerified === true) return true
+    
+    // Check nested verification object
+    if (user.verification?.phone?.verified === true) return true
+    
+    return false
   }
 
   const getStatusBadge = (status: string) => {
@@ -232,11 +371,22 @@ export default function DashboardPage() {
       case 'pro':
         return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Pro</span>
       case 'basic':
-        return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">Basic</span>
-      case 'free':
-        return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Free</span>
+        return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Basic</span>
       default:
-        return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">{plan}</span>
+        return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 capitalize">{plan}</span>
+    }
+  }
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'high':
+        return 'text-red-600 bg-red-100'
+      case 'medium':
+        return 'text-yellow-600 bg-yellow-100'
+      case 'low':
+        return 'text-green-600 bg-green-100'
+      default:
+        return 'text-gray-600 bg-gray-100'
     }
   }
 
@@ -244,8 +394,8 @@ export default function DashboardPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm text-gray-600">Loading dashboard...</p>
+          <RefreshCw className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-sm text-gray-600">Loading your dashboard...</p>
         </div>
       </div>
     )
@@ -255,24 +405,11 @@ export default function DashboardPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <AlertCircle className="h-5 w-5 text-red-600" />
-              <span>Error Loading Dashboard</span>
-            </CardTitle>
-            <CardDescription>
-              {error || 'Failed to load user data'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex space-x-2">
-              <Button onClick={loadUserData} variant="outline" size="sm">
-                Try Again
-              </Button>
-              <Button onClick={() => router.push('/login')} size="sm">
-                Back to Login
-              </Button>
-            </div>
+          <CardContent className="p-6 text-center">
+            <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+            <h2 className="text-lg font-semibold mb-2">Failed to Load Dashboard</h2>
+            <p className="text-sm text-gray-600 mb-4">{error || 'Unable to load user data'}</p>
+            <Button onClick={loadUserData}>Try Again</Button>
           </CardContent>
         </Card>
       </div>
@@ -281,31 +418,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <Link href="/" className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <span className="text-black font-bold text-sm">E</span>
-                </div>
-                <span className="text-lg font-bold">Enterprise</span>
-              </Link>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm">
-                <Bell className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
@@ -318,57 +430,94 @@ export default function DashboardPage() {
           </p>
         </div>
 
+        {/* Alert Section - Shows only if email not verified */}
+        {!isEmailVerified() && (
+          <div className="mb-6">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium text-yellow-800 mb-1">Email Verification Required</h3>
+                  <p className="text-sm text-yellow-700 mb-3">
+                    Please verify your email address to access all features and ensure account security.
+                  </p>
+                  <Button size="sm" variant="outline" className="border-yellow-300 text-yellow-800 hover:bg-yellow-100">
+                    Resend Verification Email
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* User Profile Card */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle className="text-base">Profile Overview</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Profile Overview</CardTitle>
+                <Link href="/dashboard/profile">
+                  <Button variant="ghost" size="sm">
+                    <Settings className="h-3.5 w-3.5" />
+                  </Button>
+                </Link>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="flex items-start space-x-4">
-                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
+                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
                   <User className="h-8 w-8 text-primary" />
                 </div>
-                <div className="flex-1 space-y-2">
+                <div className="flex-1 space-y-3">
                   <div>
                     <h3 className="text-base font-semibold">{user.profile?.displayName || `${user.firstName} ${user.lastName}`}</h3>
                     <p className="text-xs text-gray-600">{user.professional?.title || 'No title set'}</p>
                   </div>
 
-                  <div className="flex items-center space-x-4 text-xs text-gray-600">
-                    <div className="flex items-center space-x-1">
-                      <Mail className="h-3 w-3" />
-                      <span>{user.email}</span>
-                      {user.emailVerified ? (
-                        <CheckCircle className="h-3 w-3 text-green-600" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="flex items-center space-x-2 text-xs text-gray-600">
+                      <Mail className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{user.email}</span>
+                      {isEmailVerified() ? (
+                        <CheckCircle className="h-3 w-3 text-green-600 flex-shrink-0" />
                       ) : (
-                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                        <AlertCircle className="h-3 w-3 text-yellow-600 flex-shrink-0" />
                       )}
                     </div>
+
+                    {user.profile?.phone && (
+                      <div className="flex items-center space-x-2 text-xs text-gray-600">
+                        <Phone className="h-3 w-3 flex-shrink-0" />
+                        <span>{user.profile.phone}</span>
+                        {isPhoneVerified() ? (
+                          <CheckCircle className="h-3 w-3 text-green-600 flex-shrink-0" />
+                        ) : (
+                          <AlertCircle className="h-3 w-3 text-yellow-600 flex-shrink-0" />
+                        )}
+                      </div>
+                    )}
+
+                    {user.professional?.company && (
+                      <div className="flex items-center space-x-2 text-xs text-gray-600">
+                        <Building2 className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate">{user.professional.company}</span>
+                      </div>
+                    )}
+
+                    {user.professional?.department && (
+                      <div className="flex items-center space-x-2 text-xs text-gray-600">
+                        <Briefcase className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate">{user.professional.department}</span>
+                      </div>
+                    )}
                   </div>
-
-                  {user.profile?.phone && (
-                    <div className="flex items-center space-x-1 text-xs text-gray-600">
-                      <Phone className="h-3 w-3" />
-                      <span>{user.profile.phone}</span>
-                      {user.phoneVerified ? (
-                        <CheckCircle className="h-3 w-3 text-green-600" />
-                      ) : (
-                        <AlertCircle className="h-3 w-3 text-yellow-600" />
-                      )}
-                    </div>
-                  )}
-
-                  {user.professional?.company && (
-                    <div className="flex items-center space-x-1 text-xs text-gray-600">
-                      <Building2 className="h-3 w-3" />
-                      <span>{user.professional.company}</span>
-                    </div>
-                  )}
 
                   <div className="flex items-center space-x-2 pt-2">
                     {getStatusBadge(user.status)}
                     {user.subscription?.plan && getPlanBadge(user.subscription.plan)}
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 capitalize">
+                      {user.role}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -379,34 +528,67 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle className="text-base">Account Status</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-600">Account Type</span>
-                <span className="text-xs font-medium capitalize">{user.role}</span>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-600">Account Type</span>
+                  <span className="text-xs font-medium capitalize">{user.role}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-600">Member Since</span>
+                  <span className="text-xs font-medium">
+                    {new Date(user.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-600">Last Updated</span>
+                  <span className="text-xs font-medium">
+                    {new Date(user.updatedAt).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-600">Member Since</span>
-                <span className="text-xs font-medium">
-                  {new Date(user.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-600">Last Updated</span>
-                <span className="text-xs font-medium">
-                  {new Date(user.updatedAt).toLocaleDateString()}
-                </span>
-              </div>
-              {!user.emailVerified && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-3">
-                  <div className="flex items-center space-x-2">
-                    <AlertCircle className="h-4 w-4 text-yellow-600" />
-                    <div>
-                      <p className="text-xs font-medium text-yellow-800">Email Not Verified</p>
-                      <p className="text-xs text-yellow-700">Please check your email to verify your account</p>
+
+              <div className="pt-3 border-t">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-medium text-gray-700">Verification Status</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Mail className="h-3 w-3 text-gray-500" />
+                      <span className="text-xs text-gray-600">Email</span>
                     </div>
+                    {isEmailVerified() ? (
+                      <div className="flex items-center space-x-1">
+                        <CheckCircle className="h-3 w-3 text-green-600" />
+                        <span className="text-xs text-green-600">Verified</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-1">
+                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                        <span className="text-xs text-yellow-600">Not Verified</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Phone className="h-3 w-3 text-gray-500" />
+                      <span className="text-xs text-gray-600">Phone</span>
+                    </div>
+                    {isPhoneVerified() ? (
+                      <div className="flex items-center space-x-1">
+                        <CheckCircle className="h-3 w-3 text-green-600" />
+                        <span className="text-xs text-green-600">Verified</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-1">
+                        <AlertCircle className="h-3 w-3 text-gray-600" />
+                        <span className="text-xs text-gray-600">Not Added</span>
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -416,13 +598,13 @@ export default function DashboardPage() {
           {stats.map((stat, index) => {
             const Icon = stat.icon
             return (
-              <Card key={index}>
+              <Card key={index} className="hover:shadow-lg transition-shadow">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs font-medium text-gray-600">{stat.title}</p>
-                      <p className="text-2xl font-bold">{stat.value}</p>
-                      <p className="text-xs text-green-600 flex items-center mt-1">
+                      <p className="text-2xl font-bold mt-1">{stat.value}</p>
+                      <p className="text-xs text-green-600 flex items-center mt-2">
                         <TrendingUp className="h-3 w-3 mr-1" />
                         {stat.change}
                       </p>
@@ -437,28 +619,72 @@ export default function DashboardPage() {
           })}
         </div>
 
-        {/* Recent Activity and Quick Actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Performance Metrics */}
+        <Card className="mb-8">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">Performance Metrics</CardTitle>
+                <CardDescription className="text-xs">Your key performance indicators this month</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm">
+                <BarChart3 className="h-4 w-4 mr-2" />
+                View Report
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {performanceMetrics.map((metric, index) => (
+                <div key={index} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-600">{metric.label}</span>
+                    <span className={`text-xs ${metric.color} flex items-center`}>
+                      {metric.trend === 'up' ? (
+                        <ArrowUpRight className="h-3 w-3 mr-1" />
+                      ) : (
+                        <ArrowDownRight className="h-3 w-3 mr-1" />
+                      )}
+                      {metric.change}
+                    </span>
+                  </div>
+                  <div className="text-xl font-bold">{metric.value}</div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div className="bg-primary h-1.5 rounded-full" style={{ width: '75%' }}></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {/* Recent Activity */}
-          <Card>
+          <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle className="text-base">Recent Activity</CardTitle>
-              <CardDescription className="text-xs">
-                Your latest account activities
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Recent Activity</CardTitle>
+                  <CardDescription className="text-xs">Your latest account activities</CardDescription>
+                </div>
+                <Button variant="ghost" size="sm">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {recentActivities.map((activity) => {
                   const Icon = activity.icon
                   return (
-                    <div key={activity.id} className="flex items-start space-x-3">
-                      <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                        <Icon className="h-4 w-4 text-gray-600" />
+                    <div key={activity.id} className="flex items-start space-x-3 pb-4 border-b last:border-0 last:pb-0">
+                      <div className={`w-8 h-8 ${activity.color} rounded-full flex items-center justify-center flex-shrink-0`}>
+                        <Icon className="h-4 w-4" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium">{activity.title}</p>
-                        <p className="text-xs text-gray-600">{activity.description}</p>
+                        <p className="text-xs font-medium text-gray-900">{activity.title}</p>
+                        <p className="text-xs text-gray-600 mt-0.5">{activity.description}</p>
                         <p className="text-xs text-gray-500 flex items-center mt-1">
                           <Clock className="h-3 w-3 mr-1" />
                           {activity.time}
@@ -471,38 +697,134 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
+          {/* Upcoming Tasks */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Upcoming Tasks</CardTitle>
+                <Button variant="ghost" size="sm">
+                  <CalendarCheck className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {upcomingTasks.map((task) => (
+                  <div key={task.id} className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div className="flex items-start justify-between mb-2">
+                      <h4 className="text-xs font-medium text-gray-900 flex-1">{task.title}</h4>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${getPriorityColor(task.priority)}`}>
+                        {task.priority}
+                      </span>
+                    </div>
+                    <div className="flex items-center text-xs text-gray-600">
+                      <Clock className="h-3 w-3 mr-1" />
+                      {task.dueDate}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Button variant="outline" size="sm" className="w-full mt-4">
+                View All Tasks
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Bottom Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Recent Documents */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Recent Documents</CardTitle>
+                  <CardDescription className="text-xs">Recently uploaded files</CardDescription>
+                </div>
+                <Button variant="ghost" size="sm">
+                  <Upload className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {recentDocuments.map((doc) => (
+                  <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div className="flex items-center space-x-3 flex-1 min-w-0">
+                      <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center flex-shrink-0">
+                        <FileText className="h-4 w-4 text-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-900 truncate">{doc.name}</p>
+                        <p className="text-xs text-gray-600">{doc.size} • {doc.uploadedAt}</p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="sm" className="flex-shrink-0">
+                      <Download className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <Button variant="outline" size="sm" className="w-full mt-4">
+                View All Documents
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* Quick Actions */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Quick Actions</CardTitle>
-              <CardDescription className="text-xs">
-                Common tasks and settings
-              </CardDescription>
+              <CardDescription className="text-xs">Common tasks and settings</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
                 <Link href="/dashboard/profile">
-                  <Button variant="outline" size="sm" className="w-full">
-                    <User className="h-3.5 w-3.5 mr-2" />
-                    Edit Profile
+                  <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
+                    <User className="h-4 w-4" />
+                    <span className="text-xs">Edit Profile</span>
                   </Button>
                 </Link>
                 <Link href="/dashboard/settings">
-                  <Button variant="outline" size="sm" className="w-full">
-                    <Settings className="h-3.5 w-3.5 mr-2" />
-                    Settings
+                  <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
+                    <Settings className="h-4 w-4" />
+                    <span className="text-xs">Settings</span>
                   </Button>
                 </Link>
                 <Link href="/dashboard/projects">
-                  <Button variant="outline" size="sm" className="w-full">
-                    <Briefcase className="h-3.5 w-3.5 mr-2" />
-                    Projects
+                  <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
+                    <Briefcase className="h-4 w-4" />
+                    <span className="text-xs">Projects</span>
                   </Button>
                 </Link>
                 <Link href="/dashboard/reports">
-                  <Button variant="outline" size="sm" className="w-full">
-                    <BarChart3 className="h-3.5 w-3.5 mr-2" />
-                    Reports
+                  <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
+                    <BarChart3 className="h-4 w-4" />
+                    <span className="text-xs">Reports</span>
+                  </Button>
+                </Link>
+                <Link href="/dashboard/calendar">
+                  <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
+                    <Calendar className="h-4 w-4" />
+                    <span className="text-xs">Calendar</span>
+                  </Button>
+                </Link>
+                <Link href="/dashboard/messages">
+                  <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
+                    <MessageSquare className="h-4 w-4" />
+                    <span className="text-xs">Messages</span>
+                  </Button>
+                </Link>
+                <Link href="/dashboard/billing">
+                  <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
+                    <CreditCard className="h-4 w-4" />
+                    <span className="text-xs">Billing</span>
+                  </Button>
+                </Link>
+                <Link href="/dashboard/help">
+                  <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
+                    <Shield className="h-4 w-4" />
+                    <span className="text-xs">Help</span>
                   </Button>
                 </Link>
               </div>

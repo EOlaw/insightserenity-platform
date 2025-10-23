@@ -21,7 +21,8 @@ import {
   Edit,
   FileText,
   Calendar,
-  BarChart3,
+  Bell,
+  LogOut,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api } from '@/lib/api/client'
@@ -102,10 +103,7 @@ export default function ClientDashboardPage() {
     setError('')
 
     try {
-      // Fetch dashboard data from the API
       const response = await api.get(`/clients/${clientId}/dashboard`)
-      
-      // Handle the nested data structure from the API response
       const data = response.data || response
       
       if (!data.client || !data.statistics) {
@@ -122,12 +120,41 @@ export default function ClientDashboardPage() {
     }
   }
 
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-success-50 text-success-700">
+            Active
+          </span>
+        )
+      case 'prospect':
+        return (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-info-50 text-info-700">
+            Prospect
+          </span>
+        )
+      case 'churned':
+        return (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-error-50 text-error-700">
+            Churned
+          </span>
+        )
+      default:
+        return (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+            {status}
+          </span>
+        )
+    }
+  }
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading dashboard...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-sm text-gray-600">Loading client dashboard...</p>
         </div>
       </div>
     )
@@ -135,24 +162,31 @@ export default function ClientDashboardPage() {
 
   if (error || !dashboardData) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Card className="max-w-md">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Card className="max-w-md w-full">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              Error Loading Dashboard
-            </CardTitle>
+            <div className="flex justify-center mb-4">
+              <div className="w-12 h-12 bg-error-50 rounded-full flex items-center justify-center">
+                <AlertCircle className="h-6 w-6 text-error-600" />
+              </div>
+            </div>
+            <CardTitle className="text-center text-base">Error Loading Dashboard</CardTitle>
+            <CardDescription className="text-center text-xs">
+              {error || 'Failed to load dashboard data'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground mb-4">
-              {error || 'Failed to load dashboard data'}
-            </p>
-            <div className="flex gap-2">
-              <Button onClick={loadDashboardData} variant="outline">
+            <div className="space-y-2">
+              <Button onClick={loadDashboardData} className="w-full" size="sm">
                 Try Again
               </Button>
-              <Button onClick={() => router.back()} variant="ghost">
-                Go Back
+              <Button 
+                onClick={() => router.push('/dashboard/core-business/clients')} 
+                variant="outline" 
+                className="w-full"
+                size="sm"
+              >
+                Back to Clients
               </Button>
             </div>
           </CardContent>
@@ -162,269 +196,364 @@ export default function ClientDashboardPage() {
   }
 
   const { client, statistics } = dashboardData
-  const statusColor = client.relationship.status === 'active' ? 'text-green-600' : 
-                      client.relationship.status === 'prospect' ? 'text-blue-600' : 
-                      'text-gray-600'
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push('/dashboard/core-business/clients')}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Clients
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">{client.displayName}</h1>
-            <p className="text-muted-foreground">
-              {client.clientCode} • {client.relationship.tier} Tier
-            </p>
+      <header className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <Link href="/dashboard" className="flex items-center space-x-2">
+                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                  <span className="text-black font-bold text-sm">E</span>
+                </div>
+                <span className="text-lg font-bold">Enterprise</span>
+              </Link>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => router.push('/dashboard/core-business/clients')}
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to Clients
+              </Button>
+              <Button variant="ghost" size="sm">
+                <Bell className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={loadDashboardData}>
-            <Activity className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-          <Link href={`/dashboard/core-business/clients/${clientId}/edit`}>
-            <Button>
-              <Edit className="h-4 w-4 mr-2" />
-              Edit Client
-            </Button>
-          </Link>
-        </div>
-      </div>
+      </header>
 
-      {/* Status Badge */}
-      <div className="flex items-center gap-4">
-        <div className={`flex items-center gap-2 px-3 py-1 rounded-full bg-background border ${statusColor}`}>
-          <CheckCircle className="h-4 w-4" />
-          <span className="text-sm font-medium capitalize">{client.relationship.status}</span>
-        </div>
-        {client.hasOutstandingBalance && (
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-destructive/10 text-destructive border border-destructive">
-            <AlertCircle className="h-4 w-4" />
-            <span className="text-sm font-medium">Outstanding Balance</span>
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Client Header Section */}
+        <div className="mb-8">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">
+                {client.displayName}
+              </h1>
+              <div className="flex items-center space-x-3 text-sm text-gray-600">
+                <span className="font-medium">{client.clientCode}</span>
+                <span>•</span>
+                <span className="capitalize">{client.relationship.tier} Tier</span>
+                <span>•</span>
+                {getStatusBadge(client.relationship.status)}
+              </div>
+            </div>
+            <div className="flex space-x-2">
+              <Button variant="outline" size="sm" onClick={loadDashboardData}>
+                <Activity className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+              <Link href={`/dashboard/core-business/clients/${clientId}/edit`}>
+                <Button size="sm" className="bg-primary text-black hover:bg-primary-600">
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Client
+                </Button>
+              </Link>
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {statistics.financial.currency} {statistics.financial.totalRevenue.toLocaleString()}
+          {client.hasOutstandingBalance && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning-50 border border-warning-200">
+              <AlertCircle className="h-4 w-4 text-warning-700" />
+              <span className="text-sm font-medium text-warning-700">
+                Outstanding balance of {client.billing.currency} {client.billing.outstandingBalance.toLocaleString()}
+              </span>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Lifetime value
-            </p>
-          </CardContent>
-        </Card>
+          )}
+        </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
-            <Briefcase className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{statistics.engagement.activeProjects}</div>
-            <p className="text-xs text-muted-foreground">
-              {statistics.engagement.totalProjects} total projects
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Engagements</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{statistics.engagement.totalEngagements}</div>
-            <p className="text-xs text-muted-foreground">
-              Total engagements
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Portal Logins</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{statistics.engagement.portalLogins}</div>
-            <p className="text-xs text-muted-foreground">
-              Total portal visits
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Client Information */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Contact Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Contact Information</CardTitle>
-            <CardDescription>Primary contact details</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-start gap-3">
-              <Users className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="font-medium">{client.primaryContact.name}</p>
-                <p className="text-sm text-muted-foreground">Primary Contact</p>
+        {/* Statistics Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Total Revenue
+              </CardTitle>
+              <DollarSign className="h-4 w-4 text-primary" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {statistics.financial.currency} {statistics.financial.totalRevenue.toLocaleString()}
               </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <Mail className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="font-medium">{client.primaryContact.email}</p>
-                <p className="text-sm text-muted-foreground">Email Address</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <Phone className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="font-medium">{client.primaryContact.phone}</p>
-                <p className="text-sm text-muted-foreground">Phone Number</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="font-medium">{client.fullAddress || 'Not specified'}</p>
-                <p className="text-sm text-muted-foreground">Address</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Business Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Business Information</CardTitle>
-            <CardDescription>Company and billing details</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-start gap-3">
-              <Building2 className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="font-medium">{client.legalName}</p>
-                <p className="text-sm text-muted-foreground">Legal Name</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <FileText className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="font-medium">{client.billing.paymentTerms.toUpperCase()}</p>
-                <p className="text-sm text-muted-foreground">Payment Terms</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="font-medium">
-                  {client.billing.currency} {client.billing.outstandingBalance.toLocaleString()}
-                </p>
-                <p className="text-sm text-muted-foreground">Outstanding Balance</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="font-medium">
-                  {new Date(client.relationship.acquisitionDate).toLocaleDateString()}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Acquired via {client.relationship.acquisitionSource}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Activity Summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Activity Summary</CardTitle>
-          <CardDescription>Recent interactions and engagement metrics</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex flex-col items-center p-4 bg-muted rounded-lg">
-              <Activity className="h-8 w-8 text-primary mb-2" />
-              <p className="text-2xl font-bold">{statistics.activity.totalInteractions}</p>
-              <p className="text-sm text-muted-foreground">Total Interactions</p>
-            </div>
-
-            <div className="flex flex-col items-center p-4 bg-muted rounded-lg">
-              <BarChart3 className="h-8 w-8 text-primary mb-2" />
-              <p className="text-2xl font-bold">{statistics.engagement.totalProjects}</p>
-              <p className="text-sm text-muted-foreground">Total Projects</p>
-            </div>
-
-            <div className="flex flex-col items-center p-4 bg-muted rounded-lg">
-              <TrendingUp className="h-8 w-8 text-primary mb-2" />
-              <p className="text-2xl font-bold">
-                {client.relationship.tier.replace('_', ' ').toUpperCase()}
+              <p className="text-xs text-gray-500 mt-1">
+                Lifetime value
               </p>
-              <p className="text-sm text-muted-foreground">Client Tier</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
 
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Link href={`/dashboard/core-business/clients/${clientId}/projects`}>
-            <Button variant="outline">
-              <Briefcase className="h-4 w-4 mr-2" />
-              View Projects
-            </Button>
-          </Link>
-          <Link href={`/dashboard/core-business/clients/${clientId}/documents`}>
-            <Button variant="outline">
-              <FileText className="h-4 w-4 mr-2" />
-              Documents
-            </Button>
-          </Link>
-          <Link href={`/dashboard/core-business/clients/${clientId}/contacts`}>
-            <Button variant="outline">
-              <Users className="h-4 w-4 mr-2" />
-              Contacts
-            </Button>
-          </Link>
-          <Link href={`/dashboard/core-business/clients/${clientId}/notes`}>
-            <Button variant="outline">
-              <FileText className="h-4 w-4 mr-2" />
-              Notes
-            </Button>
-          </Link>
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Active Projects
+              </CardTitle>
+              <Briefcase className="h-4 w-4 text-primary" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {statistics.engagement.activeProjects}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                of {statistics.engagement.totalProjects} total
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Engagements
+              </CardTitle>
+              <Users className="h-4 w-4 text-primary" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {statistics.engagement.totalEngagements}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Total interactions
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Portal Activity
+              </CardTitle>
+              <Activity className="h-4 w-4 text-primary" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">
+                {statistics.engagement.portalLogins}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Portal logins
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Two Column Layout for Details */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Contact Information Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Contact Information</CardTitle>
+              <CardDescription className="text-xs">
+                Primary contact details
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50">
+                  <div className="flex-shrink-0">
+                    <Users className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">
+                      {client.primaryContact.name}
+                    </p>
+                    <p className="text-xs text-gray-500">Primary Contact</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50">
+                  <div className="flex-shrink-0">
+                    <Mail className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {client.primaryContact.email}
+                    </p>
+                    <p className="text-xs text-gray-500">Email Address</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50">
+                  <div className="flex-shrink-0">
+                    <Phone className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">
+                      {client.primaryContact.phone}
+                    </p>
+                    <p className="text-xs text-gray-500">Phone Number</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50">
+                  <div className="flex-shrink-0">
+                    <MapPin className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">
+                      {client.fullAddress || 'Not specified'}
+                    </p>
+                    <p className="text-xs text-gray-500">Business Address</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Business Details Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Business Details</CardTitle>
+              <CardDescription className="text-xs">
+                Company and billing information
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50">
+                  <div className="flex-shrink-0">
+                    <Building2 className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">
+                      {client.legalName}
+                    </p>
+                    <p className="text-xs text-gray-500">Legal Name</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50">
+                  <div className="flex-shrink-0">
+                    <FileText className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 uppercase">
+                      {client.billing.paymentTerms}
+                    </p>
+                    <p className="text-xs text-gray-500">Payment Terms</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50">
+                  <div className="flex-shrink-0">
+                    <DollarSign className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">
+                      {client.billing.currency} {client.billing.outstandingBalance.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-gray-500">Outstanding Balance</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50">
+                  <div className="flex-shrink-0">
+                    <Calendar className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">
+                      {new Date(client.relationship.acquisitionDate).toLocaleDateString()}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Acquired via {client.relationship.acquisitionSource}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Activity Metrics Card */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="text-base">Activity Overview</CardTitle>
+            <CardDescription className="text-xs">
+              Recent engagement metrics and performance indicators
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                <div className="flex items-center justify-between mb-2">
+                  <Activity className="h-5 w-5 text-primary" />
+                  <TrendingUp className="h-4 w-4 text-success-600" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900">
+                  {statistics.activity.totalInteractions}
+                </p>
+                <p className="text-xs text-gray-600 mt-1">Total Interactions</p>
+              </div>
+
+              <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                <div className="flex items-center justify-between mb-2">
+                  <Briefcase className="h-5 w-5 text-primary" />
+                  <CheckCircle className="h-4 w-4 text-success-600" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900">
+                  {statistics.engagement.totalProjects}
+                </p>
+                <p className="text-xs text-gray-600 mt-1">Total Projects</p>
+              </div>
+
+              <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                <div className="flex items-center justify-between mb-2">
+                  <Users className="h-5 w-5 text-primary" />
+                  <span className="text-xs font-medium text-gray-700 bg-white px-2 py-1 rounded">
+                    {client.relationship.tier.toUpperCase()}
+                  </span>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">
+                  {client.relationship.tier.replace('_', ' ')}
+                </p>
+                <p className="text-xs text-gray-600 mt-1">Client Tier</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick Actions Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Quick Actions</CardTitle>
+            <CardDescription className="text-xs">
+              Common tasks and navigation
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Link href={`/dashboard/core-business/clients/${clientId}/projects`}>
+                <Button variant="outline" size="sm" className="w-full">
+                  <Briefcase className="h-3.5 w-3.5 mr-2" />
+                  Projects
+                </Button>
+              </Link>
+              <Link href={`/dashboard/core-business/clients/${clientId}/documents`}>
+                <Button variant="outline" size="sm" className="w-full">
+                  <FileText className="h-3.5 w-3.5 mr-2" />
+                  Documents
+                </Button>
+              </Link>
+              <Link href={`/dashboard/core-business/clients/${clientId}/contacts`}>
+                <Button variant="outline" size="sm" className="w-full">
+                  <Users className="h-3.5 w-3.5 mr-2" />
+                  Contacts
+                </Button>
+              </Link>
+              <Link href={`/dashboard/core-business/clients/${clientId}/notes`}>
+                <Button variant="outline" size="sm" className="w-full">
+                  <FileText className="h-3.5 w-3.5 mr-2" />
+                  Notes
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
     </div>
   )
 }
