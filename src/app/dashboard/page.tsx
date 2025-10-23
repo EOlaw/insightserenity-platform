@@ -159,8 +159,31 @@ export default function DashboardPage() {
 
     try {
       // Get current user data from backend
-      const response = await auth.getCurrentUser()
-      setUser(response.data.user)
+      const userData = await auth.getCurrentUser()
+      
+      console.log('User data received:', userData)
+      
+      // ========================================
+      // FIX: Handle different response structures
+      // ========================================
+      let actualUserData: UserData
+      
+      if (userData.data?.user) {
+        // Response structure: { success: true, data: { user: {...} } }
+        actualUserData = userData.data.user
+      } else if (userData.user) {
+        // Response structure: { user: {...} }
+        actualUserData = userData.user
+      } else if (userData._id || userData.email) {
+        // Response is the user object directly
+        actualUserData = userData as UserData
+      } else {
+        console.error('Unexpected user data structure:', userData)
+        throw new Error('Invalid user data structure received from server')
+      }
+      
+      setUser(actualUserData)
+      
     } catch (error: any) {
       console.error('Failed to load user data:', error)
 
@@ -228,50 +251,28 @@ export default function DashboardPage() {
     )
   }
 
-  if (error) {
+  if (error || !user) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <div className="flex items-center justify-center mb-4">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertCircle className="h-6 w-6 text-red-600" />
-              </div>
-            </div>
-            <CardTitle className="text-center">Error Loading Dashboard</CardTitle>
-            <CardDescription className="text-center">{error}</CardDescription>
+            <CardTitle className="flex items-center space-x-2">
+              <AlertCircle className="h-5 w-5 text-red-600" />
+              <span>Error Loading Dashboard</span>
+            </CardTitle>
+            <CardDescription>
+              {error || 'Failed to load user data'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              <Button onClick={loadUserData} fullWidth>
+            <div className="flex space-x-2">
+              <Button onClick={loadUserData} variant="outline" size="sm">
                 Try Again
               </Button>
-              <Link href="/login">
-                <Button variant="outline" fullWidth>
-                  Back to Login
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="text-center">Authentication Required</CardTitle>
-            <CardDescription className="text-center">Please sign in to access the dashboard</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link href="/login">
-              <Button fullWidth>
-                Go to Login
+              <Button onClick={() => router.push('/login')} size="sm">
+                Back to Login
               </Button>
-            </Link>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -310,7 +311,7 @@ export default function DashboardPage() {
         {/* Welcome Section */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            Welcome back, {user.profile.displayName || user.firstName}!
+            Welcome back, {user.profile?.displayName || user.firstName}!
           </h1>
           <p className="text-sm text-gray-600">
             Here's what's happening with your account today.
@@ -330,8 +331,8 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex-1 space-y-2">
                   <div>
-                    <h3 className="text-base font-semibold">{user.profile.displayName}</h3>
-                    <p className="text-xs text-gray-600">{user.professional.title || 'No title set'}</p>
+                    <h3 className="text-base font-semibold">{user.profile?.displayName || `${user.firstName} ${user.lastName}`}</h3>
+                    <p className="text-xs text-gray-600">{user.professional?.title || 'No title set'}</p>
                   </div>
 
                   <div className="flex items-center space-x-4 text-xs text-gray-600">
@@ -346,7 +347,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {user.profile.phone && (
+                  {user.profile?.phone && (
                     <div className="flex items-center space-x-1 text-xs text-gray-600">
                       <Phone className="h-3 w-3" />
                       <span>{user.profile.phone}</span>
@@ -358,7 +359,7 @@ export default function DashboardPage() {
                     </div>
                   )}
 
-                  {user.professional.company && (
+                  {user.professional?.company && (
                     <div className="flex items-center space-x-1 text-xs text-gray-600">
                       <Building2 className="h-3 w-3" />
                       <span>{user.professional.company}</span>
@@ -367,7 +368,7 @@ export default function DashboardPage() {
 
                   <div className="flex items-center space-x-2 pt-2">
                     {getStatusBadge(user.status)}
-                    {getPlanBadge(user.subscription.plan)}
+                    {user.subscription?.plan && getPlanBadge(user.subscription.plan)}
                   </div>
                 </div>
               </div>
@@ -481,25 +482,25 @@ export default function DashboardPage() {
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
                 <Link href="/dashboard/profile">
-                  <Button variant="outline" size="sm" fullWidth>
+                  <Button variant="outline" size="sm" className="w-full">
                     <User className="h-3.5 w-3.5 mr-2" />
                     Edit Profile
                   </Button>
                 </Link>
                 <Link href="/dashboard/settings">
-                  <Button variant="outline" size="sm" fullWidth>
+                  <Button variant="outline" size="sm" className="w-full">
                     <Settings className="h-3.5 w-3.5 mr-2" />
                     Settings
                   </Button>
                 </Link>
                 <Link href="/dashboard/projects">
-                  <Button variant="outline" size="sm" fullWidth>
+                  <Button variant="outline" size="sm" className="w-full">
                     <Briefcase className="h-3.5 w-3.5 mr-2" />
                     Projects
                   </Button>
                 </Link>
                 <Link href="/dashboard/reports">
-                  <Button variant="outline" size="sm" fullWidth>
+                  <Button variant="outline" size="sm" className="w-full">
                     <BarChart3 className="h-3.5 w-3.5 mr-2" />
                     Reports
                   </Button>
