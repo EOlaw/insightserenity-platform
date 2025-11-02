@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { FeatureHighlight } from '@/components/FeatureHighlight'
+import { Logo } from '@/components/Logo'
 import { auth } from '@/lib/api/client'
 import { 
   User, 
@@ -97,12 +98,7 @@ export default function Navigation() {
         <div className="flex items-center justify-between h-16">
           {/* Logo and Main Navigation */}
           <div className="flex items-center space-x-8">
-            <Link href="/" className="flex items-center space-x-2 logo">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <span className="text-black font-bold text-sm">E</span>
-              </div>
-              <span className="text-lg font-bold text-foreground">Enterprise</span>
-            </Link>
+            <Logo href="/" showText={false} />
             <div className="hidden md:flex items-center space-x-6">
               <Link href="/features" className="text-xs text-muted-foreground hover:text-foreground transition">
                 Features
@@ -165,16 +161,24 @@ export default function Navigation() {
                     
                     {/* Menu */}
                     <div className="absolute right-0 mt-2 w-56 bg-background border border-border rounded-lg shadow-lg z-50">
-                      <div className="p-3 border-b border-border">
-                        <p className="text-sm font-medium text-foreground">
-                          {getUserDisplayName()}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {user.email}
-                        </p>
+                      <div className="p-4 border-b border-border">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
+                            <span className="text-sm font-semibold text-black">
+                              {getUserInitials()}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">
+                              {getUserDisplayName()}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {user.email}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      
-                      <div className="py-1">
+                      <div className="py-2">
                         <Link
                           href="/dashboard"
                           className="flex items-center space-x-2 px-4 py-2 text-sm text-foreground hover:bg-muted transition"
@@ -183,9 +187,8 @@ export default function Navigation() {
                           <LayoutDashboard className="h-4 w-4" />
                           <span>Dashboard</span>
                         </Link>
-                        
                         <Link
-                          href="/dashboard/settings"
+                          href="/settings"
                           className="flex items-center space-x-2 px-4 py-2 text-sm text-foreground hover:bg-muted transition"
                           onClick={() => setShowUserMenu(false)}
                         >
@@ -193,13 +196,9 @@ export default function Navigation() {
                           <span>Settings</span>
                         </Link>
                       </div>
-                      
-                      <div className="border-t border-border py-1">
+                      <div className="border-t border-border py-2">
                         <button
-                          onClick={() => {
-                            setShowUserMenu(false)
-                            handleLogout()
-                          }}
+                          onClick={handleLogout}
                           className="flex items-center space-x-2 w-full px-4 py-2 text-sm text-destructive hover:bg-muted transition"
                         >
                           <LogOut className="h-4 w-4" />
@@ -211,7 +210,7 @@ export default function Navigation() {
                 )}
               </div>
             ) : (
-              // Not authenticated - Show sign in and get started buttons
+              // Unauthenticated state - Show auth buttons
               <>
                 <Link href="/login">
                   <Button variant="ghost" size="sm">Sign in</Button>

@@ -14,35 +14,35 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Enterprise Platform',
-    template: '%s | Enterprise Platform'
+    default: 'Insight Serenity',
+    template: '%s | Insight Serenity'
   },
-  description: 'Comprehensive Enterprise SaaS Platform',
-  keywords: ['enterprise', 'saas', 'platform', 'consulting', 'recruitment'],
-  authors: [{ name: 'Enterprise Team' }],
-  creator: 'Enterprise Platform',
+  description: 'Comprehensive Enterprise SaaS Platform for Business Intelligence and Analytics',
+  keywords: ['enterprise', 'saas', 'platform', 'consulting', 'recruitment', 'business intelligence', 'analytics', 'insight'],
+  authors: [{ name: 'Insight Serenity Team' }],
+  creator: 'Insight Serenity',
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://enterprise.com',
-    title: 'Enterprise Platform',
-    description: 'Comprehensive Enterprise SaaS Platform',
-    siteName: 'Enterprise Platform',
+    url: 'https://insightserenity.com',
+    title: 'Insight Serenity',
+    description: 'Comprehensive Enterprise SaaS Platform for Business Intelligence and Analytics',
+    siteName: 'Insight Serenity',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Enterprise Platform',
+        alt: 'Insight Serenity - Enterprise Business Intelligence Platform',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Enterprise Platform',
-    description: 'Comprehensive Enterprise SaaS Platform',
+    title: 'Insight Serenity',
+    description: 'Comprehensive Enterprise SaaS Platform for Business Intelligence and Analytics',
     images: ['/og-image.png'],
-    creator: '@enterprise',
+    creator: '@insightserenity',
   },
   icons: {
     icon: [
@@ -75,7 +75,7 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: light)', color: '#ffc451' },
     { media: '(prefers-color-scheme: dark)', color: '#000000' },
   ],
 }

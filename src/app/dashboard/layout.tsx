@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { Logo } from '@/components/Logo'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import { Button } from '@/components/ui/button'
 import {
@@ -23,7 +24,10 @@ import {
   CreditCard,
   FileText,
   TrendingUp,
+  User as UserIcon,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { auth } from '@/lib/api/client'
 
 const navigation = [
   {
@@ -73,14 +77,73 @@ const bottomNavigation = [
   { name: 'Help & Support', href: '/dashboard/support', icon: HelpCircle },
 ]
 
+interface UserData {
+  _id: string
+  email: string
+  firstName: string
+  lastName: string
+  profile?: {
+    displayName?: string
+    firstName?: string
+    lastName?: string
+  }
+}
+
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [expandedItems, setExpandedItems] = useState<string[]>([])
+  const [user, setUser] = useState<UserData | null>(null)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+
+  useEffect(() => {
+    loadUserData()
+  }, [])
+
+  const loadUserData = async () => {
+    try {
+      const userData = await auth.getCurrentUser()
+      
+      let actualUserData: UserData
+      
+      if (userData.data?.user) {
+        actualUserData = userData.data.user
+      } else if (userData.user) {
+        actualUserData = userData.user
+      } else if (userData._id || userData.email) {
+        actualUserData = userData as UserData
+      } else {
+        return
+      }
+      
+      setUser(actualUserData)
+    } catch (error) {
+      console.error('Failed to load user data:', error)
+    }
+  }
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return
+    
+    setIsLoggingOut(true)
+    try {
+      await auth.logout()
+      toast.success('Logged out successfully')
+      router.push('/')
+    } catch (error) {
+      console.error('Logout failed:', error)
+      toast.error('Failed to logout. Redirecting...')
+      // Even if logout fails, redirect to home
+      router.push('/')
+    } finally {
+      setIsLoggingOut(false)
+    }
+  }
 
   const toggleExpanded = (name: string) => {
     setExpandedItems(prev =>
@@ -95,6 +158,48 @@ export default function DashboardLayout({
       return pathname === '/dashboard'
     }
     return pathname.startsWith(href)
+  }
+
+  const getUserInitials = () => {
+    if (!user) return 'U'
+    
+    const firstName = user.profile?.firstName || user.firstName || ''
+    const lastName = user.profile?.lastName || user.lastName || ''
+    
+    if (firstName && lastName) {
+      return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
+    }
+    
+    if (firstName) {
+      return firstName.charAt(0).toUpperCase()
+    }
+    
+    if (user.email) {
+      return user.email.charAt(0).toUpperCase()
+    }
+    
+    return 'U'
+  }
+
+  const getUserDisplayName = () => {
+    if (!user) return 'User'
+    
+    if (user.profile?.displayName) {
+      return user.profile.displayName
+    }
+    
+    const firstName = user.profile?.firstName || user.firstName
+    const lastName = user.profile?.lastName || user.lastName
+    
+    if (firstName && lastName) {
+      return `${firstName} ${lastName}`
+    }
+    
+    if (firstName) {
+      return firstName
+    }
+    
+    return 'User'
   }
 
   return (
@@ -117,12 +222,7 @@ export default function DashboardLayout({
         <div className="flex h-full flex-col">
           {/* Logo */}
           <div className="flex h-16 items-center justify-between px-6 border-b border-white/10">
-            <Link href="/dashboard" className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <span className="text-black font-bold text-sm">E</span>
-              </div>
-              <span className="text-lg font-bold">Enterprise</span>
-            </Link>
+            <Logo href="/" showText={false} />
             <button
               onClick={() => setSidebarOpen(false)}
               className="lg:hidden text-white/60 hover:text-white"
@@ -241,14 +341,23 @@ export default function DashboardLayout({
           <div className="border-t border-white/10 px-4 py-4">
             <div className="flex items-center space-x-3 px-3">
               <div className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center">
-                <span className="text-2xs font-medium">JD</span>
+                <span className="text-2xs font-medium">{getUserInitials()}</span>
               </div>
-              <div className="flex-1">
-                <p className="text-xs font-medium">John Doe</p>
-                <p className="text-2xs text-white/60">john@example.com</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium truncate">{getUserDisplayName()}</p>
+                <p className="text-2xs text-white/60 truncate">{user?.email || 'Loading...'}</p>
               </div>
-              <button className="text-white/60 hover:text-white">
-                <LogOut className="h-4 w-4" />
+              <button 
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="text-white/60 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="Sign out"
+              >
+                {isLoggingOut ? (
+                  <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <LogOut className="h-4 w-4" />
+                )}
               </button>
             </div>
           </div>

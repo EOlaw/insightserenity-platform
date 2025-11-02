@@ -26,7 +26,8 @@ import {
   Globe,
   Palette,
   Shield,
-  LogOut
+  LogOut,
+  RefreshCw
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { auth, api } from '@/lib/api/client'
@@ -36,53 +37,65 @@ interface UserProfile {
   email: string
   firstName: string
   lastName: string
-  phone: string
-  profile: {
-    displayName: string
-    firstName: string
-    lastName: string
-    email: string
-    phone: string
-    avatar: {
+  phone?: string
+  profile?: {
+    displayName?: string
+    firstName?: string
+    lastName?: string
+    email?: string
+    phone?: string
+    avatar?: {
       url: string
       alt: string
     }
   }
-  professional: {
-    title: string
-    department: string
-    company: string
-    experience: number
-    skills: string[]
-    bio: string
+  professional?: {
+    title?: string
+    department?: string
+    company?: string
+    experience?: number
+    skills?: string[]
+    bio?: string
   }
-  preferences: {
-    theme: string
-    language: string
-    timezone: string
-    notifications: {
-      email: boolean
-      push: boolean
-      marketing: boolean
+  preferences?: {
+    theme?: string
+    language?: string
+    timezone?: string
+    notifications?: {
+      email?: boolean
+      push?: boolean
+      marketing?: boolean
     }
-    privacy: {
-      profileVisibility: string
-      allowSearchIndexing: boolean
+    privacy?: {
+      profileVisibility?: string
+      allowSearchIndexing?: boolean
     }
   }
-  security: {
-    twoFactorEnabled: boolean
-    lastPasswordChange: string
+  security?: {
+    twoFactorEnabled?: boolean
+    lastPasswordChange?: string
   }
-  subscription: {
-    plan: string
-    status: string
+  mfa?: {
+    enabled?: boolean
+  }
+  subscription?: {
+    plan?: string
+    status?: string
   }
   role: string
   status: string
-  emailVerified: boolean
-  phoneVerified: boolean
+  emailVerified?: boolean
+  phoneVerified?: boolean
+  verification?: {
+    email?: {
+      verified?: boolean
+    }
+    phone?: {
+      verified?: boolean
+    }
+  }
   createdAt: string
+  updatedAt: string
 }
 
 export default function ProfilePage() {
@@ -147,16 +160,31 @@ export default function ProfilePage() {
     setError('')
 
     try {
-      const response = await api.get('/profile')
-      const userData = response.data.user
+      // Use the same method that works in the dashboard
+      const response = await auth.getCurrentUser()
+      
+      console.log('Profile data received:', response)
+      
+      // Handle different response structures
+      let userData: UserProfile
+      
+      if (response.data?.user) {
+        userData = response.data.user
+      } else if (response.user) {
+        userData = response.user
+      } else if (response._id || response.email) {
+        userData = response as UserProfile
+      } else {
+        throw new Error('Invalid user data structure received from server')
+      }
 
       setUser(userData)
 
-      // Populate forms
+      // Populate forms with existing data
       setProfileForm({
-        firstName: userData.firstName || '',
-        lastName: userData.lastName || '',
-        phone: userData.phone || '',
+        firstName: userData.firstName || userData.profile?.firstName || '',
+        lastName: userData.lastName || userData.profile?.lastName || '',
+        phone: userData.phone || userData.profile?.phone || '',
       })
 
       setProfessionalForm({
@@ -185,6 +213,7 @@ export default function ProfilePage() {
     } catch (error: any) {
       console.error('Failed to load profile:', error)
       if (error.response?.status === 401) {
+        toast.error('Please sign in to access your profile')
         router.push('/login')
       } else {
         setError('Failed to load profile data')
@@ -207,18 +236,30 @@ export default function ProfilePage() {
         preferences: preferencesForm,
       }
 
-      await api.put('/profile', updateData)
+      // Try to update profile - adjust the endpoint based on your API
+      await api.put('/users/profile', updateData)
       await loadUserProfile() // Reload to get updated data
       toast.success('Profile updated successfully!')
     } catch (error: any) {
       console.error('Failed to update profile:', error)
-      toast.error(error.response?.data?.message || 'Failed to update profile')
+      
+      // Provide more specific error messages
+      if (error.response?.status === 404) {
+        toast.error('Profile update endpoint not found. Please contact support.')
+      } else {
+        toast.error(error.response?.data?.message || 'Failed to update profile')
+      }
     } finally {
       setIsSaving(false)
     }
   }
 
   const handleChangePassword = async () => {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      toast.error('Please fill in all password fields')
+      return
+    }
+
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       toast.error('New passwords do not match')
       return
@@ -232,18 +273,17 @@ export default function ProfilePage() {
     setIsSaving(true)
 
     try {
-      await api.post('/profile/change-password', {
+      await api.put('/auth/change-password', {
         currentPassword: passwordForm.currentPassword,
         newPassword: passwordForm.newPassword,
       })
-
+      
+      toast.success('Password changed successfully!')
       setPasswordForm({
         currentPassword: '',
         newPassword: '',
         confirmPassword: '',
       })
-
-      toast.success('Password changed successfully!')
     } catch (error: any) {
       console.error('Failed to change password:', error)
       toast.error(error.response?.data?.message || 'Failed to change password')
@@ -253,39 +293,57 @@ export default function ProfilePage() {
   }
 
   const handleAddSkill = () => {
-    if (newSkill.trim() && !professionalForm.skills.includes(newSkill.trim())) {
-      setProfessionalForm(prev => ({
-        ...prev,
-        skills: [...prev.skills, newSkill.trim()]
-      }))
-      setNewSkill('')
-    }
-  }
+    if (!newSkill.trim()) return
 
-  const handleRemoveSkill = (skillToRemove: string) => {
+    if (professionalForm.skills.includes(newSkill.trim())) {
+      toast.error('Skill already added')
+      return
+    }
+
     setProfessionalForm(prev => ({
       ...prev,
-      skills: prev.skills.filter(skill => skill !== skillToRemove)
+      skills: [...prev.skills, newSkill.trim()],
+    }))
+    setNewSkill('')
+  }
+
+  const handleRemoveSkill = (skill: string) => {
+    setProfessionalForm(prev => ({
+      ...prev,
+      skills: prev.skills.filter(s => s !== skill),
     }))
   }
 
-  const handleLogout = async () => {
-    try {
-      await auth.logout()
-      toast.success('Logged out successfully')
-      router.push('/')
-    } catch (error) {
-      console.error('Logout failed:', error)
-      router.push('/')
-    }
+  // Check email verification from multiple possible locations
+  const isEmailVerified = () => {
+    if (!user) return false
+    if (user.emailVerified === true) return true
+    if (user.verification?.email?.verified === true) return true
+    return false
+  }
+
+  // Check phone verification from multiple possible locations
+  const isPhoneVerified = () => {
+    if (!user) return false
+    if (user.phoneVerified === true) return true
+    if (user.verification?.phone?.verified === true) return true
+    return false
+  }
+
+  // Check 2FA status
+  const is2FAEnabled = () => {
+    if (!user) return false
+    if (user.security?.twoFactorEnabled === true) return true
+    if (user.mfa?.enabled === true) return true
+    return false
   }
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm text-gray-600">Loading profile...</p>
+          <RefreshCw className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-sm text-gray-600">Loading your profile...</p>
         </div>
       </div>
     )
@@ -295,22 +353,18 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Card className="w-full max-w-md">
-          <CardHeader>
-            <div className="flex items-center justify-center mb-4">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertCircle className="h-6 w-6 text-red-600" />
-              </div>
-            </div>
-            <CardTitle className="text-center">Error Loading Profile</CardTitle>
-            <CardDescription className="text-center">{error}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <Button onClick={loadUserProfile} fullWidth>
+          <CardContent className="p-6 text-center">
+            <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+            <h2 className="text-lg font-semibold mb-2">Error Loading Profile</h2>
+            <p className="text-sm text-gray-600 mb-4">{error || 'Unable to load profile data'}</p>
+            <div className="flex gap-3 justify-center">
+              <Button onClick={loadUserProfile} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
                 Try Again
               </Button>
               <Link href="/dashboard">
-                <Button variant="outline" fullWidth>
+                <Button>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
                   Back to Dashboard
                 </Button>
               </Link>
@@ -321,13 +375,6 @@ export default function ProfilePage() {
     )
   }
 
-  const tabs = [
-    { id: 'general', label: 'General', icon: User },
-    { id: 'professional', label: 'Professional', icon: Briefcase },
-    { id: 'preferences', label: 'Preferences', icon: Settings },
-    { id: 'security', label: 'Security', icon: Lock },
-  ]
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -335,16 +382,22 @@ export default function ProfilePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
-              <Link href="/dashboard" className="flex items-center space-x-2 text-gray-600 hover:text-gray-900">
-                <ArrowLeft className="h-4 w-4" />
-                <span className="text-sm">Back to Dashboard</span>
+              <Link href="/dashboard">
+                <Button variant="ghost" size="sm">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Dashboard
+                </Button>
               </Link>
+              <div className="h-6 w-px bg-gray-300" />
+              <h1 className="text-lg font-bold">Edit Profile</h1>
             </div>
 
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Welcome, {user.profile.displayName}</span>
-              <Button variant="ghost" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4" />
+            <div className="flex items-center space-x-3">
+              <Button variant="ghost" size="sm">
+                <Bell className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="sm">
+                <Settings className="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -353,55 +406,102 @@ export default function ProfilePage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Profile Settings</h1>
-          <p className="text-sm text-gray-600">Manage your account settings and preferences</p>
-        </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Sidebar */}
           <div className="lg:col-span-1">
             <Card>
               <CardContent className="p-4">
-                <div className="space-y-2">
-                  {tabs.map((tab) => {
-                    const Icon = tab.icon
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`w-full flex items-center space-x-3 px-3 py-2 text-sm rounded-lg transition-colors ${
-                          activeTab === tab.id
-                            ? 'bg-primary text-black font-medium'
-                            : 'text-gray-600 hover:bg-gray-100'
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        <span>{tab.label}</span>
-                      </button>
-                    )
-                  })}
+                <div className="text-center mb-6">
+                  <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <User className="h-10 w-10 text-primary" />
+                  </div>
+                  <h3 className="text-base font-semibold">
+                    {user.profile?.displayName || `${user.firstName} ${user.lastName}`}
+                  </h3>
+                  <p className="text-xs text-gray-600">{user.email}</p>
+                  <div className="flex items-center justify-center space-x-2 mt-2">
+                    {isEmailVerified() ? (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Verified
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-800">
+                        <AlertCircle className="h-3 w-3 mr-1" />
+                        Unverified
+                      </span>
+                    )}
+                  </div>
                 </div>
+
+                <nav className="space-y-1">
+                  <button
+                    onClick={() => setActiveTab('general')}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                      activeTab === 'general'
+                        ? 'bg-primary text-black'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <User className="h-4 w-4" />
+                    <span>General</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('professional')}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                      activeTab === 'professional'
+                        ? 'bg-primary text-black'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Briefcase className="h-4 w-4" />
+                    <span>Professional</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('preferences')}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                      activeTab === 'preferences'
+                        ? 'bg-primary text-black'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span>Preferences</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('security')}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                      activeTab === 'security'
+                        ? 'bg-primary text-black'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Lock className="h-4 w-4" />
+                    <span>Security</span>
+                  </button>
+                </nav>
               </CardContent>
             </Card>
 
-            {/* Profile Summary */}
-            <Card className="mt-6">
+            {/* Account Info Card */}
+            <Card className="mt-4">
               <CardContent className="p-4">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <User className="h-8 w-8 text-primary" />
+                <h4 className="text-sm font-semibold mb-3">Account Information</h4>
+                <div className="space-y-2 text-xs text-gray-600">
+                  <div className="flex justify-between">
+                    <span>Plan:</span>
+                    <span className="font-medium text-gray-900 capitalize">
+                      {user.subscription?.plan || 'Free'}
+                    </span>
                   </div>
-                  <h3 className="font-medium">{user.profile.displayName}</h3>
-                  <p className="text-xs text-gray-600">{user.email}</p>
-                  <div className="flex items-center justify-center space-x-1 mt-2">
-                    {user.emailVerified ? (
-                      <CheckCircle className="h-3 w-3 text-green-600" />
-                    ) : (
-                      <AlertCircle className="h-3 w-3 text-yellow-600" />
-                    )}
-                    <span className="text-xs text-gray-600">
-                      {user.emailVerified ? 'Verified' : 'Unverified'}
+                  <div className="flex justify-between">
+                    <span>Status:</span>
+                    <span className="font-medium text-gray-900 capitalize">{user.status}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Member Since:</span>
+                    <span className="font-medium text-gray-900">
+                      {new Date(user.createdAt).toLocaleDateString()}
                     </span>
                   </div>
                 </div>
@@ -409,14 +509,14 @@ export default function ProfilePage() {
             </Card>
           </div>
 
-          {/* Content */}
+          {/* Main Content */}
           <div className="lg:col-span-3">
             {activeTab === 'general' && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">General Information</CardTitle>
                   <CardDescription className="text-sm">
-                    Update your basic profile information
+                    Update your personal information and contact details
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -432,6 +532,7 @@ export default function ProfilePage() {
                       label="Last Name"
                       value={profileForm.lastName}
                       onChange={(e) => setProfileForm(prev => ({ ...prev, lastName: e.target.value }))}
+                      leftIcon={<User className="h-3.5 w-3.5" />}
                       required
                     />
                   </div>
@@ -439,23 +540,44 @@ export default function ProfilePage() {
                   <Input
                     label="Email Address"
                     value={user.email}
-                    leftIcon={<Mail className="h-3.5 w-3.5" />}
                     disabled
-                    hint="Email cannot be changed. Contact support if you need to update your email."
+                    leftIcon={<Mail className="h-3.5 w-3.5" />}
+                    rightIcon={
+                      isEmailVerified() ? (
+                        <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                      ) : (
+                        <AlertCircle className="h-3.5 w-3.5 text-yellow-600" />
+                      )
+                    }
                   />
 
                   <Input
                     label="Phone Number"
+                    type="tel"
                     value={profileForm.phone}
                     onChange={(e) => setProfileForm(prev => ({ ...prev, phone: e.target.value }))}
                     leftIcon={<Phone className="h-3.5 w-3.5" />}
                     placeholder="+1 (555) 000-0000"
+                    rightIcon={
+                      isPhoneVerified() ? (
+                        <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                      ) : undefined
+                    }
                   />
 
                   <div className="flex justify-end pt-4">
-                    <Button onClick={handleSaveProfile} loading={isSaving}>
-                      <Save className="h-3.5 w-3.5 mr-2" />
-                      Save Changes
+                    <Button onClick={handleSaveProfile} disabled={isSaving}>
+                      {isSaving ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-3.5 w-3.5 mr-2" />
+                          Save Changes
+                        </>
+                      )}
                     </Button>
                   </div>
                 </CardContent>
@@ -467,7 +589,7 @@ export default function ProfilePage() {
                 <CardHeader>
                   <CardTitle className="text-lg">Professional Information</CardTitle>
                   <CardDescription className="text-sm">
-                    Update your work-related information
+                    Manage your work-related details and expertise
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -476,7 +598,7 @@ export default function ProfilePage() {
                     value={professionalForm.title}
                     onChange={(e) => setProfessionalForm(prev => ({ ...prev, title: e.target.value }))}
                     leftIcon={<Briefcase className="h-3.5 w-3.5" />}
-                    placeholder="Software Engineer"
+                    placeholder="e.g. Senior Software Engineer"
                   />
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -484,21 +606,22 @@ export default function ProfilePage() {
                       label="Department"
                       value={professionalForm.department}
                       onChange={(e) => setProfessionalForm(prev => ({ ...prev, department: e.target.value }))}
-                      placeholder="Engineering"
+                      leftIcon={<Building2 className="h-3.5 w-3.5" />}
+                      placeholder="e.g. Engineering"
                     />
                     <Input
                       label="Company"
                       value={professionalForm.company}
                       onChange={(e) => setProfessionalForm(prev => ({ ...prev, company: e.target.value }))}
                       leftIcon={<Building2 className="h-3.5 w-3.5" />}
-                      placeholder="Acme Corporation"
+                      placeholder="e.g. TechCorp Inc"
                     />
                   </div>
 
                   <Input
-                    type="number"
                     label="Years of Experience"
-                    value={professionalForm.experience.toString()}
+                    type="number"
+                    value={professionalForm.experience}
                     onChange={(e) => setProfessionalForm(prev => ({ ...prev, experience: parseInt(e.target.value) || 0 }))}
                     min="0"
                     max="50"
@@ -507,14 +630,19 @@ export default function ProfilePage() {
                   {/* Skills */}
                   <div>
                     <label className="text-sm font-medium mb-2 block">Skills</label>
-                    <div className="flex gap-2 mb-2">
+                    <div className="flex gap-2 mb-3">
                       <Input
                         value={newSkill}
                         onChange={(e) => setNewSkill(e.target.value)}
-                        placeholder="Add a skill"
-                        onKeyPress={(e) => e.key === 'Enter' && handleAddSkill()}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            handleAddSkill()
+                          }
+                        }}
+                        placeholder="Add a skill..."
                       />
-                      <Button type="button" onClick={handleAddSkill} size="sm">
+                      <Button onClick={handleAddSkill} size="sm">
                         Add
                       </Button>
                     </div>
@@ -522,35 +650,45 @@ export default function ProfilePage() {
                       {professionalForm.skills.map((skill, index) => (
                         <span
                           key={index}
-                          className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-primary/10 text-primary"
+                          className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-primary/10 text-primary"
                         >
                           {skill}
                           <button
                             onClick={() => handleRemoveSkill(skill)}
-                            className="ml-1 hover:text-red-600"
+                            className="ml-2 text-primary hover:text-primary/80"
                           >
-                            ×
+                            <Trash2 className="h-3 w-3" />
                           </button>
                         </span>
                       ))}
                     </div>
                   </div>
 
+                  {/* Bio */}
                   <div>
                     <label className="text-sm font-medium mb-2 block">Bio</label>
                     <textarea
                       value={professionalForm.bio}
                       onChange={(e) => setProfessionalForm(prev => ({ ...prev, bio: e.target.value }))}
                       rows={4}
-                      className="w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                       placeholder="Tell us about yourself..."
                     />
                   </div>
 
                   <div className="flex justify-end pt-4">
-                    <Button onClick={handleSaveProfile} loading={isSaving}>
-                      <Save className="h-3.5 w-3.5 mr-2" />
-                      Save Changes
+                    <Button onClick={handleSaveProfile} disabled={isSaving}>
+                      {isSaving ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-3.5 w-3.5 mr-2" />
+                          Save Changes
+                        </>
+                      )}
                     </Button>
                   </div>
                 </CardContent>
@@ -562,36 +700,63 @@ export default function ProfilePage() {
                 <CardHeader>
                   <CardTitle className="text-lg">Preferences</CardTitle>
                   <CardDescription className="text-sm">
-                    Customize your experience
+                    Customize your experience and privacy settings
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Theme */}
-                  <div>
-                    <label className="text-sm font-medium mb-3 block flex items-center">
-                      <Palette className="h-4 w-4 mr-2" />
-                      Theme
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => setPreferencesForm(prev => ({ ...prev, theme: 'light' }))}
-                        className={`p-3 rounded-lg border text-left ${
-                          preferencesForm.theme === 'light' ? 'border-primary bg-primary/5' : 'border-gray-200'
-                        }`}
+                  {/* Theme & Language */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium mb-2 block flex items-center">
+                        <Palette className="h-4 w-4 mr-2" />
+                        Theme
+                      </label>
+                      <select
+                        value={preferencesForm.theme}
+                        onChange={(e) => setPreferencesForm(prev => ({ ...prev, theme: e.target.value }))}
+                        className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
                       >
-                        <div className="text-sm font-medium">Light</div>
-                        <div className="text-xs text-gray-600">Bright and clean</div>
-                      </button>
-                      <button
-                        onClick={() => setPreferencesForm(prev => ({ ...prev, theme: 'dark' }))}
-                        className={`p-3 rounded-lg border text-left ${
-                          preferencesForm.theme === 'dark' ? 'border-primary bg-primary/5' : 'border-gray-200'
-                        }`}
-                      >
-                        <div className="text-sm font-medium">Dark</div>
-                        <div className="text-xs text-gray-600">Easy on the eyes</div>
-                      </button>
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                        <option value="auto">Auto</option>
+                      </select>
                     </div>
+
+                    <div>
+                      <label className="text-sm font-medium mb-2 block flex items-center">
+                        <Globe className="h-4 w-4 mr-2" />
+                        Language
+                      </label>
+                      <select
+                        value={preferencesForm.language}
+                        onChange={(e) => setPreferencesForm(prev => ({ ...prev, language: e.target.value }))}
+                        className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        <option value="en">English</option>
+                        <option value="es">Spanish</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Timezone */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Timezone</label>
+                    <select
+                      value={preferencesForm.timezone}
+                      onChange={(e) => setPreferencesForm(prev => ({ ...prev, timezone: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="UTC">UTC</option>
+                      <option value="America/New_York">Eastern Time</option>
+                      <option value="America/Chicago">Central Time</option>
+                      <option value="America/Denver">Mountain Time</option>
+                      <option value="America/Los_Angeles">Pacific Time</option>
+                      <option value="Europe/London">London</option>
+                      <option value="Europe/Paris">Paris</option>
+                      <option value="Asia/Tokyo">Tokyo</option>
+                    </select>
                   </div>
 
                   {/* Notifications */}
@@ -656,6 +821,21 @@ export default function ProfilePage() {
                       Privacy
                     </label>
                     <div className="space-y-3">
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">Profile Visibility</label>
+                        <select
+                          value={preferencesForm.privacy.profileVisibility}
+                          onChange={(e) => setPreferencesForm(prev => ({
+                            ...prev,
+                            privacy: { ...prev.privacy, profileVisibility: e.target.value }
+                          }))}
+                          className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          <option value="public">Public</option>
+                          <option value="private">Private</option>
+                          <option value="connections">Connections Only</option>
+                        </select>
+                      </div>
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="text-sm font-medium">Allow Search Engine Indexing</div>
@@ -675,9 +855,18 @@ export default function ProfilePage() {
                   </div>
 
                   <div className="flex justify-end pt-4">
-                    <Button onClick={handleSaveProfile} loading={isSaving}>
-                      <Save className="h-3.5 w-3.5 mr-2" />
-                      Save Changes
+                    <Button onClick={handleSaveProfile} disabled={isSaving}>
+                      {isSaving ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-3.5 w-3.5 mr-2" />
+                          Save Changes
+                        </>
+                      )}
                     </Button>
                   </div>
                 </CardContent>
@@ -750,9 +939,18 @@ export default function ProfilePage() {
                     />
 
                     <div className="flex justify-end pt-4">
-                      <Button onClick={handleChangePassword} loading={isSaving}>
-                        <Lock className="h-3.5 w-3.5 mr-2" />
-                        Change Password
+                      <Button onClick={handleChangePassword} disabled={isSaving}>
+                        {isSaving ? (
+                          <>
+                            <RefreshCw className="h-3.5 w-3.5 mr-2 animate-spin" />
+                            Changing...
+                          </>
+                        ) : (
+                          <>
+                            <Lock className="h-3.5 w-3.5 mr-2" />
+                            Change Password
+                          </>
+                        )}
                       </Button>
                     </div>
                   </CardContent>
@@ -771,35 +969,61 @@ export default function ProfilePage() {
                       <div>
                         <div className="text-sm font-medium">Two-Factor Authentication</div>
                         <div className="text-xs text-gray-600">
-                          {user.security.twoFactorEnabled ? 'Enabled' : 'Not enabled'}
+                          {is2FAEnabled() ? (
+                            <span className="text-green-600 flex items-center mt-1">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Enabled
+                            </span>
+                          ) : (
+                            <span className="text-gray-600">Not enabled</span>
+                          )}
                         </div>
                       </div>
                       <Button size="sm" variant="outline">
-                        {user.security.twoFactorEnabled ? 'Manage' : 'Enable'}
+                        {is2FAEnabled() ? 'Manage' : 'Enable'}
                       </Button>
                     </div>
 
-                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                      <div>
-                        <div className="text-sm font-medium">Last Password Change</div>
-                        <div className="text-xs text-gray-600">
-                          {new Date(user.security.lastPasswordChange).toLocaleDateString()}
+                    {user.security?.lastPasswordChange && (
+                      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div>
+                          <div className="text-sm font-medium">Last Password Change</div>
+                          <div className="text-xs text-gray-600">
+                            {new Date(user.security.lastPasswordChange).toLocaleDateString()}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                       <div>
                         <div className="text-sm font-medium">Email Verification</div>
                         <div className="text-xs text-gray-600">
-                          {user.emailVerified ? 'Verified' : 'Not verified'}
+                          {isEmailVerified() ? (
+                            <span className="text-green-600 flex items-center mt-1">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Verified
+                            </span>
+                          ) : (
+                            <span className="text-yellow-600 flex items-center mt-1">
+                              <AlertCircle className="h-3 w-3 mr-1" />
+                              Not verified
+                            </span>
+                          )}
                         </div>
                       </div>
-                      {!user.emailVerified && (
+                      {!isEmailVerified() && (
                         <Button size="sm" variant="outline">
                           Verify Email
                         </Button>
                       )}
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <div className="text-sm font-medium">Account Status</div>
+                        <div className="text-xs text-gray-600 capitalize">{user.status}</div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

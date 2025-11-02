@@ -1,5 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
+import { Logo } from '@/components/Logo'
 
 export default function AuthLayout({
   children,
@@ -60,12 +61,7 @@ export default function AuthLayout({
       <div className="flex-1 flex flex-col">
         {/* Mobile Header */}
         <div className="lg:hidden p-6 border-b">
-          <Link href="/" className="inline-flex items-center space-x-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-black font-bold text-sm">E</span>
-            </div>
-            <span className="text-lg font-bold">Enterprise</span>
-          </Link>
+          <Logo href="/" showText={false} />
         </div>
 
         {/* Auth Content */}

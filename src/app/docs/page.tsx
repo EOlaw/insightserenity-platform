@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -239,12 +240,7 @@ export default function DocumentationPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
-              <Link href="/" className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <span className="text-black font-bold text-sm">E</span>
-                </div>
-                <span className="text-lg font-bold text-foreground">Enterprise</span>
-              </Link>
+              <Logo href="/" showText={false} />
               <div className="hidden md:flex items-center space-x-6">
                 <Link href="/docs" className="text-xs text-primary font-medium">
                   Documentation
