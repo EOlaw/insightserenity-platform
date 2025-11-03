@@ -1,7 +1,8 @@
 /**
- * @fileoverview Client Note Management Routes
+ * @fileoverview Client Note Self-Service Routes
  * @module servers/customer-services/modules/core-business/client-management/routes/client-note-routes
- * @description Routes for client note operations
+ * @description Client-facing routes for authenticated clients to manage their own notes
+ * @note Administrative operations are handled by the admin server
  */
 
 const express = require('express');
@@ -10,117 +11,21 @@ const ClientNoteController = require('../controllers/client-note-controller');
 
 // Import middleware
 const { authenticate } = require('../../../../middleware/auth-middleware');
-const { validateRequest } = require('../../../../middleware/validation');
 const { rateLimiter } = require('../../../../middleware/rate-limiter');
-const { checkPermission } = require('../../../../middleware/permissions');
 
 // Apply authentication to all routes
+// Note: Permission checks removed - clients access their own data only
+// Authorization is enforced at the controller level
 router.use(authenticate);
-
-/**
- * @route   GET /api/v1/notes/statistics
- * @desc    Get note statistics
- * @access  Private
- */
-router.get(
-    '/statistics',
-    checkPermission('notes:read'),
-    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
-    ClientNoteController.getNoteStatistics
-);
-
-/**
- * @route   GET /api/v1/notes/recent
- * @desc    Get recent notes
- * @access  Private
- */
-router.get(
-    '/recent',
-    checkPermission('notes:read'),
-    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
-    ClientNoteController.getRecentNotes
-);
-
-/**
- * @route   GET /api/v1/notes/search
- * @desc    Search notes (GET method)
- * @access  Private
- */
-router.get(
-    '/search',
-    checkPermission('notes:read'),
-    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
-    ClientNoteController.searchNotes
-);
-
-/**
- * @route   POST /api/v1/notes/search
- * @desc    Search notes (POST method with advanced filters)
- * @access  Private
- */
-router.post(
-    '/search',
-    checkPermission('notes:read'),
-    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
-    ClientNoteController.searchNotes
-);
-
-/**
- * @route   GET /api/v1/notes/export
- * @desc    Export notes
- * @access  Private
- */
-router.get(
-    '/export',
-    checkPermission('notes:export'),
-    rateLimiter({ maxRequests: 10, windowMs: 60000 }),
-    ClientNoteController.exportNotes
-);
-
-/**
- * @route   POST /api/v1/notes/bulk
- * @desc    Bulk create notes
- * @access  Private
- */
-router.post(
-    '/bulk',
-    checkPermission('notes:create'),
-    rateLimiter({ maxRequests: 10, windowMs: 60000 }),
-    ClientNoteController.bulkCreateNotes
-);
-
-/**
- * @route   GET /api/v1/notes/tags/:tag
- * @desc    Get notes by tag
- * @access  Private
- */
-router.get(
-    '/tags/:tag',
-    checkPermission('notes:read'),
-    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
-    ClientNoteController.getNotesByTag
-);
-
-/**
- * @route   GET /api/v1/notes/priority/:priority
- * @desc    Get notes by priority
- * @access  Private
- */
-router.get(
-    '/priority/:priority',
-    checkPermission('notes:read'),
-    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
-    ClientNoteController.getNotesByPriority
-);
 
 /**
  * @route   POST /api/v1/notes
  * @desc    Create a new note
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only create notes associated with their account
  */
 router.post(
     '/',
-    checkPermission('notes:create'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientNoteController.createNote
 );
@@ -128,11 +33,11 @@ router.post(
 /**
  * @route   GET /api/v1/notes/:id
  * @desc    Get note by ID
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only retrieve their own notes
  */
 router.get(
     '/:id',
-    checkPermission('notes:read'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientNoteController.getNoteById
 );
@@ -140,11 +45,11 @@ router.get(
 /**
  * @route   PUT /api/v1/notes/:id
  * @desc    Update note (full update)
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only update their own notes
  */
 router.put(
     '/:id',
-    checkPermission('notes:update'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientNoteController.updateNote
 );
@@ -152,11 +57,11 @@ router.put(
 /**
  * @route   PATCH /api/v1/notes/:id
  * @desc    Update note (partial update)
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only update their own notes
  */
 router.patch(
     '/:id',
-    checkPermission('notes:update'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientNoteController.updateNote
 );
@@ -164,11 +69,11 @@ router.patch(
 /**
  * @route   DELETE /api/v1/notes/:id
  * @desc    Delete note
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only delete their own notes
  */
 router.delete(
     '/:id',
-    checkPermission('notes:delete'),
     rateLimiter({ maxRequests: 50, windowMs: 60000 }),
     ClientNoteController.deleteNote
 );
@@ -176,13 +81,26 @@ router.delete(
 /**
  * @route   POST /api/v1/notes/:id/comments
  * @desc    Add comment to note
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only add comments to their own notes
  */
 router.post(
     '/:id/comments',
-    checkPermission('notes:update'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientNoteController.addComment
 );
+
+// ============================================================================
+// REMOVED ROUTES - These operations are handled by the admin server
+// ============================================================================
+
+// GET /api/v1/notes/statistics - Statistics are administrative only
+// GET /api/v1/notes/recent - Recent notes view is administrative only
+// GET /api/v1/notes/search - Search across notes is administrative only
+// POST /api/v1/notes/search - Advanced search is administrative only
+// GET /api/v1/notes/export - Export functionality is administrative only
+// POST /api/v1/notes/bulk - Bulk operations are administrative only
+// GET /api/v1/notes/tags/:tag - Tag-based retrieval is administrative only
+// GET /api/v1/notes/priority/:priority - Priority-based retrieval is administrative only
 
 module.exports = router;

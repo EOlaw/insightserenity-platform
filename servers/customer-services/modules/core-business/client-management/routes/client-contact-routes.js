@@ -1,7 +1,8 @@
 /**
- * @fileoverview Client Contact Management Routes
+ * @fileoverview Client Contact Self-Service Routes
  * @module servers/customer-services/modules/core-business/client-management/routes/client-contact-routes
- * @description Routes for client contact operations
+ * @description Client-facing routes for authenticated clients to manage their own contacts
+ * @note Administrative operations are handled by the admin server
  */
 
 const express = require('express');
@@ -10,69 +11,21 @@ const ClientContactController = require('../controllers/client-contact-controlle
 
 // Import middleware
 const { authenticate } = require('../../../../middleware/auth-middleware');
-const { validateRequest } = require('../../../../middleware/validation');
 const { rateLimiter } = require('../../../../middleware/rate-limiter');
-const { checkPermission } = require('../../../../middleware/permissions');
 
 // Apply authentication to all routes
+// Note: Permission checks removed - clients access their own data only
+// Authorization is enforced at the controller level
 router.use(authenticate);
-
-/**
- * @route   GET /api/v1/contacts/search
- * @desc    Search contacts (GET method)
- * @access  Private
- */
-router.get(
-    '/search',
-    checkPermission('contacts:read'),
-    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
-    ClientContactController.searchContacts
-);
-
-/**
- * @route   POST /api/v1/contacts/search
- * @desc    Search contacts (POST method with advanced filters)
- * @access  Private
- */
-router.post(
-    '/search',
-    checkPermission('contacts:read'),
-    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
-    ClientContactController.searchContacts
-);
-
-/**
- * @route   GET /api/v1/contacts/export
- * @desc    Export contacts
- * @access  Private
- */
-router.get(
-    '/export',
-    checkPermission('contacts:export'),
-    rateLimiter({ maxRequests: 10, windowMs: 60000 }),
-    ClientContactController.exportContacts
-);
-
-/**
- * @route   POST /api/v1/contacts/bulk
- * @desc    Bulk create contacts
- * @access  Private
- */
-router.post(
-    '/bulk',
-    checkPermission('contacts:create'),
-    rateLimiter({ maxRequests: 10, windowMs: 60000 }),
-    ClientContactController.bulkCreateContacts
-);
 
 /**
  * @route   POST /api/v1/contacts
  * @desc    Create a new contact
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only create contacts associated with their account
  */
 router.post(
     '/',
-    checkPermission('contacts:create'),
     rateLimiter({ maxRequests: 50, windowMs: 60000 }),
     ClientContactController.createContact
 );
@@ -80,11 +33,11 @@ router.post(
 /**
  * @route   GET /api/v1/contacts/:id
  * @desc    Get contact by ID
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only retrieve their own contacts
  */
 router.get(
     '/:id',
-    checkPermission('contacts:read'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientContactController.getContactById
 );
@@ -92,11 +45,11 @@ router.get(
 /**
  * @route   PUT /api/v1/contacts/:id
  * @desc    Update contact (full update)
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only update their own contacts
  */
 router.put(
     '/:id',
-    checkPermission('contacts:update'),
     rateLimiter({ maxRequests: 50, windowMs: 60000 }),
     ClientContactController.updateContact
 );
@@ -104,11 +57,11 @@ router.put(
 /**
  * @route   PATCH /api/v1/contacts/:id
  * @desc    Update contact (partial update)
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only update their own contacts
  */
 router.patch(
     '/:id',
-    checkPermission('contacts:update'),
     rateLimiter({ maxRequests: 50, windowMs: 60000 }),
     ClientContactController.updateContact
 );
@@ -116,11 +69,11 @@ router.patch(
 /**
  * @route   DELETE /api/v1/contacts/:id
  * @desc    Delete contact
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only delete their own contacts
  */
 router.delete(
     '/:id',
-    checkPermission('contacts:delete'),
     rateLimiter({ maxRequests: 20, windowMs: 60000 }),
     ClientContactController.deleteContact
 );
@@ -128,11 +81,11 @@ router.delete(
 /**
  * @route   POST /api/v1/contacts/:id/interactions
  * @desc    Record contact interaction
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only record interactions for their own contacts
  */
 router.post(
     '/:id/interactions',
-    checkPermission('contacts:update'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientContactController.recordInteraction
 );
@@ -140,13 +93,22 @@ router.post(
 /**
  * @route   GET /api/v1/contacts/:id/engagement
  * @desc    Get contact engagement metrics
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only view engagement for their own contacts
  */
 router.get(
     '/:id/engagement',
-    checkPermission('contacts:read'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientContactController.getContactEngagement
 );
+
+// ============================================================================
+// REMOVED ROUTES - These operations are handled by the admin server
+// ============================================================================
+
+// GET /api/v1/contacts/search - Search across contacts is administrative only
+// POST /api/v1/contacts/search - Advanced search is administrative only
+// GET /api/v1/contacts/export - Export functionality is administrative only
+// POST /api/v1/contacts/bulk - Bulk operations are administrative only
 
 module.exports = router;

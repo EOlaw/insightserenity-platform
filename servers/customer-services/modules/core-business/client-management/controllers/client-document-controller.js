@@ -241,53 +241,6 @@ class ClientDocumentController {
     }
 
     /**
-     * Search documents
-     * @route GET /api/v1/documents/search
-     * @route POST /api/v1/documents/search
-     */
-    async searchDocuments(req, res, next) {
-        try {
-            const filters = req.method === 'POST' ? req.body.filters || {} : {
-                clientId: req.query.clientId,
-                type: req.query.type,
-                status: req.query.status,
-                accessLevel: req.query.accessLevel,
-                search: req.query.q || req.query.search,
-                dateFrom: req.query.dateFrom,
-                dateTo: req.query.dateTo
-            };
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                page: parseInt(req.query.page, 10) || 1,
-                limit: parseInt(req.query.limit, 10) || 20,
-                sortBy: req.query.sortBy,
-                sortOrder: req.query.sortOrder
-            };
-
-            logger.info('Search documents request', {
-                filters,
-                page: options.page,
-                userId: req.user?.id
-            });
-
-            const result = await ClientDocumentService.searchDocuments(filters, options);
-
-            res.status(200).json({
-                success: true,
-                data: result
-            });
-
-        } catch (error) {
-            logger.error('Search documents failed', {
-                error: error.message,
-                userId: req.user?.id
-            });
-            next(error);
-        }
-    }
-
-    /**
      * Share document
      * @route POST /api/v1/documents/:id/share
      */
@@ -418,71 +371,6 @@ class ClientDocumentController {
             logger.error('Get document versions failed', {
                 error: error.message,
                 documentId: req.params.id
-            });
-            next(error);
-        }
-    }
-
-    /**
-     * Bulk upload documents
-     * @route POST /api/v1/documents/bulk
-     */
-    async bulkUploadDocuments(req, res, next) {
-        try {
-            const { documents } = req.body;
-
-            if (!Array.isArray(documents) || documents.length === 0) {
-                throw AppError.validation('Invalid bulk document data');
-            }
-
-            logger.info('Bulk upload documents request', {
-                count: documents.length,
-                userId: req.user?.id
-            });
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                organizationId: req.user?.organizationId,
-                userId: req.user?.id,
-                uploadSource: 'bulk_upload'
-            };
-
-            const results = {
-                success: [],
-                failed: []
-            };
-
-            for (const documentData of documents) {
-                try {
-                    const document = await ClientDocumentService.createDocument(documentData, options);
-                    results.success.push({
-                        documentId: document.documentId,
-                        name: document.documentInfo.name
-                    });
-                } catch (error) {
-                    results.failed.push({
-                        name: documentData.documentInfo?.name,
-                        error: error.message
-                    });
-                }
-            }
-
-            logger.info('Bulk upload documents completed', {
-                successCount: results.success.length,
-                failedCount: results.failed.length,
-                userId: req.user?.id
-            });
-
-            res.status(201).json({
-                success: true,
-                message: `Bulk document upload completed: ${results.success.length} succeeded, ${results.failed.length} failed`,
-                data: results
-            });
-
-        } catch (error) {
-            logger.error('Bulk upload documents failed', {
-                error: error.message,
-                userId: req.user?.id
             });
             next(error);
         }

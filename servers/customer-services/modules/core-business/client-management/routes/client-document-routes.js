@@ -1,7 +1,8 @@
 /**
- * @fileoverview Client Document Management Routes
+ * @fileoverview Client Document Self-Service Routes
  * @module servers/customer-services/modules/core-business/client-management/routes/client-document-routes
- * @description Routes for client document operations
+ * @description Client-facing routes for authenticated clients to manage their own documents
+ * @note Administrative operations are handled by the admin server
  */
 
 const express = require('express');
@@ -10,57 +11,22 @@ const ClientDocumentController = require('../controllers/client-document-control
 
 // Import middleware
 const { authenticate } = require('../../../../middleware/auth-middleware');
-const { validateRequest } = require('../../../../middleware/validation');
 const { rateLimiter } = require('../../../../middleware/rate-limiter');
-const { checkPermission } = require('../../../../middleware/permissions');
 
 // Apply authentication to all routes
+// Note: Permission checks removed - clients access their own data only
+// Authorization is enforced at the controller level
 router.use(authenticate);
-
-/**
- * @route   GET /api/v1/documents/search
- * @desc    Search documents (GET method)
- * @access  Private
- */
-router.get(
-    '/search',
-    checkPermission('documents:read'),
-    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
-    ClientDocumentController.searchDocuments
-);
-
-/**
- * @route   POST /api/v1/documents/search
- * @desc    Search documents (POST method with advanced filters)
- * @access  Private
- */
-router.post(
-    '/search',
-    checkPermission('documents:read'),
-    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
-    ClientDocumentController.searchDocuments
-);
-
-/**
- * @route   POST /api/v1/documents/bulk
- * @desc    Bulk upload documents
- * @access  Private
- */
-router.post(
-    '/bulk',
-    checkPermission('documents:create'),
-    rateLimiter({ maxRequests: 5, windowMs: 60000 }),
-    ClientDocumentController.bulkUploadDocuments
-);
 
 /**
  * @route   POST /api/v1/documents
  * @desc    Create/upload a new document
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only upload documents to their own account
+ *          In production, add multer middleware here for file uploads
  */
 router.post(
     '/',
-    checkPermission('documents:create'),
     rateLimiter({ maxRequests: 30, windowMs: 60000 }),
     // Note: In production, add multer middleware here for file uploads
     // upload.single('file'),
@@ -70,11 +36,11 @@ router.post(
 /**
  * @route   GET /api/v1/documents/:id
  * @desc    Get document by ID
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only retrieve their own documents
  */
 router.get(
     '/:id',
-    checkPermission('documents:read'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientDocumentController.getDocumentById
 );
@@ -82,11 +48,11 @@ router.get(
 /**
  * @route   PUT /api/v1/documents/:id
  * @desc    Update document (full update)
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only update their own documents
  */
 router.put(
     '/:id',
-    checkPermission('documents:update'),
     rateLimiter({ maxRequests: 50, windowMs: 60000 }),
     ClientDocumentController.updateDocument
 );
@@ -94,11 +60,11 @@ router.put(
 /**
  * @route   PATCH /api/v1/documents/:id
  * @desc    Update document (partial update)
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only update their own documents
  */
 router.patch(
     '/:id',
-    checkPermission('documents:update'),
     rateLimiter({ maxRequests: 50, windowMs: 60000 }),
     ClientDocumentController.updateDocument
 );
@@ -106,11 +72,11 @@ router.patch(
 /**
  * @route   DELETE /api/v1/documents/:id
  * @desc    Delete document
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only delete their own documents
  */
 router.delete(
     '/:id',
-    checkPermission('documents:delete'),
     rateLimiter({ maxRequests: 20, windowMs: 60000 }),
     ClientDocumentController.deleteDocument
 );
@@ -118,11 +84,11 @@ router.delete(
 /**
  * @route   POST /api/v1/documents/:id/share
  * @desc    Share document with users
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only share their own documents
  */
 router.post(
     '/:id/share',
-    checkPermission('documents:share'),
     rateLimiter({ maxRequests: 50, windowMs: 60000 }),
     ClientDocumentController.shareDocument
 );
@@ -130,11 +96,11 @@ router.post(
 /**
  * @route   GET /api/v1/documents/:id/download
  * @desc    Download document
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only download their own documents
  */
 router.get(
     '/:id/download',
-    checkPermission('documents:read'),
     rateLimiter({ maxRequests: 50, windowMs: 60000 }),
     ClientDocumentController.downloadDocument
 );
@@ -142,11 +108,11 @@ router.get(
 /**
  * @route   GET /api/v1/documents/:id/versions
  * @desc    Get document versions
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only view versions of their own documents
  */
 router.get(
     '/:id/versions',
-    checkPermission('documents:read'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientDocumentController.getDocumentVersions
 );
@@ -154,13 +120,21 @@ router.get(
 /**
  * @route   GET /api/v1/documents/:id/analytics
  * @desc    Get document analytics
- * @access  Private
+ * @access  Private (Authenticated Client)
+ * @note    Client can only view analytics for their own documents
  */
 router.get(
     '/:id/analytics',
-    checkPermission('documents:read'),
     rateLimiter({ maxRequests: 100, windowMs: 60000 }),
     ClientDocumentController.getDocumentAnalytics
 );
+
+// ============================================================================
+// REMOVED ROUTES - These operations are handled by the admin server
+// ============================================================================
+
+// GET /api/v1/documents/search - Search across documents is administrative only
+// POST /api/v1/documents/search - Advanced search is administrative only
+// POST /api/v1/documents/bulk - Bulk operations are administrative only
 
 module.exports = router;
