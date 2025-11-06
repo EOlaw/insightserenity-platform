@@ -1,7 +1,7 @@
 /**
  * @fileoverview Client Note Management Controller
  * @module servers/customer-services/modules/core-business/client-management/controllers/client-note-controller
- * @description HTTP request handlers for client note operations
+ * @description HTTP request handlers for client note operations with self-service access control
  */
 
 const ClientNoteService = require('../services/client-note-service');
@@ -21,38 +21,38 @@ class ClientNoteController {
      */
     async createNote(req, res, next) {
         try {
+            const userId = req.user?._id || req.user?.id;
+            
             logger.info('Create note request received', {
                 clientId: req.body.clientId,
-                noteType: req.body.type,
-                userId: req.user?.id
+                noteTitle: req.body.content?.title,
+                noteType: req.body.classification?.type,
+                userId: userId
             });
 
-            const noteData = {
-                ...req.body,
-                tenantId: req.user?.tenantId || req.body.tenantId,
-                organizationId: req.user?.organizationId || req.body.organizationId
-            };
+            const noteData = req.body;
 
             const options = {
                 tenantId: req.user?.tenantId,
                 organizationId: req.user?.organizationId,
-                userId: req.user?.id,
-                source: req.body.source || 'manual'
+                userId: userId,
+                userClientId: req.user?.clientId,
+                source: req.body.source || 'web',
+                userAgent: req.headers['user-agent'],
+                ipAddress: req.ip || req.connection.remoteAddress
             };
 
             const note = await ClientNoteService.createNote(noteData, options);
 
             logger.info('Note created successfully', {
                 noteId: note.noteId,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(201).json({
                 success: true,
                 message: 'Note created successfully',
-                data: {
-                    note
-                }
+                data: note
             });
 
         } catch (error) {
@@ -71,21 +71,33 @@ class ClientNoteController {
     async getNoteById(req, res, next) {
         try {
             const { id } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Get note by ID request', {
+                noteId: id,
+                userId: userId
+            });
+
             const options = {
                 tenantId: req.user?.tenantId,
-                userId: req.user?.id,
-                populate: req.query.populate === 'true'
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
+                populate: req.query.populate === 'true',
+                includeDeleted: req.query.includeDeleted === 'true',
+                trackView: req.query.trackView !== 'false'
             };
-
-            logger.info('Get note by ID request', { noteId: id, userId: req.user?.id });
 
             const note = await ClientNoteService.getNoteById(id, options);
 
+            logger.info('Note fetched successfully', {
+                noteId: id,
+                userId: userId
+            });
+
             res.status(200).json({
                 success: true,
-                data: {
-                    note
-                }
+                data: note
             });
 
         } catch (error) {
@@ -104,26 +116,33 @@ class ClientNoteController {
     async getNotesByClient(req, res, next) {
         try {
             const { clientId } = req.params;
-            const options = {
-                tenantId: req.user?.tenantId,
-                type: req.query.type,
-                category: req.query.category,
-                priority: req.query.priority,
-                tags: req.query.tags ? req.query.tags.split(',') : undefined,
-                dateFrom: req.query.dateFrom,
-                dateTo: req.query.dateTo,
-                sortBy: req.query.sortBy,
-                sortOrder: req.query.sortOrder,
-                page: req.query.page,
-                limit: req.query.limit
-            };
-
+            const userId = req.user?._id || req.user?.id;
+            
             logger.info('Get notes by client request', {
                 clientId,
-                userId: req.user?.id
+                userId: userId
             });
 
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
+                type: req.query.type,
+                category: req.query.category,
+                importance: req.query.importance,
+                tags: req.query.tags ? req.query.tags.split(',') : undefined,
+                sortBy: req.query.sortBy,
+                sortOrder: req.query.sortOrder
+            };
+
             const notes = await ClientNoteService.getNotesByClient(clientId, options);
+
+            logger.info('Notes fetched successfully', {
+                clientId,
+                count: notes.length,
+                userId: userId
+            });
 
             res.status(200).json({
                 success: true,
@@ -151,31 +170,33 @@ class ClientNoteController {
         try {
             const { id } = req.params;
             const updateData = req.body;
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                userId: req.user?.id
-            };
+            const userId = req.user?._id || req.user?.id;
 
             logger.info('Update note request', {
                 noteId: id,
                 updateFields: Object.keys(updateData),
-                userId: req.user?.id
+                userId: userId
             });
+
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
+                createNewVersion: req.body.createNewVersion === true
+            };
 
             const note = await ClientNoteService.updateNote(id, updateData, options);
 
             logger.info('Note updated successfully', {
                 noteId: id,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(200).json({
                 success: true,
                 message: 'Note updated successfully',
-                data: {
-                    note
-                }
+                data: note
             });
 
         } catch (error) {
@@ -194,25 +215,29 @@ class ClientNoteController {
     async deleteNote(req, res, next) {
         try {
             const { id } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Delete note request', {
+                noteId: id,
+                softDelete: req.query.soft !== 'false',
+                userId: userId
+            });
+
             const options = {
                 tenantId: req.user?.tenantId,
-                userId: req.user?.id,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
                 softDelete: req.query.soft !== 'false',
                 forceDelete: req.query.force === 'true'
             };
-
-            logger.info('Delete note request', {
-                noteId: id,
-                softDelete: options.softDelete,
-                userId: req.user?.id
-            });
 
             const result = await ClientNoteService.deleteNote(id, options);
 
             logger.info('Note deleted successfully', {
                 noteId: id,
                 deletionType: result.deletionType,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(200).json({
@@ -237,37 +262,39 @@ class ClientNoteController {
     async addComment(req, res, next) {
         try {
             const { id } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Add comment to note request', {
+                noteId: id,
+                userId: userId
+            });
+
+            if (!req.body.content) {
+                throw AppError.validation('Comment content is required');
+            }
+
             const commentData = {
                 content: req.body.content
             };
 
-            if (!commentData.content) {
-                throw AppError.validation('Comment content is required');
-            }
-
             const options = {
                 tenantId: req.user?.tenantId,
-                userId: req.user?.id
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId
             };
-
-            logger.info('Add comment request', {
-                noteId: id,
-                userId: req.user?.id
-            });
 
             const note = await ClientNoteService.addComment(id, commentData, options);
 
             logger.info('Comment added successfully', {
                 noteId: id,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(201).json({
                 success: true,
                 message: 'Comment added successfully',
-                data: {
-                    note
-                }
+                data: note
             });
 
         } catch (error) {
@@ -280,95 +307,148 @@ class ClientNoteController {
     }
 
     /**
-     * Bulk create notes
-     * @route POST /api/v1/notes/bulk
+     * Get note comments
+     * @route GET /api/v1/notes/:id/comments
      */
-    async bulkCreateNotes(req, res, next) {
+    async getNoteComments(req, res, next) {
         try {
-            const { notes } = req.body;
-
-            if (!Array.isArray(notes) || notes.length === 0) {
-                throw AppError.validation('Invalid bulk note data');
-            }
-
-            logger.info('Bulk create notes request', {
-                count: notes.length,
-                userId: req.user?.id
+            const { id } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Get note comments request', {
+                noteId: id,
+                userId: userId
             });
 
             const options = {
                 tenantId: req.user?.tenantId,
                 organizationId: req.user?.organizationId,
-                userId: req.user?.id,
-                source: 'bulk_import'
+                userId: userId,
+                userClientId: req.user?.clientId
             };
 
-            const results = {
-                success: [],
-                failed: []
-            };
+            const note = await ClientNoteService.getNoteById(id, options);
 
-            for (const noteData of notes) {
-                try {
-                    const note = await ClientNoteService.createNote(noteData, options);
-                    results.success.push({
-                        noteId: note.noteId,
-                        title: note.content.title
-                    });
-                } catch (error) {
-                    results.failed.push({
-                        title: noteData.content?.title,
-                        error: error.message
-                    });
-                }
-            }
-
-            logger.info('Bulk create notes completed', {
-                successCount: results.success.length,
-                failedCount: results.failed.length,
-                userId: req.user?.id
+            logger.info('Note comments fetched successfully', {
+                noteId: id,
+                commentCount: note.collaboration?.comments?.length || 0,
+                userId: userId
             });
 
-            res.status(201).json({
+            res.status(200).json({
                 success: true,
-                message: `Bulk note creation completed: ${results.success.length} succeeded, ${results.failed.length} failed`,
-                data: results
+                data: {
+                    noteId: note.noteId,
+                    comments: note.collaboration?.comments || [],
+                    count: note.collaboration?.comments?.length || 0
+                }
             });
 
         } catch (error) {
-            logger.error('Bulk create notes failed', {
+            logger.error('Get note comments failed', {
                 error: error.message,
-                userId: req.user?.id
+                noteId: req.params.id
             });
             next(error);
         }
     }
 
     /**
-     * Convert notes array to CSV
-     * @private
+     * Get note analytics
+     * @route GET /api/v1/notes/:id/analytics
      */
-    _convertToCSV(notes) {
-        if (!notes || notes.length === 0) return '';
+    async getNoteAnalytics(req, res, next) {
+        try {
+            const { id } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Get note analytics request', {
+                noteId: id,
+                userId: userId
+            });
 
-        const headers = ['Note ID', 'Title', 'Type', 'Category', 'Priority', 'Created By', 'Created Date', 'Word Count'];
-        const rows = notes.map(note => [
-            note.noteId || '',
-            note.content?.title || '',
-            note.type || '',
-            note.category || '',
-            note.priority || '',
-            note.metadata?.createdBy || '',
-            note.metadata?.createdAt ? new Date(note.metadata.createdAt).toISOString() : '',
-            note.content?.wordCount || 0
-        ]);
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId
+            };
 
-        const csvContent = [
-            headers.join(','),
-            ...rows.map(row => row.map(field => `"${field}"`).join(','))
-        ].join('\n');
+            const note = await ClientNoteService.getNoteById(id, options);
 
-        return csvContent;
+            logger.info('Note analytics fetched successfully', {
+                noteId: id,
+                userId: userId
+            });
+
+            res.status(200).json({
+                success: true,
+                data: {
+                    noteId: note.noteId,
+                    analytics: note.analytics,
+                    engagement: {
+                        viewCount: note.analytics?.views?.total || 0,
+                        commentCount: note.collaboration?.comments?.length || 0,
+                        shareCount: note.analytics?.engagement?.shares || 0
+                    }
+                }
+            });
+
+        } catch (error) {
+            logger.error('Get note analytics failed', {
+                error: error.message,
+                noteId: req.params.id
+            });
+            next(error);
+        }
+    }
+
+    /**
+     * Get note action items
+     * @route GET /api/v1/notes/:id/action-items
+     */
+    async getNoteActionItems(req, res, next) {
+        try {
+            const { id } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Get note action items request', {
+                noteId: id,
+                userId: userId
+            });
+
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId
+            };
+
+            const note = await ClientNoteService.getNoteById(id, options);
+
+            logger.info('Note action items fetched successfully', {
+                noteId: id,
+                actionItemCount: note.actionItems?.length || 0,
+                userId: userId
+            });
+
+            res.status(200).json({
+                success: true,
+                data: {
+                    noteId: note.noteId,
+                    actionItems: note.actionItems || [],
+                    count: note.actionItems?.length || 0,
+                    pending: note.actionItems?.filter(item => item.status === 'pending' || item.status === 'in_progress').length || 0
+                }
+            });
+
+        } catch (error) {
+            logger.error('Get note action items failed', {
+                error: error.message,
+                noteId: req.params.id
+            });
+            next(error);
+        }
     }
 }
 

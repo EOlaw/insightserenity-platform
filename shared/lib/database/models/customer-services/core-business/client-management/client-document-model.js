@@ -14,12 +14,12 @@
 
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
-const BaseModel = require('../../../base-model');
+// const BaseModel = require('../../../base-model');
 const logger = require('../../../../../utils/logger');
 const { AppError } = require('../../../../../utils/app-error');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
+// const CommonValidator = require('../../../../../utils/validators/common-validators');
 const stringHelper = require('../../../../../utils/helpers/string-helper');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
+// const EncryptionService = require('../../../../../security/encryption/encryption-service');
 
 /**
  * Enhanced client document schema definition for enterprise document management
@@ -1030,7 +1030,7 @@ const clientDocumentSchemaDefinition = {
   metadata: {
     source: {
       type: String,
-      enum: ['upload', 'email', 'scan', 'api', 'integration', 'migration', 'generated']
+      enum: ['upload', 'email', 'scan', 'api', 'integration', 'migration', 'generated', 'web']
     },
     uploadedBy: {
       type: mongoose.Schema.Types.ObjectId,

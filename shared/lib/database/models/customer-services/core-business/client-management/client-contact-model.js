@@ -14,12 +14,12 @@
 
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
-const BaseModel = require('../../../base-model');
+// const BaseModel = require('../../../base-model');
 const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
+// const { AppError } = require('../../../../../utils/app-error');
 const CommonValidator = require('../../../../../utils/validators/common-validators');
 const stringHelper = require('../../../../../utils/helpers/string-helper');
-const EncryptionService = require('../../../../..//security/encryption/encryption-service');
+// const EncryptionService = require('../../../../..//security/encryption/encryption-service');
 
 /**
  * Enhanced client contact schema definition for enterprise contact management

@@ -17,43 +17,41 @@ const logger = require('../../../../../../shared/lib/utils/logger').createLogger
 class ClientContactController {
     /**
      * Create a new contact
-     * @route POST /api/v1/contacts
+     * @route POST /api/v1/clients/contacts
      */
     async createContact(req, res, next) {
         try {
+            const userId = req.user?._id || req.user?.id;
+            
             logger.info('Create contact request received', {
                 clientId: req.body.clientId,
-                email: req.body.contactInfo?.email,
-                userId: req.user?.id
+                userId: userId
             });
 
-            const contactData = {
-                ...req.body,
-                tenantId: req.user?.tenantId || req.body.tenantId,
-                organizationId: req.user?.organizationId || req.body.organizationId
-            };
+            const contactData = req.body;
 
             const options = {
                 tenantId: req.user?.tenantId,
                 organizationId: req.user?.organizationId,
-                userId: req.user?.id,
+                userId: userId,
+                userClientId: req.user?.clientId,
                 source: req.body.source || 'manual',
-                sendWelcome: req.body.sendWelcome === true
+                sendWelcome: req.body.sendWelcome === true,
+                userAgent: req.headers['user-agent'],
+                ipAddress: req.ip || req.connection.remoteAddress
             };
 
             const contact = await ClientContactService.createContact(contactData, options);
 
             logger.info('Contact created successfully', {
                 contactId: contact.contactId,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(201).json({
                 success: true,
                 message: 'Contact created successfully',
-                data: {
-                    contact
-                }
+                data: contact
             });
 
         } catch (error) {
@@ -67,25 +65,37 @@ class ClientContactController {
 
     /**
      * Get contact by ID
-     * @route GET /api/v1/contacts/:id
+     * @route GET /api/v1/clients/contacts/:id
      */
     async getContactById(req, res, next) {
         try {
             const { id } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Get contact by ID request', {
+                contactId: id,
+                userId: userId
+            });
+
             const options = {
                 tenantId: req.user?.tenantId,
-                populate: req.query.populate === 'true'
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
+                populate: req.query.populate === 'true',
+                includeDeleted: req.query.includeDeleted === 'true'
             };
-
-            logger.info('Get contact by ID request', { contactId: id, userId: req.user?.id });
 
             const contact = await ClientContactService.getContactById(id, options);
 
+            logger.info('Contact fetched successfully', {
+                contactId: id,
+                userId: userId
+            });
+
             res.status(200).json({
                 success: true,
-                data: {
-                    contact
-                }
+                data: contact
             });
 
         } catch (error) {
@@ -104,20 +114,31 @@ class ClientContactController {
     async getContactsByClient(req, res, next) {
         try {
             const { clientId } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Get contacts by client request', {
+                clientId,
+                userId: userId
+            });
+
             const options = {
                 tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
                 status: req.query.status,
                 role: req.query.role,
                 sortBy: req.query.sortBy,
                 sortOrder: req.query.sortOrder
             };
 
-            logger.info('Get contacts by client request', {
-                clientId,
-                userId: req.user?.id
-            });
-
             const contacts = await ClientContactService.getContactsByClient(clientId, options);
+
+            logger.info('Contacts fetched successfully', {
+                clientId,
+                count: contacts.length,
+                userId: userId
+            });
 
             res.status(200).json({
                 success: true,
@@ -138,38 +159,39 @@ class ClientContactController {
 
     /**
      * Update contact
-     * @route PUT /api/v1/contacts/:id
-     * @route PATCH /api/v1/contacts/:id
+     * @route PUT /api/v1/clients/contacts/:id
+     * @route PATCH /api/v1/clients/contacts/:id
      */
     async updateContact(req, res, next) {
         try {
             const { id } = req.params;
             const updateData = req.body;
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                userId: req.user?.id
-            };
+            const userId = req.user?._id || req.user?.id;
 
             logger.info('Update contact request', {
                 contactId: id,
                 updateFields: Object.keys(updateData),
-                userId: req.user?.id
+                userId: userId
             });
+
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId
+            };
 
             const contact = await ClientContactService.updateContact(id, updateData, options);
 
             logger.info('Contact updated successfully', {
                 contactId: id,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(200).json({
                 success: true,
                 message: 'Contact updated successfully',
-                data: {
-                    contact
-                }
+                data: contact
             });
 
         } catch (error) {
@@ -183,30 +205,34 @@ class ClientContactController {
 
     /**
      * Delete contact
-     * @route DELETE /api/v1/contacts/:id
+     * @route DELETE /api/v1/clients/contacts/:id
      */
     async deleteContact(req, res, next) {
         try {
             const { id } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Delete contact request', {
+                contactId: id,
+                softDelete: req.query.soft !== 'false',
+                userId: userId
+            });
+
             const options = {
                 tenantId: req.user?.tenantId,
-                userId: req.user?.id,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
                 softDelete: req.query.soft !== 'false',
                 forceDelete: req.query.force === 'true'
             };
-
-            logger.info('Delete contact request', {
-                contactId: id,
-                softDelete: options.softDelete,
-                userId: req.user?.id
-            });
 
             const result = await ClientContactService.deleteContact(id, options);
 
             logger.info('Contact deleted successfully', {
                 contactId: id,
                 deletionType: result.deletionType,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(200).json({
@@ -226,37 +252,38 @@ class ClientContactController {
 
     /**
      * Record contact interaction
-     * @route POST /api/v1/contacts/:id/interactions
+     * @route POST /api/v1/clients/contacts/:id/interactions
      */
     async recordInteraction(req, res, next) {
         try {
             const { id } = req.params;
             const interactionData = req.body;
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                userId: req.user?.id
-            };
+            const userId = req.user?._id || req.user?.id;
 
             logger.info('Record interaction request', {
                 contactId: id,
                 type: interactionData.type,
-                userId: req.user?.id
+                userId: userId
             });
+
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId
+            };
 
             const contact = await ClientContactService.recordInteraction(id, interactionData, options);
 
             logger.info('Interaction recorded successfully', {
                 contactId: id,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(201).json({
                 success: true,
                 message: 'Interaction recorded successfully',
-                data: {
-                    contact
-                }
+                data: contact
             });
 
         } catch (error) {
@@ -267,30 +294,41 @@ class ClientContactController {
             next(error);
         }
     }
-    
+
     /**
      * Get contact engagement metrics
-     * @route GET /api/v1/contacts/:id/engagement
+     * @route GET /api/v1/clients/contacts/:id/engagement
      */
     async getContactEngagement(req, res, next) {
         try {
             const { id } = req.params;
-            const options = {
-                tenantId: req.user?.tenantId
-            };
-
+            const userId = req.user?._id || req.user?.id;
+            
             logger.info('Get contact engagement request', {
                 contactId: id,
-                userId: req.user?.id
+                userId: userId
             });
 
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId
+            };
+
             const contact = await ClientContactService.getContactById(id, options);
+
+            logger.info('Contact engagement fetched successfully', {
+                contactId: id,
+                userId: userId
+            });
 
             res.status(200).json({
                 success: true,
                 data: {
                     engagement: contact.engagement,
-                    communications: contact.communications
+                    relationship: contact.relationship,
+                    interactions: contact.interactions
                 }
             });
 
@@ -301,34 +339,6 @@ class ClientContactController {
             });
             next(error);
         }
-    }
-
-    /**
-     * Convert contacts array to CSV
-     * @private
-     */
-    _convertToCSV(contacts) {
-        if (!contacts || contacts.length === 0) return '';
-
-        const headers = ['Contact ID', 'First Name', 'Last Name', 'Email', 'Phone', 'Job Title', 'Department', 'Status', 'Created Date'];
-        const rows = contacts.map(contact => [
-            contact.contactId || '',
-            contact.personalInfo?.firstName || '',
-            contact.personalInfo?.lastName || '',
-            contact.contactInfo?.email || '',
-            contact.contactInfo?.phone || '',
-            contact.professionalInfo?.jobTitle || '',
-            contact.professionalInfo?.department || '',
-            contact.status || '',
-            contact.createdAt ? new Date(contact.createdAt).toISOString() : ''
-        ]);
-
-        const csvContent = [
-            headers.join(','),
-            ...rows.map(row => row.map(field => `"${field}"`).join(','))
-        ].join('\n');
-
-        return csvContent;
     }
 }
 

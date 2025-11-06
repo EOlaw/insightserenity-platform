@@ -37,6 +37,7 @@
     "joi": "^18.0.1",
     "js-cookie": "^3.0.5",
     "jsonwebtoken": "^9.0.2",
+    "libphonenumber-js": "^1.12.25",
     "lucide-react": "^0.544.0",
     "mongoose": "^8.19.0",
     "morgan": "^1.10.1",

@@ -217,7 +217,7 @@ class StringHelper {
                 return padString.repeat(Math.ceil(leftPad / padString.length))
                     .substring(0, leftPad) + str +
                     padString.repeat(Math.ceil(rightPad / padString.length))
-                    .substring(0, rightPad);
+                        .substring(0, rightPad);
             default:
                 throw new AppError('Direction must be left, right, or both', 400, 'INVALID_DIRECTION');
         }
@@ -321,6 +321,16 @@ class StringHelper {
         }
 
         return result;
+    }
+
+    /**
+     * Generates a random string (alias for random method)
+     * @param {number} length - Length of string to generate
+     * @param {Object} options - Generation options (optional)
+     * @returns {string} Random string
+     */
+    static generateRandomString(length = 10, options = {}) {
+        return this.random(length, options);
     }
 
     /**

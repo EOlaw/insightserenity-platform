@@ -1,7 +1,7 @@
 /**
  * @fileoverview Client Document Management Controller
  * @module servers/customer-services/modules/core-business/client-management/controllers/client-document-controller
- * @description HTTP request handlers for client document operations
+ * @description HTTP request handlers for client document operations with self-service access control
  */
 
 const ClientDocumentService = require('../services/client-document-service');
@@ -21,49 +21,58 @@ class ClientDocumentController {
      */
     async createDocument(req, res, next) {
         try {
+            const userId = req.user?._id || req.user?.id;
+            
             logger.info('Create document request received', {
                 clientId: req.body.clientId,
                 documentName: req.body.documentInfo?.name,
-                userId: req.user?.id
+                documentType: req.body.documentInfo?.type,
+                userId: userId
             });
 
-            const documentData = {
-                ...req.body,
-                tenantId: req.user?.tenantId || req.body.tenantId,
-                organizationId: req.user?.organizationId || req.body.organizationId
-            };
+            const documentData = req.body;
 
-            // Handle file upload if present
+            // Handle file upload if present (multer middleware would populate req.file)
             if (req.file) {
-                documentData.file = {
+                documentData.fileDetails = {
                     originalName: req.file.originalname,
+                    fileName: req.file.filename,
+                    fileExtension: req.file.originalname.split('.').pop(),
                     mimeType: req.file.mimetype,
                     size: req.file.size,
-                    path: req.file.path,
-                    hash: req.file.hash || null
+                    encoding: req.file.encoding
+                };
+
+                documentData.storage = {
+                    provider: 'local', // or 'aws_s3', etc.
+                    location: {
+                        path: req.file.path
+                    },
+                    url: req.file.path
                 };
             }
 
             const options = {
                 tenantId: req.user?.tenantId,
                 organizationId: req.user?.organizationId,
-                userId: req.user?.id,
-                uploadSource: req.body.uploadSource || 'web'
+                userId: userId,
+                userClientId: req.user?.clientId,
+                source: req.body.source || 'web',
+                userAgent: req.headers['user-agent'],
+                ipAddress: req.ip || req.connection.remoteAddress
             };
 
             const document = await ClientDocumentService.createDocument(documentData, options);
 
             logger.info('Document created successfully', {
                 documentId: document.documentId,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(201).json({
                 success: true,
                 message: 'Document created successfully',
-                data: {
-                    document
-                }
+                data: document
             });
 
         } catch (error) {
@@ -82,21 +91,33 @@ class ClientDocumentController {
     async getDocumentById(req, res, next) {
         try {
             const { id } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Get document by ID request', {
+                documentId: id,
+                userId: userId
+            });
+
             const options = {
                 tenantId: req.user?.tenantId,
-                userId: req.user?.id,
-                populate: req.query.populate === 'true'
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
+                populate: req.query.populate === 'true',
+                includeDeleted: req.query.includeDeleted === 'true',
+                trackView: req.query.trackView !== 'false'
             };
-
-            logger.info('Get document by ID request', { documentId: id, userId: req.user?.id });
 
             const document = await ClientDocumentService.getDocumentById(id, options);
 
+            logger.info('Document fetched successfully', {
+                documentId: id,
+                userId: userId
+            });
+
             res.status(200).json({
                 success: true,
-                data: {
-                    document
-                }
+                data: document
             });
 
         } catch (error) {
@@ -115,23 +136,33 @@ class ClientDocumentController {
     async getDocumentsByClient(req, res, next) {
         try {
             const { clientId } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Get documents by client request', {
+                clientId,
+                userId: userId
+            });
+
             const options = {
                 tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
                 type: req.query.type,
                 status: req.query.status,
                 projectId: req.query.projectId,
+                classificationLevel: req.query.classificationLevel,
                 sortBy: req.query.sortBy,
-                sortOrder: req.query.sortOrder,
-                page: req.query.page,
-                limit: req.query.limit
+                sortOrder: req.query.sortOrder
             };
 
-            logger.info('Get documents by client request', {
-                clientId,
-                userId: req.user?.id
-            });
-
             const documents = await ClientDocumentService.getDocumentsByClient(clientId, options);
+
+            logger.info('Documents fetched successfully', {
+                clientId,
+                count: documents.length,
+                userId: userId
+            });
 
             res.status(200).json({
                 success: true,
@@ -159,33 +190,33 @@ class ClientDocumentController {
         try {
             const { id } = req.params;
             const updateData = req.body;
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                userId: req.user?.id,
-                createNewVersion: req.body.createNewVersion === true
-            };
+            const userId = req.user?._id || req.user?.id;
 
             logger.info('Update document request', {
                 documentId: id,
                 updateFields: Object.keys(updateData),
-                createNewVersion: options.createNewVersion,
-                userId: req.user?.id
+                userId: userId
             });
+
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
+                createNewVersion: req.body.createNewVersion === true
+            };
 
             const document = await ClientDocumentService.updateDocument(id, updateData, options);
 
             logger.info('Document updated successfully', {
                 documentId: id,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(200).json({
                 success: true,
                 message: 'Document updated successfully',
-                data: {
-                    document
-                }
+                data: document
             });
 
         } catch (error) {
@@ -204,25 +235,29 @@ class ClientDocumentController {
     async deleteDocument(req, res, next) {
         try {
             const { id } = req.params;
+            const userId = req.user?._id || req.user?.id;
+            
+            logger.info('Delete document request', {
+                documentId: id,
+                softDelete: req.query.soft !== 'false',
+                userId: userId
+            });
+
             const options = {
                 tenantId: req.user?.tenantId,
-                userId: req.user?.id,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
                 softDelete: req.query.soft !== 'false',
                 forceDelete: req.query.force === 'true'
             };
-
-            logger.info('Delete document request', {
-                documentId: id,
-                softDelete: options.softDelete,
-                userId: req.user?.id
-            });
 
             const result = await ClientDocumentService.deleteDocument(id, options);
 
             logger.info('Document deleted successfully', {
                 documentId: id,
                 deletionType: result.deletionType,
-                userId: req.user?.id
+                userId: userId
             });
 
             res.status(200).json({
@@ -241,92 +276,43 @@ class ClientDocumentController {
     }
 
     /**
-     * Share document
-     * @route POST /api/v1/documents/:id/share
-     */
-    async shareDocument(req, res, next) {
-        try {
-            const { id } = req.params;
-            const { userIds } = req.body;
-
-            if (!Array.isArray(userIds) || userIds.length === 0) {
-                throw AppError.validation('User IDs are required for sharing');
-            }
-
-            const options = {
-                tenantId: req.user?.tenantId,
-                userId: req.user?.id,
-                notify: req.body.notify !== false
-            };
-
-            logger.info('Share document request', {
-                documentId: id,
-                userCount: userIds.length,
-                userId: req.user?.id
-            });
-
-            const document = await ClientDocumentService.shareDocument(id, userIds, options);
-
-            logger.info('Document shared successfully', {
-                documentId: id,
-                userCount: userIds.length,
-                userId: req.user?.id
-            });
-
-            res.status(200).json({
-                success: true,
-                message: 'Document shared successfully',
-                data: {
-                    document
-                }
-            });
-
-        } catch (error) {
-            logger.error('Share document failed', {
-                error: error.message,
-                documentId: req.params.id
-            });
-            next(error);
-        }
-    }
-
-    /**
      * Download document
      * @route GET /api/v1/documents/:id/download
      */
     async downloadDocument(req, res, next) {
         try {
             const { id } = req.params;
-            const options = {
-                tenantId: req.user?.tenantId,
-                userId: req.user?.id
-            };
-
+            const userId = req.user?._id || req.user?.id;
+            
             logger.info('Download document request', {
                 documentId: id,
-                userId: req.user?.id
+                userId: userId
             });
 
-            const document = await ClientDocumentService.getDocumentById(id, options);
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId
+            };
 
-            if (!document.file?.path) {
-                throw AppError.notFound('Document file not found');
-            }
+            const result = await ClientDocumentService.downloadDocument(id, options);
 
-            // Set download headers
-            res.setHeader('Content-Type', document.file.mimeType || 'application/octet-stream');
-            res.setHeader('Content-Disposition', `attachment; filename="${document.documentInfo.name}"`);
+            logger.info('Document download initiated', {
+                documentId: id,
+                userId: userId
+            });
 
-            // In production, this would stream the file from storage
-            // For now, return document metadata
+            // In production, this would stream the file or provide a signed URL
             res.status(200).json({
                 success: true,
-                message: 'Document download initiated',
+                message: 'Document available for download',
                 data: {
-                    documentId: document.documentId,
-                    name: document.documentInfo.name,
-                    size: document.file.size,
-                    mimeType: document.file.mimeType
+                    documentId: result.document.documentId,
+                    fileName: result.fileName,
+                    downloadUrl: result.downloadUrl,
+                    mimeType: result.document.fileDetails?.mimeType,
+                    size: result.document.fileDetails?.size
                 }
             });
 
@@ -346,24 +332,34 @@ class ClientDocumentController {
     async getDocumentVersions(req, res, next) {
         try {
             const { id } = req.params;
-            const options = {
-                tenantId: req.user?.tenantId,
-                userId: req.user?.id
-            };
-
+            const userId = req.user?._id || req.user?.id;
+            
             logger.info('Get document versions request', {
                 documentId: id,
-                userId: req.user?.id
+                userId: userId
             });
 
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId
+            };
+
             const document = await ClientDocumentService.getDocumentById(id, options);
+
+            logger.info('Document versions fetched successfully', {
+                documentId: id,
+                userId: userId
+            });
 
             res.status(200).json({
                 success: true,
                 data: {
                     documentId: document.documentId,
-                    currentVersion: document.version,
-                    versionHistory: document.versionHistory || []
+                    currentVersion: document.versioning?.versionString,
+                    versionHistory: document.versioning?.versionHistory || [],
+                    changeLog: document.versioning?.changeLog || []
                 }
             });
 
@@ -383,24 +379,37 @@ class ClientDocumentController {
     async getDocumentAnalytics(req, res, next) {
         try {
             const { id } = req.params;
-            const options = {
-                tenantId: req.user?.tenantId,
-                userId: req.user?.id
-            };
-
+            const userId = req.user?._id || req.user?.id;
+            
             logger.info('Get document analytics request', {
                 documentId: id,
-                userId: req.user?.id
+                userId: userId
             });
 
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId
+            };
+
             const document = await ClientDocumentService.getDocumentById(id, options);
+
+            logger.info('Document analytics fetched successfully', {
+                documentId: id,
+                userId: userId
+            });
 
             res.status(200).json({
                 success: true,
                 data: {
                     documentId: document.documentId,
                     analytics: document.analytics,
-                    access: document.access
+                    accessControl: {
+                        isShared: document.accessControl?.sharing?.isShared,
+                        sharedWithCount: document.accessControl?.sharing?.sharedWith?.length || 0,
+                        classificationLevel: document.documentInfo?.classification?.level
+                    }
                 }
             });
 

@@ -14,12 +14,12 @@
 
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
-const BaseModel = require('../../../base-model');
+// const BaseModel = require('../../../base-model');
 const logger = require('../../../../../utils/logger');
 const { AppError } = require('../../../../../utils/app-error');
-const CommonValidator = require('../../../../../utils/validators/common-validators');
+// const CommonValidator = require('../../../../../utils/validators/common-validators');
 const stringHelper = require('../../../../../utils/helpers/string-helper');
-const EncryptionService = require('../../../../../security/encryption/encryption-service');
+// const EncryptionService = require('../../../../../security/encryption/encryption-service');
 
 /**
  * Enhanced client note schema definition for enterprise knowledge management
@@ -154,7 +154,7 @@ const clientNoteSchemaDefinition = {
     source: {
       type: {
         type: String,
-        enum: ['manual', 'meeting', 'call', 'email', 'chat', 'portal', 'api', 'integration', 'import']
+        enum: ['manual', 'meeting', 'call', 'email', 'chat', 'portal', 'api', 'integration', 'import', 'web']
       },
       referenceId: String,
       url: String
@@ -1029,7 +1029,7 @@ const clientNoteSchemaDefinition = {
   metadata: {
     source: {
       type: String,
-      enum: ['manual', 'meeting', 'call', 'email', 'import', 'api', 'integration', 'ai_generated']
+      enum: ['manual', 'meeting', 'call', 'email', 'import', 'api', 'integration', 'ai_generated', 'web']
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

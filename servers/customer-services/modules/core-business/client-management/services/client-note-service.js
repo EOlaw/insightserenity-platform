@@ -1,7 +1,7 @@
 /**
  * @fileoverview Client Note Management Service
  * @module servers/customer-services/modules/core-business/client-management/services/client-note-service
- * @description Comprehensive service for managing client notes including activity tracking, tagging, and knowledge management
+ * @description Comprehensive service for managing client notes with enterprise-grade access control
  */
 
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
@@ -10,6 +10,7 @@ const logger = require('../../../../../../shared/lib/utils/logger').createLogger
 });
 const validator = require('validator');
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 
 // Import secure database service
 const database = require('../../../../../../shared/lib/database');
@@ -22,52 +23,54 @@ const AnalyticsService = require('../../analytics/services/analytics-service');
  * Note Type Constants
  */
 const NOTE_TYPES = {
-    GENERAL: 'general',
     MEETING: 'meeting',
     CALL: 'call',
     EMAIL: 'email',
     TASK: 'task',
-    ISSUE: 'issue',
-    OPPORTUNITY: 'opportunity',
+    REMINDER: 'reminder',
+    OBSERVATION: 'observation',
     FEEDBACK: 'feedback',
+    COMPLAINT: 'complaint',
+    OPPORTUNITY: 'opportunity',
+    RISK: 'risk',
+    DECISION: 'decision',
+    ACTION_ITEM: 'action_item',
+    FOLLOW_UP: 'follow_up',
     RESEARCH: 'research',
-    DECISION: 'decision'
+    ANALYSIS: 'analysis',
+    STRATEGY: 'strategy',
+    PERSONAL: 'personal',
+    TECHNICAL: 'technical',
+    FINANCIAL: 'financial',
+    LEGAL: 'legal',
+    GENERAL: 'general'
 };
 
 /**
  * Note Category Constants
  */
 const NOTE_CATEGORIES = {
-    RELATIONSHIP: 'relationship_management',
     SALES: 'sales',
-    SUPPORT: 'customer_support',
+    SUPPORT: 'support',
     TECHNICAL: 'technical',
     FINANCIAL: 'financial',
-    STRATEGIC: 'strategic',
+    LEGAL: 'legal',
     OPERATIONAL: 'operational',
-    OTHER: 'other'
+    STRATEGIC: 'strategic',
+    RELATIONSHIP: 'relationship',
+    COMPLIANCE: 'compliance',
+    GENERAL: 'general'
 };
 
 /**
- * Note Priority Constants
+ * Note Importance Constants
  */
-const NOTE_PRIORITIES = {
-    LOW: 'low',
-    NORMAL: 'normal',
+const NOTE_IMPORTANCE = {
+    CRITICAL: 'critical',
     HIGH: 'high',
-    URGENT: 'urgent',
-    CRITICAL: 'critical'
-};
-
-/**
- * Note Visibility Constants
- */
-const NOTE_VISIBILITY = {
-    PRIVATE: 'private',
-    TEAM: 'team',
-    DEPARTMENT: 'department',
-    COMPANY: 'company',
-    PUBLIC: 'public'
+    MEDIUM: 'medium',
+    LOW: 'low',
+    FYI: 'fyi'
 };
 
 /**
@@ -84,11 +87,10 @@ class ClientNoteService {
         this.config = {
             companyTenantId: process.env.COMPANY_TENANT_ID || 'default',
             autoGenerateNoteId: process.env.AUTO_GENERATE_NOTE_ID !== 'false',
-            maxNotesPerClient: parseInt(process.env.MAX_NOTES_PER_CLIENT, 10) || 10000,
             maxNoteLength: parseInt(process.env.MAX_NOTE_LENGTH, 10) || 50000,
-            enableNoteVersioning: process.env.ENABLE_NOTE_VERSIONING === 'true',
-            enableAutoTagging: process.env.ENABLE_AUTO_TAGGING === 'true',
-            enableSentimentAnalysis: process.env.ENABLE_SENTIMENT_ANALYSIS === 'true'
+            maxNotesPerClient: parseInt(process.env.MAX_NOTES_PER_CLIENT, 10) || 10000,
+            enableVersionControl: process.env.ENABLE_NOTE_VERSION_CONTROL !== 'false',
+            maxVersionsToKeep: parseInt(process.env.MAX_NOTE_VERSIONS_TO_KEEP, 10) || 50
         };
     }
 
@@ -99,7 +101,7 @@ class ClientNoteService {
      */
     _getDatabaseService() {
         if (!this._dbService) {
-            this._dbService = database;
+            this._dbService = database.getDatabaseService();
         }
         return this._dbService;
     }
@@ -107,129 +109,313 @@ class ClientNoteService {
     // ============= NOTE CREATION & MANAGEMENT =============
 
     /**
-     * Create a new client note
-     * @param {Object} noteData - Note information
-     * @param {Object} options - Additional options
-     * @returns {Promise<Object>} Created note
+     * Create a new note with enterprise-grade validation and context inheritance
      */
     async createNote(noteData, options = {}) {
+        const operationId = crypto.randomBytes(8).toString('hex');
+        const startTime = Date.now();
+
         try {
             logger.info('Starting note creation', {
+                operationId,
                 clientId: noteData.clientId,
-                noteType: noteData.type,
-                title: noteData.content?.title
+                noteTitle: noteData.content?.title,
+                noteType: noteData.classification?.type,
+                userId: options.userId,
+                source: options.source || 'manual'
             });
 
-            // Validate note data
+            // PHASE 1: INPUT VALIDATION
             await this._validateNoteData(noteData);
 
-            // Verify client exists
-            await this._verifyClientExists(noteData.clientId, options.tenantId);
+            if (!noteData.clientId || !mongoose.Types.ObjectId.isValid(noteData.clientId)) {
+                throw AppError.validation('Valid client ID is required', {
+                    context: {
+                        providedClientId: noteData.clientId,
+                        field: 'clientId'
+                    }
+                });
+            }
 
-            // Check note limit for client
+            // PHASE 2: CLIENT VERIFICATION AND CONTEXT INHERITANCE
+            const dbService = this._getDatabaseService();
+            const Client = dbService.getModel('Client', 'customer');
+
+            const parentClient = await Client.findById(noteData.clientId)
+                .select('tenantId organizationId companyName relationship.status')
+                .lean();
+
+            if (!parentClient) {
+                throw AppError.notFound('Parent client not found', {
+                    context: { clientId: noteData.clientId }
+                });
+            }
+
+            if (parentClient.relationship?.status === 'inactive' ||
+                parentClient.relationship?.status === 'churned') {
+                throw AppError.validation(
+                    'Cannot create notes for inactive or churned clients',
+                    {
+                        context: {
+                            clientId: noteData.clientId,
+                            clientStatus: parentClient.relationship.status
+                        }
+                    }
+                );
+            }
+
+            // PHASE 3: ACCESS CONTROL VERIFICATION
+            if (options.userClientId) {
+                if (parentClient._id.toString() !== options.userClientId.toString()) {
+                    throw AppError.forbidden(
+                        'You can only create notes for your own account',
+                        {
+                            context: {
+                                requestedClientId: noteData.clientId,
+                                userClientId: options.userClientId
+                            }
+                        }
+                    );
+                }
+                logger.debug('Self-service access validated', {
+                    operationId,
+                    userId: options.userId,
+                    clientId: options.userClientId
+                });
+            } else if (options.tenantId && !options.skipTenantCheck) {
+                if (!mongoose.Types.ObjectId.isValid(options.tenantId)) {
+                    throw AppError.validation('Valid tenant ID required in authentication context', {
+                        context: {
+                            providedTenantId: options.tenantId,
+                            clientTenantId: parentClient.tenantId
+                        }
+                    });
+                }
+
+                if (parentClient.tenantId.toString() !== options.tenantId.toString()) {
+                    throw AppError.forbidden('Access denied to this client', {
+                        context: {
+                            clientTenantId: parentClient.tenantId.toString(),
+                            userTenantId: options.tenantId.toString()
+                        }
+                    });
+                }
+
+                logger.debug('Administrative access validated', {
+                    operationId,
+                    userId: options.userId,
+                    tenantId: options.tenantId
+                });
+            }
+
+            // PHASE 4: BUSINESS RULE VALIDATION
             await this._checkNoteLimit(noteData.clientId);
 
-            // Generate note ID if not provided
+            // PHASE 5: DATA ENRICHMENT AND PREPARATION
             if (!noteData.noteId && this.config.autoGenerateNoteId) {
                 noteData.noteId = await this._generateNoteId();
             }
 
-            // Set default values
-            noteData.tenantId = options.tenantId || this.config.companyTenantId;
-            noteData.organizationId = options.organizationId || noteData.organizationId;
-            noteData.type = noteData.type || NOTE_TYPES.GENERAL;
-            noteData.category = noteData.category || NOTE_CATEGORIES.OTHER;
-            noteData.priority = noteData.priority || NOTE_PRIORITIES.NORMAL;
-            noteData.visibility = noteData.visibility || NOTE_VISIBILITY.TEAM;
+            noteData.tenantId = parentClient.tenantId;
+            noteData.organizationId = parentClient.organizationId;
+
+            // Initialize classification
+            if (!noteData.classification) {
+                noteData.classification = {};
+            }
+            noteData.classification.type = noteData.classification.type || NOTE_TYPES.GENERAL;
+            noteData.classification.category = noteData.classification.category || {};
+            noteData.classification.category.primary = noteData.classification.category.primary || NOTE_CATEGORIES.GENERAL;
+            noteData.classification.importance = noteData.classification.importance || NOTE_IMPORTANCE.MEDIUM;
 
             // Calculate content metrics
             if (noteData.content?.body) {
                 noteData.content.wordCount = this._countWords(noteData.content.body);
                 noteData.content.characterCount = noteData.content.body.length;
-                noteData.content.readingTime = Math.ceil(noteData.content.wordCount / 200); // Average reading speed
+                noteData.content.readingTime = Math.ceil(noteData.content.wordCount / 200);
+
+                // Auto-generate summary if not provided
+                if (!noteData.content.summary) {
+                    noteData.content.summary = this._generateSummary(noteData.content.body);
+                }
             }
 
-            // Auto-generate tags if enabled
-            if (this.config.enableAutoTagging && noteData.content?.body) {
-                noteData.tags = await this._generateAutoTags(noteData.content.body);
+            // Initialize versioning if enabled
+            if (this.config.enableVersionControl) {
+                noteData.versioning = {
+                    version: 1,
+                    revisions: [],
+                    lastModified: {
+                        date: new Date(),
+                        by: options.userId
+                    },
+                    locked: {
+                        isLocked: false
+                    }
+                };
             }
 
-            // Analyze sentiment if enabled
-            if (this.config.enableSentimentAnalysis && noteData.content?.body) {
-                noteData.content.sentiment = await this._analyzeSentiment(noteData.content.body);
+            // Initialize visibility
+            if (!noteData.visibility) {
+                noteData.visibility = {
+                    scope: 'team',
+                    teams: [],
+                    departments: [],
+                    sharedWith: [],
+                    clientVisible: {
+                        enabled: false
+                    },
+                    restrictions: {
+                        noExport: false,
+                        noCopy: false,
+                        noForward: false
+                    }
+                };
             }
 
-            // Initialize metadata
+            // Initialize analytics
+            if (!noteData.analytics) {
+                noteData.analytics = {
+                    views: {
+                        total: 0,
+                        unique: 0,
+                        viewHistory: []
+                    },
+                    engagement: {
+                        score: 0,
+                        interactions: 0,
+                        shares: 0,
+                        exports: 0
+                    },
+                    usefulness: {
+                        totalRatings: 0
+                    }
+                };
+            }
+
+            // Initialize collaboration
+            if (!noteData.collaboration) {
+                noteData.collaboration = {
+                    comments: [],
+                    contributors: [],
+                    votes: {
+                        upvotes: [],
+                        downvotes: [],
+                        score: 0
+                    },
+                    bookmarks: []
+                };
+            }
+
+            // Set metadata
             noteData.metadata = {
+                source: options.source || 'manual',
                 createdBy: options.userId,
                 createdAt: new Date(),
-                version: 1,
-                source: options.source || 'manual'
+                flags: {
+                    isPinned: false,
+                    isImportant: false,
+                    requiresReview: false,
+                    hasIssues: false
+                }
             };
 
-            // Initialize engagement metrics
-            noteData.engagement = {
-                viewCount: 0,
-                shareCount: 0,
-                commentCount: 0,
-                lastViewedAt: null
+            // Set status
+            noteData.status = {
+                current: 'active',
+                isActive: true,
+                isDeleted: false
             };
 
-            const dbService = this._getDatabaseService();
-            const ClientNote = await dbService.getModel('ClientNote', 'customer');
-
-            // Create note
+            // PHASE 6: DATABASE PERSISTENCE
+            const ClientNote = dbService.getModel('ClientNote', 'customer');
             const newNote = new ClientNote(noteData);
             await newNote.save();
 
+            const duration = Date.now() - startTime;
+
             logger.info('Note created successfully', {
+                operationId,
                 noteId: newNote.noteId,
                 clientId: newNote.clientId,
-                type: newNote.type
+                tenantId: newNote.tenantId.toString(),
+                organizationId: newNote.organizationId?.toString(),
+                noteTitle: newNote.content?.title,
+                noteType: newNote.classification?.type,
+                userId: options.userId,
+                duration: `${duration}ms`
             });
 
-            // Post-creation activities
-            await this._handlePostNoteCreation(newNote, options);
+            // PHASE 7: POST-CREATION ACTIVITIES
+            setImmediate(async () => {
+                try {
+                    await this._handlePostNoteCreation(newNote, options);
+                } catch (postError) {
+                    logger.error('Post-creation activities failed (non-critical)', {
+                        operationId,
+                        noteId: newNote.noteId,
+                        error: postError.message,
+                        stack: postError.stack
+                    });
+                }
+            });
 
             return this._sanitizeNoteOutput(newNote);
 
         } catch (error) {
+            const duration = Date.now() - startTime;
+
             logger.error('Note creation failed', {
+                operationId,
                 error: error.message,
+                errorCode: error.code,
                 stack: error.stack,
-                clientId: noteData?.clientId
+                clientId: noteData?.clientId,
+                userId: options?.userId,
+                duration: `${duration}ms`,
+                context: error.context || {}
             });
-            throw error;
+
+            if (error instanceof AppError) {
+                throw error;
+            }
+
+            if (error.name === 'ValidationError') {
+                throw AppError.validation('Note validation failed', {
+                    errors: Object.keys(error.errors).map(key => ({
+                        field: key,
+                        message: error.errors[key].message,
+                        value: error.errors[key].value
+                    }))
+                });
+            }
+
+            throw AppError.internal('Note creation failed', {
+                originalError: error.message,
+                operationId
+            });
         }
     }
 
     /**
-     * Get note by ID
-     * @param {string} noteId - Note ID or MongoDB ObjectId
-     * @param {Object} options - Query options
-     * @returns {Promise<Object>} Note data
+     * Get note by ID with enterprise-grade access control
      */
     async getNoteById(noteId, options = {}) {
         try {
             logger.info('Fetching note by ID', { noteId });
 
+            if (!mongoose.Types.ObjectId.isValid(noteId)) {
+                throw AppError.validation('Invalid note ID format', {
+                    context: { noteId }
+                });
+            }
+
             const dbService = this._getDatabaseService();
-            const ClientNote = await dbService.getModel('ClientNote', 'customer');
+            const ClientNote = dbService.getModel('ClientNote', 'customer');
+            const Client = dbService.getModel('Client', 'customer');
 
-            // Determine if searching by MongoDB ID or noteId field
-            let query;
-            if (noteId.match(/^[0-9a-fA-F]{24}$/)) {
-                query = ClientNote.findById(noteId);
-            } else {
-                query = ClientNote.findOne({ noteId: noteId.toUpperCase() });
-            }
-
-            // Apply population if requested
-            if (options.populate) {
-                query = query.populate('clientId metadata.createdBy relatedEntities.contactId');
-            }
-
-            const note = await query.exec();
+            // Fetch note without population
+            const note = await ClientNote.findById(noteId).lean();
 
             if (!note) {
                 throw AppError.notFound('Note not found', {
@@ -237,18 +423,84 @@ class ClientNoteService {
                 });
             }
 
-            // Check tenant access
-            if (options.tenantId && note.tenantId.toString() !== options.tenantId) {
-                throw AppError.forbidden('Access denied to this note');
+            if (note.status?.isDeleted && !options.includeDeleted) {
+                throw AppError.notFound('Note not found', {
+                    context: { noteId }
+                });
             }
 
-            // Check visibility permissions
-            if (options.userId && !await this._checkNoteVisibility(note, options.userId)) {
-                throw AppError.forbidden('Insufficient permissions to view this note');
+            // Manually fetch client data if needed
+            if (options.populate) {
+                const client = await Client.findById(note.clientId)
+                    .select('companyName clientCode tenantId organizationId')
+                    .lean();
+
+                if (client) {
+                    note.clientId = client;
+                }
+            } else {
+                const client = await Client.findById(note.clientId)
+                    .select('tenantId organizationId')
+                    .lean();
+
+                if (client) {
+                    note.clientId = client;
+                }
             }
 
-            // Track note view
-            await this._trackNoteView(note._id, options.userId);
+            // ACCESS CONTROL: Self-service check
+            if (options.userClientId) {
+                const clientIdString = note.clientId._id ?
+                    note.clientId._id.toString() :
+                    note.clientId.toString();
+
+                if (clientIdString !== options.userClientId.toString()) {
+                    throw AppError.forbidden('You can only access notes from your own account', {
+                        context: {
+                            noteClientId: clientIdString,
+                            userClientId: options.userClientId
+                        }
+                    });
+                }
+            }
+            // ACCESS CONTROL: Administrative tenant check
+            else if (options.tenantId && !options.skipTenantCheck) {
+                if (!mongoose.Types.ObjectId.isValid(options.tenantId)) {
+                    throw AppError.validation('Valid tenant ID required in authentication context');
+                }
+
+                const noteTenantId = note.clientId.tenantId ?
+                    note.clientId.tenantId.toString() :
+                    note.tenantId.toString();
+
+                if (noteTenantId !== options.tenantId.toString()) {
+                    throw AppError.forbidden('Access denied to this note', {
+                        context: {
+                            noteTenantId: noteTenantId,
+                            userTenantId: options.tenantId.toString()
+                        }
+                    });
+                }
+            }
+
+            logger.info('Note fetched successfully', {
+                noteId: note._id,
+                clientId: note.clientId._id || note.clientId
+            });
+
+            // Track view
+            if (options.trackView && options.userId) {
+                setImmediate(async () => {
+                    try {
+                        await this._recordNoteView(note._id, options.userId);
+                    } catch (trackError) {
+                        logger.error('Failed to track note view', {
+                            error: trackError.message,
+                            noteId: note._id
+                        });
+                    }
+                });
+            }
 
             return this._sanitizeNoteOutput(note);
 
@@ -262,67 +514,94 @@ class ClientNoteService {
     }
 
     /**
-     * Get all notes for a client
-     * @param {string} clientId - Client ID
-     * @param {Object} options - Query options
-     * @returns {Promise<Array>} List of notes
+     * Get all notes for a client with access control
      */
     async getNotesByClient(clientId, options = {}) {
         try {
             logger.info('Fetching notes by client', { clientId });
 
-            const dbService = this._getDatabaseService();
-            const ClientNote = await dbService.getModel('ClientNote', 'customer');
+            // Validate client ID format
+            if (!mongoose.Types.ObjectId.isValid(clientId)) {
+                throw AppError.validation('Invalid client ID format', {
+                    context: { clientId }
+                });
+            }
 
+            const dbService = this._getDatabaseService();
+            const Client = dbService.getModel('Client', 'customer');
+            const ClientNote = dbService.getModel('ClientNote', 'customer');
+
+            // Verify client exists and get tenant information
+            const client = await Client.findById(clientId)
+                .select('tenantId organizationId companyName')
+                .lean();
+
+            if (!client) {
+                throw AppError.notFound('Client not found', {
+                    context: { clientId }
+                });
+            }
+
+            // ACCESS CONTROL: Self-service check
+            if (options.userClientId) {
+                if (client._id.toString() !== options.userClientId.toString()) {
+                    throw AppError.forbidden('You can only access notes from your own account', {
+                        context: {
+                            requestedClientId: clientId,
+                            userClientId: options.userClientId
+                        }
+                    });
+                }
+            }
+            // ACCESS CONTROL: Administrative tenant check
+            else if (options.tenantId && !options.skipTenantCheck) {
+                if (!mongoose.Types.ObjectId.isValid(options.tenantId)) {
+                    throw AppError.validation('Valid tenant ID required in authentication context');
+                }
+
+                if (client.tenantId.toString() !== options.tenantId.toString()) {
+                    throw AppError.forbidden('Access denied to this client', {
+                        context: {
+                            clientTenantId: client.tenantId.toString(),
+                            userTenantId: options.tenantId.toString()
+                        }
+                    });
+                }
+            }
+
+            // Build query
             const query = {
                 clientId: clientId,
-                tenantId: options.tenantId || this.config.companyTenantId,
-                'metadata.isDeleted': { $ne: true }
+                'status.isDeleted': { $ne: true }
             };
 
             // Filter by note type if provided
             if (options.type) {
-                query.type = options.type;
+                query['classification.type'] = options.type;
             }
 
             // Filter by category if provided
             if (options.category) {
-                query.category = options.category;
+                query['classification.category.primary'] = options.category;
             }
 
-            // Filter by priority if provided
-            if (options.priority) {
-                query.priority = options.priority;
+            // Filter by importance if provided
+            if (options.importance) {
+                query['classification.importance'] = options.importance;
             }
 
             // Filter by tags if provided
             if (options.tags) {
-                query.tags = { $in: Array.isArray(options.tags) ? options.tags : [options.tags] };
+                query['classification.tags.user'] = { $in: Array.isArray(options.tags) ? options.tags : [options.tags] };
             }
 
-            // Filter by date range if provided
-            if (options.dateFrom || options.dateTo) {
-                query['metadata.createdAt'] = {};
-                if (options.dateFrom) query['metadata.createdAt'].$gte = new Date(options.dateFrom);
-                if (options.dateTo) query['metadata.createdAt'].$lte = new Date(options.dateTo);
-            }
-
-            let noteQuery = ClientNote.find(query);
-
-            // Apply sorting
+            // Build and execute query
             const sortField = options.sortBy || 'metadata.createdAt';
             const sortOrder = options.sortOrder === 'asc' ? 1 : -1;
-            noteQuery = noteQuery.sort({ [sortField]: sortOrder });
 
-            // Apply pagination
-            if (options.limit) {
-                const page = parseInt(options.page, 10) || 1;
-                const limit = parseInt(options.limit, 10);
-                const skip = (page - 1) * limit;
-                noteQuery = noteQuery.skip(skip).limit(limit);
-            }
-
-            const notes = await noteQuery.lean().exec();
+            const notes = await ClientNote.find(query)
+                .sort({ [sortField]: sortOrder })
+                .lean();
 
             logger.info('Notes fetched successfully', {
                 clientId,
@@ -341,57 +620,74 @@ class ClientNoteService {
     }
 
     /**
-     * Update note information
-     * @param {string} noteId - Note ID
-     * @param {Object} updateData - Data to update
-     * @param {Object} options - Update options
-     * @returns {Promise<Object>} Updated note
+     * Update note information with access control
      */
     async updateNote(noteId, updateData, options = {}) {
         try {
             logger.info('Updating note', {
                 noteId,
-                updateFields: Object.keys(updateData)
-            });
-
-            // Validate update data
-            await this._validateNoteUpdateData(updateData);
-
-            // Get existing note
-            const note = await this.getNoteById(noteId, { 
-                tenantId: options.tenantId,
+                updateFields: Object.keys(updateData),
                 userId: options.userId
             });
 
-            const dbService = this._getDatabaseService();
-            const ClientNote = await dbService.getModel('ClientNote', 'customer');
-
-            // Archive current version if versioning enabled
-            if (this.config.enableNoteVersioning && updateData.content?.body) {
-                await this._archiveNoteVersion(note);
+            if (!mongoose.Types.ObjectId.isValid(noteId)) {
+                throw AppError.validation('Invalid note ID format', {
+                    context: { noteId }
+                });
             }
 
-            // Prepare update
-            const update = {
-                ...updateData,
-                'metadata.updatedBy': options.userId,
-                'metadata.lastModified': new Date(),
-                'metadata.version': note.metadata.version + 1
+            await this._validateNoteUpdateData(updateData);
+
+            // Get existing note with access control
+            const existingNote = await this.getNoteById(noteId, {
+                tenantId: options.tenantId,
+                userClientId: options.userClientId,
+                skipTenantCheck: options.skipTenantCheck
+            });
+
+            const dbService = this._getDatabaseService();
+            const ClientNote = dbService.getModel('ClientNote', 'customer');
+
+            // Flatten nested objects into dot notation
+            const flattenUpdate = (obj, prefix = '') => {
+                const flattened = {};
+
+                for (const [key, value] of Object.entries(obj)) {
+                    const newKey = prefix ? `${prefix}.${key}` : key;
+
+                    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+                        Object.assign(flattened, flattenUpdate(value, newKey));
+                    } else {
+                        flattened[newKey] = value;
+                    }
+                }
+
+                return flattened;
             };
+
+            const flattenedUpdate = flattenUpdate(updateData);
 
             // Recalculate metrics if content changed
             if (updateData.content?.body) {
-                update['content.wordCount'] = this._countWords(updateData.content.body);
-                update['content.characterCount'] = updateData.content.body.length;
-                update['content.readingTime'] = Math.ceil(update['content.wordCount'] / 200);
+                flattenedUpdate['content.wordCount'] = this._countWords(updateData.content.body);
+                flattenedUpdate['content.characterCount'] = updateData.content.body.length;
+                flattenedUpdate['content.readingTime'] = Math.ceil(flattenedUpdate['content.wordCount'] / 200);
             }
 
-            // Perform update
-            const updatedNote = await ClientNote.findOneAndUpdate(
-                { noteId: noteId.toUpperCase() },
-                { $set: update },
+            // Handle version increment if creating new version
+            if (options.createNewVersion && this.config.enableVersionControl) {
+                const currentVersion = existingNote.versioning?.version || 1;
+                flattenedUpdate['versioning.version'] = currentVersion + 1;
+                flattenedUpdate['versioning.lastModified.date'] = new Date();
+                flattenedUpdate['versioning.lastModified.by'] = options.userId;
+            }
+
+            // Perform update with flattened fields
+            const updatedNote = await ClientNote.findByIdAndUpdate(
+                noteId,
+                { $set: flattenedUpdate },
                 { new: true, runValidators: true }
-            );
+            ).lean();
 
             if (!updatedNote) {
                 throw AppError.notFound('Note not found for update');
@@ -399,13 +695,23 @@ class ClientNoteService {
 
             logger.info('Note updated successfully', {
                 noteId,
-                version: updatedNote.metadata.version
+                userId: options.userId
             });
 
             // Track update event
-            await this._trackNoteEvent(updatedNote, 'note_updated', {
-                updatedFields: Object.keys(updateData),
-                userId: options.userId
+            setImmediate(async () => {
+                try {
+                    await this._trackNoteEvent(updatedNote, 'note_updated', {
+                        updatedFields: Object.keys(updateData),
+                        userId: options.userId,
+                        newVersion: options.createNewVersion
+                    });
+                } catch (trackError) {
+                    logger.error('Failed to track update event', {
+                        error: trackError.message,
+                        noteId
+                    });
+                }
             });
 
             return this._sanitizeNoteOutput(updatedNote);
@@ -420,55 +726,77 @@ class ClientNoteService {
     }
 
     /**
-     * Delete/archive note
-     * @param {string} noteId - Note ID
-     * @param {Object} options - Deletion options
-     * @returns {Promise<Object>} Deletion result
+     * Delete/archive note with access control
      */
     async deleteNote(noteId, options = {}) {
         try {
-            logger.info('Deleting note', { noteId, softDelete: options.softDelete });
-
-            const note = await this.getNoteById(noteId, { 
-                tenantId: options.tenantId,
+            logger.info('Deleting note', {
+                noteId,
+                softDelete: options.softDelete,
                 userId: options.userId
             });
 
+            // Validate note ID format
+            if (!mongoose.Types.ObjectId.isValid(noteId)) {
+                throw AppError.validation('Invalid note ID format', {
+                    context: { noteId }
+                });
+            }
+
+            // Get existing note with access control
+            const existingNote = await this.getNoteById(noteId, {
+                tenantId: options.tenantId,
+                userClientId: options.userClientId,
+                skipTenantCheck: options.skipTenantCheck
+            });
+
             const dbService = this._getDatabaseService();
-            const ClientNote = await dbService.getModel('ClientNote', 'customer');
+            const ClientNote = dbService.getModel('ClientNote', 'customer');
 
             let result;
 
             if (options.softDelete !== false) {
-                // Soft delete
-                result = await ClientNote.findOneAndUpdate(
-                    { noteId: noteId.toUpperCase() },
+                // Soft delete - mark as deleted
+                result = await ClientNote.findByIdAndUpdate(
+                    noteId,
                     {
                         $set: {
-                            'metadata.deletedAt': new Date(),
-                            'metadata.deletedBy': options.userId,
-                            'metadata.isDeleted': true
+                            'status.isDeleted': true,
+                            'status.current': 'deleted',
+                            'status.isActive': false,
+                            'status.deletedAt': new Date(),
+                            'status.deletedBy': options.userId
                         }
                     },
                     { new: true }
-                );
+                ).lean();
             } else {
                 // Hard delete - only if authorized
                 if (!options.forceDelete) {
                     throw AppError.forbidden('Hard delete requires force flag');
                 }
-                result = await ClientNote.findOneAndDelete({ noteId: noteId.toUpperCase() });
+                result = await ClientNote.findByIdAndDelete(noteId).lean();
             }
 
             logger.info('Note deleted successfully', {
                 noteId,
-                softDelete: options.softDelete !== false
+                softDelete: options.softDelete !== false,
+                userId: options.userId
             });
 
             // Track deletion event
-            await this._trackNoteEvent(note, 'note_deleted', {
-                softDelete: options.softDelete !== false,
-                userId: options.userId
+            setImmediate(async () => {
+                try {
+                    await this._trackNoteEvent(existingNote, 'note_deleted', {
+                        softDelete: options.softDelete !== false,
+                        userId: options.userId
+                    });
+                } catch (trackError) {
+                    logger.error('Failed to track deletion event', {
+                        error: trackError.message,
+                        noteId
+                    });
+                }
             });
 
             return {
@@ -487,45 +815,50 @@ class ClientNoteService {
     }
 
     /**
-     * Add comment to note
-     * @param {string} noteId - Note ID
-     * @param {Object} commentData - Comment details
-     * @param {Object} options - Additional options
-     * @returns {Promise<Object>} Updated note
+     * Add comment to note with access control
      */
     async addComment(noteId, commentData, options = {}) {
         try {
-            logger.info('Adding comment to note', { noteId });
-
-            const note = await this.getNoteById(noteId, { 
-                tenantId: options.tenantId,
+            logger.info('Adding comment to note', {
+                noteId,
                 userId: options.userId
             });
 
+            // Get note with access control
+            const note = await this.getNoteById(noteId, {
+                tenantId: options.tenantId,
+                userClientId: options.userClientId,
+                skipTenantCheck: options.skipTenantCheck
+            });
+
             const dbService = this._getDatabaseService();
-            const ClientNote = await dbService.getModel('ClientNote', 'customer');
+            const ClientNote = dbService.getModel('ClientNote', 'customer');
 
             // Prepare comment
             const comment = {
-                id: crypto.randomBytes(12).toString('hex'),
-                author: options.userId,
+                commentId: `COM-${Date.now()}`,
                 content: commentData.content,
+                author: options.userId,
                 createdAt: new Date(),
-                likes: 0,
-                isEdited: false
+                resolved: false
             };
 
             // Update note with comment
-            const updatedNote = await ClientNote.findOneAndUpdate(
-                { noteId: noteId.toUpperCase() },
+            const updatedNote = await ClientNote.findByIdAndUpdate(
+                noteId,
                 {
                     $push: { 'collaboration.comments': comment },
-                    $inc: { 'engagement.commentCount': 1 }
+                    $inc: { 'analytics.engagement.interactions': 1 },
+                    $set: { 'analytics.engagement.lastInteraction': new Date() }
                 },
                 { new: true }
-            );
+            ).lean();
 
-            logger.info('Comment added successfully', { noteId });
+            logger.info('Comment added successfully', {
+                noteId,
+                commentId: comment.commentId,
+                userId: options.userId
+            });
 
             return this._sanitizeNoteOutput(updatedNote);
 
@@ -541,11 +874,16 @@ class ClientNoteService {
     // ============= VALIDATION METHODS =============
 
     /**
-     * Validate note data
+     * Validate note data with enhanced error reporting
      * @private
      */
     async _validateNoteData(noteData) {
         const errors = [];
+
+        logger.debug('Starting note data validation', {
+            hasClientId: !!noteData.clientId,
+            hasContent: !!noteData.content
+        });
 
         // Required fields
         if (!noteData.clientId) {
@@ -556,17 +894,45 @@ class ClientNoteService {
             errors.push({ field: 'content.body', message: 'Note content is required' });
         }
 
-        // Validate note length
         if (noteData.content?.body && noteData.content.body.length > this.config.maxNoteLength) {
             errors.push({ 
                 field: 'content.body', 
-                message: `Note exceeds maximum length of ${this.config.maxNoteLength} characters` 
+                message: `Note content exceeds maximum length of ${this.config.maxNoteLength} characters` 
             });
         }
 
+        if (noteData.content?.title && noteData.content.title.length > 500) {
+            errors.push({ 
+                field: 'content.title', 
+                message: 'Note title exceeds maximum length of 500 characters' 
+            });
+        }
+
+        // Validate note type if provided
+        if (noteData.classification?.type) {
+            const validTypes = Object.values(NOTE_TYPES);
+            if (!validTypes.includes(noteData.classification.type)) {
+                errors.push({
+                    field: 'classification.type',
+                    message: `Invalid note type. Must be one of: ${validTypes.join(', ')}`
+                });
+            }
+        }
+
         if (errors.length > 0) {
+            logger.error('Note validation failed with errors', {
+                errors: errors,
+                noteData: {
+                    clientId: noteData.clientId,
+                    noteTitle: noteData.content?.title,
+                    noteType: noteData.classification?.type
+                }
+            });
+
             throw AppError.validation('Note validation failed', { errors });
         }
+
+        logger.debug('Note validation passed successfully');
     }
 
     /**
@@ -577,18 +943,26 @@ class ClientNoteService {
         const errors = [];
 
         // Cannot update immutable fields
-        const immutableFields = ['noteId', 'clientId', 'tenantId'];
+        const immutableFields = ['noteId', 'clientId', 'tenantId', 'organizationId', 'metadata.createdAt', 'metadata.createdBy'];
         for (const field of immutableFields) {
             if (updateData[field] !== undefined) {
                 errors.push({ field, message: `${field} cannot be updated` });
             }
         }
 
-        // Validate note length if content updated
+        // Validate note content length if provided
         if (updateData.content?.body && updateData.content.body.length > this.config.maxNoteLength) {
             errors.push({ 
                 field: 'content.body', 
-                message: `Note exceeds maximum length of ${this.config.maxNoteLength} characters` 
+                message: `Note content exceeds maximum length of ${this.config.maxNoteLength} characters` 
+            });
+        }
+
+        // Validate note title length if provided
+        if (updateData.content?.title && updateData.content.title.length > 500) {
+            errors.push({ 
+                field: 'content.title', 
+                message: 'Note title exceeds maximum length of 500 characters' 
             });
         }
 
@@ -598,37 +972,16 @@ class ClientNoteService {
     }
 
     /**
-     * Verify client exists
-     * @private
-     */
-    async _verifyClientExists(clientId, tenantId) {
-        const dbService = this._getDatabaseService();
-        const Client = await dbService.getModel('Client', 'customer');
-
-        const client = await Client.findById(clientId);
-
-        if (!client) {
-            throw AppError.notFound('Client not found', {
-                context: { clientId }
-            });
-        }
-
-        if (tenantId && client.tenantId.toString() !== tenantId) {
-            throw AppError.forbidden('Access denied to this client');
-        }
-    }
-
-    /**
      * Check note limit for client
      * @private
      */
     async _checkNoteLimit(clientId) {
         const dbService = this._getDatabaseService();
-        const ClientNote = await dbService.getModel('ClientNote', 'customer');
+        const ClientNote = dbService.getModel('ClientNote', 'customer');
 
         const count = await ClientNote.countDocuments({
             clientId: clientId,
-            'metadata.isDeleted': { $ne: true }
+            'status.isDeleted': { $ne: true }
         });
 
         if (count >= this.config.maxNotesPerClient) {
@@ -641,25 +994,6 @@ class ClientNoteService {
         }
     }
 
-    /**
-     * Check note visibility permissions
-     * @private
-     */
-    async _checkNoteVisibility(note, userId) {
-        // Private notes only visible to creator
-        if (note.visibility === NOTE_VISIBILITY.PRIVATE) {
-            return note.metadata.createdBy && note.metadata.createdBy.toString() === userId;
-        }
-
-        // Public notes visible to all
-        if (note.visibility === NOTE_VISIBILITY.PUBLIC) {
-            return true;
-        }
-
-        // Team/Department/Company - implement based on your org structure
-        return true;
-    }
-
     // ============= HELPER METHODS =============
 
     /**
@@ -670,12 +1004,12 @@ class ClientNoteService {
         const prefix = 'NOTE';
         const timestamp = Date.now().toString(36).toUpperCase();
         const random = crypto.randomBytes(3).toString('hex').toUpperCase();
-        
+
         const id = `${prefix}-${timestamp}${random}`;
 
         // Verify uniqueness
         const dbService = this._getDatabaseService();
-        const ClientNote = await dbService.getModel('ClientNote', 'customer');
+        const ClientNote = dbService.getModel('ClientNote', 'customer');
         const existing = await ClientNote.findOne({ noteId: id });
 
         if (existing) {
@@ -691,62 +1025,62 @@ class ClientNoteService {
      */
     _countWords(text) {
         if (!text) return 0;
-        return text.trim().split(/\s+/).length;
+        return text.trim().split(/\s+/).filter(word => word.length > 0).length;
     }
 
     /**
-     * Generate auto tags from content
+     * Generate summary from content
      * @private
      */
-    async _generateAutoTags(content) {
-        // Placeholder for auto-tagging logic
-        // Could use NLP or keyword extraction
-        return [];
+    _generateSummary(content) {
+        if (!content) return '';
+        
+        // Get first 3 sentences or 200 characters
+        const sentences = content.match(/[^.!?]+[.!?]+/g) || [];
+        const summary = sentences.slice(0, 3).join(' ');
+        
+        return summary.length > 200 
+            ? summary.substring(0, 197) + '...'
+            : summary;
     }
 
     /**
-     * Analyze sentiment of content
+     * Record note view
      * @private
      */
-    async _analyzeSentiment(content) {
-        // Placeholder for sentiment analysis
-        return {
-            score: 0,
-            polarity: 'neutral',
-            confidence: 0
-        };
-    }
-
-    /**
-     * Archive note version
-     * @private
-     */
-    async _archiveNoteVersion(note) {
-        logger.info('Archiving note version', {
-            noteId: note.noteId,
-            version: note.metadata.version
-        });
-        // Placeholder for version archival logic
-    }
-
-    /**
-     * Track note view
-     * @private
-     */
-    async _trackNoteView(noteId, userId) {
+    async _recordNoteView(noteId, userId) {
         try {
             const dbService = this._getDatabaseService();
-            const ClientNote = await dbService.getModel('ClientNote', 'customer');
+            const ClientNote = dbService.getModel('ClientNote', 'customer');
 
             await ClientNote.findByIdAndUpdate(
                 noteId,
                 {
-                    $inc: { 'engagement.viewCount': 1 },
-                    $set: { 'engagement.lastViewedAt': new Date() }
+                    $inc: {
+                        'analytics.views.total': 1
+                    },
+                    $set: {
+                        'analytics.views.lastViewed': new Date()
+                    },
+                    $push: {
+                        'analytics.views.viewHistory': {
+                            $each: [{
+                                viewedBy: userId,
+                                viewedAt: new Date()
+                            }],
+                            $slice: -100
+                        }
+                    }
                 }
             );
+
+            logger.debug('Note view recorded', { noteId, userId });
         } catch (error) {
-            logger.error('Failed to track note view', { error: error.message });
+            logger.error('Failed to record note view', {
+                error: error.message,
+                noteId,
+                userId
+            });
         }
     }
 
@@ -762,40 +1096,11 @@ class ClientNoteService {
                 source: options.source || 'manual'
             });
 
-            // Send notifications if mentions exist
-            if (note.collaboration?.mentions && note.collaboration.mentions.length > 0) {
-                await this._notifyMentionedUsers(note, options);
-            }
-
         } catch (error) {
             logger.error('Post-note creation activities failed (non-blocking)', {
                 error: error.message,
                 noteId: note.noteId
             });
-        }
-    }
-
-    /**
-     * Notify mentioned users
-     * @private
-     */
-    async _notifyMentionedUsers(note, options) {
-        try {
-            if (typeof this.notificationService.sendNotification === 'function') {
-                for (const userId of note.collaboration.mentions) {
-                    await this.notificationService.sendNotification({
-                        type: 'note_mention',
-                        recipient: userId,
-                        data: {
-                            noteId: note.noteId,
-                            noteTitle: note.content.title,
-                            mentionedBy: options.userId
-                        }
-                    });
-                }
-            }
-        } catch (error) {
-            logger.error('Failed to send mention notifications', { error: error.message });
         }
     }
 
@@ -814,7 +1119,11 @@ class ClientNoteService {
                 });
             }
         } catch (error) {
-            logger.error('Failed to track note event', { error: error.message });
+            logger.error('Failed to track note event', {
+                error: error.message,
+                eventType,
+                noteId: note._id || note.id
+            });
         }
     }
 
@@ -827,10 +1136,11 @@ class ClientNoteService {
 
         const noteObject = note.toObject ? note.toObject() : note;
 
-        // Remove sensitive fields
+        // Remove sensitive and internal fields
         delete noteObject.__v;
-        delete noteObject.metadata?.deletedAt;
-        delete noteObject.metadata?.deletedBy;
+        delete noteObject.searchTokens;
+        delete noteObject.status?.deletedAt;
+        delete noteObject.status?.deletedBy;
 
         return noteObject;
     }
