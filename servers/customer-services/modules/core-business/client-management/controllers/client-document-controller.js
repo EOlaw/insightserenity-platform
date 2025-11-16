@@ -6,6 +6,7 @@
 
 const ClientDocumentService = require('../services/client-document-service');
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
+const { search } = require('../routes');
 const logger = require('../../../../../../shared/lib/utils/logger').createLogger({
     serviceName: 'client-document-controller'
 });
@@ -22,7 +23,7 @@ class ClientDocumentController {
     async createDocument(req, res, next) {
         try {
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Create document request received', {
                 clientId: req.body.clientId,
                 documentName: req.body.documentInfo?.name,
@@ -85,6 +86,60 @@ class ClientDocumentController {
     }
 
     /**
+     * Get all documents for authenticated client
+     * @route GET /api/v1/documents
+     */
+    async getDocuments(req, res, next) {
+        try {
+            const userId = req.user?._id || req.user?.id;
+
+            logger.info('Get all documents request', {
+                userId: userId,
+                userClientId: req.user?.clientId,
+                query: req.query
+            });
+
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
+                type: req.query.type,
+                status: req.query.status,
+                classification: req.query.classification,
+                search: req.query.search,
+                sortBy: req.query.sortBy,
+                sortOrder: req.query.sortOrder,
+                limit: req.query.limit ? parseInt(req.query.limit, 10) : undefined,
+                skip: req.query.skip ? parseInt(req.query.skip, 10) : undefined,
+                includeDeleted: req.query.includeDeleted === 'true',
+                onlyLatest: req.query.onlyLatest !== 'false'
+            };
+
+            const result = await ClientDocumentService.getDocuments(options);
+
+            logger.info('All documents fetched successfully', {
+                userId: userId,
+                count: result.documents.length,
+                total: result.metadata.total
+            });
+
+            res.status(200).json({
+                success: true,
+                data: result.documents,
+                metadata: result.metadata
+            });
+
+        } catch (error) {
+            logger.error('Get all documents failed', {
+                error: error.message,
+                userId: req.user?.id
+            });
+            next(error);
+        }
+    }
+
+    /**
      * Get document by ID
      * @route GET /api/v1/documents/:id
      */
@@ -92,7 +147,7 @@ class ClientDocumentController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get document by ID request', {
                 documentId: id,
                 userId: userId
@@ -137,7 +192,7 @@ class ClientDocumentController {
         try {
             const { clientId } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get documents by client request', {
                 clientId,
                 userId: userId
@@ -236,7 +291,7 @@ class ClientDocumentController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Delete document request', {
                 documentId: id,
                 softDelete: req.query.soft !== 'false',
@@ -283,7 +338,7 @@ class ClientDocumentController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Download document request', {
                 documentId: id,
                 userId: userId
@@ -333,7 +388,7 @@ class ClientDocumentController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get document versions request', {
                 documentId: id,
                 userId: userId
@@ -380,7 +435,7 @@ class ClientDocumentController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get document analytics request', {
                 documentId: id,
                 userId: userId

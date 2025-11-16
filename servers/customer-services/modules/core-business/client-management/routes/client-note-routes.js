@@ -19,6 +19,29 @@ const { rateLimiter } = require('../../../../middleware/rate-limiter');
 router.use(authenticate);
 
 /**
+ * @route   GET /api/v1/notes
+ * @desc    Get all notes for authenticated client
+ * @access  Private (Authenticated Client)
+ * @note    Client can only retrieve their own notes
+ * @query   type - Filter by note type (meeting, call, email, task, reminder, etc.)
+ * @query   importance - Filter by importance level (critical, high, medium, low, fyi)
+ * @query   category - Filter by category (sales, support, technical, financial, etc.)
+ * @query   status - Filter by status (draft, active, archived)
+ * @query   search - Search term for title, body, summary, or keywords
+ * @query   sortBy - Field to sort by (default: createdAt)
+ * @query   sortOrder - Sort order: asc or desc (default: desc)
+ * @query   limit - Number of notes per page (max 100, default: 50)
+ * @query   skip - Number of notes to skip for pagination (default: 0)
+ * @query   includeDeleted - Include soft-deleted notes (default: false)
+ * @query   includeArchived - Include archived notes (default: false)
+ */
+router.get(
+    '/',
+    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
+    ClientNoteController.getNotes
+);
+
+/**
  * @route   POST /api/v1/notes
  * @desc    Create a new note
  * @access  Private (Authenticated Client)

@@ -23,13 +23,11 @@ import {
 import toast from 'react-hot-toast'
 import { api } from '@/lib/api/client'
 
-export default function EditContactPage() {
+export default function NewContactPage() {
   const router = useRouter()
   const params = useParams()
   const clientId = params.id as string
-  const contactId = params.contactId as string
 
-  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const [clientName, setClientName] = useState('')
@@ -60,111 +58,15 @@ export default function EditContactPage() {
 
   useEffect(() => {
     loadClientInfo()
-    loadContact()
-  }, [contactId])
+  }, [clientId])
 
   const loadClientInfo = async () => {
     try {
-      const response = await api.get(`/clients/${clientId}`)
-      setClientName(response.client?.companyName || 'Client')
+      const response = await api.get(`/clients/contacts/${clientId}`)
+      const data = response.data || response
+      setClientName(data.client?.companyName || 'Client')
     } catch (err) {
       console.error('Error loading client info:', err)
-    }
-  }
-
-  const loadContact = async () => {
-    setIsLoading(true)
-    setError('')
-
-    try {
-      const response = await api.get(`/clients/contacts/${contactId}`)
-      
-      console.log('Full API Response:', JSON.stringify(response, null, 2))
-      
-      if (!response.data) {
-        throw new Error('Contact not found')
-      }
-
-      const contact = response.data
-
-      console.log('Contact data structure:', {
-        hasPersonalInfo: !!contact.personalInfo,
-        hasProfessionalInfo: !!contact.professionalInfo,
-        hasContactDetails: !!contact.contactDetails,
-        hasCommunicationChannels: !!contact.communicationChannels,
-        contactDetailsStructure: contact.contactDetails ? {
-          hasEmails: !!contact.contactDetails.emails,
-          emailsLength: contact.contactDetails.emails?.length,
-          hasPhones: !!contact.contactDetails.phones,
-          phonesLength: contact.contactDetails.phones?.length,
-          hasSocialProfiles: !!contact.contactDetails.socialProfiles,
-        } : 'No contactDetails'
-      })
-
-      // Extract emails from array format
-      const primaryEmail = contact.contactDetails?.emails?.find((e: any) => e.isPrimary)
-      const secondaryEmail = contact.contactDetails?.emails?.find((e: any) => !e.isPrimary && e.type === 'work')
-      
-      // Extract phones from array format
-      const primaryPhone = contact.contactDetails?.phones?.find((p: any) => p.type === 'office' || p.isPrimary)
-      const mobilePhone = contact.contactDetails?.phones?.find((p: any) => p.type === 'mobile')
-      const directPhone = contact.contactDetails?.phones?.find((p: any) => p.type === 'other' || (p.type === 'office' && p.extension))
-
-      // Extract address from array format
-      const workAddress = contact.contactDetails?.addresses?.find((a: any) => a.type === 'office')
-
-      // Extract social profiles from array format
-      const linkedinProfile = contact.contactDetails?.socialProfiles?.find((s: any) => s.platform === 'linkedin')
-      const twitterProfile = contact.contactDetails?.socialProfiles?.find((s: any) => s.platform === 'twitter')
-
-      console.log('Extracted data:', {
-        primaryEmail: primaryEmail?.address,
-        secondaryEmail: secondaryEmail?.address,
-        primaryPhone: primaryPhone?.number,
-        mobilePhone: mobilePhone?.number,
-        workAddress: workAddress?.street1,
-        linkedin: linkedinProfile?.url,
-        twitter: twitterProfile?.handle,
-      })
-
-      // Populate form with existing data
-      setFormData({
-        prefix: contact.personalInfo?.prefix || '',
-        firstName: contact.personalInfo?.firstName || '',
-        middleName: contact.personalInfo?.middleName || '',
-        lastName: contact.personalInfo?.lastName || '',
-        suffix: contact.personalInfo?.suffix || '',
-        jobTitle: contact.professionalInfo?.jobTitle || '',
-        department: contact.professionalInfo?.department || '',
-        role: contact.professionalInfo?.division || '',
-        primaryEmail: primaryEmail?.address || '',
-        secondaryEmail: secondaryEmail?.address || '',
-        primaryPhone: primaryPhone?.number || '',
-        mobilePhone: mobilePhone?.number || '',
-        directPhone: directPhone?.number || '',
-        workAddress: workAddress?.street1 || '',
-        linkedin: linkedinProfile?.url || '',
-        twitter: twitterProfile?.handle || twitterProfile?.url || '',
-        status: contact.relationship?.status || 'active',
-        type: contact.relationship?.type || 'primary',
-        isPrimaryContact: contact.roleInfluence?.isPrimaryContact || false,
-        decisionMakingLevel: contact.roleInfluence?.decisionAuthority || '',
-        influenceScore: contact.roleInfluence?.influence?.score?.toString() || '',
-        notes: '',
-      })
-
-      console.log('Form populated successfully')
-    } catch (err: any) {
-      console.error('Error loading contact:', err)
-      console.error('Error details:', {
-        message: err.message,
-        response: err.response?.data,
-        status: err.response?.status
-      })
-      setError(err.response?.data?.error?.message || err.message || 'Failed to load contact')
-      toast.error('Failed to load contact')
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -185,180 +87,63 @@ export default function EditContactPage() {
     setError('')
 
     try {
-      // Build update data in the format expected by the backend schema
-      const updateData: any = {
+      const contactData = {
+        clientId,
         personalInfo: {
+          prefix: formData.prefix || undefined,
           firstName: formData.firstName,
+          middleName: formData.middleName || undefined,
           lastName: formData.lastName,
+          suffix: formData.suffix || undefined,
         },
         professionalInfo: {
           jobTitle: formData.jobTitle,
+          department: formData.department || undefined,
+          role: formData.role || undefined,
         },
-        contactDetails: {
-          emails: [
-            {
-              address: formData.primaryEmail,
-              type: 'work',
-              isPrimary: true,
-              isVerified: false,
-              doNotEmail: false
-            }
-          ],
-          phones: [],
-          addresses: [],
-          socialProfiles: []
+        communicationChannels: {
+          email: {
+            primary: formData.primaryEmail,
+            secondary: formData.secondaryEmail || undefined,
+          },
+          phone: {
+            primary: formData.primaryPhone || undefined,
+            mobile: formData.mobilePhone || undefined,
+            direct: formData.directPhone || undefined,
+          },
+          address: {
+            work: formData.workAddress || undefined,
+          },
+          socialMedia: {
+            linkedin: formData.linkedin || undefined,
+            twitter: formData.twitter || undefined,
+          },
         },
         relationship: {
           status: formData.status,
+          type: formData.type || undefined,
         },
         roleInfluence: {
           isPrimaryContact: formData.isPrimaryContact,
+          decisionMakingLevel: formData.decisionMakingLevel || undefined,
+          influenceScore: formData.influenceScore ? parseInt(formData.influenceScore) : undefined,
         },
+        notes: formData.notes || undefined,
       }
 
-      // Add optional personal info fields
-      if (formData.prefix) {
-        updateData.personalInfo.prefix = formData.prefix
-      }
-      if (formData.middleName) {
-        updateData.personalInfo.middleName = formData.middleName
-      }
-      if (formData.suffix) {
-        updateData.personalInfo.suffix = formData.suffix
-      }
+      const response = await api.post('/contacts', contactData)
+      const newContact = response.data?.contact || response.data
 
-      // Add optional professional info fields
-      if (formData.department) {
-        updateData.professionalInfo.department = formData.department
-      }
-      if (formData.role) {
-        updateData.professionalInfo.division = formData.role
-      }
-
-      // Add secondary email if provided
-      if (formData.secondaryEmail) {
-        updateData.contactDetails.emails.push({
-          address: formData.secondaryEmail,
-          type: 'work',
-          isPrimary: false,
-          isVerified: false,
-          doNotEmail: false
-        })
-      }
-
-      // Add phones to array
-      if (formData.primaryPhone) {
-        updateData.contactDetails.phones.push({
-          number: formData.primaryPhone,
-          type: 'office',
-          isPrimary: true,
-          isVerified: false,
-          canText: false,
-          doNotCall: false
-        })
-      }
-      if (formData.mobilePhone) {
-        updateData.contactDetails.phones.push({
-          number: formData.mobilePhone,
-          type: 'mobile',
-          isPrimary: false,
-          isVerified: false,
-          canText: true,
-          doNotCall: false
-        })
-      }
-      if (formData.directPhone) {
-        updateData.contactDetails.phones.push({
-          number: formData.directPhone,
-          type: 'other',
-          isPrimary: false,
-          isVerified: false,
-          canText: false,
-          doNotCall: false
-        })
-      }
-
-      // Add work address if provided
-      if (formData.workAddress) {
-        updateData.contactDetails.addresses.push({
-          type: 'office',
-          street1: formData.workAddress,
-          isPrimary: true
-        })
-      }
-
-      // Add social profiles
-      if (formData.linkedin) {
-        updateData.contactDetails.socialProfiles.push({
-          platform: 'linkedin',
-          url: formData.linkedin,
-          verified: false,
-          isPublic: true
-        })
-      }
-      if (formData.twitter) {
-        const twitterData: any = {
-          platform: 'twitter',
-          verified: false,
-          isPublic: true
-        }
-        
-        if (formData.twitter.startsWith('http')) {
-          twitterData.url = formData.twitter
-        } else {
-          twitterData.handle = formData.twitter.startsWith('@') ? formData.twitter : `@${formData.twitter}`
-        }
-        
-        updateData.contactDetails.socialProfiles.push(twitterData)
-      }
-
-      // Add relationship type
-      if (formData.type) {
-        updateData.relationship.type = formData.type
-      }
-
-      // Add role influence fields
-      if (formData.decisionMakingLevel) {
-        updateData.roleInfluence.decisionAuthority = formData.decisionMakingLevel
-      }
-      if (formData.influenceScore) {
-        updateData.roleInfluence.influence = {
-          score: parseInt(formData.influenceScore),
-          level: 'unknown'
-        }
-      }
-
-      console.log('Sending update data:', JSON.stringify(updateData, null, 2))
-
-      const response = await api.put(`/clients/contacts/${contactId}`, updateData)
-
-      console.log('Update response:', response)
-
-      toast.success('Contact updated successfully!')
-      router.push(`/dashboard/core-business/clients/${clientId}/contacts/${contactId}`)
+      toast.success('Contact created successfully!')
+      router.push(`/dashboard/core-business/clients/${clientId}/contacts/${newContact._id}`)
     } catch (err: any) {
-      console.error('Error updating contact:', err)
-      console.error('Error response:', err.response?.data)
-      const errorMessage = err.response?.data?.error?.message || 
-                          err.response?.data?.message ||
-                          err.message || 
-                          'Failed to update contact'
+      console.error('Error creating contact:', err)
+      const errorMessage = err.response?.data?.error?.message || err.message || 'Failed to create contact'
       setError(errorMessage)
       toast.error(errorMessage)
     } finally {
       setIsSaving(false)
     }
-  }
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-sm text-gray-600">Loading contact data...</p>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -370,7 +155,7 @@ export default function EditContactPage() {
             <div className="flex items-center space-x-4">
               <Logo href="/" showText={false} />
               <div>
-                <h1 className="text-lg font-semibold text-gray-900">Edit Contact</h1>
+                <h1 className="text-lg font-semibold text-gray-900">Add New Contact</h1>
                 <p className="text-xs text-gray-500">{clientName}</p>
               </div>
             </div>
@@ -379,7 +164,7 @@ export default function EditContactPage() {
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={() => router.push(`/dashboard/core-business/clients/${clientId}/contacts/${contactId}`)}
+                onClick={() => router.push(`/dashboard/core-business/clients/${clientId}/contacts`)}
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Cancel
@@ -404,7 +189,7 @@ export default function EditContactPage() {
                   <CardTitle>Personal Information</CardTitle>
                 </div>
                 <CardDescription>
-                  Update contact details and personal information
+                  Basic contact details and personal information
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -426,8 +211,6 @@ export default function EditContactPage() {
                       <option value="Mrs">Mrs</option>
                       <option value="Dr">Dr</option>
                       <option value="Prof">Prof</option>
-                      <option value="Hon">Hon</option>
-                      <option value="Rev">Rev</option>
                     </select>
                   </div>
 
@@ -478,23 +261,13 @@ export default function EditContactPage() {
                     <label htmlFor="suffix" className="block text-sm font-medium text-gray-700 mb-1">
                       Suffix
                     </label>
-                    <select
+                    <Input
                       id="suffix"
                       name="suffix"
                       value={formData.suffix}
                       onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary focus:border-primary"
-                    >
-                      <option value="">Select</option>
-                      <option value="Jr">Jr</option>
-                      <option value="Sr">Sr</option>
-                      <option value="II">II</option>
-                      <option value="III">III</option>
-                      <option value="IV">IV</option>
-                      <option value="PhD">PhD</option>
-                      <option value="MD">MD</option>
-                      <option value="Esq">Esq</option>
-                    </select>
+                      placeholder="Jr., Sr., III, etc."
+                    />
                   </div>
                 </div>
               </CardContent>
@@ -542,14 +315,14 @@ export default function EditContactPage() {
 
                   <div className="md:col-span-2">
                     <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
-                      Division / Role Description
+                      Role Description
                     </label>
                     <Input
                       id="role"
                       name="role"
                       value={formData.role}
                       onChange={handleInputChange}
-                      placeholder="Division or brief role description"
+                      placeholder="Brief role description"
                     />
                   </div>
                 </div>
@@ -600,7 +373,7 @@ export default function EditContactPage() {
 
                   <div>
                     <label htmlFor="primaryPhone" className="block text-sm font-medium text-gray-700 mb-1">
-                      Office Phone
+                      Primary Phone
                     </label>
                     <Input
                       id="primaryPhone"
@@ -628,7 +401,7 @@ export default function EditContactPage() {
 
                   <div>
                     <label htmlFor="directPhone" className="block text-sm font-medium text-gray-700 mb-1">
-                      Direct Line / Other
+                      Direct Line
                     </label>
                     <Input
                       id="directPhone"
@@ -642,7 +415,7 @@ export default function EditContactPage() {
 
                   <div>
                     <label htmlFor="workAddress" className="block text-sm font-medium text-gray-700 mb-1">
-                      Office Address
+                      Work Address
                     </label>
                     <Input
                       id="workAddress"
@@ -671,14 +444,14 @@ export default function EditContactPage() {
 
                   <div>
                     <label htmlFor="twitter" className="block text-sm font-medium text-gray-700 mb-1">
-                      Twitter Handle or URL
+                      Twitter Handle
                     </label>
                     <Input
                       id="twitter"
                       name="twitter"
                       value={formData.twitter}
                       onChange={handleInputChange}
-                      placeholder="@username or https://twitter.com/..."
+                      placeholder="@username"
                     />
                   </div>
                 </div>
@@ -739,7 +512,7 @@ export default function EditContactPage() {
 
                   <div>
                     <label htmlFor="decisionMakingLevel" className="block text-sm font-medium text-gray-700 mb-1">
-                      Decision Authority
+                      Decision Making Level
                     </label>
                     <select
                       id="decisionMakingLevel"
@@ -749,11 +522,10 @@ export default function EditContactPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary focus:border-primary"
                     >
                       <option value="">Select level</option>
-                      <option value="final">Final Authority</option>
-                      <option value="approval">Approval</option>
-                      <option value="recommendation">Recommendation</option>
+                      <option value="executive">Executive</option>
+                      <option value="primary">Primary</option>
+                      <option value="secondary">Secondary</option>
                       <option value="influencer">Influencer</option>
-                      <option value="end_user">End User</option>
                       <option value="none">None</option>
                     </select>
                   </div>
@@ -794,6 +566,27 @@ export default function EditContactPage() {
               </CardContent>
             </Card>
 
+            {/* Notes */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Additional Notes</CardTitle>
+                <CardDescription>
+                  Any additional information about this contact
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <textarea
+                  id="notes"
+                  name="notes"
+                  value={formData.notes}
+                  onChange={handleInputChange}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary focus:border-primary resize-none"
+                  placeholder="Add any relevant notes or observations..."
+                />
+              </CardContent>
+            </Card>
+
             {/* Error Display */}
             {error && (
               <Card className="border-red-200 bg-red-50">
@@ -811,7 +604,7 @@ export default function EditContactPage() {
               <Button 
                 type="button"
                 variant="outline"
-                onClick={() => router.push(`/dashboard/core-business/clients/${clientId}/contacts/${contactId}`)}
+                onClick={() => router.push(`/dashboard/core-business/clients/${clientId}/contacts`)}
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Cancel
@@ -825,12 +618,12 @@ export default function EditContactPage() {
                 {isSaving ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Saving Changes...
+                    Creating Contact...
                   </>
                 ) : (
                   <>
                     <Save className="h-4 w-4 mr-2" />
-                    Save Changes
+                    Create Contact
                   </>
                 )}
               </Button>

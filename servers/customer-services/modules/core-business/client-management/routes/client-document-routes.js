@@ -19,6 +19,28 @@ const { rateLimiter } = require('../../../../middleware/rate-limiter');
 router.use(authenticate);
 
 /**
+ * @route   GET /api/v1/clients/documents
+ * @desc    Get all documents for authenticated client
+ * @access  Private (Authenticated Client)
+ * @note    Client can only retrieve their own documents
+ * @query   status - Filter by document status (active, archived, deleted)
+ * @query   type - Filter by document type (contract, invoice, report, etc.)
+ * @query   search - Search term for title or description
+ * @query   sortBy - Field to sort by (default: createdAt)
+ * @query   sortOrder - Sort order: asc or desc (default: desc)
+ * @query   limit - Number of documents per page (max 100, default: 50)
+ * @query   skip - Number of documents to skip for pagination (default: 0)
+ * @query   includeDeleted - Include soft-deleted
+ */
+router.get(
+    '/',
+    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
+    // TODO: Add multer middleware in production
+    // upload.single('file'),
+    ClientDocumentController.getDocuments
+);
+
+/**
  * @route   POST /api/v1/documents
  * @desc    Create/upload a new document
  * @access  Private (Authenticated Client)

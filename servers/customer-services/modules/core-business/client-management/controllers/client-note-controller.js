@@ -22,7 +22,7 @@ class ClientNoteController {
     async createNote(req, res, next) {
         try {
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Create note request received', {
                 clientId: req.body.clientId,
                 noteTitle: req.body.content?.title,
@@ -65,6 +65,61 @@ class ClientNoteController {
     }
 
     /**
+     * Get all notes for authenticated client
+     * @route GET /api/v1/notes
+     */
+    async getNotes(req, res, next) {
+        try {
+            const userId = req.user?._id || req.user?.id;
+
+            logger.info('Get all notes request', {
+                userId: userId,
+                userClientId: req.user?.clientId,
+                query: req.query
+            });
+
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
+                type: req.query.type,
+                importance: req.query.importance,
+                category: req.query.category,
+                status: req.query.status,
+                search: req.query.search,
+                sortBy: req.query.sortBy,
+                sortOrder: req.query.sortOrder,
+                limit: req.query.limit ? parseInt(req.query.limit, 10) : undefined,
+                skip: req.query.skip ? parseInt(req.query.skip, 10) : undefined,
+                includeDeleted: req.query.includeDeleted === 'true',
+                includeArchived: req.query.includeArchived === 'true'
+            };
+
+            const result = await ClientNoteService.getNotes(options);
+
+            logger.info('All notes fetched successfully', {
+                userId: userId,
+                count: result.notes.length,
+                total: result.metadata.total
+            });
+
+            res.status(200).json({
+                success: true,
+                data: result.notes,
+                metadata: result.metadata
+            });
+
+        } catch (error) {
+            logger.error('Get all notes failed', {
+                error: error.message,
+                userId: req.user?.id
+            });
+            next(error);
+        }
+    }
+
+    /**
      * Get note by ID
      * @route GET /api/v1/notes/:id
      */
@@ -72,7 +127,7 @@ class ClientNoteController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get note by ID request', {
                 noteId: id,
                 userId: userId
@@ -117,7 +172,7 @@ class ClientNoteController {
         try {
             const { clientId } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get notes by client request', {
                 clientId,
                 userId: userId
@@ -216,7 +271,7 @@ class ClientNoteController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Delete note request', {
                 noteId: id,
                 softDelete: req.query.soft !== 'false',
@@ -263,7 +318,7 @@ class ClientNoteController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Add comment to note request', {
                 noteId: id,
                 userId: userId
@@ -314,7 +369,7 @@ class ClientNoteController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get note comments request', {
                 noteId: id,
                 userId: userId
@@ -361,7 +416,7 @@ class ClientNoteController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get note analytics request', {
                 noteId: id,
                 userId: userId
@@ -411,7 +466,7 @@ class ClientNoteController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get note action items request', {
                 noteId: id,
                 userId: userId

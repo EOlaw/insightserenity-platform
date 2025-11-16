@@ -1,14 +1,177 @@
+/**
+ * @fileoverview Comprehensive API Client for InsightSerenity Platform
+ * @description Unified API client handling all backend communications including authentication,
+ *              client management (contacts, documents, notes), and core platform operations
+ * @version 2.1.0
+ */
+
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import toast from 'react-hot-toast'
 import Cookies from 'js-cookie'
 
-// API Configuration
+// ==================== Configuration ====================
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 const API_VERSION = 'v1'
 const AUTH_TOKEN_KEY = 'auth-token'
 const REFRESH_TOKEN_KEY = 'refresh-token'
 
-// Create axios instance
+// ==================== Type Definitions ====================
+
+/**
+ * Contact entity based on MongoDB ClientContact model
+ */
+export interface Contact {
+  _id: string;
+  contactId: string;
+  clientId: string;
+  personalInfo: {
+    prefix?: string;
+    firstName: string;
+    middleName?: string;
+    lastName: string;
+    suffix?: string;
+    displayName?: string;
+    preferredName?: string;
+  };
+  professionalInfo: {
+    jobTitle?: string;
+    department?: string;
+    companyName?: string;
+    role?: string;
+  };
+  contactDetails: {
+    emails: Array<{
+      type: string;
+      email: string;
+      isPrimary: boolean;
+      isVerified: boolean;
+    }>;
+    phones: Array<{
+      type: string;
+      number: string;
+      isPrimary: boolean;
+      extension?: string;
+    }>;
+  };
+  status: {
+    current: string;
+    isActive: boolean;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Document entity based on MongoDB ClientDocument model
+ */
+export interface Document {
+  _id: string;
+  documentId: string;
+  clientId: string;
+  documentInfo: {
+    name: string;
+    displayName?: string;
+    description?: string;
+    type: string;
+    category?: {
+      primary: string;
+      secondary?: string[];
+    };
+  };
+  file: {
+    filename: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    path: string;
+    extension: string;
+  };
+  version: {
+    current: number;
+    history: any[];
+  };
+  status: {
+    current: string;
+    isActive: boolean;
+  };
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Note entity based on MongoDB ClientNote model
+ */
+export interface Note {
+  _id: string;
+  noteId: string;
+  clientId: string;
+  content: {
+    title?: string;
+    body: string;
+    summary?: string;
+    format: string;
+  };
+  classification: {
+    type: string;
+    category: {
+      primary: string;
+      secondary?: string[];
+    };
+    importance: string;
+    urgency: string;
+    tags?: {
+      system?: string[];
+      user?: string[];
+      auto?: string[];
+    };
+  };
+  visibility: {
+    scope: string;
+  };
+  status: {
+    current: string;
+    isActive: boolean;
+  };
+  metadata: {
+    createdBy: string;
+    createdAt: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Metadata for paginated responses
+ */
+export interface ResponseMetadata {
+  total: number;
+  count: number;
+  limit: number;
+  skip: number;
+  hasMore: boolean;
+  filters?: Record<string, any>;
+}
+
+/**
+ * Standard API response wrapper
+ */
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+  metadata?: ResponseMetadata;
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+// ==================== Axios Instance Configuration ====================
+
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
@@ -18,16 +181,15 @@ const apiClient: AxiosInstance = axios.create({
   withCredentials: true,
 })
 
-// Request interceptor
+// ==================== Request Interceptor ====================
+
 apiClient.interceptors.request.use(
   (config) => {
-    // Add auth token to requests
     const token = Cookies.get(AUTH_TOKEN_KEY)
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
 
-    // Add tenant header if available
     const tenantId = localStorage.getItem('current-tenant')
     if (tenantId) {
       config.headers['X-Tenant-ID'] = tenantId
@@ -40,7 +202,8 @@ apiClient.interceptors.request.use(
   }
 )
 
-// Response interceptor
+// ==================== Response Interceptor ====================
+
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
     return response
@@ -48,7 +211,6 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean }
 
-    // Handle 401 Unauthorized with token refresh
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
 
@@ -64,7 +226,6 @@ apiClient.interceptors.response.use(
             oldAccessToken
           })
 
-          // Extract tokens from nested response structure
           const responseData = response.data?.data || response.data
           const { tokens } = responseData
           
@@ -72,17 +233,15 @@ apiClient.interceptors.response.use(
             throw new Error('Token refresh failed - no access token in response')
           }
 
-          // Store new access token
           Cookies.set(AUTH_TOKEN_KEY, tokens.accessToken, {
-            expires: 1, // 1 day
+            expires: 1,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict'
           })
           
-          // Store new refresh token if provided
           if (tokens.refreshToken) {
             Cookies.set(REFRESH_TOKEN_KEY, tokens.refreshToken, {
-              expires: 30, // 30 days
+              expires: 30,
               secure: process.env.NODE_ENV === 'production',
               sameSite: 'strict'
             })
@@ -90,18 +249,15 @@ apiClient.interceptors.response.use(
 
           console.log('Token refresh successful')
 
-          // Update the failed request with new token
           if (originalRequest.headers) {
             originalRequest.headers.Authorization = `Bearer ${tokens.accessToken}`
           }
 
-          // Retry original request with new token
           return apiClient(originalRequest)
         }
       } catch (refreshError) {
         console.error('Token refresh failed:', refreshError)
         
-        // Refresh failed, clear auth state and redirect to login
         Cookies.remove(AUTH_TOKEN_KEY)
         Cookies.remove(REFRESH_TOKEN_KEY)
         localStorage.removeItem('user')
@@ -113,7 +269,6 @@ apiClient.interceptors.response.use(
       }
     }
 
-    // Handle other error responses
     if (error.response) {
       const data = error.response.data as any
       const message = data?.error?.message || data?.message || 'An error occurred'
@@ -150,7 +305,8 @@ apiClient.interceptors.response.use(
   }
 )
 
-// API methods with version prefix
+// ==================== Core API Methods ====================
+
 export const api = {
   get: <T = any>(url: string, config?: AxiosRequestConfig) =>
     apiClient.get<T>(`/${API_VERSION}${url}`, config).then(res => res.data),
@@ -189,36 +345,32 @@ export const api = {
   },
 }
 
-// Authentication methods
+// ==================== Authentication Methods ====================
+
 export const auth = {
   login: async (email: string, password: string) => {
     const response = await api.post('/auth/login', { email, password })
     
-    // Extract data from response - handle both response.data and direct response
     const responseData = response.data || response
     const { tokens, user, userType } = responseData
     
-    // Validate tokens are present
     if (!tokens?.accessToken || !tokens?.refreshToken) {
       console.error('Login response structure:', response)
       throw new Error('Authentication failed - invalid token structure received')
     }
 
-    // Store access token with 1 day expiration
     Cookies.set(AUTH_TOKEN_KEY, tokens.accessToken, {
       expires: 1,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict'
     })
     
-    // Store refresh token with 30 day expiration
     Cookies.set(REFRESH_TOKEN_KEY, tokens.refreshToken, {
       expires: 30,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict'
     })
 
-    // Cache user information in localStorage for immediate access
     if (user) {
       localStorage.setItem('user', JSON.stringify(user))
     }
@@ -240,13 +392,10 @@ export const auth = {
   register: async (data: any) => {
     const response = await api.post('/auth/register', data)
     
-    // Extract data from response
     const responseData = response.data || response
     const { tokens, user, userType } = responseData
     
-    // Registration may provide immediate login tokens or require email verification
     if (tokens?.accessToken && tokens?.refreshToken) {
-      // Store tokens for immediate authentication
       Cookies.set(AUTH_TOKEN_KEY, tokens.accessToken, {
         expires: 1,
         secure: process.env.NODE_ENV === 'production',
@@ -259,7 +408,6 @@ export const auth = {
         sameSite: 'strict'
       })
 
-      // Cache user information
       if (user) {
         localStorage.setItem('user', JSON.stringify(user))
       }
@@ -280,20 +428,17 @@ export const auth = {
     try {
       const token = Cookies.get(AUTH_TOKEN_KEY)
       if (token) {
-        // Notify backend to blacklist the token
         await api.post('/auth/logout')
       }
     } catch (error) {
       console.error('Logout API call failed:', error)
     } finally {
-      // Clear all authentication state regardless of API success
       Cookies.remove(AUTH_TOKEN_KEY)
       Cookies.remove(REFRESH_TOKEN_KEY)
       localStorage.removeItem('user')
       localStorage.removeItem('userType')
       localStorage.removeItem('current-tenant')
       
-      // Redirect to login page
       window.location.href = '/login'
     }
   },
@@ -318,7 +463,6 @@ export const auth = {
       const response = await api.get('/auth/me')
       const userData = response.data || response
       
-      // Update cached user data
       if (userData) {
         localStorage.setItem('user', JSON.stringify(userData))
       }
@@ -399,5 +543,289 @@ export const auth = {
     localStorage.removeItem('current-tenant')
   }
 }
+
+// ==================== Contact Management API ====================
+
+export const contactsApi = {
+  /**
+   * Get all contacts for authenticated client
+   * Backend returns: { success: true, data: Contact[], metadata: {...} }
+   */
+  getAll: async (params?: { 
+    page?: number; 
+    limit?: number; 
+    search?: string;
+    status?: string;
+    role?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<ApiResponse<Contact[]>> => {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.page !== undefined) {
+      const skip = (params.page - 1) * (params.limit || 50);
+      queryParams.append('skip', skip.toString());
+    }
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.role) queryParams.append('role', params.role);
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    return api.get(`/contacts${query}`);
+  },
+
+  getById: async (contactId: string): Promise<ApiResponse<Contact>> => {
+    return api.get(`/contacts/${contactId}`);
+  },
+
+  create: async (contactData: Partial<Contact>): Promise<ApiResponse<Contact>> => {
+    return api.post('/contacts', contactData);
+  },
+
+  update: async (contactId: string, contactData: Partial<Contact>): Promise<ApiResponse<Contact>> => {
+    return api.put(`/contacts/${contactId}`, contactData);
+  },
+
+  patch: async (contactId: string, contactData: Partial<Contact>): Promise<ApiResponse<Contact>> => {
+    return api.patch(`/contacts/${contactId}`, contactData);
+  },
+
+  delete: async (contactId: string): Promise<ApiResponse<{ message: string }>> => {
+    return api.delete(`/contacts/${contactId}`);
+  },
+};
+
+// ==================== Document Management API ====================
+
+export const documentsApi = {
+  /**
+   * Get all documents for authenticated client
+   * Backend returns: { success: true, data: Document[], metadata: {...} }
+   */
+  getAll: async (params?: { 
+    page?: number; 
+    limit?: number; 
+    search?: string; 
+    type?: string;
+    status?: string;
+    classification?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<ApiResponse<Document[]>> => {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.page !== undefined) {
+      const skip = (params.page - 1) * (params.limit || 50);
+      queryParams.append('skip', skip.toString());
+    }
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.type) queryParams.append('type', params.type);
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.classification) queryParams.append('classification', params.classification);
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    return api.get(`/documents${query}`);
+  },
+
+  getById: async (documentId: string): Promise<ApiResponse<Document>> => {
+    return api.get(`/documents/${documentId}`);
+  },
+
+  create: async (documentData: Partial<Document>): Promise<ApiResponse<Document>> => {
+    return api.post('/documents', documentData);
+  },
+
+  upload: async (file: File, onProgress?: (progress: number) => void): Promise<ApiResponse<Document>> => {
+    return api.upload('/documents', file, onProgress);
+  },
+
+  update: async (documentId: string, documentData: Partial<Document>): Promise<ApiResponse<Document>> => {
+    return api.put(`/documents/${documentId}`, documentData);
+  },
+
+  patch: async (documentId: string, documentData: Partial<Document>): Promise<ApiResponse<Document>> => {
+    return api.patch(`/documents/${documentId}`, documentData);
+  },
+
+  delete: async (documentId: string): Promise<ApiResponse<{ message: string }>> => {
+    return api.delete(`/documents/${documentId}`);
+  },
+
+  download: async (documentId: string): Promise<void> => {
+    const token = Cookies.get(AUTH_TOKEN_KEY);
+    if (!token) {
+      throw new Error('Authentication required for document download');
+    }
+    
+    const url = `${API_BASE_URL}/${API_VERSION}/documents/${documentId}/download`;
+    window.open(`${url}?token=${token}`, '_blank');
+  },
+
+  getVersions: async (documentId: string): Promise<ApiResponse<any[]>> => {
+    return api.get(`/documents/${documentId}/versions`);
+  },
+
+  share: async (documentId: string, shareData: any): Promise<ApiResponse<any>> => {
+    return api.post(`/documents/${documentId}/share`, shareData);
+  },
+};
+
+// ==================== Note Management API ====================
+
+export const notesApi = {
+  /**
+   * Get all notes for authenticated client
+   * Backend returns: { success: true, data: Note[], metadata: {...} }
+   */
+  getAll: async (params?: { 
+    page?: number; 
+    limit?: number; 
+    search?: string; 
+    type?: string;
+    importance?: string;
+    category?: string;
+    status?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<ApiResponse<Note[]>> => {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.page !== undefined) {
+      const skip = (params.page - 1) * (params.limit || 50);
+      queryParams.append('skip', skip.toString());
+    }
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.type) queryParams.append('type', params.type);
+    if (params?.importance) queryParams.append('importance', params.importance);
+    if (params?.category) queryParams.append('category', params.category);
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    return api.get(`/notes${query}`);
+  },
+
+  getById: async (noteId: string): Promise<ApiResponse<Note>> => {
+    return api.get(`/notes/${noteId}`);
+  },
+
+  create: async (noteData: Partial<Note>): Promise<ApiResponse<Note>> => {
+    return api.post('/notes', noteData);
+  },
+
+  update: async (noteId: string, noteData: Partial<Note>): Promise<ApiResponse<Note>> => {
+    return api.put(`/notes/${noteId}`, noteData);
+  },
+
+  patch: async (noteId: string, noteData: Partial<Note>): Promise<ApiResponse<Note>> => {
+    return api.patch(`/notes/${noteId}`, noteData);
+  },
+
+  delete: async (noteId: string): Promise<ApiResponse<{ message: string }>> => {
+    return api.delete(`/notes/${noteId}`);
+  },
+
+  search: async (searchParams: {
+    query?: string;
+    type?: string[];
+    importance?: string[];
+    category?: string[];
+    dateFrom?: string;
+    dateTo?: string;
+  }): Promise<ApiResponse<Note[]>> => {
+    return api.post('/notes/search', searchParams);
+  },
+
+  getRecent: async (limit: number = 10): Promise<ApiResponse<Note[]>> => {
+    return api.get(`/notes/recent?limit=${limit}`);
+  },
+
+  getByTag: async (tag: string): Promise<ApiResponse<Note[]>> => {
+    return api.get(`/notes/tags/${encodeURIComponent(tag)}`);
+  },
+
+  getByPriority: async (priority: string): Promise<ApiResponse<Note[]>> => {
+    return api.get(`/notes/priority/${priority}`);
+  },
+
+  export: async (format: 'csv' | 'json' | 'pdf', filters?: any): Promise<ApiResponse<{ url: string }>> => {
+    return api.post(`/notes/export?format=${format}`, filters || {});
+  },
+};
+
+// ==================== Utility Functions ====================
+
+export const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+};
+
+export const getFileIcon = (mimeType: string): string => {
+  if (mimeType.includes('pdf')) return '📄';
+  if (mimeType.includes('word') || mimeType.includes('document')) return '📝';
+  if (mimeType.includes('sheet') || mimeType.includes('excel')) return '📊';
+  if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return '📽️';
+  if (mimeType.includes('image')) return '🖼️';
+  if (mimeType.includes('video')) return '🎥';
+  if (mimeType.includes('audio')) return '🎵';
+  if (mimeType.includes('zip') || mimeType.includes('compressed')) return '📦';
+  return '📁';
+};
+
+export const getImportanceBadge = (importance: string): string => {
+  const badges: Record<string, string> = {
+    critical: 'bg-red-100 text-red-800',
+    high: 'bg-orange-100 text-orange-800',
+    medium: 'bg-yellow-100 text-yellow-800',
+    low: 'bg-blue-100 text-blue-800',
+    fyi: 'bg-gray-100 text-gray-800',
+  };
+  return badges[importance] || badges.fyi;
+};
+
+export const getUrgencyIcon = (urgency: string): string => {
+  switch (urgency) {
+    case 'immediate':
+    case 'urgent':
+      return '🔴';
+    case 'normal':
+      return '🟡';
+    case 'low':
+    case 'none':
+      return '🟢';
+    default:
+      return '⚪';
+  }
+};
+
+export const getContactEmail = (contact: Contact): string => {
+  const primaryEmail = contact.contactDetails?.emails?.find(e => e.isPrimary);
+  return primaryEmail?.email || contact.contactDetails?.emails?.[0]?.email || 'No email';
+};
+
+export const getContactPhone = (contact: Contact): string => {
+  const primaryPhone = contact.contactDetails?.phones?.find(p => p.isPrimary);
+  return primaryPhone?.number || contact.contactDetails?.phones?.[0]?.number || 'No phone';
+};
+
+export const getContactDisplayName = (contact: Contact): string => {
+  return contact.personalInfo.displayName || 
+         contact.personalInfo.preferredName ||
+         `${contact.personalInfo.firstName} ${contact.personalInfo.lastName}`;
+};
+
+export const getContactInitials = (contact: Contact): string => {
+  const firstName = contact.personalInfo.firstName?.[0] || '';
+  const lastName = contact.personalInfo.lastName?.[0] || '';
+  return (firstName + lastName).toUpperCase();
+};
 
 export default apiClient

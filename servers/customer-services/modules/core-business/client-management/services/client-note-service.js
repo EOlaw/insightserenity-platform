@@ -620,6 +620,253 @@ class ClientNoteService {
     }
 
     /**
+     * Get all notes for authenticated client with filtering and sorting
+     * This method is designed for self-service access where clients retrieve their own notes
+     * @param {Object} options - Query options
+     * @param {string} options.userClientId - Client ID from authenticated user (required for self-service)
+     * @param {string} options.tenantId - Tenant ID for admin access
+     * @param {string} options.type - Filter by note type (meeting, call, email, task, reminder, etc.)
+     * @param {string} options.importance - Filter by importance level (critical, high, medium, low, fyi)
+     * @param {string} options.category - Filter by category (sales, support, technical, financial, etc.)
+     * @param {string} options.status - Filter by status (draft, active, archived)
+     * @param {string} options.search - Search term for title, body, or keywords
+     * @param {string} options.sortBy - Field to sort by (default: 'createdAt')
+     * @param {string} options.sortOrder - Sort order: 'asc' or 'desc' (default: 'desc')
+     * @param {number} options.limit - Maximum number of notes to return (max 100, default: 50)
+     * @param {number} options.skip - Number of notes to skip for pagination (default: 0)
+     * @param {boolean} options.includeDeleted - Include soft-deleted notes (default: false)
+     * @param {boolean} options.includeArchived - Include archived notes (default: false)
+     * @returns {Promise<Object>} Object containing notes array and metadata
+     */
+    async getNotes(options = {}) {
+        const operationId = crypto.randomBytes(8).toString('hex');
+        const startTime = Date.now();
+
+        try {
+            logger.info('Starting get all notes operation', {
+                operationId,
+                userClientId: options.userClientId,
+                tenantId: options.tenantId,
+                filters: {
+                    type: options.type,
+                    importance: options.importance,
+                    category: options.category,
+                    status: options.status,
+                    search: options.search
+                }
+            });
+
+            // PHASE 1: ACCESS CONTROL
+            let clientId;
+
+            if (options.userClientId) {
+                // Self-service access - client accessing their own notes
+                if (!mongoose.Types.ObjectId.isValid(options.userClientId)) {
+                    throw AppError.validation('Invalid client ID', {
+                        context: { userClientId: options.userClientId }
+                    });
+                }
+                clientId = options.userClientId;
+
+                logger.debug('Self-service access - retrieving own notes', {
+                    operationId,
+                    clientId: clientId
+                });
+            } else if (options.tenantId) {
+                // Administrative access - would need clientId specified
+                throw AppError.validation('Client ID required for administrative access', {
+                    context: {
+                        message: 'Use getNotesByClient method for admin operations with specific clientId'
+                    }
+                });
+            } else {
+                throw AppError.unauthorized('Authentication required', {
+                    context: { message: 'User must be authenticated to retrieve notes' }
+                });
+            }
+
+            // PHASE 2: BUILD QUERY
+            const dbService = this._getDatabaseService();
+            const ClientNote = dbService.getModel('ClientNote', 'customer');
+
+            const query = {
+                clientId: clientId,
+                'status.isDeleted': options.includeDeleted === true ? { $in: [true, false] } : { $ne: true }
+            };
+
+            // Apply type filter
+            if (options.type) {
+                const validTypes = [
+                    'meeting', 'call', 'email', 'task', 'reminder', 'observation',
+                    'feedback', 'complaint', 'opportunity', 'risk', 'decision',
+                    'action_item', 'follow_up', 'research', 'analysis', 'strategy',
+                    'personal', 'technical', 'financial', 'legal', 'general'
+                ];
+
+                if (!validTypes.includes(options.type)) {
+                    throw AppError.validation('Invalid note type filter', {
+                        context: {
+                            provided: options.type,
+                            validValues: validTypes
+                        }
+                    });
+                }
+                query['classification.type'] = options.type;
+            }
+
+            // Apply importance filter
+            if (options.importance) {
+                const validImportance = ['critical', 'high', 'medium', 'low', 'fyi'];
+
+                if (!validImportance.includes(options.importance)) {
+                    throw AppError.validation('Invalid importance filter', {
+                        context: {
+                            provided: options.importance,
+                            validValues: validImportance
+                        }
+                    });
+                }
+                query['classification.importance'] = options.importance;
+            }
+
+            // Apply category filter
+            if (options.category) {
+                const validCategories = [
+                    'sales', 'support', 'technical', 'financial', 'legal',
+                    'operational', 'strategic', 'relationship', 'compliance', 'general'
+                ];
+
+                if (!validCategories.includes(options.category)) {
+                    throw AppError.validation('Invalid category filter', {
+                        context: {
+                            provided: options.category,
+                            validValues: validCategories
+                        }
+                    });
+                }
+                query['classification.category.primary'] = options.category;
+            }
+
+            // Apply status filter
+            if (options.status) {
+                const validStatuses = ['draft', 'active', 'archived', 'deleted'];
+
+                if (!validStatuses.includes(options.status)) {
+                    throw AppError.validation('Invalid status filter', {
+                        context: {
+                            provided: options.status,
+                            validValues: validStatuses
+                        }
+                    });
+                }
+                query['status.current'] = options.status;
+            } else {
+                // Default to active notes only
+                if (!options.includeArchived) {
+                    query['status.current'] = 'active';
+                } else {
+                    query['status.current'] = { $in: ['active', 'archived'] };
+                }
+            }
+
+            // Apply search filter
+            if (options.search && options.search.trim()) {
+                const searchTerm = options.search.trim();
+                query.$or = [
+                    { 'content.title': { $regex: searchTerm, $options: 'i' } },
+                    { 'content.body': { $regex: searchTerm, $options: 'i' } },
+                    { 'content.summary': { $regex: searchTerm, $options: 'i' } },
+                    { 'mentions.keywords.manual': { $regex: searchTerm, $options: 'i' } },
+                    { 'classification.tags.user': { $regex: searchTerm, $options: 'i' } }
+                ];
+            }
+
+            // PHASE 3: BUILD SORT OPTIONS
+            const sortBy = options.sortBy || 'createdAt';
+            const sortOrder = options.sortOrder === 'asc' ? 1 : -1;
+            const sort = { [sortBy]: sortOrder };
+
+            // Add secondary sort by createdAt for consistent ordering
+            if (sortBy !== 'createdAt') {
+                sort['createdAt'] = -1;
+            }
+
+            // PHASE 4: PAGINATION
+            const limit = options.limit ? parseInt(options.limit, 10) : 50;
+            const skip = options.skip ? parseInt(options.skip, 10) : 0;
+
+            if (limit > 100) {
+                throw AppError.validation('Limit cannot exceed 100 notes per request', {
+                    context: { requestedLimit: limit, maxLimit: 100 }
+                });
+            }
+
+            // PHASE 5: EXECUTE QUERY
+            const [notes, totalCount] = await Promise.all([
+                ClientNote.find(query)
+                    .select('-__v -searchTokens -personalPreferences.notes')
+                    .populate('metadata.createdBy', 'profile.firstName profile.lastName email')
+                    .sort(sort)
+                    .skip(skip)
+                    .limit(limit)
+                    .lean(),
+                ClientNote.countDocuments(query)
+            ]);
+
+            // PHASE 6: SANITIZE OUTPUT
+            const sanitizedNotes = notes.map(note => this._sanitizeNoteOutput(note));
+
+            const duration = Date.now() - startTime;
+
+            logger.info('Get all notes completed successfully', {
+                operationId,
+                clientId: clientId,
+                count: notes.length,
+                totalCount: totalCount,
+                duration: `${duration}ms`,
+                filters: {
+                    type: options.type,
+                    importance: options.importance,
+                    category: options.category,
+                    status: options.status,
+                    hasSearch: !!options.search
+                }
+            });
+
+            return {
+                notes: sanitizedNotes,
+                metadata: {
+                    total: totalCount,
+                    count: notes.length,
+                    limit: limit,
+                    skip: skip,
+                    hasMore: skip + notes.length < totalCount,
+                    filters: {
+                        type: options.type,
+                        importance: options.importance,
+                        category: options.category,
+                        status: options.status || 'active',
+                        search: options.search,
+                        includeArchived: options.includeArchived
+                    }
+                }
+            };
+
+        } catch (error) {
+            const duration = Date.now() - startTime;
+
+            logger.error('Get all notes failed', {
+                operationId,
+                error: error.message,
+                duration: `${duration}ms`,
+                userClientId: options.userClientId
+            });
+
+            throw error;
+        }
+    }
+
+    /**
      * Update note information with access control
      */
     async updateNote(noteId, updateData, options = {}) {
@@ -895,16 +1142,16 @@ class ClientNoteService {
         }
 
         if (noteData.content?.body && noteData.content.body.length > this.config.maxNoteLength) {
-            errors.push({ 
-                field: 'content.body', 
-                message: `Note content exceeds maximum length of ${this.config.maxNoteLength} characters` 
+            errors.push({
+                field: 'content.body',
+                message: `Note content exceeds maximum length of ${this.config.maxNoteLength} characters`
             });
         }
 
         if (noteData.content?.title && noteData.content.title.length > 500) {
-            errors.push({ 
-                field: 'content.title', 
-                message: 'Note title exceeds maximum length of 500 characters' 
+            errors.push({
+                field: 'content.title',
+                message: 'Note title exceeds maximum length of 500 characters'
             });
         }
 
@@ -952,17 +1199,17 @@ class ClientNoteService {
 
         // Validate note content length if provided
         if (updateData.content?.body && updateData.content.body.length > this.config.maxNoteLength) {
-            errors.push({ 
-                field: 'content.body', 
-                message: `Note content exceeds maximum length of ${this.config.maxNoteLength} characters` 
+            errors.push({
+                field: 'content.body',
+                message: `Note content exceeds maximum length of ${this.config.maxNoteLength} characters`
             });
         }
 
         // Validate note title length if provided
         if (updateData.content?.title && updateData.content.title.length > 500) {
-            errors.push({ 
-                field: 'content.title', 
-                message: 'Note title exceeds maximum length of 500 characters' 
+            errors.push({
+                field: 'content.title',
+                message: 'Note title exceeds maximum length of 500 characters'
             });
         }
 
@@ -1034,12 +1281,12 @@ class ClientNoteService {
      */
     _generateSummary(content) {
         if (!content) return '';
-        
+
         // Get first 3 sentences or 200 characters
         const sentences = content.match(/[^.!?]+[.!?]+/g) || [];
         const summary = sentences.slice(0, 3).join(' ');
-        
-        return summary.length > 200 
+
+        return summary.length > 200
             ? summary.substring(0, 197) + '...'
             : summary;
     }
@@ -1139,6 +1386,7 @@ class ClientNoteService {
         // Remove sensitive and internal fields
         delete noteObject.__v;
         delete noteObject.searchTokens;
+        delete noteObject.personalPreferences?.notes;
         delete noteObject.status?.deletedAt;
         delete noteObject.status?.deletedBy;
 

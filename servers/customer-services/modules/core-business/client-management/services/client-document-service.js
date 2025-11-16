@@ -19,6 +19,7 @@ const database = require('../../../../../../shared/lib/database');
 // Import business services
 const NotificationService = require('../../notifications/services/notification-service');
 const AnalyticsService = require('../../analytics/services/analytics-service');
+const { Client } = require('../../../../../../shared/lib/database/models/customer-services/core-business/client-management/client-model');
 
 /**
  * Document Type Constants
@@ -377,6 +378,147 @@ class ClientDocumentService {
     }
 
     /**
+     * Get documents for authenticated client with filtering and sorting
+     * This method is design for self-service access where clients retireve their own documents
+     * @param {Object} options - Query options
+     * @param {string} options.userClientId - Client ID from authenticated user (required for self-service)
+     * @param {string} options.tenantId - Tenant ID from authenticated user (for admin access)
+     * @param {string} options.status - Filter by document status
+     * @param {string} options.search - Search term for document name or description
+     * @param {string} options.sortBy - Field to sort by (default: createdAt)
+     * @param {string} options.sortOrder - Sort order: 'asc' or 'desc' (default: desc)
+     * @param {number} options.limit - Maximum number of documents to return (default: 50)
+     * @param {number} options.skip - Number of documents to skip for pagination (default: 0)
+     * @param {boolean} options.includeDeleted - Include soft-deteleted documents
+     * @returns {Promise<Object>} Object containing documents array and metadata
+     */
+    async getDocuments(options = {}) {
+        const startTime = Date.now();
+        try {
+            logger.info('Fetching documents with filters', {
+                userClientId: options.userClientId,
+                tenantId: options.tenantId,
+                filters: {
+                    status: options.status,
+                    role: options.role,
+                    search: options.search
+                }
+            });
+
+            // PHASE 1: ACCESS CONTROL
+            let clientId;
+            if (options.userClientId) {
+                // Self-service access - client accessing their own documents
+                if (!mongoose.Types.ObjectId.isValid(options.userClientId)) {
+                    throw AppError.validation('Invalid client ID', {
+                        context: { userClientId: options.userClientId }
+                    });
+                }
+                clientId = options.userClientId;
+                logger.debug('Self-service access - retrieving own contacts', {
+                    clientId: clientId
+                });
+            }
+
+            // PHASE 2: BUILD QUERY
+            const dbService = this._getDatabaseService();
+            const ClientDocument = dbService.getModel('ClientDocument', 'customer');
+
+            const query = {
+                clientId: clientId,
+                isDeleted: options.includeDeleted === true ? { $in: [true, false] } : { $ne: true }
+            };
+
+            // Apply status filter
+            if (options.status) {
+                if (!Object.values(DOCUMENT_STATUS).includes(options.status)) {
+                    throw AppError.validation('Invalid document status filter', {
+                        context: {
+                            provided: options.status,
+                            validValues: Object.values(DOCUMENT_STATUS)
+                        }
+                    });
+                }
+                query['lifecycle.status'] = options.status;
+            } else {
+                // Default to active documents only
+                query['lifecycle.status'] = { $ne: DOCUMENT_STATUS.ARCHIVED };
+            }
+
+            // Apply search filter
+            if (options.search && options.search.trim()) {
+                const searchTerm = options.search.trim();
+                query.$or = [
+                    { 'documentInfo.name': { $regex: searchTerm, $options: 'i' } },
+                    { 'documentInfo.description': { $regex: searchTerm, $options: 'i' } },
+                ];
+            }
+
+            // PHASE 3: BUILD SORT OPTIONS
+            const sortBy = options.sortBy || 'documentInfo.name';
+            const sortOrder = options.sortOrder === 'asc' ? -1 : 1;
+            const sort = { [sortBy]: sortOrder };
+
+            // Add secondary sort by name for consistent ordering
+            if (sortBy !== 'documentInfo.name') sort['documentInfo.name'] = 1;
+
+            // PHASE 4: PAGINATION
+            const limit = options.limit ? parseInt(options.limit, 10) : 50;
+            const skip = options.skip ? parseInt(options.skip, 10) : 0;
+
+            if (limit > 100) throw AppError.validation('Limit exceeds maximum of 100', { context: { requestdLimit: limit, maxLimit: 100 } });
+
+            // PHASE 5: EXECUTE QUERY
+            const [documents, totalCount] = await Promise.all([
+                ClientDocument.find(query)
+                    .select('-__v -accessControl.restrictions -analytics.views.viewHistory -analytics.downloads.downloadHistory')
+                    .sort(sort)
+                    .skip(skip)
+                    .limit(limit)
+                    .lean(),
+                ClientDocument.countDocuments(query)
+            ]);
+
+            // PHASE 6: SANITIZE OUTPUT
+            const sanitizedDocuments = documents.map(document => this._sanitizeDocumentOutput(document));
+            const duration = Date.now() - startTime;
+            logger.info('Documents fetched successfully', {
+                clientId: clientId,
+                count: documents.length,
+                totalCount: totalCount,
+                duration: `${duration}ms`,
+                filters: {
+                    status: options.status,
+                    role: options.role,
+                    hasSearch: !!options.search
+                }
+            });
+
+            return {
+                documents: sanitizedDocuments,
+                metadata: {
+                    total: totalCount,
+                    count: documents.length,
+                    limit: limit,
+                    skip: skip,
+                    hasMore: skip + documents.length < totalCount,
+                    filters: {
+                        status: options.status || DOCUMENT_STATUS,
+                        search: options.search
+                    }
+                }
+            }
+        } catch (error) {
+            const duration = Date.now() - startTime;
+            logger.error('Failed to fetch documents', {
+                error: error.message,
+                duration: `${duration}ms`,
+                userClientId: options.userClientId,
+            })
+        }
+    }
+
+    /**
      * Get document by ID with enterprise-grade access control
      */
     async getDocumentById(documentId, options = {}) {
@@ -599,91 +741,229 @@ class ClientDocumentService {
     }
 
     /**
-     * Update document information with access control
+     * Get all documents for authenticated client with filtering and sorting
+     * This method is designed for self-service access where clients retrieve their own documents
+     * @param {Object} options - Query options
+     * @param {string} options.userClientId - Client ID from authenticated user (required for self-service)
+     * @param {string} options.tenantId - Tenant ID for admin access
+     * @param {string} options.type - Filter by document type (contract, proposal, invoice, report, etc.)
+     * @param {string} options.status - Filter by lifecycle status (draft, review, approved, published, archived)
+     * @param {string} options.classification - Filter by classification level (public, internal, confidential, restricted)
+     * @param {string} options.search - Search term for name, description, or keywords
+     * @param {string} options.sortBy - Field to sort by (default: 'createdAt')
+     * @param {string} options.sortOrder - Sort order: 'asc' or 'desc' (default: 'desc')
+     * @param {number} options.limit - Maximum number of documents to return (max 100, default: 50)
+     * @param {number} options.skip - Number of documents to skip for pagination (default: 0)
+     * @param {boolean} options.includeDeleted - Include soft-deleted documents (default: false)
+     * @param {boolean} options.onlyLatest - Only return latest versions (default: true)
+     * @returns {Promise<Object>} Object containing documents array and metadata
      */
-    // async updateDocument(documentId, updateData, options = {}) {
-    //     try {
-    //         logger.info('Updating document', {
-    //             documentId,
-    //             updateFields: Object.keys(updateData),
-    //             userId: options.userId
-    //         });
+    async getDocuments(options = {}) {
+        const operationId = crypto.randomBytes(8).toString('hex');
+        const startTime = Date.now();
 
-    //         // Validate document ID format
-    //         if (!mongoose.Types.ObjectId.isValid(documentId)) {
-    //             throw AppError.validation('Invalid document ID format', {
-    //                 context: { documentId }
-    //             });
-    //         }
+        try {
+            logger.info('Starting get all documents operation', {
+                operationId,
+                userClientId: options.userClientId,
+                tenantId: options.tenantId,
+                filters: {
+                    type: options.type,
+                    status: options.status,
+                    classification: options.classification,
+                    search: options.search
+                }
+            });
 
-    //         // Validate update data
-    //         await this._validateDocumentUpdateData(updateData);
+            // PHASE 1: ACCESS CONTROL
+            let clientId;
 
-    //         // Get existing document with access control
-    //         const existingDocument = await this.getDocumentById(documentId, {
-    //             tenantId: options.tenantId,
-    //             userClientId: options.userClientId,
-    //             skipTenantCheck: options.skipTenantCheck
-    //         });
+            if (options.userClientId) {
+                // Self-service access - client accessing their own documents
+                if (!mongoose.Types.ObjectId.isValid(options.userClientId)) {
+                    throw AppError.validation('Invalid client ID', {
+                        context: { userClientId: options.userClientId }
+                    });
+                }
+                clientId = options.userClientId;
 
-    //         const dbService = this._getDatabaseService();
-    //         const ClientDocument = dbService.getModel('ClientDocument', 'customer');
+                logger.debug('Self-service access - retrieving own documents', {
+                    operationId,
+                    clientId: clientId
+                });
+            } else if (options.tenantId) {
+                // Administrative access - would need clientId specified
+                throw AppError.validation('Client ID required for administrative access', {
+                    context: {
+                        message: 'Use getDocumentsByClient method for admin operations with specific clientId'
+                    }
+                });
+            } else {
+                throw AppError.unauthorized('Authentication required', {
+                    context: { message: 'User must be authenticated to retrieve documents' }
+                });
+            }
 
-    //         // Prepare update
-    //         const update = {
-    //             ...updateData
-    //         };
+            // PHASE 2: BUILD QUERY
+            const dbService = this._getDatabaseService();
+            const ClientDocument = dbService.getModel('ClientDocument', 'customer');
 
-    //         // Handle version increment if creating new version
-    //         if (options.createNewVersion && this.config.enableVersionControl) {
-    //             const currentVersion = existingDocument.versioning?.version || { major: 1, minor: 0, patch: 0 };
-    //             update['versioning.version.minor'] = currentVersion.minor + 1;
-    //             update['versioning.version.patch'] = 0;
-    //             update['versioning.versionString'] = `${currentVersion.major}.${currentVersion.minor + 1}.0`;
-    //         }
+            const query = {
+                clientId: clientId,
+                isDeleted: options.includeDeleted === true ? { $in: [true, false] } : { $ne: true }
+            };
 
-    //         // Perform update
-    //         const updatedDocument = await ClientDocument.findByIdAndUpdate(
-    //             documentId,
-    //             { $set: update },
-    //             { new: true, runValidators: true }
-    //         ).lean();
+            // Apply version filter
+            if (options.onlyLatest !== false) {
+                query['versioning.isLatest'] = true;
+            }
 
-    //         if (!updatedDocument) {
-    //             throw AppError.notFound('Document not found for update');
-    //         }
+            // Apply type filter
+            if (options.type) {
+                const validTypes = [
+                    'contract', 'proposal', 'invoice', 'report', 'presentation',
+                    'specification', 'requirement', 'design', 'legal', 'financial',
+                    'technical', 'meeting_notes', 'correspondence', 'certificate',
+                    'policy', 'procedure', 'template', 'form', 'image', 'video', 'other'
+                ];
 
-    //         logger.info('Document updated successfully', {
-    //             documentId,
-    //             userId: options.userId
-    //         });
+                if (!validTypes.includes(options.type)) {
+                    throw AppError.validation('Invalid document type filter', {
+                        context: {
+                            provided: options.type,
+                            validValues: validTypes
+                        }
+                    });
+                }
+                query['documentInfo.type'] = options.type;
+            }
 
-    //         // Track update event
-    //         setImmediate(async () => {
-    //             try {
-    //                 await this._trackDocumentEvent(updatedDocument, 'document_updated', {
-    //                     updatedFields: Object.keys(updateData),
-    //                     userId: options.userId,
-    //                     newVersion: options.createNewVersion
-    //                 });
-    //             } catch (trackError) {
-    //                 logger.error('Failed to track update event', {
-    //                     error: trackError.message,
-    //                     documentId
-    //                 });
-    //             }
-    //         });
+            // Apply status filter
+            if (options.status) {
+                const validStatuses = ['draft', 'review', 'approved', 'published', 'archived', 'obsolete', 'deleted'];
 
-    //         return this._sanitizeDocumentOutput(updatedDocument);
+                if (!validStatuses.includes(options.status)) {
+                    throw AppError.validation('Invalid status filter', {
+                        context: {
+                            provided: options.status,
+                            validValues: validStatuses
+                        }
+                    });
+                }
+                query['lifecycle.status'] = options.status;
+            } else {
+                // Default to active documents only
+                query['lifecycle.status'] = { $nin: ['deleted', 'obsolete'] };
+            }
 
-    //     } catch (error) {
-    //         logger.error('Document update failed', {
-    //             error: error.message,
-    //             documentId
-    //         });
-    //         throw error;
-    //     }
-    // }
+            // Apply classification filter
+            if (options.classification) {
+                const validClassifications = ['public', 'internal', 'confidential', 'restricted', 'top_secret'];
+
+                if (!validClassifications.includes(options.classification)) {
+                    throw AppError.validation('Invalid classification filter', {
+                        context: {
+                            provided: options.classification,
+                            validValues: validClassifications
+                        }
+                    });
+                }
+                query['documentInfo.classification.level'] = options.classification;
+            }
+
+            // Apply search filter
+            if (options.search && options.search.trim()) {
+                const searchTerm = options.search.trim();
+                query.$or = [
+                    { 'documentInfo.name': { $regex: searchTerm, $options: 'i' } },
+                    { 'documentInfo.displayName': { $regex: searchTerm, $options: 'i' } },
+                    { 'documentInfo.description': { $regex: searchTerm, $options: 'i' } },
+                    { 'documentInfo.keywords': { $regex: searchTerm, $options: 'i' } },
+                    { 'fileDetails.originalName': { $regex: searchTerm, $options: 'i' } }
+                ];
+            }
+
+            // PHASE 3: BUILD SORT OPTIONS
+            const sortBy = options.sortBy || 'createdAt';
+            const sortOrder = options.sortOrder === 'asc' ? 1 : -1;
+            const sort = { [sortBy]: sortOrder };
+
+            // Add secondary sort by name for consistent ordering
+            if (sortBy !== 'documentInfo.name') {
+                sort['documentInfo.name'] = 1;
+            }
+
+            // PHASE 4: PAGINATION
+            const limit = options.limit ? parseInt(options.limit, 10) : 50;
+            const skip = options.skip ? parseInt(options.skip, 10) : 0;
+
+            if (limit > 100) {
+                throw AppError.validation('Limit cannot exceed 100 documents per request', {
+                    context: { requestedLimit: limit, maxLimit: 100 }
+                });
+            }
+
+            // PHASE 5: EXECUTE QUERY
+            const [documents, totalCount] = await Promise.all([
+                ClientDocument.find(query)
+                    .select('-__v -contentExtraction.searchableContent -signatures.signatories.verificationCode')
+                    .sort(sort)
+                    .skip(skip)
+                    .limit(limit)
+                    .lean(),
+                ClientDocument.countDocuments(query)
+            ]);
+
+            // PHASE 6: SANITIZE OUTPUT
+            const sanitizedDocuments = documents.map(doc => this._sanitizeDocumentOutput(doc));
+
+            const duration = Date.now() - startTime;
+
+            logger.info('Get all documents completed successfully', {
+                operationId,
+                clientId: clientId,
+                count: documents.length,
+                totalCount: totalCount,
+                duration: `${duration}ms`,
+                filters: {
+                    type: options.type,
+                    status: options.status,
+                    classification: options.classification,
+                    hasSearch: !!options.search
+                }
+            });
+
+            return {
+                documents: sanitizedDocuments,
+                metadata: {
+                    total: totalCount,
+                    count: documents.length,
+                    limit: limit,
+                    skip: skip,
+                    hasMore: skip + documents.length < totalCount,
+                    filters: {
+                        type: options.type,
+                        status: options.status || 'active',
+                        classification: options.classification,
+                        search: options.search,
+                        onlyLatest: options.onlyLatest !== false
+                    }
+                }
+            };
+
+        } catch (error) {
+            const duration = Date.now() - startTime;
+
+            logger.error('Get all documents failed', {
+                operationId,
+                error: error.message,
+                duration: `${duration}ms`,
+                userClientId: options.userClientId
+            });
+
+            throw error;
+        }
+    }
 
     async updateDocument(documentId, updateData, options = {}) {
         try {

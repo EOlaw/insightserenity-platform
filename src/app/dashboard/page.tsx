@@ -6,44 +6,49 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  Activity,
   Users,
   Calendar,
-  DollarSign,
-  TrendingUp,
-  TrendingDown,
   Bell,
   Settings,
-  LogOut,
   User,
   Building2,
   Mail,
   Phone,
-  MapPin,
   CheckCircle,
   AlertCircle,
   Clock,
-  BarChart3,
-  PieChart,
-  Target,
   Briefcase,
   FileText,
-  Upload,
   Download,
-  Award,
-  Zap,
   Shield,
   CreditCard,
-  CalendarCheck,
   MessageSquare,
-  TrendingUpIcon,
   ArrowUpRight,
-  ArrowDownRight,
   MoreVertical,
-  RefreshCw
+  RefreshCw,
+  StickyNote,
+  FolderOpen,
+  UserPlus,
+  Upload,
+  PlusCircle,
+  Eye,
+  TrendingUp
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { auth, api } from '@/lib/api/client'
+import { 
+  auth, 
+  contactsApi, 
+  documentsApi, 
+  notesApi,
+  Contact,
+  Document,
+  Note,
+  getContactDisplayName,
+  getContactEmail,
+  formatFileSize,
+  getFileIcon,
+  getImportanceBadge
+} from '@/lib/api/client'
 
 interface UserData {
   _id: string
@@ -92,188 +97,40 @@ interface UserData {
   updatedAt: string
 }
 
-const stats = [
-  {
-    title: 'Total Projects',
-    value: '12',
-    change: '+20.1%',
-    trend: 'up',
-    icon: Briefcase,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-100',
-  },
-  {
-    title: 'Active Clients',
-    value: '8',
-    change: '+15.3%',
-    trend: 'up',
-    icon: Users,
-    color: 'text-green-600',
-    bgColor: 'bg-green-100',
-  },
-  {
-    title: 'This Month Revenue',
-    value: '$24,500',
-    change: '+12.5%',
-    trend: 'up',
-    icon: DollarSign,
-    color: 'text-primary',
-    bgColor: 'bg-primary/10',
-  },
-  {
-    title: 'Completed Tasks',
-    value: '145',
-    change: '+8.2%',
-    trend: 'up',
-    icon: Target,
-    color: 'text-purple-600',
-    bgColor: 'bg-purple-100',
-  },
-]
-
-const performanceMetrics = [
-  {
-    label: 'Task Completion Rate',
-    value: '94%',
-    change: '+5%',
-    trend: 'up',
-    color: 'text-green-600',
-  },
-  {
-    label: 'Client Satisfaction',
-    value: '4.8/5',
-    change: '+0.3',
-    trend: 'up',
-    color: 'text-green-600',
-  },
-  {
-    label: 'Response Time',
-    value: '2.4h',
-    change: '-0.8h',
-    trend: 'up',
-    color: 'text-green-600',
-  },
-  {
-    label: 'Project Delivery',
-    value: '98%',
-    change: '+2%',
-    trend: 'up',
-    color: 'text-green-600',
-  },
-]
-
-const recentActivities = [
-  {
-    id: 1,
-    type: 'project',
-    title: 'New project started',
-    description: 'Website redesign for TechCorp',
-    time: '2 hours ago',
-    icon: Briefcase,
-    color: 'bg-blue-100 text-blue-600',
-  },
-  {
-    id: 2,
-    type: 'client',
-    title: 'Client meeting completed',
-    description: 'Strategy session with StartupXYZ',
-    time: '4 hours ago',
-    icon: Users,
-    color: 'bg-green-100 text-green-600',
-  },
-  {
-    id: 3,
-    type: 'task',
-    title: 'Task completed',
-    description: 'Market research analysis',
-    time: '6 hours ago',
-    icon: CheckCircle,
-    color: 'bg-purple-100 text-purple-600',
-  },
-  {
-    id: 4,
-    type: 'payment',
-    title: 'Payment received',
-    description: '$5,000 from RetailCorp project',
-    time: '1 day ago',
-    icon: DollarSign,
-    color: 'bg-primary/10 text-primary',
-  },
-  {
-    id: 5,
-    type: 'document',
-    title: 'Document uploaded',
-    description: 'Q4 Financial Report.pdf',
-    time: '2 days ago',
-    icon: FileText,
-    color: 'bg-orange-100 text-orange-600',
-  },
-]
-
-const upcomingTasks = [
-  {
-    id: 1,
-    title: 'Review project proposal',
-    dueDate: 'Today, 3:00 PM',
-    priority: 'high',
-    status: 'pending',
-  },
-  {
-    id: 2,
-    title: 'Team standup meeting',
-    dueDate: 'Today, 4:30 PM',
-    priority: 'medium',
-    status: 'pending',
-  },
-  {
-    id: 3,
-    title: 'Submit timesheet',
-    dueDate: 'Tomorrow',
-    priority: 'medium',
-    status: 'pending',
-  },
-  {
-    id: 4,
-    title: 'Client presentation',
-    dueDate: 'Oct 25, 2:00 PM',
-    priority: 'high',
-    status: 'pending',
-  },
-]
-
-const recentDocuments = [
-  {
-    id: 1,
-    name: 'Project Proposal - TechCorp.pdf',
-    size: '2.4 MB',
-    uploadedAt: '2 hours ago',
-    type: 'pdf',
-  },
-  {
-    id: 2,
-    name: 'Financial Report Q3.xlsx',
-    size: '1.8 MB',
-    uploadedAt: '1 day ago',
-    type: 'excel',
-  },
-  {
-    id: 3,
-    name: 'Client Contract - StartupXYZ.docx',
-    size: '856 KB',
-    uploadedAt: '3 days ago',
-    type: 'word',
-  },
-]
+interface DashboardStats {
+  totalContacts: number
+  totalDocuments: number
+  totalNotes: number
+  recentActivityCount: number
+}
 
 export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<UserData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  
+  // Data states
+  const [stats, setStats] = useState<DashboardStats>({
+    totalContacts: 0,
+    totalDocuments: 0,
+    totalNotes: 0,
+    recentActivityCount: 0
+  })
+  const [recentContacts, setRecentContacts] = useState<Contact[]>([])
+  const [recentDocuments, setRecentDocuments] = useState<Document[]>([])
+  const [recentNotes, setRecentNotes] = useState<Note[]>([])
+  const [isLoadingData, setIsLoadingData] = useState(true)
 
   useEffect(() => {
     loadUserData()
   }, [])
+
+  useEffect(() => {
+    if (user) {
+      loadDashboardData()
+    }
+  }, [user])
 
   const loadUserData = async () => {
     setIsLoading(true)
@@ -314,6 +171,49 @@ export default function DashboardPage() {
     }
   }
 
+  const loadDashboardData = async () => {
+    setIsLoadingData(true)
+    
+    try {
+      // Load contacts, documents, and notes in parallel
+      const [contactsResponse, documentsResponse, notesResponse] = await Promise.all([
+        contactsApi.getAll({ limit: 5 }).catch(err => {
+          console.error('Failed to load contacts:', err)
+          return { data: { contacts: [] }, pagination: { total: 0 } }
+        }),
+        documentsApi.getAll({ limit: 5 }).catch(err => {
+          console.error('Failed to load documents:', err)
+          return { data: { documents: [] }, pagination: { total: 0 } }
+        }),
+        notesApi.getAll({ limit: 5 }).catch(err => {
+          console.error('Failed to load notes:', err)
+          return { data: { notes: [] }, pagination: { total: 0 } }
+        })
+      ])
+
+      // Update stats
+      setStats({
+        totalContacts: contactsResponse.pagination?.total || contactsResponse.data.contacts.length,
+        totalDocuments: documentsResponse.pagination?.total || documentsResponse.data.documents.length,
+        totalNotes: notesResponse.pagination?.total || notesResponse.data.notes.length,
+        recentActivityCount: (contactsResponse.data.contacts.length + 
+                             documentsResponse.data.documents.length + 
+                             notesResponse.data.notes.length)
+      })
+
+      // Set recent data
+      setRecentContacts(contactsResponse.data.contacts)
+      setRecentDocuments(documentsResponse.data.documents)
+      setRecentNotes(notesResponse.data.notes)
+
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error)
+      toast.error('Some dashboard data could not be loaded')
+    } finally {
+      setIsLoadingData(false)
+    }
+  }
+
   const handleLogout = async () => {
     try {
       await auth.logout()
@@ -325,29 +225,17 @@ export default function DashboardPage() {
     }
   }
 
-  // Check email verification from multiple possible locations
   const isEmailVerified = () => {
     if (!user) return false
-    
-    // Check direct field
     if (user.emailVerified === true) return true
-    
-    // Check nested verification object
     if (user.verification?.email?.verified === true) return true
-    
     return false
   }
 
-  // Check phone verification from multiple possible locations
   const isPhoneVerified = () => {
     if (!user) return false
-    
-    // Check direct field
     if (user.phoneVerified === true) return true
-    
-    // Check nested verification object
     if (user.verification?.phone?.verified === true) return true
-    
     return false
   }
 
@@ -377,17 +265,17 @@ export default function DashboardPage() {
     }
   }
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high':
-        return 'text-red-600 bg-red-100'
-      case 'medium':
-        return 'text-yellow-600 bg-yellow-100'
-      case 'low':
-        return 'text-green-600 bg-green-100'
-      default:
-        return 'text-gray-600 bg-gray-100'
-    }
+  const getRelativeTime = (dateString: string): string => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+    if (diffInSeconds < 60) return 'Just now'
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`
+    
+    return date.toLocaleDateString()
   }
 
   if (isLoading) {
@@ -418,7 +306,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
@@ -426,11 +313,11 @@ export default function DashboardPage() {
             Welcome back, {user.profile?.displayName || user.firstName}!
           </h1>
           <p className="text-sm text-gray-600">
-            Here's what's happening with your account today.
+            Here is an overview of your account and recent activity.
           </p>
         </div>
 
-        {/* Alert Section - Shows only if email not verified */}
+        {/* Email Verification Alert */}
         {!isEmailVerified() && (
           <div className="mb-6">
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -450,7 +337,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* User Profile Card */}
+        {/* Profile and Account Status Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <Card className="lg:col-span-2">
             <CardHeader>
@@ -593,181 +480,257 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {stats.map((stat, index) => {
-            const Icon = stat.icon
-            return (
-              <Card key={index} className="hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-medium text-gray-600">{stat.title}</p>
-                      <p className="text-2xl font-bold mt-1">{stat.value}</p>
-                      <p className="text-xs text-green-600 flex items-center mt-2">
-                        <TrendingUp className="h-3 w-3 mr-1" />
-                        {stat.change}
-                      </p>
-                    </div>
-                    <div className={`w-12 h-12 ${stat.bgColor} rounded-lg flex items-center justify-center`}>
-                      <Icon className={`h-6 w-6 ${stat.color}`} />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-
-        {/* Performance Metrics */}
-        <Card className="mb-8">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base">Performance Metrics</CardTitle>
-                <CardDescription className="text-xs">Your key performance indicators this month</CardDescription>
-              </div>
-              <Button variant="ghost" size="sm">
-                <BarChart3 className="h-4 w-4 mr-2" />
-                View Report
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {performanceMetrics.map((metric, index) => (
-                <div key={index} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-600">{metric.label}</span>
-                    <span className={`text-xs ${metric.color} flex items-center`}>
-                      {metric.trend === 'up' ? (
-                        <ArrowUpRight className="h-3 w-3 mr-1" />
-                      ) : (
-                        <ArrowDownRight className="h-3 w-3 mr-1" />
-                      )}
-                      {metric.change}
-                    </span>
-                  </div>
-                  <div className="text-xl font-bold">{metric.value}</div>
-                  <div className="w-full bg-gray-200 rounded-full h-1.5">
-                    <div className="bg-primary h-1.5 rounded-full" style={{ width: '75%' }}></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Recent Activity */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
+        {/* Account Statistics */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-base">Recent Activity</CardTitle>
-                  <CardDescription className="text-xs">Your latest account activities</CardDescription>
+                  <p className="text-xs font-medium text-gray-600">Your Contacts</p>
+                  <p className="text-2xl font-bold mt-1">{stats.totalContacts}</p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Total contacts in your network
+                  </p>
                 </div>
-                <Button variant="ghost" size="sm">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {recentActivities.map((activity) => {
-                  const Icon = activity.icon
-                  return (
-                    <div key={activity.id} className="flex items-start space-x-3 pb-4 border-b last:border-0 last:pb-0">
-                      <div className={`w-8 h-8 ${activity.color} rounded-full flex items-center justify-center flex-shrink-0`}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-900">{activity.title}</p>
-                        <p className="text-xs text-gray-600 mt-0.5">{activity.description}</p>
-                        <p className="text-xs text-gray-500 flex items-center mt-1">
-                          <Clock className="h-3 w-3 mr-1" />
-                          {activity.time}
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })}
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Users className="h-6 w-6 text-blue-600" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Upcoming Tasks */}
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-600">Your Documents</p>
+                  <p className="text-2xl font-bold mt-1">{stats.totalDocuments}</p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Files uploaded and managed
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  <FolderOpen className="h-6 w-6 text-green-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-600">Your Notes</p>
+                  <p className="text-2xl font-bold mt-1">{stats.totalNotes}</p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Notes and observations recorded
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <StickyNote className="h-6 w-6 text-purple-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Recent Contacts */}
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Upcoming Tasks</CardTitle>
-                <Button variant="ghost" size="sm">
-                  <CalendarCheck className="h-4 w-4" />
-                </Button>
+                <div>
+                  <CardTitle className="text-base">Recent Contacts</CardTitle>
+                  <CardDescription className="text-xs">Your most recently added contacts</CardDescription>
+                </div>
+                <Link href="/dashboard/client-management?tab=contacts">
+                  <Button variant="ghost" size="sm">
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                </Link>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {upcomingTasks.map((task) => (
-                  <div key={task.id} className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                    <div className="flex items-start justify-between mb-2">
-                      <h4 className="text-xs font-medium text-gray-900 flex-1">{task.title}</h4>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${getPriorityColor(task.priority)}`}>
-                        {task.priority}
+              {isLoadingData ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+                </div>
+              ) : recentContacts.length > 0 ? (
+                <div className="space-y-3">
+                  {recentContacts.map((contact) => (
+                    <div key={contact._id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-sm font-semibold text-blue-600">
+                          {contact.personalInfo.firstName?.[0]}{contact.personalInfo.lastName?.[0]}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-900 truncate">
+                          {getContactDisplayName(contact)}
+                        </p>
+                        <p className="text-xs text-gray-600 truncate">{getContactEmail(contact)}</p>
+                        <p className="text-xs text-gray-500">{contact.professionalInfo?.jobTitle || 'No title'}</p>
+                      </div>
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        contact.status.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {contact.status.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </div>
-                    <div className="flex items-center text-xs text-gray-600">
-                      <Clock className="h-3 w-3 mr-1" />
-                      {task.dueDate}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <Button variant="outline" size="sm" className="w-full mt-4">
-                View All Tasks
-              </Button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Users className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-sm text-gray-600 mb-4">No contacts yet</p>
+                  <Link href="/dashboard/client-management?tab=contacts">
+                    <Button size="sm" variant="outline">
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Add Your First Contact
+                    </Button>
+                  </Link>
+                </div>
+              )}
+              {recentContacts.length > 0 && (
+                <Link href="/dashboard/client-management?tab=contacts">
+                  <Button variant="outline" size="sm" className="w-full mt-4">
+                    View All Contacts
+                  </Button>
+                </Link>
+              )}
             </CardContent>
           </Card>
-        </div>
 
-        {/* Bottom Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Recent Documents */}
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base">Recent Documents</CardTitle>
-                  <CardDescription className="text-xs">Recently uploaded files</CardDescription>
+                  <CardDescription className="text-xs">Your recently uploaded files</CardDescription>
                 </div>
-                <Button variant="ghost" size="sm">
-                  <Upload className="h-4 w-4" />
-                </Button>
+                <Link href="/dashboard/client-management?tab=documents">
+                  <Button variant="ghost" size="sm">
+                    <Upload className="h-4 w-4" />
+                  </Button>
+                </Link>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {recentDocuments.map((doc) => (
-                  <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                      <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center flex-shrink-0">
-                        <FileText className="h-4 w-4 text-blue-600" />
+              {isLoadingData ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+                </div>
+              ) : recentDocuments.length > 0 ? (
+                <div className="space-y-3">
+                  {recentDocuments.map((doc) => (
+                    <div key={doc._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                        <div className="text-2xl">
+                          {getFileIcon(doc.file.mimeType)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-gray-900 truncate">
+                            {doc.documentInfo.displayName || doc.documentInfo.name}
+                          </p>
+                          <p className="text-xs text-gray-600">
+                            {formatFileSize(doc.file.size)} • {getRelativeTime(doc.createdAt)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-900 truncate">{doc.name}</p>
-                        <p className="text-xs text-gray-600">{doc.size} • {doc.uploadedAt}</p>
+                      <Button variant="ghost" size="sm" className="flex-shrink-0">
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <FileText className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-sm text-gray-600 mb-4">No documents yet</p>
+                  <Link href="/dashboard/client-management?tab=documents">
+                    <Button size="sm" variant="outline">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Your First Document
+                    </Button>
+                  </Link>
+                </div>
+              )}
+              {recentDocuments.length > 0 && (
+                <Link href="/dashboard/client-management?tab=documents">
+                  <Button variant="outline" size="sm" className="w-full mt-4">
+                    View All Documents
+                  </Button>
+                </Link>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Recent Notes and Quick Actions */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Recent Notes */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Recent Notes</CardTitle>
+                  <CardDescription className="text-xs">Your latest notes and observations</CardDescription>
+                </div>
+                <Link href="/dashboard/client-management?tab=notes">
+                  <Button variant="ghost" size="sm">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoadingData ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+                </div>
+              ) : recentNotes.length > 0 ? (
+                <div className="space-y-3">
+                  {recentNotes.map((note) => (
+                    <div key={note._id} className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div className="flex items-start justify-between mb-2">
+                        {note.content.title && (
+                          <h4 className="text-xs font-medium text-gray-900">{note.content.title}</h4>
+                        )}
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${getImportanceBadge(note.classification.importance)}`}>
+                          {note.classification.importance}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 line-clamp-2 mb-2">{note.content.body}</p>
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
+                          {note.classification.type}
+                        </span>
+                        <span>{getRelativeTime(note.createdAt)}</span>
                       </div>
                     </div>
-                    <Button variant="ghost" size="sm" className="flex-shrink-0">
-                      <Download className="h-3 w-3" />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <StickyNote className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-sm text-gray-600 mb-4">No notes yet</p>
+                  <Link href="/dashboard/client-management?tab=notes">
+                    <Button size="sm" variant="outline">
+                      <PlusCircle className="h-4 w-4 mr-2" />
+                      Create Your First Note
                     </Button>
-                  </div>
-                ))}
-              </div>
-              <Button variant="outline" size="sm" className="w-full mt-4">
-                View All Documents
-              </Button>
+                  </Link>
+                </div>
+              )}
+              {recentNotes.length > 0 && (
+                <Link href="/dashboard/client-management?tab=notes">
+                  <Button variant="outline" size="sm" className="w-full mt-4">
+                    View All Notes
+                  </Button>
+                </Link>
+              )}
             </CardContent>
           </Card>
 
@@ -791,16 +754,10 @@ export default function DashboardPage() {
                     <span className="text-xs">Settings</span>
                   </Button>
                 </Link>
-                <Link href="/dashboard/projects">
+                <Link href="/dashboard/client-management">
                   <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
                     <Briefcase className="h-4 w-4" />
-                    <span className="text-xs">Projects</span>
-                  </Button>
-                </Link>
-                <Link href="/dashboard/reports">
-                  <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
-                    <BarChart3 className="h-4 w-4" />
-                    <span className="text-xs">Reports</span>
+                    <span className="text-xs">Client Management</span>
                   </Button>
                 </Link>
                 <Link href="/dashboard/calendar">
@@ -819,6 +776,12 @@ export default function DashboardPage() {
                   <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
                     <CreditCard className="h-4 w-4" />
                     <span className="text-xs">Billing</span>
+                  </Button>
+                </Link>
+                <Link href="/dashboard/notifications">
+                  <Button variant="outline" size="sm" className="w-full h-auto py-3 flex-col space-y-1">
+                    <Bell className="h-4 w-4" />
+                    <span className="text-xs">Notifications</span>
                   </Button>
                 </Link>
                 <Link href="/dashboard/help">

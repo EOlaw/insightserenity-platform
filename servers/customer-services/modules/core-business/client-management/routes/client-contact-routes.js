@@ -19,6 +19,26 @@ const { rateLimiter } = require('../../../../middleware/rate-limiter');
 router.use(authenticate);
 
 /**
+ * @route   GET /api/v1/clients/contacts
+ * @desc    Get all contacts for authenticated client
+ * @access  Private (Authenticated Client)
+ * @note    Client can only retrieve their own contacts
+ * @query   status - Filter by contact status (active, inactive, left_company, do_not_contact)
+ * @query   role - Filter by contact role (primary, decision_maker, technical_contact, etc.)
+ * @query   search - Search term for name, email, or job title
+ * @query   sortBy - Field to sort by (default: personalInfo.lastName)
+ * @query   sortOrder - Sort order: asc or desc (default: asc)
+ * @query   limit - Number of contacts per page (max 100, default: 50)
+ * @query   skip - Number of contacts to skip for pagination (default: 0)
+ * @query   includeDeleted - Include soft-deleted contacts (default: false)
+ */
+router.get(
+    '/',
+    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
+    ClientContactController.getContacts
+);
+
+/**
  * @route   POST /api/v1/contacts
  * @desc    Create a new contact
  * @access  Private (Authenticated Client)

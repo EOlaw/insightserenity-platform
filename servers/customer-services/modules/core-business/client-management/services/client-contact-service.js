@@ -478,6 +478,195 @@ class ClientContactService {
     }
 
     /**
+     * Get all contacts for authenticated client with filtering and sorting
+     * This method is designed for self-service access where clients retrieve their own contacts
+     * @param {Object} options - Query options
+     * @param {string} options.userClientId - Client ID from authenticated user (required for self-service)
+     * @param {string} options.tenantId - Tenant ID for admin access
+     * @param {string} options.status - Filter by status (active, inactive, etc.)
+     * @param {string} options.role - Filter by role (primary, decision_maker, etc.)
+     * @param {string} options.search - Search term for name or email
+     * @param {string} options.sortBy - Field to sort by (default: 'personalInfo.lastName')
+     * @param {string} options.sortOrder - Sort order: 'asc' or 'desc' (default: 'asc')
+     * @param {number} options.limit - Maximum number of contacts to return
+     * @param {number} options.skip - Number of contacts to skip for pagination
+     * @param {boolean} options.includeDeleted - Include soft-deleted contacts
+     * @returns {Promise<Object>} Object containing contacts array and metadata
+     */
+    async getContacts(options = {}) {
+        const operationId = crypto.randomBytes(8).toString('hex');
+        const startTime = Date.now();
+
+        try {
+            logger.info('Starting get all contacts operation', {
+                operationId,
+                userClientId: options.userClientId,
+                tenantId: options.tenantId,
+                filters: {
+                    status: options.status,
+                    role: options.role,
+                    search: options.search
+                }
+            });
+
+            // PHASE 1: ACCESS CONTROL
+            let clientId;
+
+            if (options.userClientId) {
+                // Self-service access - client accessing their own contacts
+                if (!mongoose.Types.ObjectId.isValid(options.userClientId)) {
+                    throw AppError.validation('Invalid client ID', {
+                        context: { userClientId: options.userClientId }
+                    });
+                }
+                clientId = options.userClientId;
+
+                logger.debug('Self-service access - retrieving own contacts', {
+                    operationId,
+                    clientId: clientId
+                });
+            } else if (options.tenantId) {
+                // Administrative access - would need clientId specified
+                throw AppError.validation('Client ID required for administrative access', {
+                    context: {
+                        message: 'Use getContactsByClient method for admin operations with specific clientId'
+                    }
+                });
+            } else {
+                throw AppError.unauthorized('Authentication required', {
+                    context: { message: 'User must be authenticated to retrieve contacts' }
+                });
+            }
+
+            // PHASE 2: BUILD QUERY
+            const dbService = this._getDatabaseService();
+            const ClientContact = dbService.getModel('ClientContact', 'customer');
+
+            const query = {
+                clientId: clientId,
+                isDeleted: options.includeDeleted === true ? { $in: [true, false] } : { $ne: true }
+            };
+
+            // Apply status filter
+            if (options.status) {
+                if (!Object.values(CONTACT_STATUS).includes(options.status)) {
+                    throw AppError.validation('Invalid status filter', {
+                        context: {
+                            provided: options.status,
+                            validValues: Object.values(CONTACT_STATUS)
+                        }
+                    });
+                }
+                query['relationship.status'] = options.status;
+            } else {
+                // Default to active contacts only
+                query['relationship.status'] = CONTACT_STATUS.ACTIVE;
+            }
+
+            // Apply role filter
+            if (options.role) {
+                if (!Object.values(CONTACT_ROLES).includes(options.role)) {
+                    throw AppError.validation('Invalid role filter', {
+                        context: {
+                            provided: options.role,
+                            validValues: Object.values(CONTACT_ROLES)
+                        }
+                    });
+                }
+                query['professionalInfo.role'] = options.role;
+            }
+
+            // Apply search filter
+            if (options.search && options.search.trim()) {
+                const searchTerm = options.search.trim();
+                query.$or = [
+                    { 'personalInfo.firstName': { $regex: searchTerm, $options: 'i' } },
+                    { 'personalInfo.lastName': { $regex: searchTerm, $options: 'i' } },
+                    { 'contactDetails.emails.address': { $regex: searchTerm, $options: 'i' } },
+                    { 'professionalInfo.jobTitle': { $regex: searchTerm, $options: 'i' } }
+                ];
+            }
+
+            // PHASE 3: BUILD SORT OPTIONS
+            const sortBy = options.sortBy || 'personalInfo.lastName';
+            const sortOrder = options.sortOrder === 'desc' ? -1 : 1;
+            const sort = { [sortBy]: sortOrder };
+
+            // Add secondary sort by firstName for consistent ordering
+            if (sortBy !== 'personalInfo.firstName') {
+                sort['personalInfo.firstName'] = 1;
+            }
+
+            // PHASE 4: PAGINATION
+            const limit = options.limit ? parseInt(options.limit, 10) : 50;
+            const skip = options.skip ? parseInt(options.skip, 10) : 0;
+
+            if (limit > 100) {
+                throw AppError.validation('Limit cannot exceed 100 contacts per request', {
+                    context: { requestedLimit: limit, maxLimit: 100 }
+                });
+            }
+
+            // PHASE 5: EXECUTE QUERY
+            const [contacts, totalCount] = await Promise.all([
+                ClientContact.find(query)
+                    .select('-__v -security.accessCredentials')
+                    .sort(sort)
+                    .skip(skip)
+                    .limit(limit)
+                    .lean(),
+                ClientContact.countDocuments(query)
+            ]);
+
+            // PHASE 6: SANITIZE OUTPUT
+            const sanitizedContacts = contacts.map(contact => this._sanitizeContactOutput(contact));
+
+            const duration = Date.now() - startTime;
+
+            logger.info('Get all contacts completed successfully', {
+                operationId,
+                clientId: clientId,
+                count: contacts.length,
+                totalCount: totalCount,
+                duration: `${duration}ms`,
+                filters: {
+                    status: options.status,
+                    role: options.role,
+                    hasSearch: !!options.search
+                }
+            });
+
+            return {
+                contacts: sanitizedContacts,
+                metadata: {
+                    total: totalCount,
+                    count: contacts.length,
+                    limit: limit,
+                    skip: skip,
+                    hasMore: skip + contacts.length < totalCount,
+                    filters: {
+                        status: options.status || CONTACT_STATUS.ACTIVE,
+                        role: options.role,
+                        search: options.search
+                    }
+                }
+            };
+
+        } catch (error) {
+            const duration = Date.now() - startTime;
+
+            logger.error('Get all contacts failed', {
+                operationId,
+                error: error.message,
+                duration: `${duration}ms`,
+                userClientId: options.userClientId
+            });
+
+            throw error;
+        }
+    }
+
+    /**
      * Update contact information with access control
      */
     async updateContact(contactId, updateData, options = {}) {

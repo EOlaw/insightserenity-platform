@@ -22,7 +22,7 @@ class ClientContactController {
     async createContact(req, res, next) {
         try {
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Create contact request received', {
                 clientId: req.body.clientId,
                 userId: userId
@@ -71,7 +71,7 @@ class ClientContactController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get contact by ID request', {
                 contactId: id,
                 userId: userId
@@ -108,6 +108,58 @@ class ClientContactController {
     }
 
     /**
+     * Get all contacts for authenticated client
+     * @route GET /api/v1/clients/contacts
+     */
+    async getContacts(req, res, next) {
+        try {
+            const userId = req.user?._id || req.user?.id;
+
+            logger.info('Get all contacts request', {
+                userId: userId,
+                userClientId: req.user?.clientId,
+                query: req.query
+            });
+
+            const options = {
+                tenantId: req.user?.tenantId,
+                organizationId: req.user?.organizationId,
+                userId: userId,
+                userClientId: req.user?.clientId,
+                status: req.query.status,
+                role: req.query.role,
+                search: req.query.search,
+                sortBy: req.query.sortBy,
+                sortOrder: req.query.sortOrder,
+                limit: req.query.limit ? parseInt(req.query.limit, 10) : undefined,
+                skip: req.query.skip ? parseInt(req.query.skip, 10) : undefined,
+                includeDeleted: req.query.includeDeleted === 'true'
+            };
+
+            const result = await ClientContactService.getContacts(options);
+
+            logger.info('All contacts fetched successfully', {
+                userId: userId,
+                count: result.contacts.length,
+                total: result.metadata.total
+            });
+
+            res.status(200).json({
+                success: true,
+                data: result.contacts,
+                metadata: result.metadata
+            });
+
+        } catch (error) {
+            logger.error('Get all contacts failed', {
+                error: error.message,
+                userId: req.user?.id
+            });
+            next(error);
+        }
+    }
+
+    /**
      * Get contacts by client
      * @route GET /api/v1/clients/:clientId/contacts
      */
@@ -115,7 +167,7 @@ class ClientContactController {
         try {
             const { clientId } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get contacts by client request', {
                 clientId,
                 userId: userId
@@ -211,7 +263,7 @@ class ClientContactController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Delete contact request', {
                 contactId: id,
                 softDelete: req.query.soft !== 'false',
@@ -303,7 +355,7 @@ class ClientContactController {
         try {
             const { id } = req.params;
             const userId = req.user?._id || req.user?.id;
-            
+
             logger.info('Get contact engagement request', {
                 contactId: id,
                 userId: userId
