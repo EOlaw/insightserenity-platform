@@ -2,7 +2,7 @@
  * @fileoverview Comprehensive API Client for InsightSerenity Platform
  * @description Unified API client handling all backend communications including authentication,
  *              client management (contacts, documents, notes), and core platform operations
- * @version 2.1.0
+ * @version 2.2.0
  */
 
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
@@ -43,7 +43,7 @@ export interface Contact {
   contactDetails: {
     emails: Array<{
       type: string;
-      email: string;
+      address: string;
       isPrimary: boolean;
       isVerified: boolean;
     }>;
@@ -69,6 +69,8 @@ export interface Document {
   _id: string;
   documentId: string;
   clientId: string;
+  projectId?: string;
+  engagementId?: string;
   documentInfo: {
     name: string;
     displayName?: string;
@@ -77,25 +79,198 @@ export interface Document {
     category?: {
       primary: string;
       secondary?: string[];
+      custom?: string[];
     };
+    classification?: {
+      level: string;
+      handling?: string;
+      markings?: string[];
+    };
+    language?: string;
+    keywords?: string[];
+    abstract?: string;
   };
-  file: {
-    filename: string;
+  fileDetails: {
     originalName: string;
+    fileName: string;
+    fileExtension: string;
     mimeType: string;
     size: number;
-    path: string;
-    extension: string;
+    encoding?: string;
+    checksum?: {
+      md5?: string;
+      sha256?: string;
+    };
+    dimensions?: {
+      width?: number;
+      height?: number;
+      duration?: number;
+      pages?: number;
+    };
+    metadata?: {
+      author?: string;
+      creator?: string;
+      producer?: string;
+      subject?: string;
+      title?: string;
+      creationDate?: Date;
+      modificationDate?: Date;
+    };
   };
-  version: {
-    current: number;
-    history: any[];
+  storage: {
+    provider: string;
+    location?: {
+      bucket?: string;
+      path?: string;
+      region?: string;
+    };
+    url: string;
+    publicUrl?: string;
+    thumbnailUrl?: string;
+    cdnUrl?: string;
+    signedUrl?: {
+      url?: string;
+      expiresAt?: Date;
+    };
+    backup?: {
+      enabled?: boolean;
+      location?: string;
+      lastBackup?: Date;
+    };
+    encryption?: {
+      enabled: boolean;
+      algorithm?: string;
+      keyId?: string;
+    };
+    compression?: {
+      enabled?: boolean;
+      algorithm?: string;
+      originalSize?: number;
+    };
   };
-  status: {
-    current: string;
-    isActive: boolean;
+  versioning: {
+    version: {
+      major: number;
+      minor: number;
+      patch: number;
+      label?: string;
+    };
+    versionString: string;
+    isLatest: boolean;
+    isDraft: boolean;
+    parentVersionId?: string;
+    versionHistory?: Array<{
+      versionId: string;
+      version: string;
+      createdAt: Date;
+      createdBy: string;
+      changeNotes?: string;
+      size: number;
+    }>;
+    changeLog?: Array<{
+      version: string;
+      date: Date;
+      author: string;
+      changes: string[];
+      reviewedBy?: string;
+    }>;
   };
-  uploadedBy: string;
+  accessControl?: {
+    owner: string;
+    permissions?: any;
+    sharing?: any;
+    restrictions?: any;
+  };
+  lifecycle: {
+    status: string;
+    stage?: string;
+    workflow?: any;
+    approval?: any;
+    review?: {
+      nextReviewDate?: Date;
+      reviewFrequency?: any;
+      lastReviewDate?: Date;
+      reviewedBy?: string;
+      reviewNotes?: string;
+    };
+    retention?: any;
+  };
+  relationships?: {
+    relatedDocuments?: any[];
+    contracts?: any[];
+    invoices?: any[];
+    dependencies?: any[];
+    externalReferences?: any[];
+  };
+  signatures?: {
+    required: boolean;
+    signatories?: any[];
+    envelope?: any;
+    auditTrail?: any[];
+  };
+  collaboration?: {
+    comments?: any[];
+    annotations?: any[];
+    tasks?: any[];
+  };
+  analytics?: {
+    views?: any;
+    downloads?: any;
+    shares?: any;
+    prints?: any;
+    engagement?: any;
+    usage?: any;
+  };
+  contentExtraction?: {
+    ocr?: any;
+    textContent?: any;
+    metadata?: any;
+    entities?: any[];
+    searchableContent?: string;
+  };
+  compliance?: {
+    regulatory?: any;
+    privacy?: any;
+    audit?: any;
+    dataClassification?: any;
+  };
+  quality?: {
+    validation?: any;
+    integrity?: any;
+    completeness?: any;
+  };
+  processing?: {
+    status?: string;
+    queue?: any;
+    jobs?: any[];
+    conversions?: any[];
+    thumbnails?: any[];
+  };
+  tags?: {
+    system?: string[];
+    user?: string[];
+    auto?: string[];
+    taxonomy?: any[];
+  };
+  customFields?: Record<string, any>;
+  metadata: {
+    source?: string;
+    uploadedBy: string;
+    uploadedAt: Date;
+    importBatch?: string;
+    flags?: {
+      isFavorite?: boolean;
+      isPinned?: boolean;
+      isTemplate?: boolean;
+      requiresAction?: boolean;
+    };
+  };
+  searchTokens?: string[];
+  isDeleted: boolean;
+  deletedAt?: Date;
+  deletedBy?: string;
+  restorable?: boolean;
+  permanentDeletionDate?: Date;
   createdAt: string;
   updatedAt: string;
 }
@@ -547,10 +722,6 @@ export const auth = {
 // ==================== Contact Management API ====================
 
 export const contactsApi = {
-  /**
-   * Get all contacts for authenticated client
-   * Backend returns: { success: true, data: Contact[], metadata: {...} }
-   */
   getAll: async (params?: { 
     page?: number; 
     limit?: number; 
@@ -600,10 +771,6 @@ export const contactsApi = {
 // ==================== Document Management API ====================
 
 export const documentsApi = {
-  /**
-   * Get all documents for authenticated client
-   * Backend returns: { success: true, data: Document[], metadata: {...} }
-   */
   getAll: async (params?: { 
     page?: number; 
     limit?: number; 
@@ -632,7 +799,7 @@ export const documentsApi = {
   },
 
   getById: async (documentId: string): Promise<ApiResponse<Document>> => {
-    return api.get(`/documents/${documentId}`);
+    return api.get(`/clients/documents/${documentId}`);
   },
 
   create: async (documentData: Partial<Document>): Promise<ApiResponse<Document>> => {
@@ -677,10 +844,6 @@ export const documentsApi = {
 // ==================== Note Management API ====================
 
 export const notesApi = {
-  /**
-   * Get all notes for authenticated client
-   * Backend returns: { success: true, data: Note[], metadata: {...} }
-   */
   getAll: async (params?: { 
     page?: number; 
     limit?: number; 
@@ -711,7 +874,7 @@ export const notesApi = {
   },
 
   getById: async (noteId: string): Promise<ApiResponse<Note>> => {
-    return api.get(`/notes/${noteId}`);
+    return api.get(`/clients/notes/${noteId}`);
   },
 
   create: async (noteData: Partial<Note>): Promise<ApiResponse<Note>> => {
@@ -808,7 +971,7 @@ export const getUrgencyIcon = (urgency: string): string => {
 
 export const getContactEmail = (contact: Contact): string => {
   const primaryEmail = contact.contactDetails?.emails?.find(e => e.isPrimary);
-  return primaryEmail?.email || contact.contactDetails?.emails?.[0]?.email || 'No email';
+  return primaryEmail?.address || contact.contactDetails?.emails?.[0]?.address || 'No email';
 };
 
 export const getContactPhone = (contact: Contact): string => {

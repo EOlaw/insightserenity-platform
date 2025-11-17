@@ -17,7 +17,7 @@ const { Schema } = mongoose;
 // const BaseModel = require('../../../base-model');
 const logger = require('../../../../../utils/logger');
 const { AppError } = require('../../../../../utils/app-error');
-// const CommonValidator = require('../../../../../utils/validators/common-validators');
+const S3UrlHelper = require('../../../../../utils/helpers/s3-url-helper');
 const stringHelper = require('../../../../../utils/helpers/string-helper');
 // const EncryptionService = require('../../../../../security/encryption/encryption-service');
 
@@ -1153,26 +1153,45 @@ clientDocumentSchema.virtual('fileSize').get(function() {
 // ==================== Pre-save Middleware ====================
 clientDocumentSchema.pre('save', async function(next) {
   try {
-    // Generate document ID if not provided
+    // Existing document ID generation
     if (!this.documentId && this.isNew) {
       this.documentId = await this.constructor.generateDocumentId(this.tenantId);
     }
 
-    // Update version string
+    // Existing version string update
     const v = this.versioning.version;
     this.versioning.versionString = `${v.major}.${v.minor}.${v.patch}`;
 
-    // Update search tokens
+    // NEW: Convert storage URLs to proper format
+    if (this.storage?.url) {
+      this.storage.url = S3UrlHelper.ensureCorrectUrlFormat(this.storage.url);
+      
+      // Update region if not set
+      if (!this.storage.location?.region) {
+        this.storage.location = this.storage.location || {};
+        this.storage.location.region = S3UrlHelper.extractRegion(this.storage.url);
+      }
+    }
+
+    // NEW: Convert related URLs if they exist
+    if (this.storage?.publicUrl) {
+      this.storage.publicUrl = S3UrlHelper.ensureCorrectUrlFormat(this.storage.publicUrl);
+    }
+    
+    if (this.storage?.thumbnailUrl) {
+      this.storage.thumbnailUrl = S3UrlHelper.ensureCorrectUrlFormat(this.storage.thumbnailUrl);
+    }
+
+    // Existing search tokens update
     this.updateSearchTokens();
 
-    // Calculate checksums if new file
+    // Existing checksum generation
     if (this.isNew && !this.fileDetails.checksum.md5) {
-      // In production, calculate actual checksums
       this.fileDetails.checksum.md5 = stringHelper.generateRandomString(32);
       this.fileDetails.checksum.sha256 = stringHelper.generateRandomString(64);
     }
 
-    // Set display name if not provided
+    // Existing display name logic
     if (!this.documentInfo.displayName) {
       this.documentInfo.displayName = this.documentInfo.name;
     }

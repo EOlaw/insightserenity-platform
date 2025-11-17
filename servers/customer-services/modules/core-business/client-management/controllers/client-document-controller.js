@@ -28,30 +28,13 @@ class ClientDocumentController {
                 clientId: req.body.clientId,
                 documentName: req.body.documentInfo?.name,
                 documentType: req.body.documentInfo?.type,
-                userId: userId
+                userId: userId,
+                hasFileUpload: !!req.file,
+                fileSize: req.file?.size,
+                mimeType: req.file?.mimetype
             });
 
             const documentData = req.body;
-
-            // Handle file upload if present (multer middleware would populate req.file)
-            if (req.file) {
-                documentData.fileDetails = {
-                    originalName: req.file.originalname,
-                    fileName: req.file.filename,
-                    fileExtension: req.file.originalname.split('.').pop(),
-                    mimeType: req.file.mimetype,
-                    size: req.file.size,
-                    encoding: req.file.encoding
-                };
-
-                documentData.storage = {
-                    provider: 'local', // or 'aws_s3', etc.
-                    location: {
-                        path: req.file.path
-                    },
-                    url: req.file.path
-                };
-            }
 
             const options = {
                 tenantId: req.user?.tenantId,
@@ -60,13 +43,17 @@ class ClientDocumentController {
                 userClientId: req.user?.clientId,
                 source: req.body.source || 'web',
                 userAgent: req.headers['user-agent'],
-                ipAddress: req.ip || req.connection.remoteAddress
+                ipAddress: req.ip || req.connection.remoteAddress,
+                uploadedFile: req.file // Pass the multer file object
             };
 
             const document = await ClientDocumentService.createDocument(documentData, options);
 
             logger.info('Document created successfully', {
                 documentId: document.documentId,
+                documentName: document.documentInfo?.name,
+                storageProvider: document.storage?.provider,
+                hasStorageUrl: !!document.storage?.url,
                 userId: userId
             });
 
@@ -79,7 +66,10 @@ class ClientDocumentController {
         } catch (error) {
             logger.error('Create document failed', {
                 error: error.message,
-                userId: req.user?.id
+                errorCode: error.code,
+                userId: req.user?.id,
+                clientId: req.body?.clientId,
+                hasFileUpload: !!req.file
             });
             next(error);
         }

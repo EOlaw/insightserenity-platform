@@ -35,32 +35,22 @@ import {
   TrendingUp
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { 
-  auth, 
-  contactsApi, 
-  documentsApi, 
-  notesApi,
-  Contact,
-  Document,
-  Note,
-  getContactDisplayName,
-  getContactEmail,
-  formatFileSize,
-  getFileIcon,
-  getImportanceBadge
-} from '@/lib/api/client'
+
+// Import your existing API client
+import { auth, api } from '@/lib/api/client'
 
 interface UserData {
   _id: string
   email: string
   firstName: string
   lastName: string
+  phoneNumber?: string
   profile: {
     displayName: string
     firstName: string
     lastName: string
     email: string
-    phone: string
+    phone?: string
     avatar: {
       url: string
       alt: string
@@ -95,6 +85,51 @@ interface UserData {
   }
   createdAt: string
   updatedAt: string
+}
+
+interface Contact {
+  _id: string
+  personalInfo: {
+    firstName: string
+    lastName: string
+    email: string
+    phone?: string
+  }
+  professionalInfo?: {
+    jobTitle?: string
+    company?: string
+  }
+  status: {
+    isActive: boolean
+  }
+  createdAt: string
+}
+
+interface Document {
+  _id: string
+  documentInfo: {
+    name: string
+    displayName?: string
+    description?: string
+  }
+  file: {
+    size: number
+    mimeType: string
+  }
+  createdAt: string
+}
+
+interface Note {
+  _id: string
+  content: {
+    title?: string
+    body: string
+  }
+  classification: {
+    type: string
+    importance: string
+  }
+  createdAt: string
 }
 
 interface DashboardStats {
@@ -175,36 +210,48 @@ export default function DashboardPage() {
     setIsLoadingData(true)
     
     try {
-      // Load contacts, documents, and notes in parallel
+      console.log('Loading dashboard data for authenticated user...')
+
+      // Load contacts, documents, and notes in parallel using the correct endpoints
+      // The backend uses req.user.clientId from the JWT token to scope the data
       const [contactsResponse, documentsResponse, notesResponse] = await Promise.all([
-        contactsApi.getAll({ limit: 5 }).catch(err => {
+        api.get('/clients/contacts?limit=5').catch(err => {
           console.error('Failed to load contacts:', err)
-          return { data: { contacts: [] }, pagination: { total: 0 } }
+          return { success: false, data: [], metadata: { total: 0 } }
         }),
-        documentsApi.getAll({ limit: 5 }).catch(err => {
+        api.get('/clients/documents?limit=5').catch(err => {
           console.error('Failed to load documents:', err)
-          return { data: { documents: [] }, pagination: { total: 0 } }
+          return { success: false, data: [], metadata: { total: 0 } }
         }),
-        notesApi.getAll({ limit: 5 }).catch(err => {
+        api.get('/clients/notes?limit=5').catch(err => {
           console.error('Failed to load notes:', err)
-          return { data: { notes: [] }, pagination: { total: 0 } }
+          return { success: false, data: [], metadata: { total: 0 } }
         })
       ])
 
+      // Extract data from responses
+      const contactsData = Array.isArray(contactsResponse.data) ? contactsResponse.data : []
+      const documentsData = Array.isArray(documentsResponse.data) ? documentsResponse.data : []
+      const notesData = Array.isArray(notesResponse.data) ? notesResponse.data : []
+
+      console.log('Dashboard data loaded:', {
+        contacts: contactsData.length,
+        documents: documentsData.length,
+        notes: notesData.length
+      })
+
       // Update stats
       setStats({
-        totalContacts: contactsResponse.pagination?.total || contactsResponse.data.contacts.length,
-        totalDocuments: documentsResponse.pagination?.total || documentsResponse.data.documents.length,
-        totalNotes: notesResponse.pagination?.total || notesResponse.data.notes.length,
-        recentActivityCount: (contactsResponse.data.contacts.length + 
-                             documentsResponse.data.documents.length + 
-                             notesResponse.data.notes.length)
+        totalContacts: contactsResponse.metadata?.total || contactsData.length,
+        totalDocuments: documentsResponse.metadata?.total || documentsData.length,
+        totalNotes: notesResponse.metadata?.total || notesData.length,
+        recentActivityCount: (contactsData.length + documentsData.length + notesData.length)
       })
 
       // Set recent data
-      setRecentContacts(contactsResponse.data.contacts)
-      setRecentDocuments(documentsResponse.data.documents)
-      setRecentNotes(notesResponse.data.notes)
+      setRecentContacts(contactsData)
+      setRecentDocuments(documentsData)
+      setRecentNotes(notesData)
 
     } catch (error) {
       console.error('Failed to load dashboard data:', error)
@@ -234,9 +281,13 @@ export default function DashboardPage() {
 
   const isPhoneVerified = () => {
     if (!user) return false
-    if (user.phoneVerified === true) return true
     if (user.verification?.phone?.verified === true) return true
     return false
+  }
+
+  const hasPhoneNumber = () => {
+    if (!user) return false
+    return !!(user.phoneNumber || (user as any).phone)
   }
 
   const getStatusBadge = (status: string) => {
@@ -276,6 +327,44 @@ export default function DashboardPage() {
     if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`
     
     return date.toLocaleDateString()
+  }
+
+  const getContactDisplayName = (contact: Contact): string => {
+    return `${contact.personalInfo.firstName} ${contact.personalInfo.lastName}`
+  }
+
+  const getContactEmail = (contact: Contact): string => {
+    return contact.personalInfo.email
+  }
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+  }
+
+  const getFileIcon = (mimeType: string): string => {
+    if (mimeType?.includes('pdf')) return '📄'
+    if (mimeType?.includes('word') || mimeType?.includes('document')) return '📝'
+    if (mimeType?.includes('sheet') || mimeType?.includes('excel')) return '📊'
+    if (mimeType?.includes('image')) return '🖼️'
+    if (mimeType?.includes('video')) return '🎥'
+    return '📁'
+  }
+
+  const getImportanceBadge = (importance: string): string => {
+    switch (importance.toLowerCase()) {
+      case 'high':
+        return 'bg-red-100 text-red-800'
+      case 'medium':
+        return 'bg-yellow-100 text-yellow-800'
+      case 'low':
+        return 'bg-green-100 text-green-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
+    }
   }
 
   if (isLoading) {
@@ -372,10 +461,10 @@ export default function DashboardPage() {
                       )}
                     </div>
 
-                    {user.profile?.phone && (
+                    {(user.phoneNumber || user.profile?.phone) && (
                       <div className="flex items-center space-x-2 text-xs text-gray-600">
                         <Phone className="h-3 w-3 flex-shrink-0" />
-                        <span>{user.profile.phone}</span>
+                        <span>{user.phoneNumber || user.profile.phone}</span>
                         {isPhoneVerified() ? (
                           <CheckCircle className="h-3 w-3 text-green-600 flex-shrink-0" />
                         ) : (
@@ -462,15 +551,20 @@ export default function DashboardPage() {
                       <Phone className="h-3 w-3 text-gray-500" />
                       <span className="text-xs text-gray-600">Phone</span>
                     </div>
-                    {isPhoneVerified() ? (
+                    {!hasPhoneNumber() ? (
+                      <div className="flex items-center space-x-1">
+                        <AlertCircle className="h-3 w-3 text-gray-400" />
+                        <span className="text-xs text-gray-500">Not Added</span>
+                      </div>
+                    ) : isPhoneVerified() ? (
                       <div className="flex items-center space-x-1">
                         <CheckCircle className="h-3 w-3 text-green-600" />
                         <span className="text-xs text-green-600">Verified</span>
                       </div>
                     ) : (
                       <div className="flex items-center space-x-1">
-                        <AlertCircle className="h-3 w-3 text-gray-600" />
-                        <span className="text-xs text-gray-600">Not Added</span>
+                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                        <span className="text-xs text-yellow-600">Not Verified</span>
                       </div>
                     )}
                   </div>
@@ -573,9 +667,9 @@ export default function DashboardPage() {
                         <p className="text-xs text-gray-500">{contact.professionalInfo?.jobTitle || 'No title'}</p>
                       </div>
                       <span className={`px-2 py-1 text-xs rounded-full ${
-                        contact.status.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        contact.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                       }`}>
-                        {contact.status.isActive ? 'Active' : 'Inactive'}
+                        {contact.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </div>
                   ))}
@@ -628,14 +722,14 @@ export default function DashboardPage() {
                     <div key={doc._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                       <div className="flex items-center space-x-3 flex-1 min-w-0">
                         <div className="text-2xl">
-                          {getFileIcon(doc.file.mimeType)}
+                          {getFileIcon(doc?.file?.mimeType)}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium text-gray-900 truncate">
                             {doc.documentInfo.displayName || doc.documentInfo.name}
                           </p>
                           <p className="text-xs text-gray-600">
-                            {formatFileSize(doc.file.size)} • {getRelativeTime(doc.createdAt)}
+                            {formatFileSize(doc?.file?.size)} • {getRelativeTime(doc?.createdAt)}
                           </p>
                         </div>
                       </div>
