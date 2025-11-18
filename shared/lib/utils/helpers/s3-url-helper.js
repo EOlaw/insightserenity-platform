@@ -14,7 +14,7 @@ const logger = require('../../utils/logger').createLogger({
 /**
  * Default AWS region - can be overridden via environment variable
  */
-const DEFAULT_REGION = process.env.AWS_DEFAULT_REGION || 'us-east-1';
+const DEFAULT_REGION = process.env.AWS_DEFAULT_REGION || 'ap-southeast-1';
 
 /**
  * Check if URL is in path-style format

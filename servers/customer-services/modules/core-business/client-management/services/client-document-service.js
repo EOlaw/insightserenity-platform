@@ -228,7 +228,7 @@ class ClientDocumentService {
                 const bucketName = uploadedFile.bucket;
                 const s3Key = uploadedFile.key;
                 const storageUrl = uploadedFile.location;
-                const region = S3UrlHelper.extractRegion(storageUrl) || process.env.AWS_DEFAULT_REGION || 'us-east-1';
+                const region = S3UrlHelper.extractRegion(storageUrl) || process.env.AWS_DEFAULT_REGION || 'ap-southeast-1';
 
                 // Verify the URL is in correct virtual-hosted-style format
                 const validation = S3UrlHelper.validateUrl(storageUrl);
