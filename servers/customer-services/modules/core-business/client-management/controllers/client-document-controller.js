@@ -30,11 +30,45 @@ class ClientDocumentController {
                 documentType: req.body.documentInfo?.type,
                 userId: userId,
                 hasFileUpload: !!req.file,
-                fileSize: req.file?.size,
-                mimeType: req.file?.mimetype
+                s3Location: req.file?.location
             });
 
             const documentData = req.body;
+
+            // Parse nested JSON objects if sent as strings (common in multipart/form-data)
+            if (typeof documentData.documentInfo === 'string') {
+                try {
+                    documentData.documentInfo = JSON.parse(documentData.documentInfo);
+                } catch (parseError) {
+                    logger.error('Failed to parse documentInfo JSON', {
+                        error: parseError.message,
+                        documentInfo: documentData.documentInfo
+                    });
+                    return res.status(400).json({
+                        success: false,
+                        error: {
+                            message: 'Invalid documentInfo format. Must be valid JSON.',
+                            code: 'INVALID_JSON_FORMAT'
+                        }
+                    });
+                }
+            }
+
+            if (typeof documentData.lifecycle === 'string') {
+                try {
+                    documentData.lifecycle = JSON.parse(documentData.lifecycle);
+                } catch (parseError) {
+                    documentData.lifecycle = {};
+                }
+            }
+
+            if (typeof documentData.accessControl === 'string') {
+                try {
+                    documentData.accessControl = JSON.parse(documentData.accessControl);
+                } catch (parseError) {
+                    documentData.accessControl = {};
+                }
+            }
 
             const options = {
                 tenantId: req.user?.tenantId,
@@ -44,16 +78,14 @@ class ClientDocumentController {
                 source: req.body.source || 'web',
                 userAgent: req.headers['user-agent'],
                 ipAddress: req.ip || req.connection.remoteAddress,
-                uploadedFile: req.file // Pass the multer file object
+                uploadedFile: req.file
             };
 
             const document = await ClientDocumentService.createDocument(documentData, options);
 
             logger.info('Document created successfully', {
                 documentId: document.documentId,
-                documentName: document.documentInfo?.name,
-                storageProvider: document.storage?.provider,
-                hasStorageUrl: !!document.storage?.url,
+                storageUrl: document.storage?.url,
                 userId: userId
             });
 
@@ -66,10 +98,9 @@ class ClientDocumentController {
         } catch (error) {
             logger.error('Create document failed', {
                 error: error.message,
-                errorCode: error.code,
+                stack: error.stack,
                 userId: req.user?.id,
-                clientId: req.body?.clientId,
-                hasFileUpload: !!req.file
+                s3Location: req.file?.location
             });
             next(error);
         }

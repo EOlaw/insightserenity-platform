@@ -15,6 +15,9 @@ module.exports = (options = {}) => {
         message: 'Too many requests, please try again later',
         standardHeaders: true,
         legacyHeaders: false,
+        validate: {
+            trustProxy: false  // Explicitly disable validation for trust proxy
+        },
         keyGenerator: (req) => {
             // Use IP + user ID for authenticated requests
             const userId = req.auth?.userId || req.user?.id;

@@ -7,15 +7,160 @@
 
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const multerS3 = require('multer-s3');
+const { S3Client } = require('@aws-sdk/client-s3');
+const path = require('path');
+const crypto = require('crypto');
 const ClientDocumentController = require('../controllers/client-document-controller');
 
 // Import middleware
 const { authenticate } = require('../../../../middleware/auth-middleware');
 const { rateLimiter } = require('../../../../middleware/rate-limiter');
 
+// Configure AWS S3 Client
+const s3Client = new S3Client({
+    region: process.env.AWS_DEFAULT_REGION || 'us-east-1',
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
+});
+
+// Configure multer to upload directly to S3
+const storage = multerS3({
+    s3: s3Client,
+    bucket: process.env.AWS_S3_BUCKET || 'company-documents',
+    acl: 'private', // Files are private by default, accessed via pre-signed URLs
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    metadata: function (req, file, cb) {
+        cb(null, {
+            fieldName: file.fieldname,
+            originalName: file.originalname,
+            uploadedBy: req.user?.id?.toString() || 'unknown',
+            uploadedAt: new Date().toISOString()
+        });
+    },
+    key: function (req, file, cb) {
+        // Generate organized S3 key structure
+        const category = req.body.documentInfo?.category?.primary || 'general';
+        const year = new Date().getFullYear();
+        const month = String(new Date().getMonth() + 1).padStart(2, '0');
+        
+        // Generate unique filename
+        const uniqueSuffix = Date.now() + '-' + crypto.randomBytes(6).toString('hex');
+        const fileExtension = path.extname(file.originalname).toLowerCase();
+        const sanitizedBaseName = path.basename(file.originalname, fileExtension)
+            .replace(/[^a-zA-Z0-9-]/g, '_')
+            .substring(0, 50); // Limit base name length
+        
+        const fileName = `${sanitizedBaseName}-${uniqueSuffix}${fileExtension}`;
+        const s3Key = `${category}/${year}/${month}/${fileName}`;
+        
+        cb(null, s3Key);
+    }
+});
+
+// File filter for allowed types
+const fileFilter = (req, file, cb) => {
+    const allowedTypes = (process.env.ALLOWED_DOCUMENT_TYPES || 
+        'pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,jpg,jpeg,png,gif,zip').split(',');
+    
+    const fileExtension = path.extname(file.originalname).toLowerCase().replace('.', '');
+    
+    if (allowedTypes.includes(fileExtension)) {
+        cb(null, true);
+    } else {
+        cb(new Error(`File type .${fileExtension} is not allowed. Allowed types: ${allowedTypes.join(', ')}`), false);
+    }
+};
+
+// Configure multer with S3 storage, limits, and filters
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: parseInt(process.env.MAX_DOCUMENT_SIZE, 10) || 104857600, // 100MB default
+        files: 1 // Only allow single file upload per request
+    },
+    fileFilter: fileFilter
+});
+
+// Enhanced multer error handling middleware
+const handleMulterError = (err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            const maxSizeMB = ((parseInt(process.env.MAX_DOCUMENT_SIZE, 10) || 104857600) / (1024 * 1024)).toFixed(2);
+            return res.status(413).json({
+                success: false,
+                error: {
+                    message: `File size exceeds maximum allowed size of ${maxSizeMB}MB`,
+                    code: 'FILE_TOO_LARGE',
+                    maxSize: maxSizeMB + 'MB'
+                }
+            });
+        }
+        if (err.code === 'LIMIT_FILE_COUNT') {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    message: 'Too many files uploaded. Only one file allowed per request',
+                    code: 'TOO_MANY_FILES'
+                }
+            });
+        }
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    message: 'Unexpected file field. Use "file" field for document upload',
+                    code: 'UNEXPECTED_FILE_FIELD'
+                }
+            });
+        }
+        return res.status(400).json({
+            success: false,
+            error: {
+                message: 'File upload error: ' + err.message,
+                code: 'UPLOAD_ERROR'
+            }
+        });
+    }
+    
+    // Handle S3 upload errors
+    if (err && err.name === 'NoSuchBucket') {
+        return res.status(500).json({
+            success: false,
+            error: {
+                message: 'Storage bucket not found. Please contact support.',
+                code: 'STORAGE_ERROR'
+            }
+        });
+    }
+    
+    if (err && err.name === 'AccessDenied') {
+        return res.status(500).json({
+            success: false,
+            error: {
+                message: 'Storage access denied. Please contact support.',
+                code: 'STORAGE_ACCESS_ERROR'
+            }
+        });
+    }
+    
+    if (err) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                message: err.message,
+                code: 'INVALID_FILE'
+            }
+        });
+    }
+    
+    next();
+};
+
 // Apply authentication to all routes
-// Note: Permission checks removed - clients access their own data only
-// Authorization is enforced at the controller and service levels
 router.use(authenticate);
 
 /**

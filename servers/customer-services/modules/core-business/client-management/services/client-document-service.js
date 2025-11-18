@@ -20,6 +20,7 @@ const database = require('../../../../../../shared/lib/database');
 const NotificationService = require('../../notifications/services/notification-service');
 const AnalyticsService = require('../../analytics/services/analytics-service');
 const { Client } = require('../../../../../../shared/lib/database/models/customer-services/core-business/client-management/client-model');
+const S3UrlHelper = require('../../../../../../shared/lib/utils/helpers/s3-url-helper');
 
 /**
  * Document Type Constants
@@ -101,6 +102,7 @@ class ClientDocumentService {
 
     /**
      * Create a new document with enterprise-grade validation and context inheritance
+     * Handles documents uploaded directly to S3 via multer-s3
      */
     async createDocument(documentData, options = {}) {
         const operationId = crypto.randomBytes(8).toString('hex');
@@ -113,7 +115,9 @@ class ClientDocumentService {
                 documentName: documentData.documentInfo?.name,
                 documentType: documentData.documentInfo?.type,
                 userId: options.userId,
-                source: options.source || 'manual'
+                source: options.source || 'manual',
+                hasFileUpload: !!options.uploadedFile,
+                s3Upload: options.uploadedFile?.location ? 'direct' : 'none'
             });
 
             // PHASE 1: INPUT VALIDATION
@@ -199,20 +203,163 @@ class ClientDocumentService {
                 });
             }
 
-            // PHASE 4: BUSINESS RULE VALIDATION
+            // PHASE 4: S3 FILE UPLOAD PROCESSING
+            if (options.uploadedFile) {
+                logger.debug('Processing S3-uploaded file', {
+                    operationId,
+                    originalName: options.uploadedFile.originalname,
+                    mimeType: options.uploadedFile.mimetype,
+                    size: options.uploadedFile.size,
+                    s3Location: options.uploadedFile.location,
+                    s3Bucket: options.uploadedFile.bucket,
+                    s3Key: options.uploadedFile.key
+                });
+
+                const uploadedFile = options.uploadedFile;
+                const fileExtension = path.extname(uploadedFile.originalname).toLowerCase().replace('.', '');
+
+                // Validate file type
+                await this._validateFileType(fileExtension);
+
+                // Validate file size
+                await this._validateFileSize(uploadedFile.size);
+
+                // Extract S3 information from the uploaded file object
+                const bucketName = uploadedFile.bucket;
+                const s3Key = uploadedFile.key;
+                const storageUrl = uploadedFile.location;
+                const region = S3UrlHelper.extractRegion(storageUrl) || process.env.AWS_DEFAULT_REGION || 'us-east-1';
+
+                // Verify the URL is in correct virtual-hosted-style format
+                const validation = S3UrlHelper.validateUrl(storageUrl);
+
+                if (!validation.valid) {
+                    logger.error('S3 upload produced invalid URL format', {
+                        operationId,
+                        url: storageUrl,
+                        validation: validation,
+                        bucket: bucketName,
+                        key: s3Key
+                    });
+                    throw AppError.internal('Invalid storage URL generated during S3 upload', {
+                        context: {
+                            url: storageUrl,
+                            issues: validation.issues
+                        }
+                    });
+                }
+
+                if (validation.needsConversion) {
+                    logger.warn('S3 URL requires conversion to virtual-hosted-style', {
+                        operationId,
+                        originalUrl: storageUrl,
+                        format: validation.format
+                    });
+
+                    const convertedUrl = S3UrlHelper.convertToVirtualHostedStyle(storageUrl, region);
+                    uploadedFile.location = convertedUrl;
+                }
+
+                logger.debug('S3 file upload validated successfully', {
+                    operationId,
+                    bucket: bucketName,
+                    key: s3Key,
+                    url: uploadedFile.location,
+                    urlFormat: validation.format,
+                    region: region
+                });
+
+                // Populate file details from S3 upload
+                documentData.fileDetails = {
+                    originalName: uploadedFile.originalname,
+                    fileName: path.basename(s3Key),
+                    fileExtension: fileExtension,
+                    mimeType: uploadedFile.mimetype,
+                    size: uploadedFile.size,
+                    encoding: uploadedFile.encoding || 'binary',
+                    checksum: {
+                        md5: uploadedFile.etag ? uploadedFile.etag.replace(/"/g, '') : null,
+                        sha256: null
+                    }
+                };
+
+                // Populate storage configuration with S3 details
+                documentData.storage = {
+                    provider: 'aws_s3',
+                    location: {
+                        bucket: bucketName,
+                        path: s3Key,
+                        region: region
+                    },
+                    url: uploadedFile.location,
+                    encryption: {
+                        enabled: true,
+                        algorithm: 'AES256'
+                    }
+                };
+
+                logger.info('S3 file upload processed successfully', {
+                    operationId,
+                    fileName: path.basename(s3Key),
+                    size: uploadedFile.size,
+                    storageUrl: uploadedFile.location,
+                    bucket: bucketName,
+                    region: region
+                });
+
+            } else if (documentData.fileDetails || documentData.storage) {
+                // Handle case where file details are provided directly without upload
+                // This supports API integrations or document references
+
+                if (documentData.fileDetails?.fileExtension) {
+                    await this._validateFileType(documentData.fileDetails.fileExtension);
+                }
+
+                if (documentData.fileDetails?.size) {
+                    await this._validateFileSize(documentData.fileDetails.size);
+                }
+
+                // Ensure storage URL is in correct format if provided
+                if (documentData.storage?.url) {
+                    const validation = S3UrlHelper.validateUrl(documentData.storage.url);
+
+                    if (validation.needsConversion) {
+                        logger.info('Converting provided storage URL to virtual-hosted-style', {
+                            operationId,
+                            originalUrl: documentData.storage.url,
+                            originalFormat: validation.format
+                        });
+
+                        documentData.storage.url = S3UrlHelper.convertToVirtualHostedStyle(
+                            documentData.storage.url,
+                            documentData.storage.location?.region || process.env.AWS_DEFAULT_REGION
+                        );
+
+                        // Populate missing location details
+                        if (!documentData.storage.location) {
+                            documentData.storage.location = {};
+                        }
+                        if (!documentData.storage.location.region) {
+                            documentData.storage.location.region = S3UrlHelper.extractRegion(documentData.storage.url);
+                        }
+                        if (!documentData.storage.location.bucket) {
+                            documentData.storage.location.bucket = S3UrlHelper.extractBucketName(documentData.storage.url);
+                        }
+
+                        logger.info('Storage URL converted successfully', {
+                            operationId,
+                            convertedUrl: documentData.storage.url,
+                            region: documentData.storage.location.region,
+                            bucket: documentData.storage.location.bucket
+                        });
+                    }
+                }
+            }
+
+            // PHASE 5: BUSINESS RULE VALIDATION
             await this._checkDocumentLimit(documentData.clientId);
 
-            // Validate file type if provided
-            if (documentData.fileDetails?.fileExtension) {
-                await this._validateFileType(documentData.fileDetails.fileExtension);
-            }
-
-            // Validate file size if provided
-            if (documentData.fileDetails?.size) {
-                await this._validateFileSize(documentData.fileDetails.size);
-            }
-
-            // PHASE 5: DATA ENRICHMENT AND PREPARATION
+            // PHASE 6: DATA ENRICHMENT AND PREPARATION
             if (!documentData.documentId && this.config.autoGenerateDocumentId) {
                 documentData.documentId = await this._generateDocumentId();
             }
@@ -307,7 +454,7 @@ class ClientDocumentService {
 
             documentData.isDeleted = false;
 
-            // PHASE 6: DATABASE PERSISTENCE
+            // PHASE 7: DATABASE PERSISTENCE
             const ClientDocument = dbService.getModel('ClientDocument', 'customer');
             const newDocument = new ClientDocument(documentData);
             await newDocument.save();
@@ -322,11 +469,16 @@ class ClientDocumentService {
                 organizationId: newDocument.organizationId?.toString(),
                 documentName: newDocument.documentInfo?.name,
                 documentType: newDocument.documentInfo?.type,
+                storageProvider: newDocument.storage?.provider,
+                storageUrl: newDocument.storage?.url,
+                storageBucket: newDocument.storage?.location?.bucket,
+                storageRegion: newDocument.storage?.location?.region,
+                fileSize: newDocument.fileDetails?.size,
                 userId: options.userId,
                 duration: `${duration}ms`
             });
 
-            // PHASE 7: POST-CREATION ACTIVITIES
+            // PHASE 8: POST-CREATION ACTIVITIES
             setImmediate(async () => {
                 try {
                     await this._handlePostDocumentCreation(newDocument, options);
@@ -352,6 +504,7 @@ class ClientDocumentService {
                 stack: error.stack,
                 clientId: documentData?.clientId,
                 userId: options?.userId,
+                s3Location: options?.uploadedFile?.location,
                 duration: `${duration}ms`,
                 context: error.context || {}
             });
