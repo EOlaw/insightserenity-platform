@@ -22,6 +22,18 @@ const AnalyticsService = require('../../analytics/services/analytics-service');
 const { Client } = require('../../../../../../shared/lib/database/models/customer-services/core-business/client-management/client-model');
 const S3UrlHelper = require('../../../../../../shared/lib/utils/helpers/s3-url-helper');
 
+const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
+// S3 Client for generating pre-signed URLs
+const s3Client = new S3Client({
+    region: process.env.AWS_DEFAULT_REGION || 'ap-southeast-1',
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
+});
+
 /**
  * Document Type Constants
  */
@@ -319,40 +331,76 @@ class ClientDocumentService {
                     await this._validateFileSize(documentData.fileDetails.size);
                 }
 
-                // Ensure storage URL is in correct format if provided
+                // CRITICAL FIX: Always use configured bucket from environment
+                const configuredBucket = process.env.AWS_S3_BUCKET || 'insightserenity-ap';
+                const configuredRegion = process.env.AWS_DEFAULT_REGION || 'ap-southeast-1';
+
+                // If storage URL is provided, extract the key and rebuild with correct bucket
                 if (documentData.storage?.url) {
-                    const validation = S3UrlHelper.validateUrl(documentData.storage.url);
+                    const providedKey = S3UrlHelper.extractKey(documentData.storage.url);
+                    const providedBucket = S3UrlHelper.extractBucketName(documentData.storage.url);
 
-                    if (validation.needsConversion) {
-                        logger.info('Converting provided storage URL to virtual-hosted-style', {
+                    // Log if bucket mismatch detected
+                    if (providedBucket && providedBucket !== configuredBucket) {
+                        logger.warn('Bucket mismatch detected - using configured bucket', {
                             operationId,
-                            originalUrl: documentData.storage.url,
-                            originalFormat: validation.format
-                        });
-
-                        documentData.storage.url = S3UrlHelper.convertToVirtualHostedStyle(
-                            documentData.storage.url,
-                            documentData.storage.location?.region || process.env.AWS_DEFAULT_REGION
-                        );
-
-                        // Populate missing location details
-                        if (!documentData.storage.location) {
-                            documentData.storage.location = {};
-                        }
-                        if (!documentData.storage.location.region) {
-                            documentData.storage.location.region = S3UrlHelper.extractRegion(documentData.storage.url);
-                        }
-                        if (!documentData.storage.location.bucket) {
-                            documentData.storage.location.bucket = S3UrlHelper.extractBucketName(documentData.storage.url);
-                        }
-
-                        logger.info('Storage URL converted successfully', {
-                            operationId,
-                            convertedUrl: documentData.storage.url,
-                            region: documentData.storage.location.region,
-                            bucket: documentData.storage.location.bucket
+                            providedBucket: providedBucket,
+                            configuredBucket: configuredBucket,
+                            originalUrl: documentData.storage.url
                         });
                     }
+
+                    // Generate correct URL using configured bucket
+                    const correctedUrl = S3UrlHelper.generateUrl({
+                        bucket: configuredBucket,
+                        key: providedKey,
+                        region: configuredRegion
+                    });
+
+                    documentData.storage.url = correctedUrl;
+
+                    // Populate storage location with correct values
+                    documentData.storage.location = {
+                        bucket: configuredBucket,
+                        region: configuredRegion,
+                        path: providedKey
+                    };
+
+                    // Set provider if not already set
+                    if (!documentData.storage.provider) {
+                        documentData.storage.provider = 'aws_s3';
+                    }
+
+                    logger.info('Storage URL corrected to use configured bucket', {
+                        operationId,
+                        correctedUrl: correctedUrl,
+                        bucket: configuredBucket,
+                        region: configuredRegion,
+                        path: providedKey
+                    });
+                } else if (documentData.storage?.location?.path) {
+                    // If only path is provided, generate full URL
+                    const generatedUrl = S3UrlHelper.generateUrl({
+                        bucket: configuredBucket,
+                        key: documentData.storage.location.path,
+                        region: configuredRegion
+                    });
+
+                    documentData.storage.url = generatedUrl;
+                    documentData.storage.location.bucket = configuredBucket;
+                    documentData.storage.location.region = configuredRegion;
+
+                    if (!documentData.storage.provider) {
+                        documentData.storage.provider = 'aws_s3';
+                    }
+
+                    logger.info('Storage URL generated from path', {
+                        operationId,
+                        generatedUrl: generatedUrl,
+                        bucket: configuredBucket,
+                        region: configuredRegion,
+                        path: documentData.storage.location.path
+                    });
                 }
             }
 
@@ -473,6 +521,7 @@ class ClientDocumentService {
                 storageUrl: newDocument.storage?.url,
                 storageBucket: newDocument.storage?.location?.bucket,
                 storageRegion: newDocument.storage?.location?.region,
+                storagePath: newDocument.storage?.location?.path,
                 fileSize: newDocument.fileDetails?.size,
                 userId: options.userId,
                 duration: `${duration}ms`
@@ -1324,6 +1373,48 @@ class ClientDocumentService {
                 throw AppError.forbidden('Download is disabled for this document');
             }
 
+            // Generate pre-signed URL for secure download
+            let downloadUrl = null;
+            const bucket = document.storage?.location?.bucket;
+            const key = document.storage?.location?.path;
+
+            if (bucket && key) {
+                try {
+                    const command = new GetObjectCommand({
+                        Bucket: bucket,
+                        Key: key,
+                        ResponseContentDisposition: `attachment; filename="${encodeURIComponent(document.fileDetails?.originalName || document.documentInfo?.name || 'document')}"`
+                    });
+
+                    // URL expires in 15 minutes (900 seconds)
+                    downloadUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 });
+
+                    logger.info('Pre-signed download URL generated', {
+                        documentId,
+                        bucket,
+                        key,
+                        expiresIn: 900
+                    });
+                } catch (s3Error) {
+                    logger.error('Failed to generate pre-signed URL', {
+                        error: s3Error.message,
+                        documentId,
+                        bucket,
+                        key
+                    });
+                    throw AppError.internal('Failed to generate download URL', {
+                        context: { documentId }
+                    });
+                }
+            } else {
+                logger.error('Missing storage location information', {
+                    documentId,
+                    hasBucket: !!bucket,
+                    hasKey: !!key
+                });
+                throw AppError.internal('Document storage information is incomplete');
+            }
+
             // Track download
             setImmediate(async () => {
                 try {
@@ -1338,7 +1429,7 @@ class ClientDocumentService {
 
             return {
                 document: this._sanitizeDocumentOutput(document),
-                downloadUrl: document.storage?.url,
+                downloadUrl: downloadUrl,
                 fileName: document.fileDetails?.originalName || document.documentInfo?.name
             };
 

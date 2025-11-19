@@ -822,14 +822,18 @@ export const documentsApi = {
     return api.delete(`/documents/${documentId}`);
   },
 
-  download: async (documentId: string): Promise<void> => {
-    const token = Cookies.get(AUTH_TOKEN_KEY);
-    if (!token) {
-      throw new Error('Authentication required for document download');
-    }
-    
-    const url = `${API_BASE_URL}/${API_VERSION}/documents/${documentId}/download`;
-    window.open(`${url}?token=${token}`, '_blank');
+  /**
+   * Get pre-signed download URL for a document
+   * Returns the download URL along with document metadata
+   */
+  download: async (documentId: string): Promise<ApiResponse<{
+    documentId: string;
+    fileName: string;
+    downloadUrl: string;
+    mimeType?: string;
+    size?: number;
+  }>> => {
+    return api.get(`/clients/documents/${documentId}/download`);
   },
 
   getVersions: async (documentId: string): Promise<ApiResponse<any[]>> => {
@@ -838,6 +842,13 @@ export const documentsApi = {
 
   share: async (documentId: string, shareData: any): Promise<ApiResponse<any>> => {
     return api.post(`/documents/${documentId}/share`, shareData);
+  },
+
+  /**
+   * Get document analytics
+   */
+  getAnalytics: async (documentId: string): Promise<ApiResponse<any>> => {
+    return api.get(`/clients/documents/${documentId}/analytics`);
   },
 };
 

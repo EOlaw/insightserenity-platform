@@ -24,7 +24,9 @@ const s3Client = new S3Client({
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    }
+    },
+    // Force virtual-hosted-style URL addressing
+    forcePathStyle: false
 });
 
 // Configure multer to upload directly to S3
@@ -186,18 +188,16 @@ router.get(
 );
 
 /**
- * @route   POST /api/v1/documents
+ * @route   POST /api/v1/clients/documents
  * @desc    Create/upload a new document
  * @access  Private (Authenticated Client)
  * @note    Client can only upload documents to their own account
- *          In production, add multer middleware here for file uploads:
- *          upload.single('file') or upload.array('files', 10)
  */
 router.post(
     '/',
     rateLimiter({ maxRequests: 30, windowMs: 60000 }),
-    // TODO: Add multer middleware in production
-    // upload.single('file'),
+    upload.single('file'),
+    handleMulterError,
     ClientDocumentController.createDocument
 );
 

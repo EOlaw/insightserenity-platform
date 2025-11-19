@@ -267,11 +267,11 @@ export default function NoteDetailPage() {
       case 'high':
         return { variant: 'default' as const, icon: Zap, color: 'text-orange-600' }
       case 'medium':
-        return { variant: 'secondary' as const, icon: Star, color: 'text-yellow-600' }
+        return { variant: 'default' as const, icon: Star, color: 'text-yellow-600' }
       case 'low':
         return { variant: 'outline' as const, icon: Star, color: 'text-gray-600' }
       default:
-        return { variant: 'secondary' as const, icon: Star, color: 'text-gray-600' }
+        return { variant: 'default' as const, icon: Star, color: 'text-gray-600' }
     }
   }
 
@@ -285,11 +285,11 @@ export default function NoteDetailPage() {
       case 'urgent':
         return { variant: 'default' as const, color: 'text-orange-600' }
       case 'normal':
-        return { variant: 'secondary' as const, color: 'text-blue-600' }
+        return { variant: 'default' as const, color: 'text-blue-600' }
       case 'low':
         return { variant: 'outline' as const, color: 'text-gray-600' }
       default:
-        return { variant: 'secondary' as const, color: 'text-gray-600' }
+        return { variant: 'default' as const, color: 'text-gray-600' }
     }
   }
 
