@@ -25,9 +25,8 @@ class ClientDocumentController {
             const userId = req.user?._id || req.user?.id;
 
             logger.info('Create document request received', {
-                clientId: req.body.clientId,
-                documentName: req.body.documentInfo?.name,
-                documentType: req.body.documentInfo?.type,
+                documentName: req.body.name || req.body.documentInfo?.name,
+                documentType: req.body.type || req.body.documentInfo?.type,
                 userId: userId,
                 hasFileUpload: !!req.file,
                 s3Location: req.file?.location
@@ -67,6 +66,54 @@ class ClientDocumentController {
                     documentData.accessControl = JSON.parse(documentData.accessControl);
                 } catch (parseError) {
                     documentData.accessControl = {};
+                }
+            }
+
+            // Inject clientId from authenticated user context for client self-service
+            if (!documentData.clientId && req.user?.clientId) {
+                documentData.clientId = req.user.clientId;
+            }
+
+            // Map flat FormData fields to nested documentInfo structure
+            if (!documentData.documentInfo) {
+                documentData.documentInfo = {};
+            }
+
+            // Map flat field names to nested structure (common in multipart/form-data)
+            if (req.body.name && !documentData.documentInfo.name) {
+                documentData.documentInfo.name = req.body.name;
+            }
+            if (req.body.displayName && !documentData.documentInfo.displayName) {
+                documentData.documentInfo.displayName = req.body.displayName;
+            }
+            if (req.body.type && !documentData.documentInfo.type) {
+                documentData.documentInfo.type = req.body.type;
+            }
+            if (req.body.description && !documentData.documentInfo.description) {
+                documentData.documentInfo.description = req.body.description;
+            }
+            if (req.body.primaryCategory) {
+                if (!documentData.documentInfo.category) {
+                    documentData.documentInfo.category = {};
+                }
+                documentData.documentInfo.category.primary = req.body.primaryCategory;
+            }
+            if (req.body.classificationLevel) {
+                if (!documentData.documentInfo.classification) {
+                    documentData.documentInfo.classification = {};
+                }
+                documentData.documentInfo.classification.level = req.body.classificationLevel;
+            }
+            if (req.body.abstract && !documentData.documentInfo.abstract) {
+                documentData.documentInfo.abstract = req.body.abstract;
+            }
+            if (req.body.keywords) {
+                try {
+                    documentData.documentInfo.keywords = typeof req.body.keywords === 'string'
+                        ? JSON.parse(req.body.keywords)
+                        : req.body.keywords;
+                } catch (e) {
+                    documentData.documentInfo.keywords = [];
                 }
             }
 
