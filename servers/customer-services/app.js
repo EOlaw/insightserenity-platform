@@ -60,6 +60,10 @@ const candidateRoutes = require('./modules/recruitment-services/candidates/route
 const applicationRoutes = require('./modules/recruitment-services/applications/routes/application.routes');
 const partnershipRoutes = require('./modules/recruitment-services/partnerships/routes/partnership.routes');
 
+// Import route modules - Content Management Systems
+// (e.g., blog, knowledge base) can be added here as needed
+// const blogRoutes = require('./modules/content/blog/routes/blog-routes');
+
 /**
  * @class CustomerServicesApp
  * @description Main application class for Customer Services
@@ -587,6 +591,9 @@ class CustomerServicesApp {
         apiRouter.use('/candidates', candidateRoutes);
         apiRouter.use('/applications', applicationRoutes);
         apiRouter.use('/partnerships', partnershipRoutes);
+
+        // ==================== CONTENT MANAGEMENT ROUTES ====================
+        // apiRouter.use('/blog', blogRoutes);
 
         // ==================== UTILITY ROUTES ====================
 

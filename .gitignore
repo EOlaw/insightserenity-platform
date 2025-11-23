@@ -15,6 +15,11 @@
 /servers/customer-services/.env
 /servers/customer-services/logs
 
+# servers/admin-server
+/servers/admin-server/node_modules
+/servers/admin-server/.env
+/servers/admin-server/logs
+
 /servers/gatewayts
 
 # testing

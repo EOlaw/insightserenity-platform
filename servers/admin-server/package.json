@@ -1,0 +1,90 @@
+{
+  "name": "insightserenity-admin-server",
+  "version": "2.0.0",
+  "description": "InsightSerenity Admin Server - Enterprise-grade administrative backend for consulting and recruitment operations platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "start:cluster": "NODE_ENV=production ENABLE_CLUSTER=true node server.js",
+    "start:production": "NODE_ENV=production node server.js",
+    "start:development": "NODE_ENV=development nodemon server.js",
+    "start:staging": "NODE_ENV=staging node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.js\"",
+    "health-check": "node -e \"require('http').get('http://localhost:3000/health', (res) => { console.log('Status:', res.statusCode); process.exit(res.statusCode === 200 ? 0 : 1); })\""
+  },
+  "keywords": [
+    "admin",
+    "server",
+    "enterprise",
+    "saas",
+    "multi-tenant",
+    "consulting",
+    "recruitment",
+    "api",
+    "express",
+    "mongodb",
+    "nodejs"
+  ],
+  "author": "InsightSerenity Team",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-mongo-sanitize": "^2.2.0",
+    "helmet": "^8.1.0",
+    "hpp": "^0.2.3",
+    "mongoose": "^8.20.1",
+    "morgan": "^1.10.1",
+    "xss-clean": "^0.1.4"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.1",
+    "nodemon": "^3.1.11",
+    "prettier": "^3.6.2"
+  },
+  "nodemonConfig": {
+    "watch": [
+      "server.js",
+      "app.js",
+      "config/",
+      "routes/",
+      "controllers/",
+      "services/",
+      "middleware/",
+      "models/",
+      "modules/"
+    ],
+    "ext": "js,json",
+    "ignore": [
+      "node_modules/",
+      "logs/",
+      "uploads/",
+      "public/",
+      "*.test.js",
+      "*.spec.js"
+    ],
+    "delay": "2000",
+    "env": {
+      "NODE_ENV": "development"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/insightserenity.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/insightserenity/issues"
+  },
+  "homepage": "https://github.com/yourusername/insightserenity#readme"
+}
