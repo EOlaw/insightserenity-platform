@@ -182,7 +182,12 @@ class CustomerServicesApp {
                 rateLimit: {
                     windowMs: 15 * 60 * 1000,
                     max: process.env.RATE_LIMIT || 100,
-                    message: 'Too many requests from this IP'
+                    message: 'Too many requests from this IP',
+                    standardHeaders: true,
+                    legacyHeaders: false,
+                    validate: {
+                        trustProxy: false  // This fixes the trust proxy validation error
+                    }
                 }
             },
 

@@ -264,264 +264,6 @@ class DirectAuthService {
         return crypto.randomBytes(16).toString('hex');
     }
 
-    // ============= ENHANCED REGISTRATION WITH PERMISSIONS =============
-
-    /**
-     * Register a new direct business user
-     * @param {Object} userData - User registration data
-     * @param {string} userType - Type of user (client, consultant, etc.)
-     * @param {Object} options - Registration options
-     * @returns {Promise<Object>} Registration result
-     */
-    // async registerDirectUser(userData, userType, options = {}) {
-    //     try {
-    //         logger.info('Starting direct user registration', {
-    //             email: userData.email,
-    //             userType: userType
-    //         });
-
-    //         // Validate user type and registration data
-    //         this._validateUserType(userType);
-    //         this._validateRegistrationData(userData, userType);
-
-    //         const dbService = this._getDatabaseService();
-
-    //         // Check for existing user
-    //         const existingUser = await dbService.userExists(
-    //             userData.email,
-    //             this.config.companyTenantId
-    //         );
-
-    //         if (existingUser) {
-    //             throw new AppError('User already exists with this email', 409);
-    //         }
-
-    //         // Get default permissions and roles
-    //         const defaultPermissions = this._getDefaultPermissions(userType);
-    //         const defaultRoles = this._getDefaultRoles(userType);
-
-    //         // Build organization membership
-    //         const organizationMembership = this._buildOrganizationMembership(
-    //             defaultPermissions,
-    //             defaultRoles,
-    //             options
-    //         );
-
-    //         // Build User document
-    //         const userDocument = {
-    //             email: userData.email.toLowerCase(),
-    //             username: userData.username ? userData.username.toLowerCase() : undefined,
-    //             password: userData.password,
-    //             phoneNumber: userData.phoneNumber,
-    //             profile: {
-    //                 firstName: userData.profile?.firstName,
-    //                 lastName: userData.profile?.lastName,
-    //                 middleName: userData.profile?.middleName,
-    //                 displayName: userData.profile?.displayName ||
-    //                     `${userData.profile?.firstName} ${userData.profile?.lastName}`.trim(),
-    //                 title: userData.profile?.title,
-    //                 bio: userData.profile?.bio,
-    //             },
-    //             permissions: defaultPermissions,
-    //             roles: defaultRoles,
-    //             organizations: [organizationMembership],
-    //             defaultOrganizationId: organizationMembership.organizationId,
-    //             tenantId: this.config.companyTenantId,
-    //             accountStatus: {
-    //                 status: 'pending',
-    //                 reason: 'Account created - awaiting email verification',
-    //             },
-    //             verification: {
-    //                 email: {
-    //                     verified: false,
-    //                     token: this._generateVerificationToken(),
-    //                     tokenExpires: new Date(Date.now() + 86400000),
-    //                 }
-    //             },
-    //             metadata: {
-    //                 source: this._determineRegistrationSource(userType, options),
-    //                 userType: userType,
-    //                 directBusiness: true,
-    //                 referrer: options.referralCode,
-    //                 campaign: options.utmParams?.campaign,
-    //                 tags: userData.metadata?.tags || [],
-    //                 flags: {
-    //                     isVip: false,
-    //                     isBetaTester: false,
-    //                     ...userData.metadata?.flags
-    //                 }
-    //             },
-    //             customFields: this._getUserTypeSpecificFields(userData, userType)
-    //         };
-
-    //         const relatedEntities = [];
-
-    //         // Check if this user type requires a related entity
-    //         if (EntityStrategyRegistry.hasStrategy(userType)) {
-    //             const strategy = EntityStrategyRegistry.getStrategy(userType);
-    //             const entityType = EntityStrategyRegistry.getEntityType(userType);
-
-    //             // Validate entity-specific data
-    //             const validation = await strategy.validate(userData, options);
-
-    //             if (!validation.valid) {
-    //                 throw AppError.validation(
-    //                     `${entityType} validation failed`,
-    //                     validation.errors
-    //                 );
-    //             }
-
-    //             // Log warnings if any
-    //             if (validation.warnings && validation.warnings.length > 0) {
-    //                 logger.warn('Entity validation warnings', {
-    //                     userType,
-    //                     entityType,
-    //                     warnings: validation.warnings
-    //                 });
-    //             }
-
-    //             // Prepare related entity document using strategy
-    //             // Note: We'll prepare it after user is created in transaction
-    //             relatedEntities.push({
-    //                 type: entityType,
-    //                 strategy: strategy,
-    //                 userData: userData,
-    //                 options: {
-    //                     tenantId: this._getDefaultTenantObjectId(),
-    //                     organizationId: this._getDefaultOrganizationObjectId(),
-    //                     accountManager: options.accountManager,
-    //                     utmParams: options.utmParams
-    //                 }
-    //             });
-    //         }
-
-    //         // Execute universal transaction
-    //         const result = await UniversalTransactionService.executeTransaction(
-    //             {
-    //                 type: 'User',
-    //                 data: userDocument,
-    //                 database: 'customer'
-    //             },
-    //             relatedEntities.map(entity => ({
-    //                 type: entity.type,
-    //                 data: null, // Will be prepared by strategy
-    //                 prepareUsing: async (user) => {
-    //                     // Prepare related entity document using strategy after user is created
-    //                     return await entity.strategy.prepare(entity.userData, user, entity.options);
-    //                 },
-    //                 linkingField: entity.strategy.getConfig().linkingField,
-    //                 linkingStrategy: (entityData, user) => {
-    //                     entity.strategy.link(entityData, user);
-    //                 }
-    //             })),
-    //             {
-    //                 tenantId: this.config.companyTenantId,
-    //                 metadata: {
-    //                     userType: userType,
-    //                     registrationSource: this._determineRegistrationSource(userType, options)
-    //                 }
-    //             }
-    //         );
-
-    //         const { entities, transaction } = result;
-    //         const newUser = entities.primary;
-    //         const relatedEntity = entities.related && entities.related.length > 0
-    //             ? entities.related[0].entity
-    //             : null;
-
-    //         logger.info('User registered successfully with universal transaction', {
-    //             userId: newUser._id,
-    //             relatedEntityId: relatedEntity?._id,
-    //             email: newUser.email,
-    //             userType: userType,
-    //             transactionId: transaction.id,
-    //             duration: transaction.duration
-    //         });
-
-    //         // Verify transaction integrity
-    //         const integrityCheck = await UniversalTransactionService.verifyTransactionIntegrity(
-    //             transaction.id
-    //         );
-
-    //         if (!integrityCheck.valid) {
-    //             logger.error('Transaction integrity check failed', integrityCheck);
-    //         }
-
-    //         // Execute post-registration workflows asynchronously
-    //         this._executePostRegistrationWorkflows(newUser, userType, options, relatedEntity)
-    //             .catch(error => {
-    //                 logger.error('Post-registration workflows failed (non-blocking)', {
-    //                     error: error.message,
-    //                     userId: newUser._id
-    //                 });
-    //             });
-
-    //         // Initialize onboarding
-    //         let onboardingData = null;
-    //         try {
-    //             onboardingData = await this._initializeOnboarding(newUser._id, userType);
-    //         } catch (error) {
-    //             logger.error('Onboarding initialization failed (non-blocking)', {
-    //                 error: error.message
-    //             });
-    //         }
-
-    //         // CRITICAL CHANGE: Only generate tokens if email verification is NOT required
-    //         // This ensures users must verify their email before they can access the system
-    //         let tokens = null;
-    //         if (!this.config.requireEmailVerification || newUser.verification?.email?.verified) {
-    //             const accessToken = this._generateAccessToken(newUser);
-    //             const refreshToken = this._generateRefreshToken(newUser);
-    //             tokens = {
-    //                 accessToken,
-    //                 refreshToken,
-    //                 expiresIn: 86400,
-    //                 tokenType: 'Bearer'
-    //             };
-    //         }
-
-    //         // Build response based on whether email verification is required
-    //         const response = {
-    //             user: this._sanitizeUserOutput(newUser),
-    //             relatedEntity: relatedEntity ? this._sanitizeEntityOutput(relatedEntity, userType) : null,
-    //             userType: userType,
-    //             permissions: newUser.permissions,
-    //             roles: newUser.roles,
-    //             onboarding: onboardingData,
-    //             nextSteps: this._getRegistrationNextSteps(userType, newUser),
-    //             dashboardUrl: this._getDashboardUrl(userType),
-    //             transaction: {
-    //                 id: transaction.id,
-    //                 status: transaction.status,
-    //                 verified: integrityCheck.valid,
-    //                 duration: transaction.duration
-    //             }
-    //         };
-
-    //         // Add tokens only if they were generated
-    //         if (tokens) {
-    //             response.tokens = tokens;
-    //             response.requiresAction = [];
-    //         } else {
-    //             // Email verification is required
-    //             response.requiresAction = ['VERIFY_EMAIL'];
-    //             response.message = 'Registration successful. Please check your email to verify your account before logging in.';
-    //             response.verificationEmailSent = true;
-    //         }
-
-    //         return response;
-
-    //     } catch (error) {
-    //         logger.error('Direct user registration failed', {
-    //             error: error.message,
-    //             stack: error.stack,
-    //             email: userData?.email,
-    //             userType: userType
-    //         });
-    //         throw error;
-    //     }
-    // }
-
     /**
      * Register a new direct business user
      * @param {Object} userData - User registration data
@@ -1860,17 +1602,28 @@ class DirectAuthService {
         logger.info('Processing referral', { userId, referralCode, userType });
     }
 
+    /**
+     * Initialize onboarding for new user
+     * FIXED: Now properly passes tenantId to onboarding service
+     * @private
+     */
     async _initializeOnboarding(userId, userType) {
         try {
             if (typeof this.onboardingService.createOnboarding === 'function') {
                 return await this.onboardingService.createOnboarding({
                     userId: userId,
+                    tenantId: this.config.companyTenantId, // FIXED: Added tenantId parameter
                     type: userType,
                     context: 'direct_business'
                 });
             }
         } catch (error) {
-            logger.error('Failed to initialize onboarding', { error: error.message });
+            logger.error('Failed to initialize onboarding', {
+                error: error.message,
+                userId: userId,
+                userType: userType,
+                tenantId: this.config.companyTenantId // Added for debugging
+            });
         }
         return null;
     }
