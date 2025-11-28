@@ -79,65 +79,6 @@ class AuthController {
         }
     }
 
-    /**
-     * Login user
-     * POST /api/auth/login
-     */
-    // async loginUser(req, res, next) {
-    //     try {
-    //         const { email, username, password } = req.body;
-
-    //         if (!password || (!email && !username)) {
-    //             return next(
-    //                 new AppError('Email/username and password are required', 400)
-    //             );
-    //         }
-
-    //         const credentials = {
-    //             email: email || username,
-    //             password
-    //         };
-
-    //         const options = {
-    //             ip: req.ip || req.connection.remoteAddress,
-    //             userAgent: req.headers['user-agent'],
-    //             device: req.body.device,
-    //             location: req.body.location
-    //         };
-
-    //         const result = await directAuthService.loginDirectUser(credentials, options);
-
-    //         if (result.requiresMFA) {
-    //             return res.status(200).json({
-    //                 success: true,
-    //                 requiresMFA: true,
-    //                 data: {
-    //                     tempToken: result.tempToken,
-    //                     mfaMethods: result.mfaMethods,
-    //                     challengeId: result.challengeId
-    //                 }
-    //             });
-    //         }
-
-    //         if (result.tokens?.refreshToken) {
-    //             res.cookie('refreshToken', result.tokens.refreshToken, {
-    //                 httpOnly: true,
-    //                 secure: process.env.NODE_ENV === 'production',
-    //                 sameSite: 'strict',
-    //                 maxAge: 30 * 24 * 60 * 60 * 1000
-    //             });
-    //         }
-
-    //         res.status(200).json({
-    //             success: true,
-    //             message: 'Login successful',
-    //             data: result
-    //         });
-
-    //     } catch (error) {
-    //         next(error);
-    //     }
-    // }
     async loginUser(req, res, next) {
         try {
             const { email, username, password } = req.body;
@@ -408,6 +349,56 @@ class AuthController {
 
         } catch (error) {
             next(error);
+        }
+    }
+
+    /**
+     * Check email verification status
+     * GET /api/auth/verification-status
+     */
+    async checkVerificationStatus(req, res, next) {
+        // CRITICAL: Set cache headers FIRST, before any processing
+        // This prevents Express from returning 304 Not Modified
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+        res.set('Surrogate-Control', 'no-store');
+        
+        try {
+            const { email } = req.query;
+
+            if (!email) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        message: 'Email parameter is required',
+                        code: 'MISSING_EMAIL'
+                    }
+                });
+            }
+
+            // Call the service method
+            const result = await directAuthService.checkEmailVerificationStatus(email);
+
+            return res.status(200).json({
+                success: true,
+                data: result
+            });
+
+        } catch (error) {
+            console.error('Check verification status failed:', {
+                error: error.message,
+                email: req.query.email
+            });
+            
+            // Return generic response on error
+            return res.status(200).json({
+                success: true,
+                data: {
+                    verified: false,
+                    email: req.query.email
+                }
+            });
         }
     }
 

@@ -392,10 +392,10 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = Cookies.get(REFRESH_TOKEN_KEY)
         const oldAccessToken = Cookies.get(AUTH_TOKEN_KEY)
-        
+
         if (refreshToken) {
           console.log('Attempting token refresh...')
-          
+
           const response = await axios.post(`${API_BASE_URL}/${API_VERSION}/auth/refresh`, {
             refreshToken,
             oldAccessToken
@@ -403,7 +403,7 @@ apiClient.interceptors.response.use(
 
           const responseData = response.data?.data || response.data
           const { tokens } = responseData
-          
+
           if (!tokens?.accessToken) {
             throw new Error('Token refresh failed - no access token in response')
           }
@@ -413,7 +413,7 @@ apiClient.interceptors.response.use(
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict'
           })
-          
+
           if (tokens.refreshToken) {
             Cookies.set(REFRESH_TOKEN_KEY, tokens.refreshToken, {
               expires: 30,
@@ -432,13 +432,13 @@ apiClient.interceptors.response.use(
         }
       } catch (refreshError) {
         console.error('Token refresh failed:', refreshError)
-        
+
         Cookies.remove(AUTH_TOKEN_KEY)
         Cookies.remove(REFRESH_TOKEN_KEY)
         localStorage.removeItem('user')
         localStorage.removeItem('userType')
         localStorage.removeItem('current-tenant')
-        
+
         window.location.href = '/login'
         return Promise.reject(refreshError)
       }
@@ -525,10 +525,10 @@ export const api = {
 export const auth = {
   login: async (email: string, password: string) => {
     const response = await api.post('/auth/login', { email, password })
-    
+
     const responseData = response.data || response
     const { tokens, user, userType } = responseData
-    
+
     if (!tokens?.accessToken || !tokens?.refreshToken) {
       console.error('Login response structure:', response)
       throw new Error('Authentication failed - invalid token structure received')
@@ -539,7 +539,7 @@ export const auth = {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict'
     })
-    
+
     Cookies.set(REFRESH_TOKEN_KEY, tokens.refreshToken, {
       expires: 30,
       secure: process.env.NODE_ENV === 'production',
@@ -549,34 +549,34 @@ export const auth = {
     if (user) {
       localStorage.setItem('user', JSON.stringify(user))
     }
-    
+
     if (userType) {
       localStorage.setItem('userType', userType)
     }
 
     console.log('Login successful - tokens stored securely')
 
-    return { 
-      user, 
-      accessToken: tokens.accessToken, 
+    return {
+      user,
+      accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
-      userType 
+      userType
     }
   },
 
   register: async (data: any) => {
     const response = await api.post('/auth/register', data)
-    
+
     const responseData = response.data || response
     const { tokens, user, userType } = responseData
-    
+
     if (tokens?.accessToken && tokens?.refreshToken) {
       Cookies.set(AUTH_TOKEN_KEY, tokens.accessToken, {
         expires: 1,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict'
       })
-      
+
       Cookies.set(REFRESH_TOKEN_KEY, tokens.refreshToken, {
         expires: 30,
         secure: process.env.NODE_ENV === 'production',
@@ -586,7 +586,7 @@ export const auth = {
       if (user) {
         localStorage.setItem('user', JSON.stringify(user))
       }
-      
+
       if (userType) {
         localStorage.setItem('userType', userType)
       }
@@ -595,7 +595,7 @@ export const auth = {
     } else {
       console.log('Registration successful - email verification required')
     }
-    
+
     return responseData
   },
 
@@ -613,7 +613,7 @@ export const auth = {
       localStorage.removeItem('user')
       localStorage.removeItem('userType')
       localStorage.removeItem('current-tenant')
-      
+
       window.location.href = '/login'
     }
   },
@@ -623,10 +623,40 @@ export const auth = {
   },
 
   resetPassword: async (token: string, password: string) => {
-    return api.post('/auth/password/reset', { 
-      token, 
-      newPassword: password 
+    return api.post('/auth/password/reset', {
+      token,
+      newPassword: password
     })
+  },
+
+  /**
+   * Check email verification status
+   * Returns whether the user's email has been verified
+   */
+  checkEmailVerificationStatus: async (email: string) => {
+    try {
+      const response = await api.get('/auth/verification-status', {
+        params: { email }
+      })
+      return response.data || response
+    } catch (error) {
+      // This will throw if the email is not verified or user doesn't exist
+      // The calling code should handle this as "not verified yet"
+      throw error
+    }
+  },
+
+  /**
+   * Resend verification email
+   * Triggers a new verification email to be sent to the user
+   */
+  resendVerificationEmail: async (email: string) => {
+    try {
+      const response = await api.post('/auth/resend-verification', { email })
+      return response.data || response
+    } catch (error) {
+      throw error
+    }
   },
 
   verifyEmail: async (token: string, email?: string) => {
@@ -637,11 +667,11 @@ export const auth = {
     try {
       const response = await api.get('/auth/me')
       const userData = response.data || response
-      
+
       if (userData) {
         localStorage.setItem('user', JSON.stringify(userData))
       }
-      
+
       return userData
     } catch (error) {
       console.error('Failed to get current user:', error)
@@ -653,7 +683,7 @@ export const auth = {
     try {
       const refreshToken = Cookies.get(REFRESH_TOKEN_KEY)
       const oldAccessToken = Cookies.get(AUTH_TOKEN_KEY)
-      
+
       if (!refreshToken) {
         throw new Error('No refresh token available')
       }
@@ -665,7 +695,7 @@ export const auth = {
 
       const responseData = response.data?.data || response.data
       const { tokens } = responseData
-      
+
       if (!tokens?.accessToken) {
         throw new Error('Token refresh failed')
       }
@@ -675,7 +705,7 @@ export const auth = {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict'
       })
-      
+
       if (tokens.refreshToken) {
         Cookies.set(REFRESH_TOKEN_KEY, tokens.refreshToken, {
           expires: 30,
@@ -722,9 +752,9 @@ export const auth = {
 // ==================== Contact Management API ====================
 
 export const contactsApi = {
-  getAll: async (params?: { 
-    page?: number; 
-    limit?: number; 
+  getAll: async (params?: {
+    page?: number;
+    limit?: number;
     search?: string;
     status?: string;
     role?: string;
@@ -742,7 +772,7 @@ export const contactsApi = {
     if (params?.role) queryParams.append('role', params.role);
     if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
     if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
-    
+
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
     return api.get(`/contacts${query}`);
   },
@@ -771,10 +801,10 @@ export const contactsApi = {
 // ==================== Document Management API ====================
 
 export const documentsApi = {
-  getAll: async (params?: { 
-    page?: number; 
-    limit?: number; 
-    search?: string; 
+  getAll: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
     type?: string;
     status?: string;
     classification?: string;
@@ -793,7 +823,7 @@ export const documentsApi = {
     if (params?.classification) queryParams.append('classification', params.classification);
     if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
     if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
-    
+
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
     return api.get(`/documents${query}`);
   },
@@ -855,10 +885,10 @@ export const documentsApi = {
 // ==================== Note Management API ====================
 
 export const notesApi = {
-  getAll: async (params?: { 
-    page?: number; 
-    limit?: number; 
-    search?: string; 
+  getAll: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
     type?: string;
     importance?: string;
     category?: string;
@@ -879,7 +909,7 @@ export const notesApi = {
     if (params?.status) queryParams.append('status', params.status);
     if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
     if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
-    
+
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
     return api.get(`/notes${query}`);
   },
@@ -991,9 +1021,9 @@ export const getContactPhone = (contact: Contact): string => {
 };
 
 export const getContactDisplayName = (contact: Contact): string => {
-  return contact.personalInfo.displayName || 
-         contact.personalInfo.preferredName ||
-         `${contact.personalInfo.firstName} ${contact.personalInfo.lastName}`;
+  return contact.personalInfo.displayName ||
+    contact.personalInfo.preferredName ||
+    `${contact.personalInfo.firstName} ${contact.personalInfo.lastName}`;
 };
 
 export const getContactInitials = (contact: Contact): string => {

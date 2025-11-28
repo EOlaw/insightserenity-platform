@@ -1,67 +1,81 @@
 /**
- * @fileoverview Client Registration Strategy - Complete Updated Version
+ * @fileoverview Client Registration Strategy - Bidirectional Linking Implementation
  * @module servers/customer-services/modules/core-business/client-management/strategies/client-registration-strategy
- * @description Strategy for preparing and validating Client entity documents with optimized single-direction linking
+ * @description Client-specific implementation extending universal registration strategy base class
  * 
  * @version 2.0.0
- * @updated 2025-10-14
+ * @updated 2025-11-28
  * 
  * IMPLEMENTATION NOTES:
- * - Implements single-direction linking (Client -> User) to prevent MongoDB lock conflicts
- * - No back-reference field is created on User documents
- * - Use findByLinkedUserId() helper method to query Client by User ID
- * - Forward-only linking eliminates lock conflicts during transaction execution
+ * - Extends UniversalRegistrationStrategy for bidirectional User ↔ Client linking
+ * - User documents maintain clientId field referencing Client._id
+ * - Client documents maintain metadata.linkedUserId referencing User._id
+ * - Two-phase commit: Phase 1 creates entities, Phase 2 establishes User.clientId back-reference
  * 
  * BREAKING CHANGES FROM v1.0:
- * - link() method now returns null instead of 'clientId'
- * - User documents no longer have clientId field
- * - Must query Client.findOne({ 'metadata.linkedUserId': userId }) to find Client
- * - Added helper method findByLinkedUserId() for convenient queries
+ * - Now extends UniversalRegistrationStrategy base class
+ * - link() method returns 'clientId' instead of null for bidirectional linking
+ * - User documents now have clientId field populated
+ * - Can query either direction: Client.findOne({ 'metadata.linkedUserId': userId }) or User.findOne({ clientId: clientId })
  * 
- * MIGRATION GUIDE:
- * Old code: const client = await Client.findById(user.clientId);
- * New code: const client = await ClientRegistrationStrategy.findByLinkedUserId(user._id, Client);
- * Or direct: const client = await Client.findOne({ 'metadata.linkedUserId': user._id });
+ * MIGRATION GUIDE FROM v1.0:
+ * Old code (forward-only): const client = await Client.findOne({ 'metadata.linkedUserId': user._id });
+ * New code (bidirectional): const client = await Client.findById(user.clientId); // OR use forward lookup
  */
 
-const mongoose = require('mongoose');
-const { AppError } = require('../../../../../../shared/lib/utils/app-error');
+const UniversalRegistrationStrategy = require('../../../../../../shared/lib/database/services/universal-registration-strategy');
 const logger = require('../../../../../../shared/lib/utils/logger').createLogger({
     serviceName: 'client-registration-strategy'
 });
 
 /**
  * @class ClientRegistrationStrategy
- * @description Implements entity-specific logic for Client document creation with optimized linking strategy
+ * @extends UniversalRegistrationStrategy
+ * @description Implements Client-specific entity document preparation and validation
  * 
- * This strategy class is responsible for preparing Client entity documents during user registration
- * and validating Client-specific data before transaction execution. It implements a single-direction
- * linking pattern where the Client document maintains a reference to the User document, but the User
- * document does not maintain a back-reference to the Client. This approach prevents MongoDB lock
- * conflicts that occur when trying to update the same document multiple times within a transaction.
+ * This strategy class handles the complete lifecycle of Client entity creation during user
+ * registration, providing Client-specific business logic while leveraging the universal
+ * bidirectional linking pattern from the base class.
  * 
- * The strategy provides comprehensive validation for business-specific fields such as business tier,
- * entity type, and contact information, ensuring data integrity before entities are created in the
- * database.
+ * The strategy transforms user registration data into properly structured Client documents
+ * that conform to the Client schema, handles business-specific validations such as business
+ * tier and entity type, and manages the bidirectional relationship between User and Client.
  */
-class ClientRegistrationStrategy {
+class ClientRegistrationStrategy extends UniversalRegistrationStrategy {
+    /**
+     * Initialize Client registration strategy with configuration
+     */
+    constructor() {
+        super({
+            entityType: 'Client',
+            userType: 'client',
+            linkingField: 'clientId',
+            database: 'customer',
+            codePrefix: 'CLI'
+        });
+        
+        logger.debug('Client registration strategy initialized', {
+            entityType: this.entityType,
+            linkingField: this.linkingField,
+            linkingType: this.linkingType
+        });
+    }
+
     /**
      * Prepare Client document from user data
      * 
      * This method transforms user registration data into a properly structured Client document
      * that conforms to the Client schema requirements. It handles default values, generates
-     * unique identifiers, maps registration sources to valid enum values, and ensures all
-     * ObjectId fields are properly typed.
+     * unique client codes, maps registration sources to valid acquisition sources, and ensures
+     * all required fields are properly populated.
      * 
-     * The method is called during Phase 1 of transaction execution, after the User document
-     * has been created but before the transaction commits. It has access to the created User
-     * document and can use that information to populate Client fields appropriately.
+     * The method is called during Phase 1 of transaction execution after the User document
+     * has been created. It has access to the created User document and uses that information
+     * to populate Client fields appropriately.
      * 
      * @param {Object} userData - User registration data from the registration request
      * @param {string} userData.email - User email address
      * @param {Object} userData.profile - User profile information
-     * @param {string} userData.profile.firstName - User first name
-     * @param {string} userData.profile.lastName - User last name
      * @param {string} [userData.companyName] - Company name (optional)
      * @param {string} [userData.businessTier] - Business tier level (optional)
      * @param {string} [userData.entityType] - Business entity type (optional)
@@ -78,8 +92,9 @@ class ClientRegistrationStrategy {
      * @param {Object} [options.utmParams] - UTM tracking parameters
      * @returns {Promise<Object>} Prepared Client document ready for creation
      * @throws {Error} If required data is missing or invalid
+     * @override
      */
-    async prepare(userData, user, options = {}) {
+    async prepareEntityData(userData, user, options = {}) {
         try {
             logger.debug('Preparing Client document', {
                 userId: user._id,
@@ -101,7 +116,7 @@ class ClientRegistrationStrategy {
             const registrationSource = userData.metadata?.source || 'web_client';
             const acquisitionSource = sourceMapping[registrationSource] || 'other';
 
-            const clientCode = this._generateClientCode(user);
+            const clientCode = this._generateEntityCode(user);
 
             const companyName = userData.companyName ||
                 userData.customFields?.companyName ||
@@ -170,7 +185,7 @@ class ClientRegistrationStrategy {
                 clientCode,
                 companyName: clientDocument.companyName,
                 userId: user._id,
-                linkingStrategy: 'forward-only',
+                linkingStrategy: 'bidirectional',
                 acquisitionSource
             });
 
@@ -190,355 +205,48 @@ class ClientRegistrationStrategy {
      * Validate Client-specific data before transaction
      * 
      * This method performs comprehensive validation of Client-specific data before the
-     * transaction begins. It checks required fields, validates enum values, and ensures
-     * data conforms to expected formats. The validation process distinguishes between
-     * critical errors that should prevent transaction execution and warnings that indicate
-     * potentially problematic but non-blocking conditions.
+     * transaction begins. It checks business tier, entity type, country data, and other
+     * Client-specific fields to ensure they conform to expected values and formats.
      * 
      * @param {Object} userData - User registration data to validate
-     * @param {Object} userData.profile - User profile data
-     * @param {string} userData.profile.firstName - User first name
-     * @param {string} userData.profile.lastName - User last name
-     * @param {string} [userData.businessTier] - Business tier to validate
-     * @param {string} [userData.entityType] - Entity type to validate
-     * @param {string} [userData.country] - Country to validate
      * @param {Object} options - Validation options
      * @returns {Promise<Object>} Validation result with errors and warnings
-     * @property {boolean} valid - Whether validation passed (no errors)
-     * @property {Array<string>} errors - Critical validation errors
-     * @property {Array<string>} warnings - Non-critical validation warnings
+     * @override
      */
     async validate(userData, options = {}) {
-        const errors = [];
-        const warnings = [];
-
-        if (!userData.profile?.firstName) {
-            errors.push('First name is required for Client entity');
-        }
-
-        if (!userData.profile?.lastName) {
-            errors.push('Last name is required for Client entity');
-        }
+        const result = await super.validate(userData, options);
 
         if (userData.businessTier) {
             const validTiers = ['strategic', 'enterprise', 'mid_market', 'small_business', 'startup'];
             if (!validTiers.includes(userData.businessTier)) {
-                warnings.push(`Invalid business tier: ${userData.businessTier}. Valid values: ${validTiers.join(', ')}`);
+                result.warnings.push(`Invalid business tier: ${userData.businessTier}. Valid values: ${validTiers.join(', ')}`);
             }
         }
 
         if (userData.entityType) {
             const validTypes = ['corporation', 'llc', 'partnership', 'sole_proprietorship', 'non_profit', 'government', 'other'];
             if (!validTypes.includes(userData.entityType)) {
-                warnings.push(`Invalid entity type: ${userData.entityType}. Valid values: ${validTypes.join(', ')}`);
+                result.warnings.push(`Invalid entity type: ${userData.entityType}. Valid values: ${validTypes.join(', ')}`);
             }
         }
 
         if (userData.country && userData.country.trim().length === 0) {
-            warnings.push('Country field is empty. Defaulting to United States');
+            result.warnings.push('Country field is empty. Defaulting to United States');
         }
 
-        if (userData.phoneNumber && !this._isValidPhoneFormat(userData.phoneNumber)) {
-            warnings.push('Phone number format may be invalid');
+        if (!userData.companyName && !userData.customFields?.companyName) {
+            result.warnings.push('Company name not provided - will use default based on user name');
         }
 
-        if (userData.email && !this._isValidEmailFormat(userData.email)) {
-            errors.push('Invalid email format');
-        }
-
-        if (errors.length > 0) {
-            logger.warn('Client validation found errors', {
-                errors,
-                warnings
-            });
-        } else if (warnings.length > 0) {
-            logger.debug('Client validation found warnings', {
-                warnings
+        if (result.errors.length > 0 || result.warnings.length > 0) {
+            logger.debug('Client validation completed', {
+                valid: result.valid,
+                errorCount: result.errors.length,
+                warningCount: result.warnings.length
             });
         }
 
-        return {
-            valid: errors.length === 0,
-            errors,
-            warnings
-        };
-    }
-
-    /**
-     * Define linking strategy for Client entity
-     * 
-     * This method establishes the relationship pattern between Client and User entities.
-     * It implements a single-direction linking strategy where the Client document maintains
-     * a reference to the User (forward reference) but the User document does not maintain
-     * a reference back to the Client (no back-reference).
-     * 
-     * This approach prevents MongoDB lock conflicts that occur when trying to create an entity
-     * and then immediately update it within the same transaction. By returning null for the
-     * linking field, we signal to the Universal Transaction Service that no back-reference
-     * update should be attempted on the User document.
-     * 
-     * To find a Client for a given User, use the findByLinkedUserId() helper method or query
-     * directly: Client.findOne({ 'metadata.linkedUserId': userId })
-     * 
-     * @param {Object} clientData - Client document being created
-     * @param {Object} userData - User document that was created
-     * @param {ObjectId} userData._id - User document ID
-     * @returns {string|null} Field name on User to link, or null for forward-only linking
-     */
-    link(clientData, userData) {
-        clientData.metadata = clientData.metadata || {};
-        clientData.metadata.linkedUserId = userData._id;
-        
-        logger.debug('Applied forward-only linking strategy', {
-            clientId: clientData._id || 'pending',
-            userId: userData._id,
-            strategy: 'forward-only',
-            backReferenceField: null
-        });
-        
-        return null;
-    }
-
-    /**
-     * Generate unique client code
-     * 
-     * Generates a unique identifier for the Client using a combination of prefix,
-     * user initials, timestamp, and random characters. The format is:
-     * CLI-{INITIALS}{TIMESTAMP}{RANDOM}
-     * 
-     * Example: CLI-JD847392XYZ
-     * 
-     * @private
-     * @param {Object} user - User document
-     * @param {Object} user.profile - User profile data
-     * @param {string} user.profile.firstName - User first name
-     * @param {string} user.profile.lastName - User last name
-     * @returns {string} Unique client code
-     */
-    _generateClientCode(user) {
-        const prefix = 'CLI';
-        const initials = user.profile.firstName && user.profile.lastName
-            ? `${user.profile.firstName.charAt(0)}${user.profile.lastName.charAt(0)}`.toUpperCase()
-            : 'XX';
-        const timestamp = Date.now().toString().slice(-6);
-        const random = Math.random().toString(36).substring(2, 5).toUpperCase();
-        
-        const clientCode = `${prefix}-${initials}${timestamp}${random}`;
-        
-        logger.debug('Generated client code', {
-            clientCode,
-            userId: user._id
-        });
-        
-        return clientCode;
-    }
-
-    /**
-     * Ensure value is a valid MongoDB ObjectId
-     * 
-     * Converts various input types to proper MongoDB ObjectId instances with
-     * fallback to default values if conversion fails. This ensures that all
-     * ObjectId fields in the Client document are properly typed.
-     * 
-     * @private
-     * @param {string|ObjectId|null|undefined} value - Value to convert
-     * @returns {ObjectId} Valid MongoDB ObjectId
-     */
-    _ensureObjectId(value) {
-        if (!value) {
-            const defaultId = new mongoose.Types.ObjectId('000000000000000000000001');
-            logger.debug('No ObjectId provided, using default', {
-                defaultId: defaultId.toString()
-            });
-            return defaultId;
-        }
-        
-        if (mongoose.Types.ObjectId.isValid(value)) {
-            return value instanceof mongoose.Types.ObjectId 
-                ? value 
-                : new mongoose.Types.ObjectId(value);
-        }
-        
-        logger.warn('Invalid ObjectId provided, using default', {
-            providedValue: value,
-            providedType: typeof value
-        });
-        return new mongoose.Types.ObjectId('000000000000000000000001');
-    }
-
-    /**
-     * Validate phone number format
-     * @private
-     */
-    _isValidPhoneFormat(phoneNumber) {
-        const phoneRegex = /^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$/;
-        return phoneRegex.test(phoneNumber);
-    }
-
-    /**
-     * Validate email format
-     * @private
-     */
-    _isValidEmailFormat(email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(email);
-    }
-
-    /**
-     * Get strategy configuration
-     * 
-     * Returns metadata about this strategy's configuration and capabilities.
-     * This information is used by the Universal Transaction Service to properly
-     * handle entity creation and linking.
-     * 
-     * @returns {Object} Strategy configuration
-     * @property {string} entityType - Type of entity this strategy handles
-     * @property {string} database - Database where entities are stored
-     * @property {boolean} requiresValidation - Whether validation is required
-     * @property {boolean} supportsLinking - Whether linking is supported
-     * @property {string} linkingType - Type of linking strategy used
-     * @property {string|null} linkingField - Field name for back-reference (null for forward-only)
-     * @property {string} queryMethod - Name of helper method for queries
-     */
-    getConfig() {
-        return {
-            entityType: 'Client',
-            database: 'customer',
-            requiresValidation: true,
-            supportsLinking: true,
-            linkingType: 'forward-only',
-            linkingField: null,
-            queryMethod: 'findByLinkedUserId'
-        };
-    }
-
-    /**
-     * Helper method to find Client by User ID
-     * 
-     * This method provides a convenient way to query for a Client document using the
-     * User ID. Since we use single-direction linking, the User document does not have
-     * a clientId field. Instead, we query the Client collection for a document where
-     * metadata.linkedUserId matches the provided User ID.
-     * 
-     * This method should be used throughout your application whenever you need to
-     * retrieve a Client document for a given User. It abstracts the query details
-     * and provides consistent error handling and logging.
-     * 
-     * Usage example:
-     * ```javascript
-     * const ClientRegistrationStrategy = require('./path/to/strategy');
-     * const Client = require('./path/to/client-model');
-     * const client = await ClientRegistrationStrategy.findByLinkedUserId(user._id, Client);
-     * ```
-     * 
-     * @param {string|ObjectId} userId - User ID to find Client for
-     * @param {Model} ClientModel - Client Mongoose model
-     * @returns {Promise<Object|null>} Client document or null if not found
-     * @throws {Error} If query fails
-     */
-    async findByLinkedUserId(userId, ClientModel) {
-        try {
-            logger.debug('Finding Client by linked User ID', {
-                userId: userId.toString()
-            });
-
-            const client = await ClientModel.findOne({
-                'metadata.linkedUserId': userId
-            });
-
-            if (!client) {
-                logger.debug('No Client found for User', { 
-                    userId: userId.toString() 
-                });
-                return null;
-            }
-
-            logger.debug('Client found for User', {
-                userId: userId.toString(),
-                clientId: client._id.toString(),
-                clientCode: client.clientCode
-            });
-
-            return client;
-
-        } catch (error) {
-            logger.error('Error finding Client by User ID', {
-                userId: userId.toString(),
-                error: error.message,
-                stack: error.stack
-            });
-            throw error;
-        }
-    }
-
-    /**
-     * Bulk find Clients by multiple User IDs
-     * 
-     * Efficiently retrieves multiple Client documents for an array of User IDs.
-     * This method is useful for bulk operations or when displaying lists of users
-     * with their associated client information.
-     * 
-     * @param {Array<string|ObjectId>} userIds - Array of User IDs
-     * @param {Model} ClientModel - Client Mongoose model
-     * @returns {Promise<Map<string, Object>>} Map of userId to Client document
-     */
-    async findManyByLinkedUserIds(userIds, ClientModel) {
-        try {
-            logger.debug('Finding Clients by multiple User IDs', {
-                userCount: userIds.length
-            });
-
-            const clients = await ClientModel.find({
-                'metadata.linkedUserId': { $in: userIds }
-            });
-
-            const clientMap = new Map();
-            clients.forEach(client => {
-                const userId = client.metadata.linkedUserId.toString();
-                clientMap.set(userId, client);
-            });
-
-            logger.debug('Clients found for Users', {
-                requestedCount: userIds.length,
-                foundCount: clientMap.size
-            });
-
-            return clientMap;
-
-        } catch (error) {
-            logger.error('Error finding Clients by User IDs', {
-                userCount: userIds.length,
-                error: error.message
-            });
-            throw error;
-        }
-    }
-
-    /**
-     * Check if Client exists for User
-     * 
-     * Efficiently checks whether a Client document exists for a given User ID
-     * without retrieving the full document.
-     * 
-     * @param {string|ObjectId} userId - User ID to check
-     * @param {Model} ClientModel - Client Mongoose model
-     * @returns {Promise<boolean>} True if Client exists, false otherwise
-     */
-    async existsForUser(userId, ClientModel) {
-        try {
-            const count = await ClientModel.countDocuments({
-                'metadata.linkedUserId': userId
-            });
-
-            return count > 0;
-
-        } catch (error) {
-            logger.error('Error checking Client existence for User', {
-                userId: userId.toString(),
-                error: error.message
-            });
-            throw error;
-        }
+        return result;
     }
 }
 

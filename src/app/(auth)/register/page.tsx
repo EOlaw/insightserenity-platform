@@ -132,7 +132,6 @@ export default function RegisterPage() {
     setValidationErrors([])
 
     try {
-      // Structure data according to backend expectations
       const registrationData = {
         email: formData.email.toLowerCase().trim(),
         password: formData.password,
@@ -151,38 +150,39 @@ export default function RegisterPage() {
 
       console.log('Registration response:', response)
 
-      toast.success('Registration successful! Please check your email to verify your account.')
-
-      // Handle token storage and redirection
+      // IMPROVED: Handle different registration outcomes based on backend response
       if (response.data?.tokens?.accessToken) {
-        // Tokens are automatically stored by auth.register
+        // Case 1: User can log in immediately (email verification disabled or pre-verified)
+        toast.success('Registration successful! Welcome to InsightSerenity.')
         setTimeout(() => {
           router.push('/dashboard')
-        }, 2000)
-      } else {
-        // Redirect to verification page if no immediate login
+        }, 1500)
+      } else if (response.data?.requiresAction?.includes('VERIFY_EMAIL') || response.verificationEmailSent) {
+        // Case 2: Email verification required - redirect to awaiting verification page
+        toast.success('Registration successful! Please check your email to verify your account.')
         setTimeout(() => {
-          router.push('/verify-email?email=' + encodeURIComponent(formData.email))
-        }, 2000)
+          router.push('/awaiting-verification?email=' + encodeURIComponent(formData.email))
+        }, 1500)
+      } else {
+        // Case 3: Other scenarios - redirect to login
+        toast.success('Registration successful! Please log in to continue.')
+        setTimeout(() => {
+          router.push('/login')
+        }, 1500)
       }
     } catch (error: any) {
       console.error('Registration error:', error)
 
-      // Extract detailed error information
       const errorResponse = error.response?.data
 
       if (errorResponse?.error?.details && Array.isArray(errorResponse.error.details)) {
-        // Backend returned validation errors array
         setValidationErrors(errorResponse.error.details)
         setError('Please correct the following errors:')
       } else if (errorResponse?.error?.message) {
-        // Backend returned error message
         setError(errorResponse.error.message)
       } else if (errorResponse?.message) {
-        // Alternative error message format
         setError(errorResponse.message)
       } else if (error.message) {
-        // Generic error message
         setError(error.message)
       } else {
         setError('Registration failed. Please try again.')
@@ -221,7 +221,7 @@ export default function RegisterPage() {
       <CardHeader className="space-y-1">
         <CardTitle className="text-xl font-bold">Create an account</CardTitle>
         <CardDescription className="text-xs">
-          Enter your details to get started with Enterprise Platform
+          Enter your details to get started with InsightSerenity
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

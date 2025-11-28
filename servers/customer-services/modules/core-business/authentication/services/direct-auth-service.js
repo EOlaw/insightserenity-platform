@@ -468,6 +468,7 @@ class DirectAuthService {
                 : null;
 
             // Handle Client creation for client userType if strategy was not used
+            // Handle Client creation for client userType if strategy was not used
             if (userType === DIRECT_USER_TYPES.CLIENT && !useStrategyForClient) {
                 logger.info('Creating Client using fallback method after User creation', {
                     userId: newUser._id,
@@ -484,19 +485,21 @@ class DirectAuthService {
                             clientCode: relatedEntity.clientCode
                         });
 
-                        // Fetch updated user with clientId populated
+                        // CRITICAL FIX: Refresh the user object to get the updated clientId
                         const User = dbService.getModel('User', 'customer');
-                        const updatedUser = await User.findById(newUser._id);
+                        const refreshedUser = await User.findById(newUser._id);
 
-                        if (updatedUser) {
-                            newUser = updatedUser;
-                            logger.debug('User document refreshed with clientId', {
+                        if (refreshedUser && refreshedUser.clientId) {
+                            newUser = refreshedUser;
+                            logger.info('User document refreshed with clientId', {
                                 userId: newUser._id,
                                 clientId: newUser.clientId
                             });
                         } else {
-                            logger.warn('Could not fetch updated user after clientId assignment', {
-                                userId: newUser._id
+                            logger.error('User refresh failed or clientId not present after update', {
+                                userId: newUser._id,
+                                hasRefreshedUser: !!refreshedUser,
+                                hasClientId: !!refreshedUser?.clientId
                             });
                         }
                     } else {
@@ -534,15 +537,44 @@ class DirectAuthService {
                 logger.error('Transaction integrity check failed', integrityCheck);
             }
 
-            // Execute post-registration workflows asynchronously
-            this._executePostRegistrationWorkflows(newUser, userType, options, relatedEntity)
+            // CRITICAL FIX: Refresh user from database to get the complete verification token
+            // The transaction service returns a user object that may not have the token
+            // populated by the pre-save middleware
+            let userWithToken = newUser;
+            try {
+                const dbService = this._getDatabaseService();
+                const User = dbService.getModel('User', 'customer');
+                userWithToken = await User.findById(newUser._id).select('+verification.email.token');
+
+                if (!userWithToken) {
+                    logger.error('Failed to refresh user object from database', {
+                        userId: newUser._id
+                    });
+                    userWithToken = newUser; // Fallback to original user object
+                } else {
+                    logger.info('User object refreshed successfully with verification token', {
+                        userId: userWithToken._id,
+                        hasVerificationToken: !!(userWithToken.verification?.email?.token),
+                        tokenLength: userWithToken.verification?.email?.token?.length
+                    });
+                }
+            } catch (refreshError) {
+                logger.error('Error refreshing user object', {
+                    error: refreshError.message,
+                    userId: newUser._id
+                });
+                userWithToken = newUser; // Fallback to original user object
+            }
+
+            // Execute post-registration workflows asynchronously with refreshed user object
+            this._executePostRegistrationWorkflows(userWithToken, userType, options, relatedEntity)
                 .catch(error => {
                     logger.error('Post-registration workflows failed (non-blocking)', {
                         error: error.message,
-                        userId: newUser._id
+                        userId: userWithToken._id
                     });
                 });
-
+                
             // Initialize onboarding
             let onboardingData = null;
             try {
@@ -684,6 +716,140 @@ class DirectAuthService {
      * Create Client business entity document for client user type
      * @private
      */
+    // async _createClientDocument(user, userData, options) {
+    //     try {
+    //         logger.info('Creating Client document for user', {
+    //             userId: user._id || user.id,
+    //             email: user.email
+    //         });
+
+    //         // CRITICAL FIX: Get Client model from database service
+    //         const dbService = database.getDatabaseService();
+    //         const Client = dbService.getModel('Client', 'customer');
+
+    //         if (!Client) {
+    //             throw new Error('Client model not available from database service');
+    //         }
+
+    //         // Generate unique client code
+    //         const clientCode = await this._generateClientCode(user);
+
+    //         // CRITICAL FIX: Map registration source to valid acquisitionSource enum
+    //         const sourceMapping = {
+    //             [REGISTRATION_SOURCES.WEB_CLIENT]: 'inbound',
+    //             [REGISTRATION_SOURCES.WEB_CONSULTANT]: 'inbound',
+    //             [REGISTRATION_SOURCES.WEB_CANDIDATE]: 'inbound',
+    //             [REGISTRATION_SOURCES.REFERRAL]: 'referral',
+    //             [REGISTRATION_SOURCES.LINKEDIN]: 'inbound',
+    //             [REGISTRATION_SOURCES.JOB_BOARD]: 'inbound',
+    //             [REGISTRATION_SOURCES.DIRECT_INQUIRY]: 'direct_sales'
+    //         };
+
+    //         const registrationSource = this._determineRegistrationSource(DIRECT_USER_TYPES.CLIENT, options);
+    //         const acquisitionSource = sourceMapping[registrationSource] || 'other';
+
+    //         const clientData = {
+    //             clientCode: clientCode,
+    //             companyName: userData.companyName ||
+    //                 userData.customFields?.companyName ||
+    //                 `${user.profile.firstName} ${user.profile.lastName}'s Company`,
+
+    //             // CRITICAL FIX: Use ObjectId for tenantId (not string)
+    //             tenantId: this._getDefaultTenantObjectId(),
+
+    //             // Use ObjectId for organizationId
+    //             organizationId: this._getDefaultOrganizationObjectId(),
+
+    //             // CRITICAL FIX: Provide required addresses.headquarters.country field
+    //             addresses: {
+    //                 headquarters: {
+    //                     country: userData.country || 'United States',
+    //                     city: userData.city,
+    //                     state: userData.state,
+    //                     postalCode: userData.postalCode,
+    //                     street1: userData.address,
+    //                     timezone: userData.timezone || 'America/New_York'
+    //                 }
+    //             },
+
+    //             contacts: {
+    //                 primary: {
+    //                     name: `${user.profile.firstName} ${user.profile.lastName}`,
+    //                     email: user.email,
+    //                     phone: user.phoneNumber,
+    //                     preferredContactMethod: 'email'
+    //                 }
+    //             },
+
+    //             relationship: {
+    //                 status: 'prospect',
+    //                 tier: userData.businessTier || 'small_business',
+    //                 accountManager: options.accountManager || null,
+    //                 acquisitionDate: new Date(),
+    //                 // CRITICAL FIX: Use valid enum value for acquisitionSource
+    //                 acquisitionSource: acquisitionSource
+    //             },
+
+    //             businessDetails: {
+    //                 entityType: userData.entityType || userData.customFields?.businessType || 'other',
+    //                 numberOfEmployees: userData.numberOfEmployees ? {
+    //                     range: userData.numberOfEmployees
+    //                 } : undefined
+    //             },
+
+    //             metadata: {
+    //                 // CRITICAL FIX: Use valid enum value for metadata.source
+    //                 source: 'api',
+    //                 linkedUserId: user._id || user.id,
+    //                 registrationData: {
+    //                     registeredAt: new Date(),
+    //                     registrationSource: registrationSource,
+    //                     campaign: options.utmParams?.campaign
+    //                 },
+    //                 tags: ['user-registration', registrationSource],
+    //                 flags: {
+    //                     isVip: false,
+    //                     isStrategic: false,
+    //                     requiresAttention: false
+    //                 }
+    //             }
+    //         };
+
+    //         const client = await Client.create(clientData);
+
+    //         // Update user with clientId reference using the database connection
+    //         const customerConnection = dbService.getConnection('customer');
+    //         await customerConnection.model('User').findByIdAndUpdate(
+    //             user._id || user.id,
+    //             { clientId: client._id },
+    //             { new: true }
+    //         );
+
+    //         logger.info('Client document created successfully', {
+    //             clientId: client._id,
+    //             clientCode: client.clientCode,
+    //             userId: user._id || user.id
+    //         });
+
+    //         return client;
+
+    //     } catch (error) {
+    //         logger.error('Failed to create Client document', {
+    //             error: error.message,
+    //             stack: error.stack,
+    //             userId: user._id || user.id
+    //         });
+
+    //         // Return null to allow registration to complete
+    //         // The user document is still created successfully
+    //         return null;
+    //     }
+    // }
+
+    /**
+     * Create Client business entity document for client user type
+     * @private
+     */
     async _createClientDocument(user, userData, options) {
         try {
             logger.info('Creating Client document for user', {
@@ -702,7 +868,7 @@ class DirectAuthService {
             // Generate unique client code
             const clientCode = await this._generateClientCode(user);
 
-            // CRITICAL FIX: Map registration source to valid acquisitionSource enum
+            // Map registration source to valid acquisitionSource enum
             const sourceMapping = {
                 [REGISTRATION_SOURCES.WEB_CLIENT]: 'inbound',
                 [REGISTRATION_SOURCES.WEB_CONSULTANT]: 'inbound',
@@ -722,13 +888,9 @@ class DirectAuthService {
                     userData.customFields?.companyName ||
                     `${user.profile.firstName} ${user.profile.lastName}'s Company`,
 
-                // CRITICAL FIX: Use ObjectId for tenantId (not string)
                 tenantId: this._getDefaultTenantObjectId(),
-
-                // Use ObjectId for organizationId
                 organizationId: this._getDefaultOrganizationObjectId(),
 
-                // CRITICAL FIX: Provide required addresses.headquarters.country field
                 addresses: {
                     headquarters: {
                         country: userData.country || 'United States',
@@ -754,7 +916,6 @@ class DirectAuthService {
                     tier: userData.businessTier || 'small_business',
                     accountManager: options.accountManager || null,
                     acquisitionDate: new Date(),
-                    // CRITICAL FIX: Use valid enum value for acquisitionSource
                     acquisitionSource: acquisitionSource
                 },
 
@@ -766,7 +927,6 @@ class DirectAuthService {
                 },
 
                 metadata: {
-                    // CRITICAL FIX: Use valid enum value for metadata.source
                     source: 'api',
                     linkedUserId: user._id || user.id,
                     registrationData: {
@@ -783,20 +943,35 @@ class DirectAuthService {
                 }
             };
 
+            // Create the client document
             const client = await Client.create(clientData);
-
-            // Update user with clientId reference using the database connection
-            const customerConnection = dbService.getConnection('customer');
-            await customerConnection.model('User').findByIdAndUpdate(
-                user._id || user.id,
-                { clientId: client._id },
-                { new: true }
-            );
 
             logger.info('Client document created successfully', {
                 clientId: client._id,
                 clientCode: client.clientCode,
                 userId: user._id || user.id
+            });
+
+            // CRITICAL FIX: Update user with clientId reference
+            // Get the User model and update the document
+            const User = dbService.getModel('User', 'customer');
+            const updatedUser = await User.findByIdAndUpdate(
+                user._id || user.id,
+                { clientId: client._id },
+                { new: true, runValidators: true }
+            );
+
+            if (!updatedUser) {
+                logger.error('Failed to update user with clientId', {
+                    userId: user._id || user.id,
+                    clientId: client._id
+                });
+                throw new Error('Failed to link client to user');
+            }
+
+            logger.info('User successfully updated with clientId', {
+                userId: updatedUser._id,
+                clientId: updatedUser.clientId
             });
 
             return client;
@@ -1074,24 +1249,171 @@ class DirectAuthService {
         }
     }
 
+    // async verifyEmail(token, email) {
+    //     try {
+    //         logger.info('Verifying email', { email });
+
+    //         const dbService = this._getDatabaseService();
+    //         const User = dbService.getModel('User', 'customer');
+
+    //         const user = await User.findOne({
+    //             email: email.toLowerCase(),
+    //             tenantId: this.config.companyTenantId,
+    //             'accountStatus.status': { $ne: 'deleted' }
+    //         }).select('+verification.email.token');
+
+    //         if (!user) {
+    //             throw new AppError('User not found', 404, 'USER_NOT_FOUND');
+    //         }
+
+    //         if (user.verification?.email?.verified) {
+    //             return {
+    //                 message: 'Email already verified',
+    //                 verified: true,
+    //                 user: this._sanitizeUserOutput(user)
+    //             };
+    //         }
+
+    //         const storedToken = user.verification?.email?.token;
+    //         const tokenExpires = user.verification?.email?.tokenExpires;
+
+    //         if (!storedToken) {
+    //             throw new AppError('No verification token found', 400, 'NO_TOKEN');
+    //         }
+
+    //         if (storedToken.trim() !== token.trim()) {
+    //             logger.warn('Token mismatch', {
+    //                 providedLength: token.length,
+    //                 storedLength: storedToken.length,
+    //                 email
+    //             });
+    //             throw new AppError('Invalid verification token', 400, 'INVALID_TOKEN');
+    //         }
+
+    //         if (new Date() > new Date(tokenExpires)) {
+    //             throw new AppError('Verification token has expired', 400, 'TOKEN_EXPIRED');
+    //         }
+
+    //         user.verification.email.verified = true;
+    //         user.verification.email.verifiedAt = new Date();
+    //         user.verification.email.token = undefined;
+    //         user.verification.email.tokenExpires = undefined;
+
+    //         if (user.accountStatus.status === 'pending') {
+    //             user.accountStatus.status = 'active';
+    //             user.accountStatus.activatedAt = new Date();
+    //             user.accountStatus.reason = 'Email verified successfully';
+    //         }
+
+    //         await user.save();
+
+    //         logger.info('Email verified successfully', {
+    //             userId: user._id || user.id,
+    //             email: user.email
+    //         });
+
+    //         // Send welcome email after successful verification
+    //         try {
+    //             const userType = this._getUserTypeFromUser(user);
+    //             await this._sendWelcomeEmail(user, userType);
+    //             logger.info('Welcome email sent after verification', {
+    //                 userId: user._id || user.id
+    //             });
+    //         } catch (emailError) {
+    //             logger.error('Failed to send welcome email after verification (non-blocking)', {
+    //                 error: emailError.message,
+    //                 userId: user._id || user.id
+    //             });
+    //         }
+
+    //         return {
+    //             message: 'Email verified successfully',
+    //             verified: true,
+    //             user: this._sanitizeUserOutput(user)
+    //         };
+    //     } catch (error) {
+    //         logger.error('Email verification failed', {
+    //             error: error.message,
+    //             email
+    //         });
+    //         throw error;
+    //     }
+    // }
+
+    /**
+ * Updated verifyEmail method for direct-auth-service.js
+ * 
+ * INSTRUCTIONS:
+ * Replace the existing verifyEmail method in your direct-auth-service.js file
+ * (located at: servers/customer-services/modules/core-business/authentication/services/direct-auth-service.js)
+ * with this updated version.
+ * 
+ * CRITICAL FIX:
+ * This version supports both verification flows:
+ * 1. With email parameter: Finds user by email first, then validates token
+ * 2. Without email parameter: Finds user directly by verification token
+ * 
+ * This ensures verification links work correctly whether or not the email parameter is included.
+ */
+
     async verifyEmail(token, email) {
         try {
-            logger.info('Verifying email', { email });
+            logger.info('Verifying email', {
+                hasEmail: !!email,
+                hasToken: !!token,
+                tokenLength: token?.length
+            });
 
             const dbService = this._getDatabaseService();
             const User = dbService.getModel('User', 'customer');
 
-            const user = await User.findOne({
-                email: email.toLowerCase(),
-                tenantId: this.config.companyTenantId,
-                'accountStatus.status': { $ne: 'deleted' }
-            }).select('+verification.email.token');
+            let user;
 
-            if (!user) {
-                throw new AppError('User not found', 404, 'USER_NOT_FOUND');
+            // CRITICAL FIX: Support both email-based and token-based user lookup
+            if (email) {
+                // Method 1: Find user by email (when email parameter is provided)
+                user = await User.findOne({
+                    email: email.toLowerCase(),
+                    tenantId: this.config.companyTenantId,
+                    'accountStatus.status': { $ne: 'deleted' }
+                }).select('+verification.email.token');
+
+                if (!user) {
+                    logger.warn('User not found with provided email', { email });
+                    throw new AppError('User not found', 404, 'USER_NOT_FOUND');
+                }
+
+                logger.info('User found by email', {
+                    userId: user._id || user.id,
+                    email: user.email
+                });
+            } else {
+                // Method 2: Find user by verification token (when email is not provided)
+                logger.info('Email not provided, searching by verification token');
+
+                user = await User.findOne({
+                    'verification.email.token': token,
+                    tenantId: this.config.companyTenantId,
+                    'accountStatus.status': { $ne: 'deleted' }
+                }).select('+verification.email.token');
+
+                if (!user) {
+                    logger.warn('User not found with provided verification token');
+                    throw new AppError('Invalid or expired verification token', 400, 'INVALID_TOKEN');
+                }
+
+                logger.info('User found by verification token', {
+                    userId: user._id || user.id,
+                    email: user.email ? user.email.substring(0, 3) + '***' : 'unknown'
+                });
             }
 
+            // Check if email is already verified
             if (user.verification?.email?.verified) {
+                logger.info('Email already verified', {
+                    userId: user._id || user.id,
+                    email: user.email
+                });
                 return {
                     message: 'Email already verified',
                     verified: true,
@@ -1102,28 +1424,43 @@ class DirectAuthService {
             const storedToken = user.verification?.email?.token;
             const tokenExpires = user.verification?.email?.tokenExpires;
 
+            // Validate token exists
             if (!storedToken) {
+                logger.warn('No verification token found for user', {
+                    userId: user._id || user.id,
+                    email: user.email
+                });
                 throw new AppError('No verification token found', 400, 'NO_TOKEN');
             }
 
+            // Validate token matches (case-sensitive comparison with whitespace trim)
             if (storedToken.trim() !== token.trim()) {
-                logger.warn('Token mismatch', {
+                logger.warn('Token mismatch during verification', {
                     providedLength: token.length,
                     storedLength: storedToken.length,
-                    email
+                    email: user.email,
+                    userId: user._id || user.id
                 });
                 throw new AppError('Invalid verification token', 400, 'INVALID_TOKEN');
             }
 
+            // Validate token not expired
             if (new Date() > new Date(tokenExpires)) {
-                throw new AppError('Verification token has expired', 400, 'TOKEN_EXPIRED');
+                logger.warn('Verification token expired', {
+                    tokenExpires: tokenExpires,
+                    email: user.email,
+                    userId: user._id || user.id
+                });
+                throw new AppError('Verification token has expired. Please request a new verification email.', 400, 'TOKEN_EXPIRED');
             }
 
+            // Mark email as verified
             user.verification.email.verified = true;
             user.verification.email.verifiedAt = new Date();
             user.verification.email.token = undefined;
             user.verification.email.tokenExpires = undefined;
 
+            // Activate account if status is pending
             if (user.accountStatus.status === 'pending') {
                 user.accountStatus.status = 'active';
                 user.accountStatus.activatedAt = new Date();
@@ -1134,8 +1471,23 @@ class DirectAuthService {
 
             logger.info('Email verified successfully', {
                 userId: user._id || user.id,
-                email: user.email
+                email: user.email,
+                accountStatus: user.accountStatus.status
             });
+
+            // Send welcome email after successful verification (non-blocking)
+            try {
+                const userType = this._getUserTypeFromUser(user);
+                await this._sendWelcomeEmail(user, userType);
+                logger.info('Welcome email sent after verification', {
+                    userId: user._id || user.id
+                });
+            } catch (emailError) {
+                logger.error('Failed to send welcome email after verification (non-blocking)', {
+                    error: emailError.message,
+                    userId: user._id || user.id
+                });
+            }
 
             return {
                 message: 'Email verified successfully',
@@ -1145,7 +1497,10 @@ class DirectAuthService {
         } catch (error) {
             logger.error('Email verification failed', {
                 error: error.message,
-                email
+                code: error.code,
+                hasEmail: !!email,
+                hasToken: !!token,
+                stack: error.stack
             });
             throw error;
         }
@@ -1183,6 +1538,61 @@ class DirectAuthService {
                 email
             });
             throw error;
+        }
+    }
+
+    /**
+     * Check if a user's email has been verified
+     * @param {string} email - User's email address
+     * @returns {Promise<Object>} Verification status
+     */
+    async checkEmailVerificationStatus(email) {
+        try {
+            logger.info('Checking email verification status', { email });
+
+            const dbService = this._getDatabaseService();
+
+            // Find user by email and tenant using the same method as login
+            const user = await dbService.findUserByCredentials(
+                email,
+                this.config.companyTenantId
+            );
+
+            // If user doesn't exist, return not verified (don't reveal user existence)
+            if (!user) {
+                logger.debug('User not found for verification check', { email });
+                return {
+                    verified: false,
+                    email: email
+                };
+            }
+
+            // Check if email is verified
+            const isVerified = user.verification?.email?.verified || false;
+
+            logger.info('Email verification status checked', {
+                email: email,
+                userId: user._id,
+                verified: isVerified
+            });
+
+            return {
+                verified: isVerified,
+                email: email
+            };
+
+        } catch (error) {
+            logger.error('Failed to check email verification status', {
+                error: error.message,
+                stack: error.stack,
+                email: email
+            });
+
+            // Return generic response on error to avoid information disclosure
+            return {
+                verified: false,
+                email: email
+            };
         }
     }
 
@@ -1528,7 +1938,22 @@ class DirectAuthService {
 
     async _executePostRegistrationWorkflows(user, userType, options, clientDocument) {
         try {
-            await this._sendWelcomeEmail(user, userType);
+            // Send verification email if email verification is required and email is not yet verified
+            // Otherwise, send welcome email
+            if (this.config.requireEmailVerification && !user.verification?.email?.verified) {
+                await this._sendVerificationEmail(user);
+                logger.info('Verification email sent to user', {
+                    userId: user._id || user.id,
+                    email: user.email
+                });
+            } else {
+                await this._sendWelcomeEmail(user, userType);
+                logger.info('Welcome email sent to user', {
+                    userId: user._id || user.id,
+                    email: user.email
+                });
+            }
+
             await this._trackRegistrationEvent(user, userType, options);
 
             if (options.referralCode) {
@@ -1560,21 +1985,115 @@ class DirectAuthService {
         }
     }
 
+    /**
+     * Enhanced _sendVerificationEmail method for direct-auth-service.js
+     * Replace the existing _sendVerificationEmail method with this version
+     * Location: servers/customer-services/modules/core-business/authentication/services/direct-auth-service.js
+     * 
+     * CRITICAL FIXES:
+     * 1. Validates token exists and has correct 64-character length
+     * 2. Passes both verificationLink and standalone verificationToken to template
+     * 3. Includes firstName and platformUrl for template variables
+     * 4. Comprehensive logging for debugging
+     * 5. Re-throws errors to handle at registration level
+     */
     async _sendVerificationEmail(user) {
         try {
-            if (typeof this.notificationService.sendEmail === 'function') {
-                await this.notificationService.sendEmail({
-                    to: user.email,
-                    template: 'email-verification',
-                    data: {
-                        firstName: user.profile?.firstName || 'User',
-                        verificationLink: `${this.config.platformUrl}/verify-email?token=${user.verification.email.token}`,
-                        token: user.verification.email.token
-                    }
+            // Extract verification token from user document
+            const verificationToken = user.verification?.email?.token;
+
+            // CRITICAL: Validate token exists and has correct format
+            if (!verificationToken) {
+                logger.error('Verification token is missing', {
+                    userId: user._id,
+                    email: user.email,
+                    hasVerification: !!user.verification,
+                    hasEmailVerification: !!user.verification?.email
                 });
+                throw new Error('Verification token is missing from user document');
             }
+
+            if (verificationToken.length !== 64) {
+                logger.error('Invalid verification token length', {
+                    userId: user._id,
+                    email: user.email,
+                    tokenLength: verificationToken.length,
+                    expectedLength: 64,
+                    tokenPreview: verificationToken.substring(0, 10) + '...'
+                });
+                throw new Error(`Invalid verification token length: ${verificationToken.length} (expected 64)`);
+            }
+
+            // Build verification link with full token
+            const verificationLink = `${this.config.platformUrl}/verify-email?token=${verificationToken}`;
+
+            // Log email preparation details
+            logger.info('Preparing verification email', {
+                userId: user._id,
+                email: user.email,
+                tokenLength: verificationToken.length,
+                tokenPreview: verificationToken.substring(0, 8) + '...' + verificationToken.substring(56),
+                linkLength: verificationLink.length,
+                platformUrl: this.config.platformUrl
+            });
+
+            // Verify notification service availability
+            if (typeof this.notificationService.sendEmail !== 'function') {
+                logger.error('Notification service sendEmail method not available', {
+                    userId: user._id,
+                    notificationServiceType: typeof this.notificationService,
+                    hasNotificationService: !!this.notificationService
+                });
+                throw new Error('Notification service not properly configured');
+            }
+
+            // Prepare email data with all required template variables
+            const emailData = {
+                to: user.email,
+                template: 'email-verification',
+                data: {
+                    firstName: user.profile?.firstName || 'User',
+                    lastName: user.profile?.lastName || '',
+                    email: user.email,
+                    verificationLink: verificationLink,
+                    verificationToken: verificationToken, // Include standalone token for debugging
+                    platformUrl: this.config.platformUrl
+                }
+            };
+
+            logger.debug('Email data prepared', {
+                userId: user._id,
+                to: emailData.to,
+                template: emailData.template,
+                dataKeys: Object.keys(emailData.data),
+                firstNameProvided: !!emailData.data.firstName,
+                linkProvided: !!emailData.data.verificationLink,
+                tokenProvided: !!emailData.data.verificationToken
+            });
+
+            // Send email via notification service
+            await this.notificationService.sendEmail(emailData);
+
+            logger.info('Verification email sent successfully', {
+                userId: user._id,
+                email: user.email,
+                tokenLength: verificationToken.length
+            });
+
+            return true;
+
         } catch (error) {
-            logger.error('Failed to send verification email', { error: error.message });
+            logger.error('Failed to send verification email', {
+                error: error.message,
+                stack: error.stack,
+                userId: user._id,
+                email: user.email,
+                errorType: error.constructor.name
+            });
+
+            // Re-throw error to be handled at registration level
+            // This ensures the registration process is aware of email sending failures
+            throw new Error(`Email sending failed: ${error.message}`);
         }
     }
 
@@ -1651,15 +2170,22 @@ class DirectAuthService {
     }
 
     _generateAccessToken(user) {
+        const payload = {
+            id: user._id || user.id,
+            userId: user._id || user.id,
+            email: user.email,
+            tenantId: this.config.companyTenantId,
+            permissions: user.permissions,
+            roles: user.roles
+        };
+
+        // Add clientId if user is a client type
+        if (user.clientId) {
+            payload.clientId = user.clientId;
+        }
+
         return jwt.sign(
-            {
-                id: user._id || user.id,
-                userId: user._id || user.id,
-                email: user.email,
-                tenantId: this.config.companyTenantId,
-                permissions: user.permissions,
-                roles: user.roles
-            },
+            payload,
             this.config.jwtSecret,
             { expiresIn: this.config.jwtExpiresIn }
         );

@@ -77,6 +77,15 @@ router.post('/verify-email', AuthController.verifyEmail.bind(AuthController));
 router.post('/resend-verification', AuthController.resendVerification.bind(AuthController));
 
 /**
+ * GET /api/v1/auth/verification-status
+ * Check if a user's email has been verified
+ * 
+ * Query parameters:
+ * - email: User's email address (required)
+ */
+router.get('/verification-status', AuthController.checkVerificationStatus.bind(AuthController));
+
+/**
  * POST /api/v1/auth/forgot-password
  * Request password reset link
  * 

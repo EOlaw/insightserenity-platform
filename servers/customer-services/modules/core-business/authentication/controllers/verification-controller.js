@@ -1,6 +1,13 @@
 /**
  * @fileoverview Account Verification Controller
  * @module servers/customer-services/modules/core-business/authentication/controllers/verification-controller
+ * @version 1.1.0
+ * @updated 2025-11-28
+ * 
+ * CRITICAL FIX:
+ * - Removed "Email is required" error that was blocking token-only verification
+ * - Added proper user lookup by verification token when email is not provided
+ * - This allows verification links from emails to work correctly
  */
 
 const directAuthService = require('../services/direct-auth-service');
@@ -10,6 +17,10 @@ class VerificationController {
     /**
      * Verify email with token
      * POST /api/auth/verify/email
+     * 
+     * UPDATED: Now supports both verification flows:
+     * 1. With email parameter: { token, email }
+     * 2. Token only: { token } - looks up user by token
      */
     async verifyEmail(req, res, next) {
         try {
@@ -19,30 +30,18 @@ class VerificationController {
                 return next(new AppError('Verification token is required', 400));
             }
 
-            const dbService = directAuthService._getDatabaseService();
-            
-            // Find user by email if provided, otherwise find by token
-            let user;
-            if (email) {
-                user = await dbService.findByEmail(email);
-            } else {
-                // TODO: Find user by verification token
-                return next(new AppError('Email is required', 400));
-            }
-
-            if (!user) {
-                return next(new AppError('User not found', 404));
-            }
-
-            // Verify email
-            await user.verifyEmail(token);
+            // CRITICAL FIX: Use the service method directly instead of manual user lookup
+            // The service method handles both email-based and token-based user lookup
+            const result = await directAuthService.verifyEmail(token, email);
 
             res.status(200).json({
                 success: true,
-                message: 'Email verified successfully',
+                message: result.message || 'Email verified successfully',
                 data: {
+                    verified: result.verified,
+                    user: result.user,
                     emailVerified: true,
-                    accountStatus: user.accountStatus?.status
+                    accountStatus: result.user?.accountStatus?.status
                 }
             });
 
@@ -63,49 +62,30 @@ class VerificationController {
                 return next(new AppError('Email is required', 400));
             }
 
-            const dbService = directAuthService._getDatabaseService();
-            const user = await dbService.findByEmail(email);
+            await directAuthService.resendVerificationEmail(email);
 
-            if (!user) {
-                // Don't reveal if user exists
+            res.status(200).json({
+                success: true,
+                message: 'Verification email sent successfully'
+            });
+
+        } catch (error) {
+            // Handle already verified case
+            if (error.message && error.message.includes('already verified')) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Email is already verified'
+                });
+            }
+
+            // Don't reveal if user exists for security
+            if (error.statusCode === 404) {
                 return res.status(200).json({
                     success: true,
                     message: 'If an account exists with this email, a verification email has been sent'
                 });
             }
 
-            if (user.verification?.email?.verified) {
-                return next(new AppError('Email is already verified', 400));
-            }
-
-            // Check verification attempts
-            if (user.verification.email.attempts >= 5) {
-                return next(new AppError('Too many verification attempts. Please contact support', 429));
-            }
-
-            // Generate new verification token
-            const verificationToken = await user.generateEmailVerificationToken();
-            user.verification.email.attempts += 1;
-            await user.save();
-
-            // TODO: Send verification email
-            // await NotificationService.sendEmail({
-            //     to: user.email,
-            //     template: 'email-verification',
-            //     data: { 
-            //         verificationToken, 
-            //         verificationUrl: `${process.env.PLATFORM_URL}/verify-email?token=${verificationToken}`
-            //     }
-            // });
-
-            res.status(200).json({
-                success: true,
-                message: 'Verification email sent successfully',
-                // In development, return token for testing
-                ...(process.env.NODE_ENV === 'development' && { verificationToken })
-            });
-
-        } catch (error) {
             next(error);
         }
     }
