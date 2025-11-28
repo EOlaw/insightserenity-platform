@@ -2,6 +2,12 @@
  * @fileoverview Enhanced Direct Business Authentication Service
  * @module servers/customer-services/modules/core-business/authentication/services/direct-auth-service
  * @description Complete authentication service with permission management and client relationships
+ * @version 2.1.0
+ * @updated 2025-11-27
+ * 
+ * UPDATES IN THIS VERSION:
+ * - Fixed strategy validation to properly support forward-only linking
+ * - Strategy now considered valid when linkingType is 'forward-only' even if linkingField is null
  */
 
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
@@ -360,18 +366,26 @@ class DirectAuthService {
                 const strategy = EntityStrategyRegistry.getStrategy(userType);
                 const entityType = EntityStrategyRegistry.getEntityType(userType);
 
-                // Verify strategy has required methods
+                // CRITICAL FIX: Enhanced validation that properly supports forward-only linking
+                // Strategy is valid if it has required methods AND either:
+                // 1. Has a linkingField (bidirectional linking), OR
+                // 2. Has linkingType: 'forward-only' (unidirectional linking)
                 const strategyConfig = strategy.getConfig ? strategy.getConfig() : null;
                 const hasValidStrategy = strategyConfig &&
-                    strategyConfig.linkingField &&
                     typeof strategy.prepare === 'function' &&
-                    typeof strategy.link === 'function';
+                    typeof strategy.link === 'function' &&
+                    (
+                        strategyConfig.linkingField ||
+                        strategyConfig.linkingType === 'forward-only'
+                    );
 
                 if (hasValidStrategy) {
                     logger.info('Using entity strategy for related entity creation', {
                         userType,
                         entityType,
-                        linkingField: strategyConfig.linkingField
+                        linkingType: strategyConfig.linkingType,
+                        linkingField: strategyConfig.linkingField,
+                        supportsLinking: strategyConfig.supportsLinking
                     });
 
                     // Validate entity-specific data
@@ -407,11 +421,13 @@ class DirectAuthService {
 
                     useStrategyForClient = true;
                 } else {
-                    logger.warn('Strategy exists but is incomplete, will use fallback creation', {
+                    logger.warn('Strategy exists but is incomplete or invalid', {
                         userType,
                         entityType,
                         hasConfig: !!strategyConfig,
                         hasLinkingField: !!(strategyConfig?.linkingField),
+                        hasLinkingType: !!(strategyConfig?.linkingType),
+                        linkingType: strategyConfig?.linkingType,
                         hasPrepare: typeof strategy.prepare === 'function',
                         hasLink: typeof strategy.link === 'function'
                     });

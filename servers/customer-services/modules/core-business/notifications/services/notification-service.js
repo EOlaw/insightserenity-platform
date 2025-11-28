@@ -1,13 +1,14 @@
 /**
- * @fileoverview Customer Notification Service with Gmail Integration
+ * @fileoverview Customer Notification Service with Gmail Integration and File-Based Templates
  * @module servers/customer-services/modules/core-business/notifications/services/notification-service
- * @description Production-ready notification service with Gmail SMTP for email delivery
- * @version 2.0.0
+ * @description Production-ready notification service with Gmail SMTP and organized template files
+ * @version 3.0.0
  * 
  * @location servers/customer-services/modules/core-business/notifications/services/notification-service.js
  * 
  * FEATURES:
  * - Gmail SMTP integration via Nodemailer
+ * - File-based template system with caching
  * - Support for App Password and OAuth2 authentication
  * - Professional HTML email templates with branding
  * - Mock mode for safe development testing
@@ -17,14 +18,16 @@
  */
 
 const nodemailer = require('nodemailer');
+const fs = require('fs').promises;
+const path = require('path');
 const logger = require('../../../../../../shared/lib/utils/logger').createLogger({
     serviceName: 'notification-service'
 });
 const { AppError } = require('../../../../../../shared/lib/utils/app-error');
 
 /**
- * Customer Notification Service with Gmail Integration
- * Handles email notifications via Gmail SMTP
+ * Customer Notification Service with Gmail Integration and File-Based Templates
+ * Handles email notifications via Gmail SMTP with organized template management
  * @class CustomerNotificationService
  */
 class CustomerNotificationService {
@@ -40,14 +43,28 @@ class CustomerNotificationService {
             defaultFrom: process.env.NOTIFICATION_FROM_EMAIL || process.env.GMAIL_USER || 'noreply@example.com',
             defaultFromName: process.env.NOTIFICATION_FROM_NAME || 'InsightSerenity Platform',
             useMockEmail: process.env.USE_MOCK_EMAIL === 'true',
-            platformUrl: process.env.PLATFORM_URL || 'http://localhost:3000'
+            platformUrl: process.env.PLATFORM_URL || 'http://localhost:3000',
+            templatesPath: path.join(__dirname, '../templates')
         };
+
+        // Template cache for performance
+        this.templateCache = new Map();
 
         // Email sending statistics
         this.stats = {
             sent: 0,
             failed: 0,
             mocked: 0
+        };
+
+        // Template path mapping
+        this.templatePaths = {
+            'email-verification': 'auth/email-verification.html',
+            'password-reset': 'auth/password-reset.html',
+            'password-changed': 'auth/password-changed.html',
+            'account-activated': 'auth/account-activated.html',
+            'welcome-client': 'client/welcome-client.html',
+            'welcome-consultant': 'consultant/welcome-consultant.html'
         };
 
         // Initialize Gmail transporter
@@ -163,406 +180,150 @@ class CustomerNotificationService {
     }
 
     /**
-     * Get email template HTML
+     * Load email template from file system
      * @private
-     * @param {string} template - Template name
-     * @param {Object} data - Template data
-     * @returns {Object} Email subject and HTML content
+     * @param {string} templateName - Template name
+     * @returns {Promise<string>} Template HTML content
      */
-    _getEmailTemplate(template, data) {
-        const { platformUrl } = this.config;
-        
-        // Base email styles
-        const emailStyles = `
-            body { 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                line-height: 1.6;
-                color: #333;
-                margin: 0;
-                padding: 0;
-                background-color: #f4f4f4;
+    async _loadTemplate(templateName) {
+        try {
+            // Check cache first
+            if (this.templateCache.has(templateName)) {
+                logger.debug('Loading template from cache', {
+                    template: templateName
+                });
+                return this.templateCache.get(templateName);
             }
-            .email-container {
-                max-width: 600px;
-                margin: 0 auto;
-                background-color: #ffffff;
-            }
-            .email-header {
-                background-color: #000000;
-                padding: 30px;
-                text-align: center;
-            }
-            .email-logo {
-                color: #ffc451;
-                font-size: 28px;
-                font-weight: bold;
-                margin: 0;
-            }
-            .email-body {
-                padding: 40px 30px;
-            }
-            .email-title {
-                color: #000000;
-                font-size: 24px;
-                margin-bottom: 20px;
-                font-weight: 600;
-            }
-            .email-text {
-                color: #555;
-                font-size: 16px;
-                margin-bottom: 20px;
-            }
-            .email-button {
-                display: inline-block;
-                padding: 14px 32px;
-                background-color: #ffc451;
-                color: #000000;
-                text-decoration: none;
-                border-radius: 5px;
-                font-weight: 600;
-                font-size: 16px;
-                margin: 20px 0;
-            }
-            .email-code {
-                font-size: 32px;
-                font-weight: bold;
-                color: #ffc451;
-                background-color: #f8f8f8;
-                padding: 20px;
-                border-radius: 8px;
-                text-align: center;
-                letter-spacing: 8px;
-                margin: 20px 0;
-                font-family: 'Courier New', monospace;
-            }
-            .email-footer {
-                background-color: #f8f8f8;
-                padding: 30px;
-                text-align: center;
-                color: #888;
-                font-size: 14px;
-            }
-            .email-divider {
-                border-top: 1px solid #e0e0e0;
-                margin: 30px 0;
-            }
-            .email-warning {
-                background-color: #fff3cd;
-                border-left: 4px solid #ffc107;
-                padding: 15px;
-                margin: 20px 0;
-                color: #856404;
-            }
-        `;
 
-        const templates = {
-            'email-verification': {
-                subject: 'Verify Your Email Address',
-                html: `
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset="utf-8">
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <style>${emailStyles}</style>
-                    </head>
-                    <body>
-                        <div class="email-container">
-                            <div class="email-header">
-                                <h1 class="email-logo">InsightSerenity</h1>
-                            </div>
-                            <div class="email-body">
-                                <h2 class="email-title">Verify Your Email Address</h2>
-                                <p class="email-text">
-                                    Thank you for registering with InsightSerenity! To complete your registration 
-                                    and activate your account, please verify your email address.
-                                </p>
-                                <p class="email-text">
-                                    Click the button below to verify your email:
-                                </p>
-                                <div style="text-align: center;">
-                                    <a href="${data.verificationLink}" class="email-button">Verify Email Address</a>
-                                </div>
-                                <p class="email-text" style="margin-top: 30px;">
-                                    Or use this verification code:
-                                </p>
-                                <div class="email-code">${data.verificationCode || 'N/A'}</div>
-                                <div class="email-warning">
-                                    <strong>Security Notice:</strong> This verification link will expire in 24 hours. 
-                                    If you didn't create an account with InsightSerenity, please ignore this email.
-                                </div>
-                                <p class="email-text" style="font-size: 14px; color: #888; margin-top: 30px;">
-                                    If the button doesn't work, copy and paste this link into your browser:<br>
-                                    <a href="${data.verificationLink}" style="color: #ffc451; word-break: break-all;">${data.verificationLink}</a>
-                                </p>
-                            </div>
-                            <div class="email-footer">
-                                <p>© ${new Date().getFullYear()} InsightSerenity. All rights reserved.</p>
-                                <p>This is an automated message, please do not reply to this email.</p>
-                            </div>
-                        </div>
-                    </body>
-                    </html>
-                `
-            },
-
-            'password-reset': {
-                subject: 'Reset Your Password',
-                html: `
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset="utf-8">
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <style>${emailStyles}</style>
-                    </head>
-                    <body>
-                        <div class="email-container">
-                            <div class="email-header">
-                                <h1 class="email-logo">InsightSerenity</h1>
-                            </div>
-                            <div class="email-body">
-                                <h2 class="email-title">Reset Your Password</h2>
-                                <p class="email-text">
-                                    We received a request to reset your password. Click the button below to create 
-                                    a new password:
-                                </p>
-                                <div style="text-align: center;">
-                                    <a href="${data.resetLink}" class="email-button">Reset Password</a>
-                                </div>
-                                <div class="email-warning">
-                                    <strong>Security Notice:</strong> This password reset link will expire in 1 hour. 
-                                    If you didn't request a password reset, please ignore this email and your password 
-                                    will remain unchanged.
-                                </div>
-                                <p class="email-text" style="font-size: 14px; color: #888; margin-top: 30px;">
-                                    If the button doesn't work, copy and paste this link into your browser:<br>
-                                    <a href="${data.resetLink}" style="color: #ffc451; word-break: break-all;">${data.resetLink}</a>
-                                </p>
-                            </div>
-                            <div class="email-footer">
-                                <p>© ${new Date().getFullYear()} InsightSerenity. All rights reserved.</p>
-                                <p>This is an automated message, please do not reply to this email.</p>
-                            </div>
-                        </div>
-                    </body>
-                    </html>
-                `
-            },
-
-            'welcome-client': {
-                subject: 'Welcome to InsightSerenity',
-                html: `
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset="utf-8">
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <style>${emailStyles}</style>
-                    </head>
-                    <body>
-                        <div class="email-container">
-                            <div class="email-header">
-                                <h1 class="email-logo">InsightSerenity</h1>
-                            </div>
-                            <div class="email-body">
-                                <h2 class="email-title">Welcome to InsightSerenity!</h2>
-                                <p class="email-text">
-                                    Hello${data.firstName ? ' ' + data.firstName : ''},
-                                </p>
-                                <p class="email-text">
-                                    Thank you for joining InsightSerenity. We're excited to help you manage your 
-                                    consulting and recruitment needs with our comprehensive platform.
-                                </p>
-                                <p class="email-text">
-                                    To get started, explore these features:
-                                </p>
-                                <ul style="color: #555; font-size: 16px; line-height: 1.8;">
-                                    <li>Manage your profile and preferences</li>
-                                    <li>Access your dashboard and analytics</li>
-                                    <li>Connect with consultants and opportunities</li>
-                                    <li>Track your engagements and projects</li>
-                                </ul>
-                                <div style="text-align: center;">
-                                    <a href="${platformUrl}/dashboard" class="email-button">Go to Dashboard</a>
-                                </div>
-                                <p class="email-text" style="margin-top: 30px;">
-                                    If you have any questions, our support team is here to help.
-                                </p>
-                            </div>
-                            <div class="email-footer">
-                                <p>© ${new Date().getFullYear()} InsightSerenity. All rights reserved.</p>
-                                <p>This is an automated message, please do not reply to this email.</p>
-                            </div>
-                        </div>
-                    </body>
-                    </html>
-                `
-            },
-
-            'welcome-consultant': {
-                subject: 'Welcome to InsightSerenity',
-                html: `
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset="utf-8">
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <style>${emailStyles}</style>
-                    </head>
-                    <body>
-                        <div class="email-container">
-                            <div class="email-header">
-                                <h1 class="email-logo">InsightSerenity</h1>
-                            </div>
-                            <div class="email-body">
-                                <h2 class="email-title">Welcome to InsightSerenity!</h2>
-                                <p class="email-text">
-                                    Hello${data.firstName ? ' ' + data.firstName : ''},
-                                </p>
-                                <p class="email-text">
-                                    Welcome to the InsightSerenity consultant network. We're thrilled to have you 
-                                    join our platform connecting talented professionals with exciting opportunities.
-                                </p>
-                                <p class="email-text">
-                                    Get started with these steps:
-                                </p>
-                                <ul style="color: #555; font-size: 16px; line-height: 1.8;">
-                                    <li>Complete your consultant profile</li>
-                                    <li>Showcase your skills and experience</li>
-                                    <li>Browse available opportunities</li>
-                                    <li>Connect with potential clients</li>
-                                </ul>
-                                <div style="text-align: center;">
-                                    <a href="${platformUrl}/dashboard" class="email-button">Go to Dashboard</a>
-                                </div>
-                                <p class="email-text" style="margin-top: 30px;">
-                                    We're here to support your success on the platform.
-                                </p>
-                            </div>
-                            <div class="email-footer">
-                                <p>© ${new Date().getFullYear()} InsightSerenity. All rights reserved.</p>
-                                <p>This is an automated message, please do not reply to this email.</p>
-                            </div>
-                        </div>
-                    </body>
-                    </html>
-                `
-            },
-
-            'password-changed': {
-                subject: 'Your Password Has Been Changed',
-                html: `
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset="utf-8">
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <style>${emailStyles}</style>
-                    </head>
-                    <body>
-                        <div class="email-container">
-                            <div class="email-header">
-                                <h1 class="email-logo">InsightSerenity</h1>
-                            </div>
-                            <div class="email-body">
-                                <h2 class="email-title">Password Changed Successfully</h2>
-                                <p class="email-text">
-                                    This email confirms that your password was successfully changed on 
-                                    ${new Date().toLocaleString()}.
-                                </p>
-                                <div class="email-warning">
-                                    <strong>Security Alert:</strong> If you did not make this change, please contact 
-                                    our support team immediately and secure your account.
-                                </div>
-                                <p class="email-text" style="margin-top: 30px;">
-                                    For your security, you may want to review your recent account activity.
-                                </p>
-                                <div style="text-align: center;">
-                                    <a href="${platformUrl}/settings/security" class="email-button">Review Security Settings</a>
-                                </div>
-                            </div>
-                            <div class="email-footer">
-                                <p>© ${new Date().getFullYear()} InsightSerenity. All rights reserved.</p>
-                                <p>This is an automated message, please do not reply to this email.</p>
-                            </div>
-                        </div>
-                    </body>
-                    </html>
-                `
-            },
-
-            'account-activated': {
-                subject: 'Your Account is Now Active',
-                html: `
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset="utf-8">
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <style>${emailStyles}</style>
-                    </head>
-                    <body>
-                        <div class="email-container">
-                            <div class="email-header">
-                                <h1 class="email-logo">InsightSerenity</h1>
-                            </div>
-                            <div class="email-body">
-                                <h2 class="email-title">Account Activated Successfully</h2>
-                                <p class="email-text">
-                                    Congratulations! Your email has been verified and your account is now fully active.
-                                </p>
-                                <p class="email-text">
-                                    You now have complete access to all platform features and can begin using 
-                                    InsightSerenity to its fullest potential.
-                                </p>
-                                <div style="text-align: center;">
-                                    <a href="${platformUrl}/dashboard" class="email-button">Access Your Dashboard</a>
-                                </div>
-                                <p class="email-text" style="margin-top: 30px;">
-                                    Thank you for verifying your email address. We look forward to serving you!
-                                </p>
-                            </div>
-                            <div class="email-footer">
-                                <p>© ${new Date().getFullYear()} InsightSerenity. All rights reserved.</p>
-                                <p>This is an automated message, please do not reply to this email.</p>
-                            </div>
-                        </div>
-                    </body>
-                    </html>
-                `
+            // Get template path
+            const templatePath = this.templatePaths[templateName];
+            if (!templatePath) {
+                throw new Error(`Unknown template: ${templateName}`);
             }
-        };
 
-        return templates[template] || {
-            subject: 'Notification from InsightSerenity',
-            html: `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <style>${emailStyles}</style>
-                </head>
-                <body>
-                    <div class="email-container">
-                        <div class="email-header">
-                            <h1 class="email-logo">InsightSerenity</h1>
-                        </div>
-                        <div class="email-body">
-                            <h2 class="email-title">Notification</h2>
-                            <p class="email-text">
-                                You have received a notification from InsightSerenity.
-                            </p>
-                        </div>
-                        <div class="email-footer">
-                            <p>© ${new Date().getFullYear()} InsightSerenity. All rights reserved.</p>
-                        </div>
+            // Construct full file path
+            const fullPath = path.join(this.config.templatesPath, templatePath);
+
+            // Read template file
+            logger.debug('Loading template from file', {
+                template: templateName,
+                path: fullPath
+            });
+
+            const templateContent = await fs.readFile(fullPath, 'utf8');
+
+            // Cache template
+            this.templateCache.set(templateName, templateContent);
+
+            logger.debug('Template loaded and cached successfully', {
+                template: templateName,
+                size: templateContent.length
+            });
+
+            return templateContent;
+
+        } catch (error) {
+            logger.error('Failed to load template file', {
+                template: templateName,
+                error: error.message,
+                path: this.config.templatesPath
+            });
+
+            // Return fallback template
+            return this._getFallbackTemplate(templateName);
+        }
+    }
+
+    /**
+     * Get fallback inline template if file loading fails
+     * @private
+     * @param {string} templateName - Template name
+     * @returns {string} Fallback template HTML
+     */
+    _getFallbackTemplate(templateName) {
+        logger.warn('Using fallback inline template', {
+            template: templateName
+        });
+
+        // Simple fallback template with basic structure
+        return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; }
+                    .container { max-width: 600px; margin: 0 auto; background: #fff; }
+                    .header { background: #000; color: #ffc451; padding: 20px; text-align: center; }
+                    .content { padding: 30px; }
+                    .footer { background: #f8f8f8; padding: 20px; text-align: center; font-size: 12px; color: #888; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header"><h1>InsightSerenity</h1></div>
+                    <div class="content">
+                        <p>You have received a notification from InsightSerenity.</p>
                     </div>
-                </body>
-                </html>
-            `
+                    <div class="footer">
+                        <p>&copy; ${new Date().getFullYear()} InsightSerenity. All rights reserved.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+    }
+
+    /**
+     * Replace template variables with actual data
+     * @private
+     * @param {string} template - Template HTML
+     * @param {Object} data - Template data
+     * @returns {string} Processed template
+     */
+    _replaceTemplateVariables(template, data) {
+        let processed = template;
+
+        // Add system variables
+        const allData = {
+            ...data,
+            year: new Date().getFullYear(),
+            timestamp: new Date().toLocaleString(),
+            platformUrl: this.config.platformUrl
         };
+
+        // Replace all {{variable}} placeholders
+        Object.keys(allData).forEach(key => {
+            const regex = new RegExp(`{{${key}}}`, 'g');
+            processed = processed.replace(regex, allData[key] || '');
+        });
+
+        // Handle conditional blocks {{#if variable}}...{{/if}}
+        processed = processed.replace(/{{#if\s+(\w+)}}(.*?){{\/if}}/gs, (match, variable, content) => {
+            return allData[variable] ? content : '';
+        });
+
+        return processed;
+    }
+
+    /**
+     * Get email template subject based on template name
+     * @private
+     * @param {string} templateName - Template name
+     * @returns {string} Email subject
+     */
+    _getTemplateSubject(templateName) {
+        const subjects = {
+            'email-verification': 'Verify Your Email Address',
+            'password-reset': 'Reset Your Password',
+            'password-changed': 'Your Password Has Been Changed',
+            'account-activated': 'Your Account is Now Active',
+            'welcome-client': 'Welcome to InsightSerenity',
+            'welcome-consultant': 'Welcome to InsightSerenity'
+        };
+
+        return subjects[templateName] || 'Notification from InsightSerenity';
     }
 
     /**
@@ -587,9 +348,14 @@ class CustomerNotificationService {
                 throw new AppError('Email template is required', 400, 'MISSING_TEMPLATE');
             }
 
-            // Get template content
-            const templateContent = this._getEmailTemplate(template, data || {});
-            const emailSubject = subject || templateContent.subject;
+            // Load template from file
+            const templateHtml = await this._loadTemplate(template);
+
+            // Replace variables in template
+            const processedHtml = this._replaceTemplateVariables(templateHtml, data || {});
+
+            // Get subject
+            const emailSubject = subject || this._getTemplateSubject(template);
             const emailFrom = from || `"${this.config.defaultFromName}" <${this.config.defaultFrom}>`;
 
             // Mock mode - log email details without sending
@@ -641,9 +407,9 @@ class CustomerNotificationService {
                 from: emailFrom,
                 to: to,
                 subject: emailSubject,
-                html: templateContent.html,
+                html: processedHtml,
                 // Add plain text version for better compatibility
-                text: this._stripHtml(templateContent.html)
+                text: this._stripHtml(processedHtml)
             };
 
             // Send email via Gmail
@@ -719,6 +485,43 @@ class CustomerNotificationService {
             .replace(/<[^>]+>/g, '')
             .replace(/\s+/g, ' ')
             .trim();
+    }
+
+    /**
+     * Clear template cache
+     * @returns {void}
+     */
+    clearTemplateCache() {
+        this.templateCache.clear();
+        logger.info('Template cache cleared', {
+            previousSize: this.templateCache.size
+        });
+    }
+
+    /**
+     * Preload all templates into cache
+     * @returns {Promise<void>}
+     */
+    async preloadTemplates() {
+        try {
+            logger.info('Preloading email templates', {
+                templates: Object.keys(this.templatePaths)
+            });
+
+            const loadPromises = Object.keys(this.templatePaths).map(templateName =>
+                this._loadTemplate(templateName)
+            );
+
+            await Promise.all(loadPromises);
+
+            logger.info('All templates preloaded successfully', {
+                count: this.templateCache.size
+            });
+        } catch (error) {
+            logger.error('Failed to preload templates', {
+                error: error.message
+            });
+        }
     }
 
     /**
@@ -912,6 +715,7 @@ class CustomerNotificationService {
     getStats() {
         return {
             ...this.stats,
+            cachedTemplates: this.templateCache.size,
             timestamp: new Date().toISOString()
         };
     }
@@ -928,7 +732,8 @@ class CustomerNotificationService {
                     message: 'Email service is running in mock mode',
                     config: {
                         provider: this.config.emailProvider,
-                        useMockEmail: this.config.useMockEmail
+                        useMockEmail: this.config.useMockEmail,
+                        templatesPath: this.config.templatesPath
                     }
                 };
             }
@@ -940,7 +745,8 @@ class CustomerNotificationService {
                     config: {
                         hasGmailUser: !!this.config.gmailUser,
                         hasGmailAppPassword: !!this.config.gmailAppPassword,
-                        hasOAuth2: !!(this.config.gmailClientId && this.config.gmailClientSecret)
+                        hasOAuth2: !!(this.config.gmailClientId && this.config.gmailClientSecret),
+                        templatesPath: this.config.templatesPath
                     }
                 };
             }
@@ -953,7 +759,9 @@ class CustomerNotificationService {
                 config: {
                     provider: this.config.emailProvider,
                     user: this.config.gmailUser,
-                    from: this.config.defaultFrom
+                    from: this.config.defaultFrom,
+                    templatesPath: this.config.templatesPath,
+                    cachedTemplates: this.templateCache.size
                 }
             };
 
