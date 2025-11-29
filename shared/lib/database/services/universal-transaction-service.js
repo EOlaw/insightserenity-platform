@@ -49,7 +49,7 @@ class UniversalTransactionService {
         this._databaseService = null;
         this._connectionManager = null;
         this._activeTransactions = new Map();
-        
+
         // Transaction metrics with retry tracking
         this._transactionMetrics = {
             total: 0,
@@ -60,7 +60,7 @@ class UniversalTransactionService {
             averageDuration: 0,
             totalRetryAttempts: 0
         };
-        
+
         // Retry configuration with sensible defaults
         this._retryConfig = {
             maxRetries: 3,
@@ -133,8 +133,8 @@ class UniversalTransactionService {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 return await this._executeTransactionAttempt(
-                    primaryEntity, 
-                    relatedEntities, 
+                    primaryEntity,
+                    relatedEntities,
                     options,
                     attempt
                 );
@@ -144,7 +144,7 @@ class UniversalTransactionService {
 
                 if (this._isRetriableError(error) && attempt < maxRetries) {
                     const delay = this._calculateRetryDelay(attempt);
-                    
+
                     logger.warn('Transaction attempt failed, will retry', {
                         attempt,
                         maxRetries,
@@ -156,7 +156,7 @@ class UniversalTransactionService {
 
                     this._transactionMetrics.retried++;
                     this._transactionMetrics.totalRetryAttempts++;
-                    
+
                     await new Promise(resolve => setTimeout(resolve, delay));
                     continue;
                 }
@@ -193,7 +193,7 @@ class UniversalTransactionService {
     async _executeTransactionAttempt(primaryEntity, relatedEntities, options, attemptNumber) {
         const transactionId = this._generateTransactionId();
         const startTime = Date.now();
-        
+
         const transactionContext = {
             id: transactionId,
             tenantId: options.tenantId || 'default',
@@ -346,7 +346,7 @@ class UniversalTransactionService {
                     await session.abortTransaction();
                     transactionContext.status = 'aborted';
                     this._transactionMetrics.aborted++;
-                    
+
                     logger.warn('Transaction aborted', {
                         transactionId,
                         attempt: attemptNumber,
@@ -417,7 +417,7 @@ class UniversalTransactionService {
      */
     async _createEntity(connection, databaseName, entityConfig, session, transactionContext) {
         const { type, data } = entityConfig;
-        
+
         try {
             const dbService = this._getDatabaseService();
             let Model;
@@ -498,7 +498,7 @@ class UniversalTransactionService {
                     });
 
                     entityData = await prepareUsing(primaryEntity);
-                    
+
                     logger.debug('Entity data prepared successfully', {
                         transactionId: transactionContext.id,
                         entityType: type,
@@ -527,7 +527,7 @@ class UniversalTransactionService {
 
                 if (linkingStrategy && typeof linkingStrategy === 'function') {
                     linkingStrategy(enhancedData, primaryEntity);
-                    
+
                     logger.debug('Forward linking strategy applied', {
                         transactionId: transactionContext.id,
                         entityType: type,
@@ -616,10 +616,10 @@ class UniversalTransactionService {
             }
 
             const updates = {};
-            
+
             for (const relatedResult of relatedResults) {
                 const { linkingField, entity } = relatedResult;
-                
+
                 if (linkingField) {
                     updates[linkingField] = entity._id;
                 }
@@ -668,7 +668,7 @@ class UniversalTransactionService {
                 error: error.message,
                 note: 'Transaction was successful, only back-reference update failed'
             });
-            
+
             return primaryEntity;
         }
     }
@@ -708,7 +708,7 @@ class UniversalTransactionService {
 
             for (const entityInfo of transactionContext.entities) {
                 let Model;
-                
+
                 try {
                     Model = connection.model(entityInfo.type);
                 } catch (error) {
@@ -771,6 +771,27 @@ class UniversalTransactionService {
      * Check if error is retriable
      * @private
      */
+    // _isRetriableError(error) {
+    //     const retriablePatterns = [
+    //         'lock conflict',
+    //         'writeconflict',
+    //         'unable to acquire ticket',
+    //         'transienttransactionerror',
+    //         'locktimeout',
+    //         'conflicting lock',
+    //         'ticket',
+    //         'deadlock'
+    //     ];
+
+    //     const errorMessage = error.message.toLowerCase();
+
+    //     const isRetriable = retriablePatterns.some(pattern =>
+    //         errorMessage.includes(pattern)
+    //     ) || error.code === 112 || error.code === 251;
+
+    //     return isRetriable;
+    // }
+
     _isRetriableError(error) {
         const retriablePatterns = [
             'lock conflict',
@@ -780,15 +801,25 @@ class UniversalTransactionService {
             'locktimeout',
             'conflicting lock',
             'ticket',
-            'deadlock'
+            'deadlock',
+            'already in use',  // ADDED: Catches "Collection namespace...is already in use"
+            'please retry'     // ADDED: Catches MongoDB's explicit retry instruction
         ];
 
         const errorMessage = error.message.toLowerCase();
-        
-        const isRetriable = retriablePatterns.some(pattern => 
+
+        const isRetriable = retriablePatterns.some(pattern =>
             errorMessage.includes(pattern)
-        ) || error.code === 112 || error.code === 251;
-        
+        ) || error.code === 112 || error.code === 251 || error.errorLabels?.includes('TransientTransactionError');
+
+        if (isRetriable) {
+            logger.debug('Error identified as retriable', {
+                errorCode: error.code,
+                errorMessage: error.message.substring(0, 100),
+                hasTransientLabel: error.errorLabels?.includes('TransientTransactionError')
+            });
+        }
+
         return isRetriable;
     }
 
@@ -798,7 +829,7 @@ class UniversalTransactionService {
      */
     _categorizeError(error) {
         const message = error.message.toLowerCase();
-        
+
         if (message.includes('lock') || message.includes('ticket')) {
             return 'LOCK_CONFLICT';
         }
@@ -814,7 +845,7 @@ class UniversalTransactionService {
         if (error.code === 112) {
             return 'WRITE_CONFLICT';
         }
-        
+
         return 'UNKNOWN_ERROR';
     }
 
@@ -824,15 +855,15 @@ class UniversalTransactionService {
      */
     _calculateRetryDelay(attemptNumber) {
         const { baseDelay, maxDelay, backoffMultiplier, jitterEnabled } = this._retryConfig;
-        
+
         const exponentialDelay = baseDelay * Math.pow(backoffMultiplier, attemptNumber - 1);
-        
+
         let delay = exponentialDelay;
         if (jitterEnabled) {
             const jitterFactor = 0.5 + Math.random() * 0.5;
             delay = exponentialDelay * jitterFactor;
         }
-        
+
         return Math.min(Math.round(delay), maxDelay);
     }
 
@@ -861,10 +892,10 @@ class UniversalTransactionService {
             if (!relatedEntity.type) {
                 throw new AppError('Each related entity must have a type', 400, 'INVALID_REQUEST');
             }
-            
+
             const hasData = relatedEntity.data && typeof relatedEntity.data === 'object';
             const hasPrepareUsing = relatedEntity.prepareUsing && typeof relatedEntity.prepareUsing === 'function';
-            
+
             if (!hasData && !hasPrepareUsing) {
                 throw new AppError(
                     'Each related entity must have either data object or prepareUsing function',
@@ -882,7 +913,7 @@ class UniversalTransactionService {
     _buildTransactionOptions(options) {
         return {
             readConcern: { level: options.readConcern || 'snapshot' },
-            writeConcern: { 
+            writeConcern: {
                 w: options.writeConcern || 'majority',
                 j: true
             },
@@ -899,7 +930,7 @@ class UniversalTransactionService {
         return {
             ...this._transactionMetrics,
             activeTransactions: this._activeTransactions.size,
-            retryRate: this._transactionMetrics.total > 0 
+            retryRate: this._transactionMetrics.total > 0
                 ? (this._transactionMetrics.retried / this._transactionMetrics.total * 100).toFixed(2) + '%'
                 : '0%',
             successRate: this._transactionMetrics.total > 0
@@ -931,8 +962,8 @@ class UniversalTransactionService {
     _updateAverageDuration(duration) {
         const currentAvg = this._transactionMetrics.averageDuration;
         const totalSuccessful = this._transactionMetrics.successful;
-        
-        this._transactionMetrics.averageDuration = 
+
+        this._transactionMetrics.averageDuration =
             ((currentAvg * (totalSuccessful - 1)) + duration) / totalSuccessful;
     }
 
@@ -953,7 +984,7 @@ class UniversalTransactionService {
             ...this._retryConfig,
             ...config
         };
-        
+
         logger.info('Retry configuration updated', {
             config: this._retryConfig
         });
@@ -980,7 +1011,7 @@ class UniversalTransactionService {
             averageDuration: 0,
             totalRetryAttempts: 0
         };
-        
+
         logger.info('Transaction metrics reset');
     }
 }

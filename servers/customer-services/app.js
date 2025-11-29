@@ -303,27 +303,62 @@ class CustomerServicesApp {
      * Initialize database connection
      * @private
      */
+    // async _initializeDatabase() {
+    //     try {
+    //         this.logger.info('Initializing database connection...');
+
+    //         // Initialize connection manager
+    //         this.database = new database.ConnectionManager({
+    //             environment: this.config.environment,
+    //             config: this.config.database
+    //         });
+
+    //         // Initialize database
+    //         await this.database.initialize();
+
+    //         // Setup model routing for customer services if available
+    //         if (this.database && this.database.modelRouter) {
+    //             if (typeof this.database.modelRouter.addRoutingRule === 'function') {
+    //                 this.database.modelRouter.addRoutingRule('customer-services', 'customer');
+    //             }
+    //         }
+
+    //         this.logger.info('Database initialized successfully');
+
+    //     } catch (error) {
+    //         this.logger.error('Database initialization failed', { error: error.message });
+    //         // Don't throw error in development to allow server to start
+    //         if (this.config.environment === 'production') {
+    //             throw error;
+    //         }
+    //     }
+    // }
+
+    /**
+     * Initialize database connection
+     * @private
+     */
     async _initializeDatabase() {
         try {
             this.logger.info('Initializing database connection...');
 
-            // Initialize connection manager
-            this.database = new database.ConnectionManager({
-                environment: this.config.environment,
-                config: this.config.database
-            });
+            // CRITICAL FIX: Use existing database instance instead of creating new ConnectionManager
+            // The database is already initialized in server.js before app creation
+            const existingDatabase = database.getInstance();
 
-            // Initialize database
-            await this.database.initialize();
-
-            // Setup model routing for customer services if available
-            if (this.database && this.database.modelRouter) {
-                if (typeof this.database.modelRouter.addRoutingRule === 'function') {
-                    this.database.modelRouter.addRoutingRule('customer-services', 'customer');
-                }
+            if (!existingDatabase) {
+                throw new Error('Database not initialized. Server must initialize database before creating app.');
             }
 
-            this.logger.info('Database initialized successfully');
+            // Verify database is ready
+            if (!existingDatabase.state || !existingDatabase.state.ready) {
+                throw new Error('Database instance exists but is not ready');
+            }
+
+            // Use the existing connection manager
+            this.database = existingDatabase;
+
+            this.logger.info('Database initialized successfully (using existing connection)');
 
         } catch (error) {
             this.logger.error('Database initialization failed', { error: error.message });
