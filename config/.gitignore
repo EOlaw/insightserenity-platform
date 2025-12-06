@@ -1,0 +1,55 @@
+# InsightSerenity Config Directory - Git Ignore Rules
+
+# Local developer overrides (contains personal settings)
+local.yaml
+
+# Environment-specific secrets that shouldn't be committed
+*.secrets.yaml
+*-secrets.yaml
+
+# Generated configuration exports
+*.export.json
+config-export*.json
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Log files that might end up here
+*.log
+```
+
+---
+
+## Final Directory Structure
+
+After creating all these files, your `/config/` folder should look like this:
+```
+insightserenity-platform/
+├── config/
+│   ├── index.js
+│   ├── ConfigLoader.js
+│   ├── default.yaml
+│   ├── development.yaml
+│   ├── staging.yaml
+│   ├── production.yaml
+│   ├── local.yaml.example
+│   ├── .gitignore
+│   └── services/
+│       ├── customer-services.yaml
+│       └── admin-server.yaml
+├── servers/
+├── shared/
+└── ...

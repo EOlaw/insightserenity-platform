@@ -1,0 +1,272 @@
+# ============================================================================
+# InsightSerenity - Customer Services Configuration
+# ============================================================================
+# Service-specific configuration for the customer-services backend.
+# These settings are merged with the main configuration when the
+# customer-services server starts.
+#
+# @service customer-services
+# @version 1.0.0
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Service Identity
+# ----------------------------------------------------------------------------
+service:
+  name: customer-services
+  displayName: InsightSerenity Customer Services
+  description: Multi-tenant business services for consulting and recruitment
+  version: 1.0.0
+
+# ----------------------------------------------------------------------------
+# Server Settings
+# ----------------------------------------------------------------------------
+server:
+  host: ${CUSTOMER_HOST:0.0.0.0}
+  port: ${CUSTOMER_PORT:3001}
+  basePath: /api/v1
+
+# ----------------------------------------------------------------------------
+# Module Configuration
+# ----------------------------------------------------------------------------
+modules:
+  # Core Business Modules
+  clientManagement:
+    enabled: true
+    routes:
+      prefix: /clients
+      version: v1
+    
+  documentManagement:
+    enabled: true
+    routes:
+      prefix: /documents
+      version: v1
+    storage:
+      maxFileSize: 104857600  # 100MB
+      allowedTypes:
+        - application/pdf
+        - application/msword
+        - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+        - application/vnd.ms-excel
+        - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+        - text/plain
+        - text/csv
+        - image/jpeg
+        - image/png
+    
+  recruitmentServices:
+    enabled: true
+    routes:
+      prefix: /recruitment
+      version: v1
+    
+  hostedOrganizations:
+    enabled: true
+    routes:
+      prefix: /organizations
+      version: v1
+
+# ----------------------------------------------------------------------------
+# Authentication Integration
+# ----------------------------------------------------------------------------
+auth:
+  # Routes that don't require authentication
+  publicRoutes:
+    - /health
+    - /health/ready
+    - /health/live
+    - /api/v1/auth/login
+    - /api/v1/auth/register
+    - /api/v1/auth/forgot-password
+    - /api/v1/auth/reset-password
+    - /api/v1/auth/verify-email
+    - /api/v1/auth/resend-verification
+
+  # Routes that require specific permissions
+  adminRoutes:
+    - /api/v1/admin/*
+
+  # Tenant isolation settings
+  tenantIsolation:
+    enabled: true
+    headerName: X-Tenant-ID
+    queryParam: tenantId
+    enforceOnRoutes:
+      - /api/v1/clients/*
+      - /api/v1/documents/*
+      - /api/v1/contacts/*
+
+# ----------------------------------------------------------------------------
+# API Response Configuration
+# ----------------------------------------------------------------------------
+api:
+  # Response envelope
+  envelope:
+    enabled: true
+    successKey: success
+    dataKey: data
+    errorKey: error
+    metaKey: meta
+  
+  # Pagination defaults
+  pagination:
+    defaultLimit: 20
+    maxLimit: 100
+    defaultSort: -createdAt
+    sortFields:
+      - createdAt
+      - updatedAt
+      - name
+      - status
+  
+  # Field selection
+  fieldSelection:
+    enabled: true
+    queryParam: fields
+    excludeByDefault:
+      - __v
+      - password
+      - refreshToken
+
+# ----------------------------------------------------------------------------
+# Request Processing
+# ----------------------------------------------------------------------------
+request:
+  # Request ID tracking
+  requestId:
+    enabled: true
+    header: X-Request-ID
+    generateIfMissing: true
+  
+  # Request logging
+  logging:
+    enabled: true
+    excludeRoutes:
+      - /health
+      - /health/ready
+      - /health/live
+    logBody: false
+    logHeaders: false
+    maskFields:
+      - password
+      - token
+      - authorization
+
+# ----------------------------------------------------------------------------
+# Middleware Configuration
+# ----------------------------------------------------------------------------
+middleware:
+  # Body parsing
+  bodyParser:
+    json:
+      limit: 10mb
+    urlencoded:
+      limit: 10mb
+      extended: true
+  
+  # File upload
+  upload:
+    enabled: true
+    storage: memory  # memory or disk
+    limits:
+      fileSize: 104857600  # 100MB
+      files: 10
+    fileFilter:
+      enabled: true
+      allowedMimeTypes:
+        - application/pdf
+        - application/msword
+        - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+        - image/jpeg
+        - image/png
+  
+  # Compression
+  compression:
+    enabled: true
+    level: 6
+    threshold: 1024
+
+# ----------------------------------------------------------------------------
+# Database Settings (Service-Specific)
+# ----------------------------------------------------------------------------
+database:
+  # Primary database for this service
+  primary: customer
+  
+  # Connection handling
+  connection:
+    retryOnStartup: true
+    maxStartupRetries: 5
+    startupRetryDelay: 3000
+  
+  # Query settings
+  query:
+    lean: true
+    maxTimeMS: 30000
+    allowDiskUse: true
+
+# ----------------------------------------------------------------------------
+# Background Jobs
+# ----------------------------------------------------------------------------
+jobs:
+  # Document processing
+  documentProcessing:
+    enabled: true
+    concurrency: 3
+    retryAttempts: 3
+    retryDelay: 5000
+  
+  # Email notifications
+  emailNotifications:
+    enabled: true
+    concurrency: 5
+    retryAttempts: 3
+    retryDelay: 10000
+  
+  # Data sync
+  dataSync:
+    enabled: false
+    schedule: "*/5 * * * *"  # Every 5 minutes
+
+# ----------------------------------------------------------------------------
+# WebSocket Configuration
+# ----------------------------------------------------------------------------
+websocket:
+  enabled: false
+  path: /ws
+  
+  # Event types
+  events:
+    documentUpdated: true
+    clientUpdated: true
+    notificationReceived: true
+  
+  # Connection settings
+  connection:
+    pingInterval: 25000
+    pingTimeout: 5000
+    maxPayload: 1048576  # 1MB
+
+# ----------------------------------------------------------------------------
+# Service-Specific Metrics
+# ----------------------------------------------------------------------------
+metrics:
+  custom:
+    - name: document_uploads_total
+      type: counter
+      help: Total number of document uploads
+    - name: client_operations_total
+      type: counter
+      help: Total client operations by type
+      labels:
+        - operation
+    - name: api_request_duration_seconds
+      type: histogram
+      help: API request duration in seconds
+      buckets:
+        - 0.1
+        - 0.5
+        - 1
+        - 2
+        - 5

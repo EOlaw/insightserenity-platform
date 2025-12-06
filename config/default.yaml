@@ -1,0 +1,579 @@
+# ============================================================================
+# InsightSerenity Platform - Default Configuration
+# ============================================================================
+# This file contains base configuration values for all environments.
+# Environment-specific files (development.yaml, staging.yaml, production.yaml)
+# override these values as needed.
+#
+# Configuration Hierarchy (lowest to highest priority):
+#   1. default.yaml (this file)
+#   2. {environment}.yaml
+#   3. local.yaml (git-ignored, for developer overrides)
+#   4. Environment variables
+#
+# @version 1.0.0
+# @author InsightSerenity Team
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Platform Identity
+# ----------------------------------------------------------------------------
+platform:
+  name: InsightSerenity
+  version: 1.0.0
+  description: Enterprise B2B SaaS Platform for Consulting & Recruitment
+  maintainer: InsightSerenity Team
+  supportEmail: support@insightserenity.com
+
+# ----------------------------------------------------------------------------
+# Server Configuration
+# ----------------------------------------------------------------------------
+server:
+  # Customer Services Server
+  customerServices:
+    name: customer-services
+    host: 0.0.0.0
+    port: 3001
+    protocol: http
+    baseUrl: /api/v1
+    trustProxy: false
+    compression: true
+    corsEnabled: true
+
+  # Admin Server
+  adminServer:
+    name: admin-server
+    host: 0.0.0.0
+    port: 3000
+    protocol: http
+    baseUrl: /api/v1/admin
+    trustProxy: false
+    compression: true
+    corsEnabled: true
+
+  # API Gateway (if using)
+  gateway:
+    name: api-gateway
+    host: 0.0.0.0
+    port: 8080
+    protocol: http
+    enabled: false
+
+# ----------------------------------------------------------------------------
+# Database Configuration
+# ----------------------------------------------------------------------------
+database:
+  # Connection Settings
+  connection:
+    retryAttempts: 5
+    retryDelay: 5000
+    healthCheckInterval: 30000
+
+  # Admin Database
+  admin:
+    name: insightserenity_admin
+    options:
+      minPoolSize: 2
+      maxPoolSize: 10
+      maxIdleTimeMS: 60000
+      waitQueueTimeoutMS: 10000
+      serverSelectionTimeoutMS: 10000
+      socketTimeoutMS: 45000
+      heartbeatFrequencyMS: 10000
+      retryWrites: true
+      writeConcern:
+        w: majority
+        journal: true
+      readPreference: primaryPreferred
+      readConcern:
+        level: majority
+
+  # Customer Database
+  customer:
+    name: insightserenity_customer
+    options:
+      minPoolSize: 5
+      maxPoolSize: 50
+      maxIdleTimeMS: 60000
+      waitQueueTimeoutMS: 10000
+      serverSelectionTimeoutMS: 10000
+      socketTimeoutMS: 45000
+      heartbeatFrequencyMS: 10000
+      retryWrites: true
+      writeConcern:
+        w: majority
+        journal: true
+      readPreference: primaryPreferred
+      readConcern:
+        level: majority
+
+  # Shared Database
+  shared:
+    name: insightserenity_shared
+    options:
+      minPoolSize: 2
+      maxPoolSize: 20
+      maxIdleTimeMS: 60000
+      waitQueueTimeoutMS: 10000
+      serverSelectionTimeoutMS: 10000
+      socketTimeoutMS: 45000
+      heartbeatFrequencyMS: 10000
+      retryWrites: true
+
+# ----------------------------------------------------------------------------
+# Authentication & Security
+# ----------------------------------------------------------------------------
+auth:
+  jwt:
+    algorithm: HS256
+    accessTokenExpiry: 15m
+    refreshTokenExpiry: 7d
+    issuer: insightserenity
+    audience: insightserenity-api
+
+  session:
+    name: insightserenity.sid
+    resave: false
+    saveUninitialized: false
+    rolling: true
+    maxAge: 86400000  # 24 hours in milliseconds
+
+  password:
+    minLength: 8
+    requireUppercase: true
+    requireLowercase: true
+    requireNumbers: true
+    requireSpecialChars: true
+    saltRounds: 12
+    maxAttempts: 5
+    lockoutDuration: 900000  # 15 minutes
+
+  twoFactor:
+    enabled: true
+    issuer: InsightSerenity
+    window: 1
+
+  oauth:
+    google:
+      enabled: false
+      callbackUrl: /api/v1/auth/google/callback
+    github:
+      enabled: false
+      callbackUrl: /api/v1/auth/github/callback
+    linkedin:
+      enabled: false
+      callbackUrl: /api/v1/auth/linkedin/callback
+
+# ----------------------------------------------------------------------------
+# Security Configuration
+# ----------------------------------------------------------------------------
+security:
+  helmet:
+    enabled: true
+    contentSecurityPolicy: true
+    crossOriginEmbedderPolicy: false
+    crossOriginOpenerPolicy: true
+    crossOriginResourcePolicy: true
+    dnsPrefetchControl: true
+    frameguard:
+      action: deny
+    hidePoweredBy: true
+    hsts:
+      maxAge: 31536000
+      includeSubDomains: true
+      preload: true
+    ieNoOpen: true
+    noSniff: true
+    originAgentCluster: true
+    permittedCrossDomainPolicies: false
+    referrerPolicy:
+      policy: strict-origin-when-cross-origin
+    xssFilter: true
+
+  cors:
+    methods:
+      - GET
+      - POST
+      - PUT
+      - PATCH
+      - DELETE
+      - OPTIONS
+    allowedHeaders:
+      - Content-Type
+      - Authorization
+      - X-Requested-With
+      - X-Tenant-ID
+      - X-Request-ID
+    exposedHeaders:
+      - X-Request-ID
+      - X-RateLimit-Limit
+      - X-RateLimit-Remaining
+    credentials: true
+    maxAge: 86400
+    preflightContinue: false
+    optionsSuccessStatus: 204
+
+  rateLimit:
+    windowMs: 900000  # 15 minutes
+    max: 100
+    standardHeaders: true
+    legacyHeaders: false
+    message:
+      success: false
+      error:
+        code: RATE_LIMIT_EXCEEDED
+        message: Too many requests, please try again later
+
+  sanitization:
+    mongoSanitize: true
+    xssClean: true
+    hpp: true
+
+# ----------------------------------------------------------------------------
+# Logging Configuration
+# ----------------------------------------------------------------------------
+logging:
+  level: info
+  format: json
+  colorize: false
+  timestamp: true
+  prettyPrint: false
+
+  file:
+    enabled: true
+    directory: logs
+    maxSize: 10m
+    maxFiles: 14d
+    compress: true
+    datePattern: YYYY-MM-DD
+
+  transports:
+    console:
+      enabled: true
+      level: info
+    file:
+      combined:
+        enabled: true
+        filename: app-combined-%DATE%.log
+        level: info
+      error:
+        enabled: true
+        filename: app-error-%DATE%.log
+        level: error
+      debug:
+        enabled: false
+        filename: app-debug-%DATE%.log
+        level: debug
+
+  audit:
+    enabled: true
+    sensitiveFields:
+      - password
+      - token
+      - secret
+      - apiKey
+      - creditCard
+      - ssn
+
+# ----------------------------------------------------------------------------
+# Caching Configuration
+# ----------------------------------------------------------------------------
+cache:
+  redis:
+    enabled: false
+    host: localhost
+    port: 6379
+    db: 0
+    keyPrefix: insightserenity:
+    ttl: 3600
+    maxRetries: 3
+    retryDelay: 100
+
+  memory:
+    enabled: true
+    max: 1000
+    ttl: 300000  # 5 minutes
+
+# ----------------------------------------------------------------------------
+# File Storage Configuration
+# ----------------------------------------------------------------------------
+storage:
+  provider: local  # local, s3, azure, gcs
+  
+  local:
+    uploadDir: uploads
+    maxFileSize: 104857600  # 100MB
+    allowedMimeTypes:
+      - application/pdf
+      - application/msword
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      - application/vnd.ms-excel
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/vnd.ms-powerpoint
+      - application/vnd.openxmlformats-officedocument.presentationml.presentation
+      - text/plain
+      - text/csv
+      - image/jpeg
+      - image/png
+      - image/gif
+
+  s3:
+    region: us-east-1
+    bucket: insightserenity-documents
+    acl: private
+    serverSideEncryption: AES256
+    signedUrlExpiry: 3600
+
+# ----------------------------------------------------------------------------
+# Email Configuration
+# ----------------------------------------------------------------------------
+email:
+  provider: smtp  # smtp, sendgrid, ses, mailgun
+  from:
+    name: InsightSerenity
+    address: noreply@insightserenity.com
+  replyTo: support@insightserenity.com
+  
+  smtp:
+    host: smtp.example.com
+    port: 587
+    secure: false
+    auth:
+      user: ""
+      pass: ""
+
+  templates:
+    directory: templates/email
+    engine: handlebars
+
+  queue:
+    enabled: false
+    concurrency: 5
+    retryAttempts: 3
+    retryDelay: 60000
+
+# ----------------------------------------------------------------------------
+# Queue Configuration
+# ----------------------------------------------------------------------------
+queue:
+  enabled: false
+  provider: bull  # bull, agenda, bee-queue
+  
+  redis:
+    host: localhost
+    port: 6379
+    db: 1
+  
+  defaultJobOptions:
+    attempts: 3
+    backoff:
+      type: exponential
+      delay: 1000
+    removeOnComplete: 100
+    removeOnFail: 50
+
+# ----------------------------------------------------------------------------
+# API Configuration
+# ----------------------------------------------------------------------------
+api:
+  versioning:
+    enabled: true
+    defaultVersion: v1
+    header: api-version
+    queryParam: version
+
+  pagination:
+    defaultLimit: 20
+    maxLimit: 100
+    defaultSort: -createdAt
+
+  response:
+    envelope: true
+    includeTimestamp: true
+    includeRequestId: true
+
+# ----------------------------------------------------------------------------
+# Multi-Tenancy Configuration
+# ----------------------------------------------------------------------------
+multiTenancy:
+  enabled: true
+  isolationLevel: database  # database, schema, row
+  headerName: X-Tenant-ID
+  defaultTenant: default
+
+# ----------------------------------------------------------------------------
+# Health & Monitoring
+# ----------------------------------------------------------------------------
+health:
+  enabled: true
+  path: /health
+  checkInterval: 30000
+  
+  checks:
+    database: true
+    redis: true
+    memory: true
+    disk: true
+  
+  thresholds:
+    memory: 90
+    cpu: 90
+    disk: 85
+    eventLoop: 100
+
+metrics:
+  enabled: false
+  path: /metrics
+  collectInterval: 10000
+  
+  prometheus:
+    enabled: false
+    defaultLabels:
+      app: insightserenity
+  
+  statsd:
+    enabled: false
+    host: localhost
+    port: 8125
+
+# ----------------------------------------------------------------------------
+# Feature Flags
+# ----------------------------------------------------------------------------
+features:
+  # Core Features
+  registration: true
+  emailVerification: true
+  passwordReset: true
+  twoFactorAuth: true
+  
+  # Business Features
+  clientManagement: true
+  documentManagement: true
+  recruitmentServices: true
+  hostedOrganizations: true
+  
+  # Advanced Features
+  analytics: false
+  reporting: false
+  notifications: true
+  realTimeUpdates: false
+  
+  # Beta Features
+  aiAssistant: false
+  advancedSearch: false
+  bulkOperations: false
+
+# ----------------------------------------------------------------------------
+# Client Management Module
+# ----------------------------------------------------------------------------
+clientManagement:
+  autoGenerateClientCode: true
+  autoGenerateContactId: true
+  autoGenerateDocumentId: true
+  autoGenerateNoteId: true
+  
+  limits:
+    maxSubsidiaries: 50
+    maxContactsPerClient: 100
+    maxNotesPerClient: 10000
+    maxNoteLength: 50000
+  
+  defaults:
+    currency: USD
+    
+  features:
+    healthScore: true
+    tierApproval: false
+    contactEmailVerification: false
+    contactEngagementTracking: true
+    documentVersionControl: true
+    maxVersionsToKeep: 10
+    documentApproval: false
+    noteVersioning: false
+    autoTagging: false
+    sentimentAnalysis: false
+
+# ----------------------------------------------------------------------------
+# Recruitment Module
+# ----------------------------------------------------------------------------
+recruitment:
+  enabled: true
+  
+  candidates:
+    autoGenerateId: true
+    maxResumeSizeMB: 10
+    allowedResumeFormats:
+      - pdf
+      - doc
+      - docx
+    
+  jobs:
+    autoGenerateId: true
+    defaultExpiryDays: 30
+    
+  applications:
+    statusWorkflow:
+      - applied
+      - screening
+      - interview
+      - offer
+      - hired
+      - rejected
+
+# ----------------------------------------------------------------------------
+# Notification Configuration
+# ----------------------------------------------------------------------------
+notifications:
+  enabled: true
+  
+  channels:
+    email: true
+    inApp: true
+    push: false
+    sms: false
+    slack: false
+  
+  preferences:
+    allowUserOverride: true
+    digestEnabled: true
+    digestFrequency: daily
+
+# ----------------------------------------------------------------------------
+# Scheduled Tasks
+# ----------------------------------------------------------------------------
+scheduler:
+  enabled: false
+  
+  jobs:
+    cleanup:
+      enabled: false
+      schedule: "0 2 * * *"  # 2 AM daily
+      retentionDays: 90
+    
+    healthReport:
+      enabled: false
+      schedule: "0 8 * * 1"  # 8 AM every Monday
+    
+    databaseBackup:
+      enabled: false
+      schedule: "0 3 * * *"  # 3 AM daily
+
+# ----------------------------------------------------------------------------
+# External Integrations
+# ----------------------------------------------------------------------------
+integrations:
+  stripe:
+    enabled: false
+    apiVersion: "2023-10-16"
+    webhookTolerance: 300
+  
+  analytics:
+    google:
+      enabled: false
+    mixpanel:
+      enabled: false
+  
+  errorTracking:
+    sentry:
+      enabled: false
+      tracesSampleRate: 0.1

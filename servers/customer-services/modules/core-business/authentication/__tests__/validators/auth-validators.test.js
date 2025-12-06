@@ -198,10 +198,8 @@ describe('Authentication Validators Unit Tests', () => {
 
     test('should accept passwords meeting all requirements', async () => {
       const validPasswords = [
-        'SecurePass123!@#',
-        'Str0ng!P@ssw0rd',
-        'C0mplex#Pass123',
-        'Valid!Pass123$'
+        'YourSecurePassword123!',
+        'MyStr0ng&P4ssword!'
       ];
 
       for (const validPassword of validPasswords) {

@@ -1,0 +1,252 @@
+# ============================================================================
+# InsightSerenity Platform - Development Configuration
+# ============================================================================
+# This file contains development-specific configuration overrides.
+# Values here override default.yaml for the development environment.
+#
+# @environment development
+# @version 1.0.0
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Server Configuration - Development
+# ----------------------------------------------------------------------------
+server:
+  customerServices:
+    protocol: http
+    trustProxy: false
+  
+  adminServer:
+    protocol: http
+    trustProxy: false
+
+# ----------------------------------------------------------------------------
+# Database Configuration - Development
+# ----------------------------------------------------------------------------
+database:
+  # Development uses local MongoDB or MongoDB Atlas dev cluster
+  connection:
+    retryAttempts: 3
+    retryDelay: 2000
+    healthCheckInterval: 60000
+
+  admin:
+    name: insightserenity_admin_dev
+    # URI should be set via environment variable: DATABASE_ADMIN_URI
+    options:
+      minPoolSize: 1
+      maxPoolSize: 5
+      maxIdleTimeMS: 30000
+      serverSelectionTimeoutMS: 5000
+      socketTimeoutMS: 30000
+      # Disable journaling in dev for faster writes
+      writeConcern:
+        w: 1
+        journal: false
+
+  customer:
+    name: insightserenity_customer_dev
+    # URI should be set via environment variable: DATABASE_CUSTOMER_URI
+    options:
+      minPoolSize: 2
+      maxPoolSize: 10
+      maxIdleTimeMS: 30000
+      serverSelectionTimeoutMS: 5000
+      socketTimeoutMS: 30000
+      writeConcern:
+        w: 1
+        journal: false
+
+  shared:
+    name: insightserenity_shared_dev
+    # URI should be set via environment variable: DATABASE_SHARED_URI
+    options:
+      minPoolSize: 1
+      maxPoolSize: 5
+
+# ----------------------------------------------------------------------------
+# Authentication - Development
+# ----------------------------------------------------------------------------
+auth:
+  jwt:
+    accessTokenExpiry: 1h  # Longer for development convenience
+    refreshTokenExpiry: 30d
+
+  password:
+    minLength: 6  # Relaxed for development
+    requireSpecialChars: false
+    saltRounds: 10  # Faster for development
+    maxAttempts: 10
+
+# ----------------------------------------------------------------------------
+# Security Configuration - Development
+# ----------------------------------------------------------------------------
+security:
+  helmet:
+    enabled: true
+    contentSecurityPolicy: false  # Disable CSP for easier debugging
+    hsts:
+      enabled: false
+
+  cors:
+    origins:
+      - http://localhost:3000
+      - http://localhost:3001
+      - http://localhost:3002
+      - http://127.0.0.1:3000
+      - http://127.0.0.1:3001
+      - http://127.0.0.1:3002
+
+  rateLimit:
+    max: 1000  # Higher limit for development
+    windowMs: 60000  # 1 minute window
+
+# ----------------------------------------------------------------------------
+# Logging Configuration - Development
+# ----------------------------------------------------------------------------
+logging:
+  level: debug
+  format: pretty  # Human-readable format
+  colorize: true
+  prettyPrint: true
+
+  transports:
+    console:
+      enabled: true
+      level: debug
+    file:
+      combined:
+        enabled: true
+        level: debug
+      error:
+        enabled: true
+      debug:
+        enabled: true
+        level: silly
+
+  audit:
+    enabled: true
+
+# ----------------------------------------------------------------------------
+# Caching - Development
+# ----------------------------------------------------------------------------
+cache:
+  redis:
+    enabled: false
+  
+  memory:
+    enabled: true
+    max: 100
+    ttl: 60000  # 1 minute - shorter for development
+
+# ----------------------------------------------------------------------------
+# File Storage - Development
+# ----------------------------------------------------------------------------
+storage:
+  provider: local
+  
+  local:
+    uploadDir: uploads/dev
+    maxFileSize: 52428800  # 50MB
+
+# ----------------------------------------------------------------------------
+# Email - Development
+# ----------------------------------------------------------------------------
+email:
+  provider: console  # Log emails to console instead of sending
+  
+  debug:
+    enabled: true
+    logToConsole: true
+    saveToDisk: true
+    outputDir: logs/emails
+
+# ----------------------------------------------------------------------------
+# Health & Monitoring - Development
+# ----------------------------------------------------------------------------
+health:
+  enabled: true
+  checkInterval: 60000  # Check every minute
+
+metrics:
+  enabled: true
+  collectInterval: 30000
+
+# ----------------------------------------------------------------------------
+# Feature Flags - Development
+# ----------------------------------------------------------------------------
+features:
+  # Enable all features for development testing
+  registration: true
+  emailVerification: false  # Skip email verification in dev
+  passwordReset: true
+  twoFactorAuth: true
+  
+  # Business Features
+  clientManagement: true
+  documentManagement: true
+  recruitmentServices: true
+  hostedOrganizations: true
+  
+  # Advanced Features - Enable for testing
+  analytics: true
+  reporting: true
+  notifications: true
+  realTimeUpdates: true
+  
+  # Beta Features - Enable for development
+  aiAssistant: true
+  advancedSearch: true
+  bulkOperations: true
+
+# ----------------------------------------------------------------------------
+# Development Tools
+# ----------------------------------------------------------------------------
+devTools:
+  enabled: true
+  
+  swagger:
+    enabled: true
+    path: /api-docs
+    jsonPath: /api-docs.json
+  
+  playground:
+    enabled: true
+    path: /playground
+  
+  seedData:
+    enabled: true
+    resetOnStart: false
+  
+  hotReload:
+    enabled: true
+  
+  debugRoutes:
+    enabled: true
+    path: /__debug
+
+# ----------------------------------------------------------------------------
+# Error Handling - Development
+# ----------------------------------------------------------------------------
+errors:
+  showStack: true
+  showDetails: true
+  logLevel: debug
+
+# ----------------------------------------------------------------------------
+# Scheduled Tasks - Development
+# ----------------------------------------------------------------------------
+scheduler:
+  enabled: false  # Disable scheduled tasks in development
+
+# ----------------------------------------------------------------------------
+# External Integrations - Development
+# ----------------------------------------------------------------------------
+integrations:
+  stripe:
+    enabled: false
+    testMode: true
+  
+  errorTracking:
+    sentry:
+      enabled: false

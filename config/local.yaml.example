@@ -1,0 +1,75 @@
+# ============================================================================
+# InsightSerenity Platform - Local Configuration Example
+# ============================================================================
+# COPY THIS FILE TO: local.yaml
+# 
+# local.yaml is git-ignored and allows developers to override any settings
+# without affecting the repository. This is useful for:
+#   - Custom database URIs pointing to local or personal MongoDB instances
+#   - Personal API keys for third-party services
+#   - Debug settings specific to your development workflow
+#   - Feature flag overrides for testing
+#
+# Configuration Priority (highest to lowest):
+#   1. Environment variables
+#   2. local.yaml (this file after copying)
+#   3. {environment}.yaml
+#   4. default.yaml
+#
+# @version 1.0.0
+# ============================================================================
+
+# Example: Override database connections for local development
+# database:
+#   admin:
+#     uri: mongodb://localhost:27017/insightserenity_admin_local
+#   customer:
+#     uri: mongodb://localhost:27017/insightserenity_customer_local
+#   shared:
+#     uri: mongodb://localhost:27017/insightserenity_shared_local
+
+# Example: Change server ports to avoid conflicts
+# server:
+#   customerServices:
+#     port: 4001
+#   adminServer:
+#     port: 4000
+
+# Example: Enable additional logging
+# logging:
+#   level: silly
+#   transports:
+#     console:
+#       level: silly
+
+# Example: Override feature flags for testing
+# features:
+#   aiAssistant: true
+#   advancedSearch: true
+
+# Example: Use console email provider for local testing
+# email:
+#   provider: console
+
+# Example: Disable rate limiting for local development
+# security:
+#   rateLimit:
+#     max: 10000
+
+# Example: Add custom CORS origins for local tools
+# security:
+#   cors:
+#     origins:
+#       - http://localhost:3000
+#       - http://localhost:5173  # Vite dev server
+#       - http://localhost:8080  # Custom tool
+
+# Example: Enable all dev tools
+# devTools:
+#   enabled: true
+#   swagger:
+#     enabled: true
+#   playground:
+#     enabled: true
+#   debugRoutes:
+#     enabled: true

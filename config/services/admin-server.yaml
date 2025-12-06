@@ -1,0 +1,384 @@
+# ============================================================================
+# InsightSerenity - Admin Server Configuration
+# ============================================================================
+# Service-specific configuration for the admin-server backend.
+# These settings are merged with the main configuration when the
+# admin-server starts.
+#
+# @service admin-server
+# @version 1.0.0
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Service Identity
+# ----------------------------------------------------------------------------
+service:
+  name: admin-server
+  displayName: InsightSerenity Admin Server
+  description: Administrative backend for platform management
+  version: 1.0.0
+
+# ----------------------------------------------------------------------------
+# Server Settings
+# ----------------------------------------------------------------------------
+server:
+  host: ${ADMIN_HOST:0.0.0.0}
+  port: ${ADMIN_PORT:3000}
+  basePath: /api/v1/admin
+
+# ----------------------------------------------------------------------------
+# Admin Modules
+# ----------------------------------------------------------------------------
+modules:
+  # User Management
+  userManagement:
+    enabled: true
+    routes:
+      prefix: /users
+      version: v1
+    features:
+      bulkOperations: true
+      passwordReset: true
+      accountLocking: true
+      roleAssignment: true
+  
+  # Tenant Management
+  tenantManagement:
+    enabled: true
+    routes:
+      prefix: /tenants
+      version: v1
+    features:
+      provisioning: true
+      suspension: true
+      dataExport: true
+      customization: true
+  
+  # Content Management
+  contentManagement:
+    enabled: true
+    routes:
+      prefix: /content
+      version: v1
+    features:
+      blog: true
+      pages: true
+      media: true
+      seo: true
+  
+  # Billing & Subscriptions
+  billing:
+    enabled: false
+    routes:
+      prefix: /billing
+      version: v1
+  
+  # Analytics & Reporting
+  analytics:
+    enabled: true
+    routes:
+      prefix: /analytics
+      version: v1
+  
+  # System Settings
+  systemSettings:
+    enabled: true
+    routes:
+      prefix: /settings
+      version: v1
+  
+  # Audit Logs
+  auditLogs:
+    enabled: true
+    routes:
+      prefix: /audit
+      version: v1
+    retention:
+      days: 365
+      archiveAfter: 90
+
+# ----------------------------------------------------------------------------
+# Authentication & Authorization
+# ----------------------------------------------------------------------------
+auth:
+  # Public routes (no authentication required)
+  publicRoutes:
+    - /health
+    - /health/ready
+    - /health/live
+    - /api/v1/admin/auth/login
+    - /api/v1/admin/auth/forgot-password
+    - /api/v1/admin/auth/reset-password
+
+  # Admin-only authentication settings
+  adminAuth:
+    requireTwoFactor: true
+    sessionTimeout: 28800000  # 8 hours
+    maxConcurrentSessions: 3
+    enforceIPWhitelist: false
+    ipWhitelist: []
+
+  # Role-based access control
+  rbac:
+    enabled: true
+    defaultRole: viewer
+    roles:
+      superAdmin:
+        permissions: ["*"]
+        description: Full platform access
+      admin:
+        permissions:
+          - users:read
+          - users:write
+          - tenants:read
+          - tenants:write
+          - content:read
+          - content:write
+          - analytics:read
+          - settings:read
+        description: Administrative access
+      moderator:
+        permissions:
+          - users:read
+          - content:read
+          - content:write
+          - analytics:read
+        description: Content moderation access
+      viewer:
+        permissions:
+          - users:read
+          - tenants:read
+          - content:read
+          - analytics:read
+        description: Read-only access
+
+# ----------------------------------------------------------------------------
+# API Configuration
+# ----------------------------------------------------------------------------
+api:
+  # Response format
+  envelope:
+    enabled: true
+    successKey: success
+    dataKey: data
+    errorKey: error
+    metaKey: meta
+  
+  # Pagination
+  pagination:
+    defaultLimit: 50
+    maxLimit: 500
+    defaultSort: -createdAt
+  
+  # Bulk operations
+  bulk:
+    enabled: true
+    maxItems: 100
+    timeout: 120000
+
+# ----------------------------------------------------------------------------
+# Security Settings (Admin-Specific)
+# ----------------------------------------------------------------------------
+security:
+  # Enhanced rate limiting for admin
+  rateLimit:
+    windowMs: 900000  # 15 minutes
+    max: 50  # Lower limit for admin routes
+    
+  # Brute force protection
+  bruteForce:
+    enabled: true
+    maxAttempts: 3
+    lockoutDuration: 1800000  # 30 minutes
+    
+  # IP-based access control
+  ipAccess:
+    enabled: false
+    allowedRanges: []
+    blockedRanges: []
+
+# ----------------------------------------------------------------------------
+# Audit Configuration
+# ----------------------------------------------------------------------------
+audit:
+  enabled: true
+  
+  # Actions to audit
+  actions:
+    - user:create
+    - user:update
+    - user:delete
+    - user:login
+    - user:logout
+    - user:passwordChange
+    - tenant:create
+    - tenant:update
+    - tenant:delete
+    - tenant:suspend
+    - settings:update
+    - role:assign
+    - permission:change
+  
+  # Audit log storage
+  storage:
+    type: database
+    collection: auditLogs
+    indexes: true
+  
+  # Retention
+  retention:
+    enabled: true
+    days: 365
+    archiveEnabled: true
+    archiveAfterDays: 90
+    archiveStorage: s3
+
+# ----------------------------------------------------------------------------
+# Database Settings
+# ----------------------------------------------------------------------------
+database:
+  primary: admin
+  
+  connection:
+    retryOnStartup: true
+    maxStartupRetries: 10
+    startupRetryDelay: 5000
+  
+  # Admin-specific query settings
+  query:
+    lean: true
+    maxTimeMS: 60000
+    allowDiskUse: true
+
+# ----------------------------------------------------------------------------
+# Background Jobs
+# ----------------------------------------------------------------------------
+jobs:
+  # User cleanup
+  userCleanup:
+    enabled: true
+    schedule: "0 3 * * *"  # 3 AM daily
+    config:
+      inactivityThreshold: 365  # days
+      deleteUnverified: true
+      unverifiedThreshold: 30  # days
+  
+  # Audit log archival
+  auditArchival:
+    enabled: true
+    schedule: "0 4 * * 0"  # 4 AM every Sunday
+  
+  # Report generation
+  reportGeneration:
+    enabled: true
+    schedule: "0 6 * * 1"  # 6 AM every Monday
+  
+  # Database maintenance
+  databaseMaintenance:
+    enabled: true
+    schedule: "0 2 * * 0"  # 2 AM every Sunday
+
+# ----------------------------------------------------------------------------
+# Notifications
+# ----------------------------------------------------------------------------
+notifications:
+  # Admin alert channels
+  alerts:
+    email:
+      enabled: true
+      recipients:
+        - admin@insightserenity.com
+    slack:
+      enabled: false
+      webhook: ""
+      channel: "#admin-alerts"
+  
+  # Alert triggers
+  triggers:
+    - type: security
+      events:
+        - failedLogin
+        - passwordReset
+        - roleChange
+      threshold: 1
+    - type: system
+      events:
+        - highMemory
+        - highCPU
+        - databaseError
+      threshold: 3
+      window: 300000  # 5 minutes
+
+# ----------------------------------------------------------------------------
+# Dashboard Configuration
+# ----------------------------------------------------------------------------
+dashboard:
+  # Widget refresh intervals (milliseconds)
+  refreshIntervals:
+    overview: 60000
+    userStats: 300000
+    systemHealth: 30000
+    recentActivity: 60000
+  
+  # Default widgets
+  widgets:
+    - id: overview
+      enabled: true
+    - id: userStats
+      enabled: true
+    - id: tenantStats
+      enabled: true
+    - id: systemHealth
+      enabled: true
+    - id: recentActivity
+      enabled: true
+    - id: alerts
+      enabled: true
+
+# ----------------------------------------------------------------------------
+# Export/Import Configuration
+# ----------------------------------------------------------------------------
+dataExport:
+  enabled: true
+  formats:
+    - json
+    - csv
+    - xlsx
+  maxRecords: 100000
+  tempDirectory: /tmp/exports
+  cleanupAfter: 3600000  # 1 hour
+
+dataImport:
+  enabled: true
+  formats:
+    - json
+    - csv
+    - xlsx
+  maxFileSize: 52428800  # 50MB
+  validationStrict: true
+
+# ----------------------------------------------------------------------------
+# Service-Specific Metrics
+# ----------------------------------------------------------------------------
+metrics:
+  custom:
+    - name: admin_login_attempts_total
+      type: counter
+      help: Total admin login attempts
+      labels:
+        - status
+    - name: admin_operations_total
+      type: counter
+      help: Total administrative operations
+      labels:
+        - operation
+        - module
+    - name: tenant_provisioning_duration_seconds
+      type: histogram
+      help: Tenant provisioning duration
+      buckets:
+        - 1
+        - 5
+        - 10
+        - 30
+        - 60
