@@ -16,6 +16,11 @@ const { authenticate } = require('../../../../../../shared/lib/middleware/auth-m
 const { authorize, checkPermission } = require('../../../../../../shared/lib/middleware/permission-middleware');
 const { rateLimiter } = require('../../../../../../shared/lib/middleware/rate-limiter');
 
+// Import middleware
+// const { authenticate } = require('../../../../middleware/auth-middleware');
+// const { validateRequest } = require('../../../../middleware/validation');
+// const { rateLimiter } = require('../../../../middleware/rate-limiter');
+
 // ============================================================================
 // ROUTE DEFINITIONS
 // ============================================================================
