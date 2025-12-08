@@ -45,8 +45,8 @@ const apiVersioning = require('./middleware/api-versioning');
 // Import route modules - Core Business
 const authRoutes = require('./modules/core-business/authentication/routes'); // NEW: Authentication routes
 const userRoutes = require('./modules/core-business/user-management/routes/user-routes');
-const clientRoutes = require('./modules/core-business/client-management/routes/');
-const consultantRoutes = require('./modules/core-business/consultant-management/routes/consultant.routes');
+const clientManagementRoutes = require('./modules/core-business/client-management/routes/');
+const consultantManagementRoutes = require('./modules/core-business/consultant-management/routes/consultant-routes');
 const projectRoutes = require('./modules/core-business/project-management/routes/project.routes');
 
 // Import route modules - Hosted Organizations
@@ -617,8 +617,8 @@ class CustomerServicesApp {
 
         // ==================== CORE BUSINESS ROUTES ====================
         apiRouter.use('/users', userRoutes);
-        apiRouter.use('/clients', clientRoutes);
-        apiRouter.use('/consultants', consultantRoutes);
+        apiRouter.use('/clients', clientManagementRoutes);
+        apiRouter.use('/consultants', consultantManagementRoutes);
         apiRouter.use('/projects', projectRoutes);
 
         // ==================== HOSTED ORGANIZATIONS ROUTES ====================
