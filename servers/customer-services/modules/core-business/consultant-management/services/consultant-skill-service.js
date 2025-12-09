@@ -182,6 +182,11 @@ class ConsultantSkillService {
                 category: skillData.category
             });
 
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
+
             // Validate skill data
             await this._validateSkillData(skillData);
 
@@ -195,8 +200,8 @@ class ConsultantSkillService {
                 throw AppError.notFound('Consultant not found', { context: { consultantId } });
             }
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 consultant.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this consultant');
             }
@@ -219,13 +224,11 @@ class ConsultantSkillService {
             // Generate skill record ID
             const skillRecordId = this._generateSkillRecordId();
 
-            // Build skill record
-            const skillRecord = new ConsultantSkill({
+            // Build skill record with validated ObjectIds
+            const skillRecordData = {
                 skillRecordId,
                 tenantId: consultant.tenantId,
-                organizationId: consultant.organizationId,
                 consultantId,
-                skillId: skillData.skillId, // Reference to master skill taxonomy if exists
                 skill: {
                     name: skillData.name.trim(),
                     normalizedName: skillData.name.toLowerCase().trim(),
@@ -234,7 +237,6 @@ class ConsultantSkillService {
                     description: skillData.description,
                     tags: skillData.tags || [],
                     aliases: skillData.aliases || [],
-                    parentSkill: skillData.parentSkill,
                     relatedSkills: skillData.relatedSkills || []
                 },
                 proficiency: {
@@ -290,8 +292,22 @@ class ConsultantSkillService {
                     createdBy: options.userId,
                     notes: skillData.notes
                 }
-            });
+            };
 
+            // Add optional ObjectId fields with validation
+            if (consultant.organizationId && mongoose.Types.ObjectId.isValid(consultant.organizationId)) {
+                skillRecordData.organizationId = consultant.organizationId;
+            }
+
+            if (skillData.skillId && mongoose.Types.ObjectId.isValid(skillData.skillId)) {
+                skillRecordData.skillId = skillData.skillId;
+            }
+
+            if (skillData.parentSkill && mongoose.Types.ObjectId.isValid(skillData.parentSkill)) {
+                skillRecordData.skill.parentSkill = skillData.parentSkill;
+            }
+
+            const skillRecord = new ConsultantSkill(skillRecordData);
             await skillRecord.save();
 
             // Also add to embedded skills array on consultant document
@@ -420,8 +436,8 @@ class ConsultantSkillService {
                 });
             }
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -462,6 +478,11 @@ class ConsultantSkillService {
                 level: options.level
             });
 
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
+
             const dbService = this._getDatabaseService();
             const ConsultantSkill = dbService.getModel('ConsultantSkill', 'customer');
 
@@ -471,7 +492,8 @@ class ConsultantSkillService {
                 'status.isDeleted': false
             };
 
-            if (options.tenantId && !options.skipTenantCheck) {
+            // Add tenantId with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 query.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
@@ -552,11 +574,17 @@ class ConsultantSkillService {
             const dbService = this._getDatabaseService();
             const ConsultantSkill = dbService.getModel('ConsultantSkill', 'customer');
 
+            // Build match stage with validated tenantId
+            const tenantId = options.tenantId || this.config.companyTenantId;
             const matchStage = {
-                tenantId: new mongoose.Types.ObjectId(options.tenantId || this.config.companyTenantId),
                 'status.isDeleted': false,
                 $text: { $search: searchQuery }
             };
+
+            // Add tenantId with validation
+            if (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) {
+                matchStage.tenantId = new mongoose.Types.ObjectId(tenantId);
+            }
 
             if (options.category) {
                 matchStage['skill.category'] = options.category;
@@ -618,12 +646,18 @@ class ConsultantSkillService {
 
             const normalizedSkills = skillNames.map(s => s.toLowerCase().trim());
 
+            // Build match stage with validated tenantId
+            const tenantId = options.tenantId || this.config.companyTenantId;
             const matchStage = {
-                tenantId: new mongoose.Types.ObjectId(options.tenantId || this.config.companyTenantId),
                 'skill.normalizedName': { $in: normalizedSkills },
                 'status.isDeleted': false,
                 'status.isActive': true
             };
+
+            // Add tenantId with validation
+            if (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) {
+                matchStage.tenantId = new mongoose.Types.ObjectId(tenantId);
+            }
 
             if (options.minLevel) {
                 const minScore = PROFICIENCY_VALUES[options.minLevel] || 0;
@@ -728,8 +762,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -846,8 +880,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -968,8 +1002,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -985,11 +1019,11 @@ class ConsultantSkillService {
 
             // Send notification to assessor
             await this.notificationService?.sendEmail?.({
-                to: requestData.assessorId, // Would need to look up email
+                to: requestData.assessorId,
                 template: 'skill_assessment_request',
                 data: {
                     skillName: skillRecord.skill.name,
-                    consultantName: 'Consultant', // Would populate from consultant
+                    consultantName: 'Consultant',
                     assessmentType: requestData.type,
                     message: requestData.message,
                     assessmentUrl: `${this.config.platformUrl}/assessments/${skillRecordId}`
@@ -1054,8 +1088,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -1136,8 +1170,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -1201,8 +1235,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -1217,9 +1251,8 @@ class ConsultantSkillService {
                 throw AppError.validation('Maximum project history limit reached');
             }
 
-            // Use model method
-            await skillRecord.addProjectExperience({
-                projectId: projectData.projectId,
+            // Build project experience with validated projectId
+            const projectExperience = {
                 projectName: projectData.projectName,
                 clientName: projectData.clientName,
                 role: projectData.role,
@@ -1231,7 +1264,15 @@ class ConsultantSkillService {
                 skillApplication: projectData.skillApplication || SKILL_APPLICATION.PRIMARY,
                 complexity: projectData.complexity || PROJECT_COMPLEXITY.MODERATE,
                 feedback: projectData.feedback
-            });
+            };
+
+            // Add projectId with validation
+            if (projectData.projectId && mongoose.Types.ObjectId.isValid(projectData.projectId)) {
+                projectExperience.projectId = projectData.projectId;
+            }
+
+            // Use model method
+            await skillRecord.addProjectExperience(projectExperience);
 
             // Track event
             await this._trackSkillEvent(skillRecord, 'project_experience_added', {
@@ -1280,16 +1321,18 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
 
-            // Find project index
-            const projectIndex = skillRecord.projectHistory.findIndex(p =>
-                p.projectId?.toString() === projectId || p._id?.toString() === projectId
-            );
+            // Find project index with ObjectId validation
+            const projectIndex = skillRecord.projectHistory.findIndex(p => {
+                const pId = p.projectId?.toString();
+                const pObjectId = p._id?.toString();
+                return (pId && pId === projectId) || (pObjectId && pObjectId === projectId);
+            });
 
             if (projectIndex === -1) {
                 throw AppError.notFound('Project not found in skill history');
@@ -1356,8 +1399,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -1435,8 +1478,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -1499,8 +1542,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -1598,8 +1641,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -1680,8 +1723,8 @@ class ConsultantSkillService {
 
             const skillRecord = await this._findSkillRecord(skillRecordId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 skillRecord.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this skill record');
             }
@@ -1750,8 +1793,12 @@ class ConsultantSkillService {
             const dbService = this._getDatabaseService();
             const ConsultantSkill = dbService.getModel('ConsultantSkill', 'customer');
 
+            // Get tenantId with validation
+            const tenantId = options.tenantId || this.config.companyTenantId;
+            const tenantIdToUse = (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) ? tenantId : this.config.companyTenantId;
+
             const distribution = await ConsultantSkill.getSkillDistribution(
-                options.tenantId || this.config.companyTenantId,
+                tenantIdToUse,
                 options.consultantId
             );
 
@@ -1784,6 +1831,11 @@ class ConsultantSkillService {
                 consultantId,
                 requiredSkillsCount: requiredSkills.length
             });
+
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
 
             const dbService = this._getDatabaseService();
             const ConsultantSkill = dbService.getModel('ConsultantSkill', 'customer');
@@ -1895,11 +1947,17 @@ class ConsultantSkillService {
             const dbService = this._getDatabaseService();
             const ConsultantSkill = dbService.getModel('ConsultantSkill', 'customer');
 
+            // Build match stage with validated tenantId
+            const tenantId = options.tenantId || this.config.companyTenantId;
             const matchStage = {
-                tenantId: new mongoose.Types.ObjectId(options.tenantId || this.config.companyTenantId),
                 'status.isDeleted': false,
                 'status.isActive': true
             };
+
+            // Add tenantId with validation
+            if (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) {
+                matchStage.tenantId = new mongoose.Types.ObjectId(tenantId);
+            }
 
             if (options.skills && options.skills.length > 0) {
                 matchStage['skill.normalizedName'] = {
@@ -1997,12 +2055,19 @@ class ConsultantSkillService {
             const dbService = this._getDatabaseService();
             const ConsultantSkill = dbService.getModel('ConsultantSkill', 'customer');
 
+            // Build match stage with validated IDs
+            const tenantId = options.tenantId || this.config.companyTenantId;
             const matchStage = {
-                tenantId: new mongoose.Types.ObjectId(options.tenantId || this.config.companyTenantId),
                 'status.isDeleted': false
             };
 
-            if (options.consultantId) {
+            // Add tenantId with validation
+            if (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) {
+                matchStage.tenantId = new mongoose.Types.ObjectId(tenantId);
+            }
+
+            // Add consultantId with validation
+            if (options.consultantId && mongoose.Types.ObjectId.isValid(options.consultantId)) {
                 matchStage.consultantId = new mongoose.Types.ObjectId(options.consultantId);
             }
 
@@ -2157,6 +2222,11 @@ class ConsultantSkillService {
         const dbService = this._getDatabaseService();
         const ConsultantSkill = dbService.getModel('ConsultantSkill', 'customer');
 
+        // Validate consultantId before query
+        if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+            throw AppError.validation('Invalid consultant ID format');
+        }
+
         const existing = await ConsultantSkill.findOne({
             tenantId,
             consultantId: new mongoose.Types.ObjectId(consultantId),
@@ -2184,6 +2254,12 @@ class ConsultantSkillService {
             const Consultant = dbService.getModel('Consultant', 'customer');
 
             const consultantId = consultant._id || consultant;
+
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                logger.warn('Invalid consultant ID for skill sync', { consultantId });
+                return;
+            }
 
             if (action === 'add') {
                 await Consultant.findByIdAndUpdate(consultantId, {

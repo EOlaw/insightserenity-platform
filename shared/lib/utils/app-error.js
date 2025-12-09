@@ -968,6 +968,83 @@ class AppError extends Error {
         });
     }
 
+    /**
+ * Create authentication error
+ * @param {string} message - Error message
+ * @param {Object} options - Additional options
+ * @returns {AppError}
+ */
+    static authentication(message = 'Authentication failed', options = {}) {
+        return new AppError(message, {
+            ...options,
+            code: ErrorCode.UNAUTHORIZED,
+            statusCode: 401,
+            category: ErrorCategory.AUTHENTICATION
+        });
+    }
+
+    /**
+     * Create invalid token error
+     * @param {string} message - Error message
+     * @param {Object} options - Additional options
+     * @returns {AppError}
+     */
+    static invalidToken(message = 'Invalid token', options = {}) {
+        return new AppError(message, {
+            ...options,
+            code: ErrorCode.TOKEN_INVALID,
+            statusCode: 401,
+            category: ErrorCategory.AUTHENTICATION
+        });
+    }
+
+    /**
+     * Create expired token error
+     * @param {string} message - Error message
+     * @param {Object} options - Additional options
+     * @returns {AppError}
+     */
+    static expiredToken(message = 'Token has expired', options = {}) {
+        return new AppError(message, {
+            ...options,
+            code: ErrorCode.TOKEN_EXPIRED,
+            statusCode: 401,
+            category: ErrorCategory.AUTHENTICATION,
+            isRetryable: false
+        });
+    }
+
+    /**
+     * Create session expired error
+     * @param {string} message - Error message
+     * @param {Object} options - Additional options
+     * @returns {AppError}
+     */
+    static sessionExpired(message = 'Session has expired', options = {}) {
+        return new AppError(message, {
+            ...options,
+            code: ErrorCode.SESSION_EXPIRED,
+            statusCode: 401,
+            category: ErrorCategory.AUTHENTICATION,
+            isRetryable: false
+        });
+    }
+
+    /**
+     * Create insufficient permissions error
+     * @param {string} message - Error message
+     * @param {Object} options - Additional options
+     * @returns {AppError}
+     */
+    static insufficientPermissions(message = 'Insufficient permissions', options = {}) {
+        return new AppError(message, {
+            ...options,
+            code: ErrorCode.INSUFFICIENT_PERMISSIONS,
+            statusCode: 403,
+            category: ErrorCategory.AUTHORIZATION
+        });
+    }
+
     static database(message = 'Database error', options = {}) {
         return new AppError(message, {
             ...options,

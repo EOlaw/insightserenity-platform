@@ -15,6 +15,102 @@ const consultantAvailabilityRoutes = require('./consultant-availability-routes')
 const consultantAssignmentRoutes = require('./consultant-assignment-routes');
 
 // ============================================================================
+// HEALTH CHECK & DOCUMENTATION (MUST COME FIRST - BEFORE ROUTE MOUNTING)
+// ============================================================================
+// These specific routes must be defined BEFORE the parameterized routes in
+// consultantRoutes (like /:consultantId) to prevent them from being caught
+
+/**
+ * @route GET /api/v1/consultants/health
+ * @description Health check endpoint for consultant management module
+ * @access Public
+ */
+router.get('/health', (req, res) => {
+    res.status(200).json({
+        success: true,
+        message: 'Consultant management module is healthy',
+        module: 'consultant-management',
+        routes: {
+            consultants: '/consultants',
+            skills: '/consultant-skills',
+            availability: '/consultant-availability',
+            assignments: '/consultant-assignments'
+        },
+        timestamp: new Date().toISOString()
+    });
+});
+
+/**
+ * @route GET /api/v1/consultants/docs
+ * @description Get API documentation summary for consultant management
+ * @access Public
+ */
+router.get('/docs', (req, res) => {
+    res.status(200).json({
+        success: true,
+        module: 'consultant-management',
+        version: 'v1',
+        description: 'Consultant management API for managing consultants, skills, availability, and assignments',
+        endpoints: {
+            consultants: {
+                base: '/api/v1/consultants',
+                description: 'Core consultant CRUD, profile management, certifications, performance, compliance',
+                operations: [
+                    'list', 'search', 'create', 'read', 'update', 'delete',
+                    'skills', 'certifications', 'education', 'work-history',
+                    'documents', 'reviews', 'feedback', 'achievements',
+                    'compliance', 'status-lifecycle', 'utilization'
+                ]
+            },
+            skills: {
+                base: '/api/v1/consultant-skills',
+                description: 'Skill records, proficiency assessments, endorsements, training',
+                operations: [
+                    'search', 'find-consultants', 'distribution', 'matrix',
+                    'create', 'read', 'update', 'delete',
+                    'assessments', 'endorsements', 'projects', 'courses', 'verify'
+                ]
+            },
+            availability: {
+                base: '/api/v1/consultant-availability',
+                description: 'Availability records, time-off management, capacity planning',
+                operations: [
+                    'find-available', 'bulk-query', 'capacity-report',
+                    'create', 'read', 'update', 'delete',
+                    'time-off', 'approve', 'reject', 'cancel'
+                ]
+            },
+            assignments: {
+                base: '/api/v1/consultant-assignments',
+                description: 'Assignment management, lifecycle, approvals, time tracking',
+                operations: [
+                    'utilization-report', 'revenue-report',
+                    'create', 'read', 'update', 'delete', 'extend',
+                    'start', 'complete', 'cancel', 'hold', 'resume',
+                    'approve', 'reject', 'time-log'
+                ]
+            }
+        },
+        authentication: 'JWT Bearer token required',
+        permissions: [
+            'consultants:view', 'consultants:create', 'consultants:update', 
+            'consultants:delete', 'consultants:manage', 'consultants:reports',
+            'consultant-skills:view', 'consultant-skills:create', 'consultant-skills:update',
+            'consultant-skills:delete', 'consultant-skills:assess', 'consultant-skills:endorse',
+            'consultant-skills:verify', 'consultant-skills:reports',
+            'consultant-availability:view', 'consultant-availability:create', 
+            'consultant-availability:update', 'consultant-availability:delete',
+            'consultant-availability:approve', 'consultant-availability:reports',
+            'consultant-assignments:view', 'consultant-assignments:create',
+            'consultant-assignments:update', 'consultant-assignments:delete',
+            'consultant-assignments:manage', 'consultant-assignments:approve',
+            'consultant-assignments:log-time', 'consultant-assignments:reports'
+        ],
+        timestamp: new Date().toISOString()
+    });
+});
+
+// ============================================================================
 // ROUTE MOUNTING
 // ============================================================================
 
@@ -153,104 +249,6 @@ router.use('/consultant-availability', consultantAvailabilityRoutes);
  * - POST /:assignmentId/time-log - Log time
  */
 router.use('/consultant-assignments', consultantAssignmentRoutes);
-
-// ============================================================================
-// HEALTH CHECK
-// ============================================================================
-
-/**
- * @route GET /api/v1/consultant-management/health
- * @description Health check endpoint for consultant management module
- * @access Public
- */
-router.get('/health', (req, res) => {
-    res.status(200).json({
-        success: true,
-        message: 'Consultant management module is healthy',
-        module: 'consultant-management',
-        routes: {
-            consultants: '/consultants',
-            skills: '/consultant-skills',
-            availability: '/consultant-availability',
-            assignments: '/consultant-assignments'
-        },
-        timestamp: new Date().toISOString()
-    });
-});
-
-// ============================================================================
-// API DOCUMENTATION ENDPOINT
-// ============================================================================
-
-/**
- * @route GET /api/v1/consultant-management/docs
- * @description Get API documentation summary for consultant management
- * @access Public
- */
-router.get('/docs', (req, res) => {
-    res.status(200).json({
-        success: true,
-        module: 'consultant-management',
-        version: 'v1',
-        description: 'Consultant management API for managing consultants, skills, availability, and assignments',
-        endpoints: {
-            consultants: {
-                base: '/api/v1/consultants',
-                description: 'Core consultant CRUD, profile management, certifications, performance, compliance',
-                operations: [
-                    'list', 'search', 'create', 'read', 'update', 'delete',
-                    'skills', 'certifications', 'education', 'work-history',
-                    'documents', 'reviews', 'feedback', 'achievements',
-                    'compliance', 'status-lifecycle', 'utilization'
-                ]
-            },
-            skills: {
-                base: '/api/v1/consultant-skills',
-                description: 'Skill records, proficiency assessments, endorsements, training',
-                operations: [
-                    'search', 'find-consultants', 'distribution', 'matrix',
-                    'create', 'read', 'update', 'delete',
-                    'assessments', 'endorsements', 'projects', 'courses', 'verify'
-                ]
-            },
-            availability: {
-                base: '/api/v1/consultant-availability',
-                description: 'Availability records, time-off management, capacity planning',
-                operations: [
-                    'find-available', 'bulk-query', 'capacity-report',
-                    'create', 'read', 'update', 'delete',
-                    'time-off', 'approve', 'reject', 'cancel'
-                ]
-            },
-            assignments: {
-                base: '/api/v1/consultant-assignments',
-                description: 'Assignment management, lifecycle, approvals, time tracking',
-                operations: [
-                    'utilization-report', 'revenue-report',
-                    'create', 'read', 'update', 'delete', 'extend',
-                    'start', 'complete', 'cancel', 'hold', 'resume',
-                    'approve', 'reject', 'time-log'
-                ]
-            }
-        },
-        authentication: 'JWT Bearer token required',
-        permissions: [
-            'consultants:view', 'consultants:create', 'consultants:update', 
-            'consultants:delete', 'consultants:manage', 'consultants:reports',
-            'consultant-skills:view', 'consultant-skills:create', 'consultant-skills:update',
-            'consultant-skills:delete', 'consultant-skills:assess', 'consultant-skills:endorse',
-            'consultant-skills:verify', 'consultant-skills:reports',
-            'consultant-availability:view', 'consultant-availability:create', 
-            'consultant-availability:update', 'consultant-availability:delete',
-            'consultant-availability:approve', 'consultant-availability:reports',
-            'consultant-assignments:view', 'consultant-assignments:create',
-            'consultant-assignments:update', 'consultant-assignments:delete',
-            'consultant-assignments:manage', 'consultant-assignments:approve',
-            'consultant-assignments:log-time', 'consultant-assignments:reports'
-        ],
-        timestamp: new Date().toISOString()
-    });
-});
 
 // ============================================================================
 // EXPORTS

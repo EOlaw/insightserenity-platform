@@ -151,6 +151,11 @@ class ConsultantAssignmentService {
                 role: assignmentData.role
             });
 
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
+
             // Validate assignment data
             await this._validateAssignmentData(assignmentData);
 
@@ -168,8 +173,8 @@ class ConsultantAssignmentService {
                 throw AppError.validation('Consultant is not active');
             }
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 consultant.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this consultant');
             }
@@ -193,15 +198,11 @@ class ConsultantAssignmentService {
             // Determine initial status and approval
             const { status, approvalRequired } = await this._determineInitialStatus(assignmentData, consultant, options);
 
-            // Build assignment record
-            const assignmentRecord = new ConsultantAssignment({
+            // Build assignment record with validated ObjectIds
+            const assignmentRecordData = {
                 assignmentId,
                 tenantId: consultant.tenantId,
-                organizationId: consultant.organizationId,
                 consultantId,
-                projectId: assignmentData.projectId,
-                engagementId: assignmentData.engagementId,
-                clientId: assignmentData.clientId,
                 details: {
                     title: assignmentData.title || `${assignmentData.role} Assignment`,
                     description: assignmentData.description,
@@ -210,7 +211,6 @@ class ConsultantAssignmentService {
                     responsibilities: assignmentData.responsibilities || [],
                     deliverables: assignmentData.deliverables || [],
                     workLocation: assignmentData.workLocation || WORK_LOCATIONS.FLEXIBLE,
-                    reportingTo: assignmentData.reportingTo,
                     teamMembers: assignmentData.teamMembers || []
                 },
                 timeline: {
@@ -307,8 +307,30 @@ class ConsultantAssignmentService {
                     source: options.source || 'manual',
                     tags: assignmentData.tags || []
                 }
-            });
+            };
 
+            // Add optional ObjectId fields with validation
+            if (consultant.organizationId && mongoose.Types.ObjectId.isValid(consultant.organizationId)) {
+                assignmentRecordData.organizationId = consultant.organizationId;
+            }
+
+            if (assignmentData.projectId && mongoose.Types.ObjectId.isValid(assignmentData.projectId)) {
+                assignmentRecordData.projectId = assignmentData.projectId;
+            }
+
+            if (assignmentData.engagementId && mongoose.Types.ObjectId.isValid(assignmentData.engagementId)) {
+                assignmentRecordData.engagementId = assignmentData.engagementId;
+            }
+
+            if (assignmentData.clientId && mongoose.Types.ObjectId.isValid(assignmentData.clientId)) {
+                assignmentRecordData.clientId = assignmentData.clientId;
+            }
+
+            if (assignmentData.reportingTo && mongoose.Types.ObjectId.isValid(assignmentData.reportingTo)) {
+                assignmentRecordData.details.reportingTo = assignmentData.reportingTo;
+            }
+
+            const assignmentRecord = new ConsultantAssignment(assignmentRecordData);
             await assignmentRecord.save();
 
             // Update consultant's assignment summary
@@ -442,8 +464,8 @@ class ConsultantAssignmentService {
                 });
             }
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -485,6 +507,11 @@ class ConsultantAssignmentService {
                 activeOnly: options.activeOnly
             });
 
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
+
             const dbService = this._getDatabaseService();
             const ConsultantAssignment = dbService.getModel('ConsultantAssignment', 'customer');
 
@@ -494,8 +521,8 @@ class ConsultantAssignmentService {
                 'status.isDeleted': false
             };
 
-            // Apply filters
-            if (options.tenantId) {
+            // Apply filters with validation
+            if (options.tenantId && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 query.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
@@ -508,11 +535,11 @@ class ConsultantAssignmentService {
                 query['status.isActive'] = true;
             }
 
-            if (options.clientId) {
+            if (options.clientId && mongoose.Types.ObjectId.isValid(options.clientId)) {
                 query.clientId = new mongoose.Types.ObjectId(options.clientId);
             }
 
-            if (options.projectId) {
+            if (options.projectId && mongoose.Types.ObjectId.isValid(options.projectId)) {
                 query.projectId = new mongoose.Types.ObjectId(options.projectId);
             }
 
@@ -585,6 +612,11 @@ class ConsultantAssignmentService {
                 status: options.status
             });
 
+            // Validate projectId
+            if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+                throw AppError.validation('Invalid project ID format');
+            }
+
             const dbService = this._getDatabaseService();
             const ConsultantAssignment = dbService.getModel('ConsultantAssignment', 'customer');
 
@@ -593,7 +625,7 @@ class ConsultantAssignmentService {
                 'status.isDeleted': false
             };
 
-            if (options.tenantId) {
+            if (options.tenantId && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 query.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
@@ -663,6 +695,11 @@ class ConsultantAssignmentService {
                 activeOnly: options.activeOnly
             });
 
+            // Validate clientId
+            if (!clientId || !mongoose.Types.ObjectId.isValid(clientId)) {
+                throw AppError.validation('Invalid client ID format');
+            }
+
             const dbService = this._getDatabaseService();
             const ConsultantAssignment = dbService.getModel('ConsultantAssignment', 'customer');
 
@@ -671,7 +708,7 @@ class ConsultantAssignmentService {
                 'status.isDeleted': false
             };
 
-            if (options.tenantId) {
+            if (options.tenantId && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 query.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
@@ -734,11 +771,11 @@ class ConsultantAssignmentService {
                 'status.isDeleted': false
             };
 
-            if (options.tenantId) {
+            if (options.tenantId && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 query.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
-            if (options.organizationId) {
+            if (options.organizationId && mongoose.Types.ObjectId.isValid(options.organizationId)) {
                 query.organizationId = new mongoose.Types.ObjectId(options.organizationId);
             }
 
@@ -750,9 +787,9 @@ class ConsultantAssignmentService {
                 .limit(options.limit || 50)
                 .exec();
 
-            // Filter by approver if specified
+            // Filter by approver if specified and valid
             let filteredRecords = records;
-            if (options.approverId) {
+            if (options.approverId && mongoose.Types.ObjectId.isValid(options.approverId)) {
                 filteredRecords = records.filter(r => {
                     const currentLevel = r.approval?.levels?.find(l => l.level === r.approval?.currentLevel);
                     return currentLevel?.approvers?.some(a => a.toString() === options.approverId);
@@ -794,8 +831,8 @@ class ConsultantAssignmentService {
             // Find existing record
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -817,14 +854,20 @@ class ConsultantAssignmentService {
             // Build update object
             const updateFields = {};
 
-            // Update details
+            // Update details with validated ObjectIds
             if (updateData.details) {
                 if (updateData.details.title) updateFields['details.title'] = updateData.details.title;
                 if (updateData.details.description !== undefined) updateFields['details.description'] = updateData.details.description;
                 if (updateData.details.responsibilities) updateFields['details.responsibilities'] = updateData.details.responsibilities;
                 if (updateData.details.deliverables) updateFields['details.deliverables'] = updateData.details.deliverables;
                 if (updateData.details.workLocation) updateFields['details.workLocation'] = updateData.details.workLocation;
-                if (updateData.details.reportingTo) updateFields['details.reportingTo'] = updateData.details.reportingTo;
+                if (updateData.details.reportingTo !== undefined) {
+                    if (updateData.details.reportingTo && mongoose.Types.ObjectId.isValid(updateData.details.reportingTo)) {
+                        updateFields['details.reportingTo'] = updateData.details.reportingTo;
+                    } else if (updateData.details.reportingTo === null) {
+                        updateFields['details.reportingTo'] = null;
+                    }
+                }
             }
 
             // Update allocation
@@ -920,8 +963,8 @@ class ConsultantAssignmentService {
 
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -1015,8 +1058,8 @@ class ConsultantAssignmentService {
 
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -1103,8 +1146,8 @@ class ConsultantAssignmentService {
 
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -1202,8 +1245,8 @@ class ConsultantAssignmentService {
 
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -1279,8 +1322,8 @@ class ConsultantAssignmentService {
 
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -1358,8 +1401,8 @@ class ConsultantAssignmentService {
 
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -1438,8 +1481,8 @@ class ConsultantAssignmentService {
 
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -1557,8 +1600,8 @@ class ConsultantAssignmentService {
 
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -1660,8 +1703,8 @@ class ConsultantAssignmentService {
 
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -1770,8 +1813,8 @@ class ConsultantAssignmentService {
 
             const assignment = await this._findAssignmentRecord(assignmentId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 assignment.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this assignment');
             }
@@ -1836,13 +1879,22 @@ class ConsultantAssignmentService {
         try {
             logger.info('Getting current allocation', { consultantId });
 
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
+
             const dbService = this._getDatabaseService();
             const ConsultantAssignment = dbService.getModel('ConsultantAssignment', 'customer');
 
             const asOfDate = options.asOfDate ? new Date(options.asOfDate) : new Date();
 
+            // Get tenantId with validation
+            const tenantId = options.tenantId || this.config.companyTenantId;
+            const tenantIdToUse = (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) ? tenantId : this.config.companyTenantId;
+
             const allocation = await ConsultantAssignment.getCurrentAllocation(
-                options.tenantId || this.config.companyTenantId,
+                tenantIdToUse,
                 consultantId,
                 asOfDate
             );
@@ -1888,15 +1940,26 @@ class ConsultantAssignmentService {
             const dbService = this._getDatabaseService();
             const ConsultantAssignment = dbService.getModel('ConsultantAssignment', 'customer');
 
+            // Get tenantId with validation
+            const tenantId = options.tenantId || this.config.companyTenantId;
+            const tenantIdToUse = (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) ? tenantId : this.config.companyTenantId;
+
+            const reportOptions = {};
+            if (options.consultantId && mongoose.Types.ObjectId.isValid(options.consultantId)) {
+                reportOptions.consultantId = options.consultantId;
+            }
+            if (options.clientId && mongoose.Types.ObjectId.isValid(options.clientId)) {
+                reportOptions.clientId = options.clientId;
+            }
+            if (options.projectId && mongoose.Types.ObjectId.isValid(options.projectId)) {
+                reportOptions.projectId = options.projectId;
+            }
+
             const report = await ConsultantAssignment.getUtilizationReport(
-                options.tenantId || this.config.companyTenantId,
+                tenantIdToUse,
                 new Date(startDate),
                 new Date(endDate),
-                {
-                    consultantId: options.consultantId,
-                    clientId: options.clientId,
-                    projectId: options.projectId
-                }
+                reportOptions
             );
 
             return {
@@ -1933,8 +1996,12 @@ class ConsultantAssignmentService {
             const dbService = this._getDatabaseService();
             const ConsultantAssignment = dbService.getModel('ConsultantAssignment', 'customer');
 
+            // Get tenantId with validation
+            const tenantId = options.tenantId || this.config.companyTenantId;
+            const tenantIdToUse = (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) ? tenantId : this.config.companyTenantId;
+
             const report = await ConsultantAssignment.getRevenueReport(
-                options.tenantId || this.config.companyTenantId,
+                tenantIdToUse,
                 new Date(startDate),
                 new Date(endDate)
             );
@@ -1983,11 +2050,12 @@ class ConsultantAssignmentService {
                 'status.isDeleted': false
             };
 
-            if (options.tenantId) {
+            // Add filters with validation
+            if (options.tenantId && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 matchStage.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
-            if (options.organizationId) {
+            if (options.organizationId && mongoose.Types.ObjectId.isValid(options.organizationId)) {
                 matchStage.organizationId = new mongoose.Types.ObjectId(options.organizationId);
             }
 
@@ -2102,10 +2170,20 @@ class ConsultantAssignmentService {
 
         if (!data.clientId) {
             errors.push('Client ID is required');
+        } else if (!mongoose.Types.ObjectId.isValid(data.clientId)) {
+            errors.push('Invalid client ID format');
         }
 
         if (!data.projectId && !data.engagementId) {
             errors.push('Project ID or Engagement ID is required');
+        }
+
+        if (data.projectId && !mongoose.Types.ObjectId.isValid(data.projectId)) {
+            errors.push('Invalid project ID format');
+        }
+
+        if (data.engagementId && !mongoose.Types.ObjectId.isValid(data.engagementId)) {
+            errors.push('Invalid engagement ID format');
         }
 
         if (!data.role) {
@@ -2184,6 +2262,11 @@ class ConsultantAssignmentService {
      * @param {string} excludeAssignmentId - Assignment to exclude from check
      */
     async _validateAllocationConstraints(consultantId, allocationPercentage, startDate, endDate, excludeAssignmentId = null) {
+        // Validate consultantId
+        if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+            throw AppError.validation('Invalid consultant ID format');
+        }
+
         const dbService = this._getDatabaseService();
         const ConsultantAssignment = dbService.getModel('ConsultantAssignment', 'customer');
 
@@ -2196,7 +2279,7 @@ class ConsultantAssignmentService {
             'timeline.proposedEnd': { $gt: new Date(startDate) }
         };
 
-        if (excludeAssignmentId) {
+        if (excludeAssignmentId && mongoose.Types.ObjectId.isValid(excludeAssignmentId)) {
             query._id = { $ne: new mongoose.Types.ObjectId(excludeAssignmentId) };
         }
 
@@ -2243,6 +2326,11 @@ class ConsultantAssignmentService {
      * @param {Object} data - Assignment data
      */
     async _checkDuplicateAssignment(consultantId, data) {
+        // Validate consultantId
+        if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+            return; // Skip check if invalid ID
+        }
+
         const dbService = this._getDatabaseService();
         const ConsultantAssignment = dbService.getModel('ConsultantAssignment', 'customer');
 
@@ -2252,11 +2340,11 @@ class ConsultantAssignmentService {
             'status.current': { $nin: [ASSIGNMENT_STATUS.CANCELLED, ASSIGNMENT_STATUS.TERMINATED] }
         };
 
-        if (data.projectId) {
+        if (data.projectId && mongoose.Types.ObjectId.isValid(data.projectId)) {
             query.projectId = new mongoose.Types.ObjectId(data.projectId);
         }
 
-        if (data.engagementId) {
+        if (data.engagementId && mongoose.Types.ObjectId.isValid(data.engagementId)) {
             query.engagementId = new mongoose.Types.ObjectId(data.engagementId);
         }
 
@@ -2313,8 +2401,8 @@ class ConsultantAssignmentService {
     _buildApprovalLevels(data, consultant) {
         const levels = [];
 
-        // Level 1: Manager approval
-        if (consultant.professional?.manager) {
+        // Level 1: Manager approval with validation
+        if (consultant.professional?.manager && mongoose.Types.ObjectId.isValid(consultant.professional.manager)) {
             levels.push({
                 level: 1,
                 name: 'Manager Approval',
@@ -2408,6 +2496,12 @@ class ConsultantAssignmentService {
      */
     async _updateConsultantAssignmentSummary(consultantId) {
         try {
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                logger.warn('Invalid consultant ID for assignment summary update', { consultantId });
+                return;
+            }
+
             const dbService = this._getDatabaseService();
             const Consultant = dbService.getModel('Consultant', 'customer');
             const ConsultantAssignment = dbService.getModel('ConsultantAssignment', 'customer');
@@ -2459,6 +2553,11 @@ class ConsultantAssignmentService {
      */
     async _updateConsultantUtilization(consultantId, hoursLogged) {
         try {
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                return;
+            }
+
             const dbService = this._getDatabaseService();
             const Consultant = dbService.getModel('Consultant', 'customer');
 
@@ -2487,6 +2586,11 @@ class ConsultantAssignmentService {
         if (!performance) return;
 
         try {
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                return;
+            }
+
             const dbService = this._getDatabaseService();
             const Consultant = dbService.getModel('Consultant', 'customer');
 
@@ -2553,6 +2657,11 @@ class ConsultantAssignmentService {
                 const User = dbService.getModel('User', 'customer');
 
                 for (const approverId of currentLevel.approvers) {
+                    // Validate approver ID
+                    if (!approverId || !mongoose.Types.ObjectId.isValid(approverId)) {
+                        continue;
+                    }
+
                     const approver = await User.findById(approverId).select('email profile.firstName');
 
                     if (approver?.email) {

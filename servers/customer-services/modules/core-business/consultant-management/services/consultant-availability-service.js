@@ -108,7 +108,8 @@ class ConsultantAvailabilityService {
             maxTimeOffDaysPerRequest: parseInt(process.env.MAX_TIME_OFF_DAYS_PER_REQUEST, 10) || 30,
             advanceNoticeRequired: parseInt(process.env.TIME_OFF_ADVANCE_NOTICE_DAYS, 10) || 14,
             maxLookAheadDays: parseInt(process.env.MAX_AVAILABILITY_LOOK_AHEAD_DAYS, 10) || 365,
-            conflictCheckEnabled: process.env.AVAILABILITY_CONFLICT_CHECK !== 'false'
+            conflictCheckEnabled: process.env.AVAILABILITY_CONFLICT_CHECK !== 'false',
+            defaultUtilizationTarget: parseInt(process.env.DEFAULT_UTILIZATION_TARGET, 10) || 80
         };
     }
 
@@ -150,6 +151,11 @@ class ConsultantAvailabilityService {
                 endDate: availabilityData.period?.endDate
             });
 
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
+
             // Validate availability data
             await this._validateAvailabilityData(availabilityData);
 
@@ -163,8 +169,8 @@ class ConsultantAvailabilityService {
                 throw AppError.notFound('Consultant not found', { context: { consultantId } });
             }
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck && 
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 consultant.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this consultant');
             }
@@ -198,11 +204,10 @@ class ConsultantAvailabilityService {
                 approvalStatus = await this._determineApprovalStatus(availabilityData, consultant, options);
             }
 
-            // Build availability record
-            const availabilityRecord = new ConsultantAvailability({
+            // Build availability record with validated ObjectIds
+            const availabilityRecordData = {
                 availabilityId,
                 tenantId: consultant.tenantId,
-                organizationId: consultant.organizationId,
                 consultantId,
                 type: availabilityData.type,
                 period: {
@@ -251,8 +256,14 @@ class ConsultantAvailabilityService {
                     notes: availabilityData.metadata?.notes,
                     tags: availabilityData.metadata?.tags || []
                 }
-            });
+            };
 
+            // Add optional organizationId with validation
+            if (consultant.organizationId && mongoose.Types.ObjectId.isValid(consultant.organizationId)) {
+                availabilityRecordData.organizationId = consultant.organizationId;
+            }
+
+            const availabilityRecord = new ConsultantAvailability(availabilityRecordData);
             await availabilityRecord.save();
 
             // Update consultant's availability summary if applicable
@@ -454,8 +465,8 @@ class ConsultantAvailabilityService {
                 });
             }
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 availability.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this availability record');
             }
@@ -497,6 +508,11 @@ class ConsultantAvailabilityService {
                 type: options.type
             });
 
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
+
             const dbService = this._getDatabaseService();
             const ConsultantAvailability = dbService.getModel('ConsultantAvailability', 'customer');
 
@@ -506,8 +522,8 @@ class ConsultantAvailabilityService {
                 'status.isDeleted': false
             };
 
-            // Apply filters
-            if (options.tenantId) {
+            // Apply filters with validation
+            if (options.tenantId && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 query.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
@@ -595,14 +611,24 @@ class ConsultantAvailabilityService {
             const dbService = this._getDatabaseService();
             const ConsultantAvailability = dbService.getModel('ConsultantAvailability', 'customer');
 
+            // Validate and convert consultant IDs
+            const validConsultantIds = consultantIds
+                .filter(id => id && mongoose.Types.ObjectId.isValid(id))
+                .map(id => new mongoose.Types.ObjectId(id));
+
+            if (validConsultantIds.length === 0) {
+                throw AppError.validation('No valid consultant IDs provided');
+            }
+
             const query = {
-                consultantId: { $in: consultantIds.map(id => new mongoose.Types.ObjectId(id)) },
+                consultantId: { $in: validConsultantIds },
                 'status.isDeleted': false,
                 'period.startDate': { $lte: new Date(endDate) },
                 'period.endDate': { $gte: new Date(startDate) }
             };
 
-            if (options.tenantId) {
+            // Add tenantId with validation
+            if (options.tenantId && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 query.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
@@ -669,11 +695,12 @@ class ConsultantAvailabilityService {
                 'status.isDeleted': false
             };
 
-            if (options.tenantId) {
+            // Add filters with validation
+            if (options.tenantId && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 query.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
-            if (options.organizationId) {
+            if (options.organizationId && mongoose.Types.ObjectId.isValid(options.organizationId)) {
                 query.organizationId = new mongoose.Types.ObjectId(options.organizationId);
             }
 
@@ -683,9 +710,9 @@ class ConsultantAvailabilityService {
                 .limit(options.limit || 50)
                 .exec();
 
-            // Filter by manager if specified
+            // Filter by manager if specified and valid
             let filteredRecords = records;
-            if (options.managerId) {
+            if (options.managerId && mongoose.Types.ObjectId.isValid(options.managerId)) {
                 filteredRecords = records.filter(r =>
                     r.consultantId?.professional?.manager?.toString() === options.managerId
                 );
@@ -726,8 +753,8 @@ class ConsultantAvailabilityService {
             // Find existing record
             const availability = await this._findAvailabilityRecord(availabilityId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 availability.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this availability record');
             }
@@ -861,8 +888,8 @@ class ConsultantAvailabilityService {
                 });
             }
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 availability.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this availability record');
             }
@@ -947,8 +974,8 @@ class ConsultantAvailabilityService {
                 throw AppError.validation('This request has already been processed');
             }
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 availability.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this availability record');
             }
@@ -1025,8 +1052,8 @@ class ConsultantAvailabilityService {
                 throw AppError.validation('This request cannot be cancelled');
             }
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 availability.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this availability record');
             }
@@ -1077,8 +1104,8 @@ class ConsultantAvailabilityService {
 
             const availability = await this._findAvailabilityRecord(availabilityId);
 
-            // Check tenant access
-            if (options.tenantId && !options.skipTenantCheck &&
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
                 availability.tenantId.toString() !== options.tenantId) {
                 throw AppError.forbidden('Access denied to this availability record');
             }
@@ -1149,6 +1176,11 @@ class ConsultantAvailabilityService {
                 startDate,
                 endDate
             });
+
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
 
             const dbService = this._getDatabaseService();
             const ConsultantAvailability = dbService.getModel('ConsultantAvailability', 'customer');
@@ -1266,7 +1298,8 @@ class ConsultantAvailabilityService {
                 'availability.status': { $in: ['available', 'partially_available'] }
             };
 
-            if (options.tenantId) {
+            // Add tenantId with validation
+            if (options.tenantId && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 consultantQuery.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
@@ -1375,11 +1408,20 @@ class ConsultantAvailabilityService {
         try {
             logger.info('Getting time-off balance', { consultantId, year });
 
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
+
             const dbService = this._getDatabaseService();
             const ConsultantAvailability = dbService.getModel('ConsultantAvailability', 'customer');
 
+            // Get tenantId with validation
+            const tenantId = options.tenantId || this.config.companyTenantId;
+            const tenantIdToUse = (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) ? tenantId : this.config.companyTenantId;
+
             const balance = await ConsultantAvailability.getTimeOffBalance(
-                options.tenantId || this.config.companyTenantId,
+                tenantIdToUse,
                 consultantId,
                 year
             );
@@ -1438,8 +1480,12 @@ class ConsultantAvailabilityService {
             const dbService = this._getDatabaseService();
             const ConsultantAvailability = dbService.getModel('ConsultantAvailability', 'customer');
 
+            // Get tenantId with validation
+            const tenantId = options.tenantId || this.config.companyTenantId;
+            const tenantIdToUse = (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) ? tenantId : this.config.companyTenantId;
+
             const report = await ConsultantAvailability.getCapacityReport(
-                options.tenantId || this.config.companyTenantId,
+                tenantIdToUse,
                 new Date(startDate),
                 new Date(endDate)
             );
@@ -1490,11 +1536,12 @@ class ConsultantAvailabilityService {
                 'status.isDeleted': false
             };
 
-            if (options.tenantId) {
+            // Add filters with validation
+            if (options.tenantId && mongoose.Types.ObjectId.isValid(options.tenantId)) {
                 matchStage.tenantId = new mongoose.Types.ObjectId(options.tenantId);
             }
 
-            if (options.organizationId) {
+            if (options.organizationId && mongoose.Types.ObjectId.isValid(options.organizationId)) {
                 matchStage.organizationId = new mongoose.Types.ObjectId(options.organizationId);
             }
 
@@ -1752,7 +1799,7 @@ class ConsultantAvailabilityService {
         const ConsultantAvailability = dbService.getModel('ConsultantAvailability', 'customer');
 
         return ConsultantAvailability.findOverlapping(
-            null, // tenantId is checked separately
+            null,
             consultantId,
             new Date(startDate),
             new Date(endDate),
@@ -1881,6 +1928,12 @@ class ConsultantAvailabilityService {
      */
     async _updateConsultantAvailabilitySummary(consultantId) {
         try {
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                logger.warn('Invalid consultant ID for availability summary update', { consultantId });
+                return;
+            }
+
             const dbService = this._getDatabaseService();
             const Consultant = dbService.getModel('Consultant', 'customer');
             const ConsultantAvailability = dbService.getModel('ConsultantAvailability', 'customer');
@@ -2008,6 +2061,15 @@ class ConsultantAvailabilityService {
      */
     async _sendManagerNotification(availability, consultant) {
         try {
+            // Validate manager ID
+            if (!consultant.professional?.manager || !mongoose.Types.ObjectId.isValid(consultant.professional.manager)) {
+                logger.warn('Invalid manager ID for notification', {
+                    consultantId: consultant._id,
+                    managerId: consultant.professional?.manager
+                });
+                return;
+            }
+
             const dbService = this._getDatabaseService();
             const Consultant = dbService.getModel('Consultant', 'customer');
 
