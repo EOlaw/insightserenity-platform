@@ -245,7 +245,7 @@ const consultantSchemaDefinition = {
         },
         category: {
             type: String,
-            enum: ['technical', 'functional', 'domain', 'soft_skill', 'tool', 'methodology', 'language', 'other'],
+            enum: ['technical', 'functional', 'domain', 'soft_skill', 'tool', 'methodology', 'language', 'backend_technology', 'other'],
             index: true
         },
         proficiencyLevel: {

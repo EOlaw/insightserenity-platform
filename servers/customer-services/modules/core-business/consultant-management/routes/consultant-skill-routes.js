@@ -1,8 +1,9 @@
 /**
- * @fileoverview Consultant Skill Routes
+ * @fileoverview Consultant Skill Routes - Customer Services
  * @module servers/customer-services/modules/core-business/consultant-management/routes/consultant-skill-routes
- * @description Express routes for consultant skill management operations including
- * skill records, proficiency assessments, endorsements, project experience, and training
+ * @description Express routes for consultant skill self-service and peer collaboration operations.
+ * Administrative operations (organization-wide analytics, bulk operations, formal assessments, verification)
+ * have been moved to admin-server.
  */
 
 const express = require('express');
@@ -11,74 +12,13 @@ const router = express.Router();
 const consultantSkillController = require('../controllers/consultant-skill-controller');
 const { ConsultantSkillController } = require('../controllers/consultant-skill-controller');
 
-// Middleware imports - adjust paths based on your project structure
+// Middleware imports
 const { authenticate } = require('../../../../../../shared/lib/middleware/auth-middleware');
-const { authorize, checkPermission } = require('../../../../../../shared/lib/middleware/permission-middleware');
-const { rateLimiter } = require('../../../../../../shared/lib/middleware/rate-limiter');
+const { checkPermission } = require('../../../../../../shared/lib/middleware/permission-middleware');
 
 // ============================================================================
-// ORGANIZATION-WIDE SKILL ROUTES
+// SELF-SERVICE SKILL ROUTES
 // ============================================================================
-
-/**
- * @route GET /api/v1/consultant-skills/search
- * @description Search skills across all consultants
- * @access Private - Requires authentication and view permission
- */
-router.get(
-    '/search',
-    authenticate,
-    checkPermission('consultant-skills', 'view'),
-    consultantSkillController.searchSkills
-);
-
-/**
- * @route POST /api/v1/consultant-skills/find-consultants
- * @description Find consultants with specific skills
- * @access Private - Requires authentication and view permission
- */
-router.post(
-    '/find-consultants',
-    authenticate,
-    checkPermission('consultant-skills', 'view'),
-    consultantSkillController.findConsultantsWithSkills
-);
-
-/**
- * @route GET /api/v1/consultant-skills/distribution
- * @description Get skill distribution analytics
- * @access Private - Requires authentication and reports permission
- */
-router.get(
-    '/distribution',
-    authenticate,
-    checkPermission('consultant-skills', 'reports'),
-    consultantSkillController.getSkillDistribution
-);
-
-/**
- * @route GET /api/v1/consultant-skills/matrix
- * @description Get organization skill matrix
- * @access Private - Requires authentication and reports permission
- */
-router.get(
-    '/matrix',
-    authenticate,
-    checkPermission('consultant-skills', 'reports'),
-    consultantSkillController.getOrganizationSkillMatrix
-);
-
-/**
- * @route GET /api/v1/consultant-skills/statistics
- * @description Get skill statistics
- * @access Private - Requires authentication and reports permission
- */
-router.get(
-    '/statistics',
-    authenticate,
-    checkPermission('consultant-skills', 'reports'),
-    consultantSkillController.getSkillStatistics
-);
 
 /**
  * @route GET /api/v1/consultant-skills/me
@@ -92,12 +32,12 @@ router.get(
 );
 
 // ============================================================================
-// CONSULTANT-SPECIFIC SKILL ROUTES
+// PEER VIEWING ROUTES
 // ============================================================================
 
 /**
  * @route GET /api/v1/consultant-skills/consultant/:consultantId
- * @description Get all skills for a consultant
+ * @description Get all skills for a consultant (peer view)
  * @access Private - Requires authentication and view permission
  */
 router.get(
@@ -109,8 +49,24 @@ router.get(
 );
 
 /**
+ * @route GET /api/v1/consultant-skills/:skillRecordId
+ * @description Get skill record by ID (peer view)
+ * @access Private - Requires authentication and view permission
+ */
+router.get(
+    '/:skillRecordId',
+    authenticate,
+    checkPermission('consultant-skills', 'view'),
+    consultantSkillController.getSkillRecordById
+);
+
+// ============================================================================
+// SELF-SERVICE SKILL RECORD MANAGEMENT
+// ============================================================================
+
+/**
  * @route POST /api/v1/consultant-skills/consultant/:consultantId
- * @description Create a new skill record for a consultant
+ * @description Create a new skill record for a consultant (self-service)
  * @access Private - Requires authentication and create permission
  */
 router.post(
@@ -122,49 +78,8 @@ router.post(
 );
 
 /**
- * @route POST /api/v1/consultant-skills/consultant/:consultantId/bulk
- * @description Bulk create skill records for a consultant
- * @access Private - Requires authentication and create permission
- */
-router.post(
-    '/consultant/:consultantId/bulk',
-    authenticate,
-    checkPermission('consultant-skills', 'create'),
-    rateLimiter({ windowMs: 60000, max: 10 }),
-    consultantSkillController.bulkCreateSkillRecords
-);
-
-/**
- * @route POST /api/v1/consultant-skills/consultant/:consultantId/gap-analysis
- * @description Get skill gap analysis for a consultant
- * @access Private - Requires authentication and reports permission
- */
-router.post(
-    '/consultant/:consultantId/gap-analysis',
-    authenticate,
-    checkPermission('consultant-skills', 'reports'),
-    consultantSkillController.getSkillGapAnalysis
-);
-
-// ============================================================================
-// INDIVIDUAL SKILL RECORD ROUTES
-// ============================================================================
-
-/**
- * @route GET /api/v1/consultant-skills/:skillRecordId
- * @description Get skill record by ID
- * @access Private - Requires authentication and view permission
- */
-router.get(
-    '/:skillRecordId',
-    authenticate,
-    checkPermission('consultant-skills', 'view'),
-    consultantSkillController.getSkillRecordById
-);
-
-/**
  * @route PUT /api/v1/consultant-skills/:skillRecordId
- * @description Update skill record
+ * @description Update skill record (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.put(
@@ -177,7 +92,7 @@ router.put(
 
 /**
  * @route DELETE /api/v1/consultant-skills/:skillRecordId
- * @description Delete skill record (soft delete by default)
+ * @description Delete skill record (self-service, soft delete by default)
  * @access Private - Requires authentication and delete permission
  */
 router.delete(
@@ -188,21 +103,8 @@ router.delete(
 );
 
 // ============================================================================
-// PROFICIENCY ASSESSMENT ROUTES
+// SELF-ASSESSMENT ROUTES
 // ============================================================================
-
-/**
- * @route POST /api/v1/consultant-skills/:skillRecordId/assessments
- * @description Submit proficiency assessment
- * @access Private - Requires authentication and assess permission
- */
-router.post(
-    '/:skillRecordId/assessments',
-    authenticate,
-    checkPermission('consultant-skills', 'assess'),
-    ConsultantSkillController.assessmentValidation(),
-    consultantSkillController.submitProficiencyAssessment
-);
 
 /**
  * @route POST /api/v1/consultant-skills/:skillRecordId/self-assessment
@@ -217,7 +119,7 @@ router.post(
 
 /**
  * @route POST /api/v1/consultant-skills/:skillRecordId/request-assessment
- * @description Request skill assessment from manager or peer
+ * @description Request skill assessment from manager or peer (self-service)
  * @access Private - Requires authentication only
  */
 router.post(
@@ -227,12 +129,12 @@ router.post(
 );
 
 // ============================================================================
-// ENDORSEMENT ROUTES
+// PEER COLLABORATION - ENDORSEMENTS
 // ============================================================================
 
 /**
  * @route POST /api/v1/consultant-skills/:skillRecordId/endorsements
- * @description Add endorsement to skill
+ * @description Add endorsement to skill (peer collaboration)
  * @access Private - Requires authentication and endorse permission
  */
 router.post(
@@ -245,7 +147,7 @@ router.post(
 
 /**
  * @route DELETE /api/v1/consultant-skills/:skillRecordId/endorsements/:endorsementId
- * @description Remove endorsement from skill
+ * @description Remove endorsement from skill (peer collaboration)
  * @access Private - Requires authentication and endorse permission
  */
 router.delete(
@@ -256,12 +158,12 @@ router.delete(
 );
 
 // ============================================================================
-// PROJECT EXPERIENCE ROUTES
+// SELF-SERVICE PROJECT EXPERIENCE
 // ============================================================================
 
 /**
  * @route POST /api/v1/consultant-skills/:skillRecordId/projects
- * @description Add project experience to skill
+ * @description Add project experience to skill (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -274,7 +176,7 @@ router.post(
 
 /**
  * @route PUT /api/v1/consultant-skills/:skillRecordId/projects/:projectId/feedback
- * @description Update project experience feedback
+ * @description Update project experience feedback (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.put(
@@ -285,12 +187,12 @@ router.put(
 );
 
 // ============================================================================
-// TRAINING ROUTES
+// SELF-SERVICE TRAINING & COURSES
 // ============================================================================
 
 /**
  * @route POST /api/v1/consultant-skills/:skillRecordId/courses/completed
- * @description Add completed course to skill
+ * @description Add completed course to skill (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -303,7 +205,7 @@ router.post(
 
 /**
  * @route POST /api/v1/consultant-skills/:skillRecordId/courses/enrollment
- * @description Add course enrollment to skill
+ * @description Add course enrollment to skill (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -315,7 +217,7 @@ router.post(
 
 /**
  * @route PUT /api/v1/consultant-skills/:skillRecordId/courses/:courseId/progress
- * @description Update course enrollment progress
+ * @description Update course enrollment progress (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.put(
@@ -325,20 +227,28 @@ router.put(
     consultantSkillController.updateEnrollmentProgress
 );
 
-// ============================================================================
-// VERIFICATION ROUTES
-// ============================================================================
-
-/**
- * @route POST /api/v1/consultant-skills/:skillRecordId/verify
- * @description Verify skill through certification
- * @access Private - Requires authentication and verify permission
- */
-router.post(
-    '/:skillRecordId/verify',
-    authenticate,
-    checkPermission('consultant-skills', 'verify'),
-    consultantSkillController.verifyCertification
-);
-
 module.exports = router;
+
+/*
+ * REMOVED ROUTES - Moved to Admin-Server:
+ * 
+ * ORGANIZATION-WIDE SKILL SEARCH & ANALYTICS:
+ * - GET /api/v1/consultant-skills/search - Search skills across all consultants (administrative)
+ * - POST /api/v1/consultant-skills/find-consultants - Find consultants with specific skills (administrative)
+ * - GET /api/v1/consultant-skills/distribution - Skill distribution analytics (administrative)
+ * - GET /api/v1/consultant-skills/matrix - Organization skill matrix (administrative)
+ * - GET /api/v1/consultant-skills/statistics - Skill statistics (administrative)
+ * 
+ * BULK OPERATIONS:
+ * - POST /api/v1/consultant-skills/consultant/:consultantId/bulk - Bulk create skill records (administrative)
+ * 
+ * ADMINISTRATIVE ASSESSMENTS:
+ * - POST /api/v1/consultant-skills/:skillRecordId/assessments - Submit proficiency assessment (administrative)
+ * - POST /api/v1/consultant-skills/consultant/:consultantId/gap-analysis - Skill gap analysis (administrative)
+ * 
+ * SKILL VERIFICATION:
+ * - POST /api/v1/consultant-skills/:skillRecordId/verify - Verify skill through certification (administrative)
+ * 
+ * Note: Consultants can manage their own skill records, request assessments, and endorse peers.
+ * Formal assessments, skill verification, and organization-wide analytics require administrative access.
+ */

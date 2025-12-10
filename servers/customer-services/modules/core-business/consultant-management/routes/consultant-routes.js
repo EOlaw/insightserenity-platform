@@ -1,8 +1,9 @@
 /**
- * @fileoverview Consultant Routes
+ * @fileoverview Consultant Routes - Customer Services
  * @module servers/customer-services/modules/core-business/consultant-management/routes/consultant-routes
- * @description Express routes for consultant management operations including CRUD,
- * profile management, skills, certifications, performance, compliance, and status lifecycle
+ * @description Express routes for consultant self-service and peer viewing operations.
+ * Administrative operations (lifecycle management, bulk operations, statistics) have been moved to admin-server.
+ * Skill operations have been moved to consultant-skill-routes for better organization.
  */
 
 const express = require('express');
@@ -11,80 +12,13 @@ const router = express.Router();
 const consultantController = require('../controllers/consultant-controller');
 const { ConsultantController } = require('../controllers/consultant-controller');
 
-// Middleware imports - adjust paths based on your project structure
+// Middleware imports
 const { authenticate } = require('../../../../../../shared/lib/middleware/auth-middleware');
-const { authorize, checkPermission } = require('../../../../../../shared/lib/middleware/permission-middleware');
-const { rateLimiter } = require('../../../../../../shared/lib/middleware/rate-limiter');
-
-// Import middleware
-// const { authenticate } = require('../../../../middleware/auth-middleware');
-// const { validateRequest } = require('../../../../middleware/validation');
-// const { rateLimiter } = require('../../../../middleware/rate-limiter');
+const { checkPermission } = require('../../../../../../shared/lib/middleware/permission-middleware');
 
 // ============================================================================
-// ROUTE DEFINITIONS
+// SELF-SERVICE ROUTES
 // ============================================================================
-
-/**
- * @route GET /api/v1/consultants
- * @description List all consultants with filtering and pagination
- * @access Private - Requires authentication and view permission
- */
-router.get(
-    '/',
-    authenticate,
-    checkPermission('consultants', 'view'),
-    ConsultantController.listValidation(),
-    consultantController.listConsultants
-);
-
-/**
- * @route GET /api/v1/consultants/search
- * @description Search consultants by text query
- * @access Private - Requires authentication and view permission
- */
-router.get(
-    '/search',
-    authenticate,
-    checkPermission('consultants', 'view'),
-    consultantController.searchConsultants
-);
-
-/**
- * @route GET /api/v1/consultants/available
- * @description Find available consultants based on criteria
- * @access Private - Requires authentication and view permission
- */
-router.get(
-    '/available',
-    authenticate,
-    checkPermission('consultants', 'view'),
-    consultantController.findAvailableConsultants
-);
-
-/**
- * @route POST /api/v1/consultants/search-by-skills
- * @description Search consultants by skill requirements
- * @access Private - Requires authentication and view permission
- */
-router.post(
-    '/search-by-skills',
-    authenticate,
-    checkPermission('consultants', 'view'),
-    consultantController.searchBySkills
-);
-
-/**
- * @route GET /api/v1/consultants/statistics
- * @description Get consultant statistics and analytics
- * @access Private - Requires authentication and reports permission
- */
-router.get(
-    '/statistics',
-    authenticate,
-    checkPermission('consultants', 'reports'),
-    consultantController.getConsultantStatistics
-);
 
 /**
  * @route GET /api/v1/consultants/me
@@ -108,35 +42,62 @@ router.put(
     consultantController.updateMyProfile
 );
 
+// ============================================================================
+// PEER VIEWING ROUTES
+// ============================================================================
+
 /**
- * @route POST /api/v1/consultants
- * @description Create a new consultant
- * @access Private - Requires authentication and create permission
+ * @route GET /api/v1/consultants
+ * @description List all consultants with filtering and pagination (peer view)
+ * @access Private - Requires authentication and view permission
  */
-router.post(
+router.get(
     '/',
     authenticate,
-    checkPermission('consultants', 'create'),
-    ConsultantController.createValidation(),
-    consultantController.createConsultant
+    checkPermission('consultants', 'view'),
+    ConsultantController.listValidation(),
+    consultantController.listConsultants
 );
 
 /**
- * @route POST /api/v1/consultants/bulk
- * @description Bulk create consultants
- * @access Private - Requires authentication and create permission
+ * @route GET /api/v1/consultants/search
+ * @description Search consultants by text query (peer view)
+ * @access Private - Requires authentication and view permission
+ */
+router.get(
+    '/search',
+    authenticate,
+    checkPermission('consultants', 'view'),
+    consultantController.searchConsultants
+);
+
+/**
+ * @route GET /api/v1/consultants/available
+ * @description Find available consultants based on criteria (peer view)
+ * @access Private - Requires authentication and view permission
+ */
+router.get(
+    '/available',
+    authenticate,
+    checkPermission('consultants', 'view'),
+    consultantController.findAvailableConsultants
+);
+
+/**
+ * @route POST /api/v1/consultants/search-by-skills
+ * @description Search consultants by skill requirements (peer view)
+ * @access Private - Requires authentication and view permission
  */
 router.post(
-    '/bulk',
+    '/search-by-skills',
     authenticate,
-    checkPermission('consultants', 'create'),
-    rateLimiter({ windowMs: 60000, max: 10 }),
-    consultantController.bulkCreateConsultants
+    checkPermission('consultants', 'view'),
+    consultantController.searchBySkills
 );
 
 /**
  * @route GET /api/v1/consultants/:consultantId
- * @description Get consultant by ID
+ * @description Get consultant by ID (peer view)
  * @access Private - Requires authentication and view permission
  */
 router.get(
@@ -148,7 +109,7 @@ router.get(
 
 /**
  * @route GET /api/v1/consultants/user/:userId
- * @description Get consultant by user ID
+ * @description Get consultant by user ID (peer view)
  * @access Private - Requires authentication and view permission
  */
 router.get(
@@ -159,37 +120,8 @@ router.get(
 );
 
 /**
- * @route PUT /api/v1/consultants/:consultantId
- * @description Update consultant
- * @access Private - Requires authentication and update permission
- */
-router.put(
-    '/:consultantId',
-    authenticate,
-    checkPermission('consultants', 'update'),
-    ConsultantController.updateValidation(),
-    consultantController.updateConsultant
-);
-
-/**
- * @route DELETE /api/v1/consultants/:consultantId
- * @description Delete consultant (soft delete by default)
- * @access Private - Requires authentication and delete permission
- */
-router.delete(
-    '/:consultantId',
-    authenticate,
-    checkPermission('consultants', 'delete'),
-    consultantController.deleteConsultant
-);
-
-// ============================================================================
-// DIRECT REPORTS
-// ============================================================================
-
-/**
  * @route GET /api/v1/consultants/:consultantId/direct-reports
- * @description Get direct reports for a consultant/manager
+ * @description Get direct reports for a consultant/manager (peer view)
  * @access Private - Requires authentication and view permission
  */
 router.get(
@@ -200,12 +132,12 @@ router.get(
 );
 
 // ============================================================================
-// AVAILABILITY ROUTES
+// SELF-SERVICE AVAILABILITY MANAGEMENT
 // ============================================================================
 
 /**
  * @route PUT /api/v1/consultants/:consultantId/availability
- * @description Update consultant availability
+ * @description Update consultant availability preferences (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.put(
@@ -218,7 +150,7 @@ router.put(
 
 /**
  * @route POST /api/v1/consultants/:consultantId/blackout-dates
- * @description Add blackout dates for a consultant
+ * @description Add blackout dates for a consultant (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -229,65 +161,12 @@ router.post(
 );
 
 // ============================================================================
-// SKILLS ROUTES (Embedded skills on consultant)
-// ============================================================================
-
-/**
- * @route POST /api/v1/consultants/:consultantId/skills
- * @description Add skill to consultant (embedded)
- * @access Private - Requires authentication and update permission
- */
-router.post(
-    '/:consultantId/skills',
-    authenticate,
-    checkPermission('consultants', 'update'),
-    ConsultantController.addSkillValidation(),
-    consultantController.addSkill
-);
-
-/**
- * @route PUT /api/v1/consultants/:consultantId/skills/:skillName
- * @description Update consultant skill (embedded)
- * @access Private - Requires authentication and update permission
- */
-router.put(
-    '/:consultantId/skills/:skillName',
-    authenticate,
-    checkPermission('consultants', 'update'),
-    consultantController.updateSkill
-);
-
-/**
- * @route DELETE /api/v1/consultants/:consultantId/skills/:skillName
- * @description Remove skill from consultant (embedded)
- * @access Private - Requires authentication and update permission
- */
-router.delete(
-    '/:consultantId/skills/:skillName',
-    authenticate,
-    checkPermission('consultants', 'update'),
-    consultantController.removeSkill
-);
-
-/**
- * @route POST /api/v1/consultants/:consultantId/skills/:skillName/verify
- * @description Verify consultant skill
- * @access Private - Requires authentication and manage permission
- */
-router.post(
-    '/:consultantId/skills/:skillName/verify',
-    authenticate,
-    checkPermission('consultants', 'manage'),
-    consultantController.verifySkill
-);
-
-// ============================================================================
-// CERTIFICATIONS ROUTES
+// SELF-SERVICE CERTIFICATIONS MANAGEMENT
 // ============================================================================
 
 /**
  * @route POST /api/v1/consultants/:consultantId/certifications
- * @description Add certification to consultant
+ * @description Add certification to consultant (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -300,7 +179,7 @@ router.post(
 
 /**
  * @route PUT /api/v1/consultants/:consultantId/certifications/:certificationId
- * @description Update consultant certification
+ * @description Update consultant certification (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.put(
@@ -312,7 +191,7 @@ router.put(
 
 /**
  * @route DELETE /api/v1/consultants/:consultantId/certifications/:certificationId
- * @description Remove certification from consultant
+ * @description Remove certification from consultant (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.delete(
@@ -323,12 +202,12 @@ router.delete(
 );
 
 // ============================================================================
-// EDUCATION & WORK HISTORY ROUTES
+// SELF-SERVICE EDUCATION & WORK HISTORY
 // ============================================================================
 
 /**
  * @route POST /api/v1/consultants/:consultantId/education
- * @description Add education to consultant
+ * @description Add education to consultant (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -340,7 +219,7 @@ router.post(
 
 /**
  * @route POST /api/v1/consultants/:consultantId/work-history
- * @description Add work history to consultant
+ * @description Add work history to consultant (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -351,12 +230,12 @@ router.post(
 );
 
 // ============================================================================
-// DOCUMENTS ROUTES
+// SELF-SERVICE DOCUMENT MANAGEMENT
 // ============================================================================
 
 /**
  * @route POST /api/v1/consultants/:consultantId/documents
- * @description Add document to consultant
+ * @description Add document to consultant (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -369,7 +248,7 @@ router.post(
 
 /**
  * @route DELETE /api/v1/consultants/:consultantId/documents/:documentId
- * @description Remove document from consultant
+ * @description Remove document from consultant (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.delete(
@@ -380,25 +259,12 @@ router.delete(
 );
 
 // ============================================================================
-// PERFORMANCE ROUTES
+// PEER COLLABORATION
 // ============================================================================
 
 /**
- * @route POST /api/v1/consultants/:consultantId/reviews
- * @description Add performance review
- * @access Private - Requires authentication and manage permission
- */
-router.post(
-    '/:consultantId/reviews',
-    authenticate,
-    checkPermission('consultants', 'manage'),
-    ConsultantController.addReviewValidation(),
-    consultantController.addPerformanceReview
-);
-
-/**
  * @route POST /api/v1/consultants/:consultantId/feedback
- * @description Add feedback for consultant
+ * @description Add feedback for consultant (peer collaboration)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -410,7 +276,7 @@ router.post(
 
 /**
  * @route POST /api/v1/consultants/:consultantId/achievements
- * @description Add achievement for consultant
+ * @description Add achievement for consultant (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -420,25 +286,9 @@ router.post(
     consultantController.addAchievement
 );
 
-// ============================================================================
-// COMPLIANCE ROUTES
-// ============================================================================
-
-/**
- * @route PUT /api/v1/consultants/:consultantId/compliance
- * @description Update compliance status
- * @access Private - Requires authentication and manage permission
- */
-router.put(
-    '/:consultantId/compliance',
-    authenticate,
-    checkPermission('consultants', 'manage'),
-    consultantController.updateComplianceStatus
-);
-
 /**
  * @route POST /api/v1/consultants/:consultantId/conflict-of-interest
- * @description Add conflict of interest declaration
+ * @description Add conflict of interest declaration (self-service)
  * @access Private - Requires authentication and update permission
  */
 router.post(
@@ -448,84 +298,38 @@ router.post(
     consultantController.addConflictOfInterestDeclaration
 );
 
-// ============================================================================
-// STATUS LIFECYCLE ROUTES
-// ============================================================================
-
-/**
- * @route POST /api/v1/consultants/:consultantId/activate
- * @description Activate consultant
- * @access Private - Requires authentication and manage permission
- */
-router.post(
-    '/:consultantId/activate',
-    authenticate,
-    checkPermission('consultants', 'manage'),
-    consultantController.activateConsultant
-);
-
-/**
- * @route POST /api/v1/consultants/:consultantId/deactivate
- * @description Deactivate consultant
- * @access Private - Requires authentication and manage permission
- */
-router.post(
-    '/:consultantId/deactivate',
-    authenticate,
-    checkPermission('consultants', 'manage'),
-    consultantController.deactivateConsultant
-);
-
-/**
- * @route POST /api/v1/consultants/:consultantId/leave
- * @description Put consultant on leave
- * @access Private - Requires authentication and manage permission
- */
-router.post(
-    '/:consultantId/leave',
-    authenticate,
-    checkPermission('consultants', 'manage'),
-    consultantController.putOnLeave
-);
-
-/**
- * @route POST /api/v1/consultants/:consultantId/suspend
- * @description Suspend consultant
- * @access Private - Requires authentication and manage permission
- */
-router.post(
-    '/:consultantId/suspend',
-    authenticate,
-    checkPermission('consultants', 'manage'),
-    consultantController.suspendConsultant
-);
-
-/**
- * @route POST /api/v1/consultants/:consultantId/terminate
- * @description Terminate consultant
- * @access Private - Requires authentication and manage permission
- */
-router.post(
-    '/:consultantId/terminate',
-    authenticate,
-    checkPermission('consultants', 'manage'),
-    consultantController.terminateConsultant
-);
-
-// ============================================================================
-// REPORTS ROUTES
-// ============================================================================
-
-/**
- * @route GET /api/v1/consultants/:consultantId/utilization
- * @description Get utilization report for a consultant
- * @access Private - Requires authentication and reports permission
- */
-router.get(
-    '/:consultantId/utilization',
-    authenticate,
-    checkPermission('consultants', 'reports'),
-    consultantController.getUtilizationReport
-);
-
 module.exports = router;
+
+/*
+ * REMOVED ROUTES - Moved to Admin-Server:
+ * 
+ * ADMINISTRATIVE CONSULTANT MANAGEMENT:
+ * - POST /api/v1/consultants - Create consultant (administrative)
+ * - POST /api/v1/consultants/bulk - Bulk create consultants (administrative)
+ * - PUT /api/v1/consultants/:consultantId - Update consultant (administrative)
+ * - DELETE /api/v1/consultants/:consultantId - Delete consultant (administrative)
+ * - GET /api/v1/consultants/statistics - Organization statistics (administrative)
+ * 
+ * LIFECYCLE MANAGEMENT:
+ * - POST /api/v1/consultants/:consultantId/activate - Activate consultant (administrative)
+ * - POST /api/v1/consultants/:consultantId/deactivate - Deactivate consultant (administrative)
+ * - POST /api/v1/consultants/:consultantId/leave - Put on leave (administrative)
+ * - POST /api/v1/consultants/:consultantId/suspend - Suspend consultant (administrative)
+ * - POST /api/v1/consultants/:consultantId/terminate - Terminate consultant (administrative)
+ * 
+ * ADMINISTRATIVE PERFORMANCE & COMPLIANCE:
+ * - POST /api/v1/consultants/:consultantId/reviews - Add performance review (administrative)
+ * - PUT /api/v1/consultants/:consultantId/compliance - Update compliance status (administrative)
+ * - GET /api/v1/consultants/:consultantId/utilization - Utilization report (administrative)
+ * 
+ * REMOVED ROUTES - Moved to consultant-skill-routes.js:
+ * 
+ * SKILL MANAGEMENT (now in consultant-skill-routes for better organization):
+ * - POST /api/v1/consultants/:consultantId/skills - Add skill (moved to skill routes)
+ * - PUT /api/v1/consultants/:consultantId/skills/:skillName - Update skill (moved to skill routes)
+ * - DELETE /api/v1/consultants/:consultantId/skills/:skillName - Remove skill (moved to skill routes)
+ * - POST /api/v1/consultants/:consultantId/skills/:skillName/verify - Verify skill (moved to skill routes + administrative)
+ * 
+ * Note: Consultants cannot create, update, or delete consultant records except their own profile via /me endpoints.
+ * When consultants register, the system automatically creates their consultant document.
+ */
