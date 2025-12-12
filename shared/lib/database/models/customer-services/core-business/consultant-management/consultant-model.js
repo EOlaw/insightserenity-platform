@@ -619,7 +619,14 @@ const consultantSchemaDefinition = {
             },
             content: String,
             isAnonymous: Boolean,
-            createdAt: Date
+            status: {
+                type: String,
+                enum: ['active', 'archived'],
+                default: 'active'
+            },
+            createdAt: Date,
+            updatedAt: Date,
+            archivedAt: Date
         }],
         achievements: [{
             title: String,
@@ -846,36 +853,36 @@ consultantSchema.index({ searchTokens: 1 });
 consultantSchema.index({ 'profile.firstName': 'text', 'profile.lastName': 'text', 'skills.name': 'text', 'bio': 'text' });
 
 // ==================== Virtuals ====================
-consultantSchema.virtual('fullName').get(function() {
+consultantSchema.virtual('fullName').get(function () {
     return `${this.profile.firstName} ${this.profile.lastName}`;
 });
 
-consultantSchema.virtual('displayName').get(function() {
+consultantSchema.virtual('displayName').get(function () {
     return this.profile.preferredName || this.fullName;
 });
 
-consultantSchema.virtual('activeAssignments').get(function() {
+consultantSchema.virtual('activeAssignments').get(function () {
     return this.assignments?.filter(a => a.status === 'active') || [];
 });
 
-consultantSchema.virtual('totalAllocation').get(function() {
+consultantSchema.virtual('totalAllocation').get(function () {
     return this.activeAssignments.reduce((sum, a) => sum + (a.allocationPercentage || 0), 0);
 });
 
-consultantSchema.virtual('availableCapacity').get(function() {
+consultantSchema.virtual('availableCapacity').get(function () {
     return Math.max(0, 100 - this.totalAllocation);
 });
 
-consultantSchema.virtual('skillCount').get(function() {
+consultantSchema.virtual('skillCount').get(function () {
     return this.skills?.length || 0;
 });
 
-consultantSchema.virtual('certificationCount').get(function() {
+consultantSchema.virtual('certificationCount').get(function () {
     return this.certifications?.filter(c => c.status === 'active').length || 0;
 });
 
 // ==================== Pre-Save Middleware ====================
-consultantSchema.pre('save', async function(next) {
+consultantSchema.pre('save', async function (next) {
     try {
         // Generate search tokens
         this.searchTokens = this._generateSearchTokens();
@@ -892,7 +899,7 @@ consultantSchema.pre('save', async function(next) {
 });
 
 // ==================== Instance Methods ====================
-consultantSchema.methods._generateSearchTokens = function() {
+consultantSchema.methods._generateSearchTokens = function () {
     const tokens = new Set();
 
     // Add name tokens
@@ -914,14 +921,14 @@ consultantSchema.methods._generateSearchTokens = function() {
     return Array.from(tokens);
 };
 
-consultantSchema.methods.updateAvailability = async function(availabilityData) {
+consultantSchema.methods.updateAvailability = async function (availabilityData) {
     Object.assign(this.availability, availabilityData);
     this.availability.lastUpdated = new Date();
     return this.save();
 };
 
-consultantSchema.methods.addSkill = async function(skillData) {
-    const existingSkill = this.skills.find(s => 
+consultantSchema.methods.addSkill = async function (skillData) {
+    const existingSkill = this.skills.find(s =>
         s.name.toLowerCase() === skillData.name.toLowerCase()
     );
 
@@ -934,20 +941,20 @@ consultantSchema.methods.addSkill = async function(skillData) {
     return this.save();
 };
 
-consultantSchema.methods.addCertification = async function(certificationData) {
+consultantSchema.methods.addCertification = async function (certificationData) {
     certificationData.certificationId = `CERT-${Date.now()}`;
     this.certifications.push(certificationData);
     return this.save();
 };
 
-consultantSchema.methods.addAssignment = async function(assignmentData) {
+consultantSchema.methods.addAssignment = async function (assignmentData) {
     this.assignments.push(assignmentData);
-    
+
     // Recalculate availability
     const totalAllocation = this.assignments
         .filter(a => a.status === 'active' || a.status === 'confirmed')
         .reduce((sum, a) => sum + (a.allocationPercentage || 0), 0);
-    
+
     if (totalAllocation >= 100) {
         this.availability.status = 'on_project';
         this.availability.capacityPercentage = 0;
@@ -959,8 +966,8 @@ consultantSchema.methods.addAssignment = async function(assignmentData) {
     return this.save();
 };
 
-consultantSchema.methods.removeAssignment = async function(assignmentId) {
-    this.assignments = this.assignments.filter(a => 
+consultantSchema.methods.removeAssignment = async function (assignmentId) {
+    this.assignments = this.assignments.filter(a =>
         a.assignmentId?.toString() !== assignmentId.toString()
     );
 
@@ -968,7 +975,7 @@ consultantSchema.methods.removeAssignment = async function(assignmentId) {
     const totalAllocation = this.assignments
         .filter(a => a.status === 'active' || a.status === 'confirmed')
         .reduce((sum, a) => sum + (a.allocationPercentage || 0), 0);
-    
+
     if (totalAllocation === 0) {
         this.availability.status = 'available';
         this.availability.capacityPercentage = 100;
@@ -981,14 +988,14 @@ consultantSchema.methods.removeAssignment = async function(assignmentId) {
 };
 
 // ==================== Static Methods ====================
-consultantSchema.statics.findByCode = function(tenantId, consultantCode) {
-    return this.findOne({ 
-        tenantId, 
-        consultantCode: consultantCode.toUpperCase() 
+consultantSchema.statics.findByCode = function (tenantId, consultantCode) {
+    return this.findOne({
+        tenantId,
+        consultantCode: consultantCode.toUpperCase()
     });
 };
 
-consultantSchema.statics.findAvailable = function(tenantId, filters = {}) {
+consultantSchema.statics.findAvailable = function (tenantId, filters = {}) {
     const query = {
         tenantId,
         'status.current': 'active',
@@ -1011,32 +1018,43 @@ consultantSchema.statics.findAvailable = function(tenantId, filters = {}) {
     return this.find(query);
 };
 
-consultantSchema.statics.searchBySkills = function(tenantId, skills, options = {}) {
+consultantSchema.statics.searchBySkills = function (tenantId, skills, options = {}) {
+    // Validate tenantId before attempting conversion
+    if (!tenantId || !mongoose.Types.ObjectId.isValid(tenantId) && tenantId !== 'default') {
+        throw new Error('Invalid or missing tenant ID for consultant search');
+    }
+
     const pipeline = [
-        { $match: { 
-            tenantId: new mongoose.Types.ObjectId(tenantId),
-            'status.current': 'active',
-            'status.isDeleted': false
-        }},
-        { $addFields: {
-            matchedSkills: {
-                $filter: {
-                    input: '$skills',
-                    as: 'skill',
-                    cond: { $in: ['$$skill.name', skills] }
+        {
+            $match: {
+                tenantId: new mongoose.Types.ObjectId(tenantId),
+                'status.current': 'active',
+                'status.isDeleted': false
+            }
+        },
+        {
+            $addFields: {
+                matchedSkills: {
+                    $filter: {
+                        input: '$skills',
+                        as: 'skill',
+                        cond: { $in: ['$$skill.name', skills] }
+                    }
                 }
             }
-        }},
-        { $match: { 'matchedSkills.0': { $exists: true } }},
-        { $addFields: {
-            matchCount: { $size: '$matchedSkills' },
-            matchPercentage: { 
-                $multiply: [
-                    { $divide: [{ $size: '$matchedSkills' }, skills.length] },
-                    100
-                ]
+        },
+        { $match: { 'matchedSkills.0': { $exists: true } } },
+        {
+            $addFields: {
+                matchCount: { $size: '$matchedSkills' },
+                matchPercentage: {
+                    $multiply: [
+                        { $divide: [{ $size: '$matchedSkills' }, skills.length] },
+                        100
+                    ]
+                }
             }
-        }},
+        },
         { $sort: { matchCount: -1, 'performance.rating.overall': -1 } }
     ];
 
@@ -1047,39 +1065,229 @@ consultantSchema.statics.searchBySkills = function(tenantId, skills, options = {
     return this.aggregate(pipeline);
 };
 
-consultantSchema.statics.getStatistics = async function(tenantId) {
+consultantSchema.statics.getStatistics = async function (tenantId) {
     return this.aggregate([
-        { $match: { 
-            tenantId: new mongoose.Types.ObjectId(tenantId),
-            'status.isDeleted': false
-        }},
-        { $facet: {
-            byStatus: [
-                { $group: { _id: '$status.current', count: { $sum: 1 } }}
-            ],
-            byLevel: [
-                { $group: { _id: '$professional.level', count: { $sum: 1 } }}
-            ],
-            byAvailability: [
-                { $group: { _id: '$availability.status', count: { $sum: 1 } }}
-            ],
-            byEmploymentType: [
-                { $group: { _id: '$professional.employmentType', count: { $sum: 1 } }}
-            ],
-            topSkills: [
-                { $unwind: '$skills' },
-                { $group: { _id: '$skills.name', count: { $sum: 1 } }},
-                { $sort: { count: -1 } },
-                { $limit: 20 }
-            ],
-            averageRating: [
-                { $group: { _id: null, avg: { $avg: '$performance.rating.overall' } }}
-            ],
-            totals: [
-                { $group: { _id: null, total: { $sum: 1 } }}
-            ]
-        }}
+        {
+            $match: {
+                tenantId: new mongoose.Types.ObjectId(tenantId),
+                'status.isDeleted': false
+            }
+        },
+        {
+            $facet: {
+                byStatus: [
+                    { $group: { _id: '$status.current', count: { $sum: 1 } } }
+                ],
+                byLevel: [
+                    { $group: { _id: '$professional.level', count: { $sum: 1 } } }
+                ],
+                byAvailability: [
+                    { $group: { _id: '$availability.status', count: { $sum: 1 } } }
+                ],
+                byEmploymentType: [
+                    { $group: { _id: '$professional.employmentType', count: { $sum: 1 } } }
+                ],
+                topSkills: [
+                    { $unwind: '$skills' },
+                    { $group: { _id: '$skills.name', count: { $sum: 1 } } },
+                    { $sort: { count: -1 } },
+                    { $limit: 20 }
+                ],
+                averageRating: [
+                    { $group: { _id: null, avg: { $avg: '$performance.rating.overall' } } }
+                ],
+                totals: [
+                    { $group: { _id: null, total: { $sum: 1 } } }
+                ]
+            }
+        }
     ]);
+};
+
+/**
+ * Archive document (soft delete)
+ */
+consultantSchema.methods.archiveDocument = async function (documentId) {
+    const docIndex = this.documents.findIndex(d =>
+        d.documentId === documentId || d._id?.toString() === documentId
+    );
+
+    if (docIndex === -1) {
+        throw new Error('Document not found');
+    }
+
+    this.documents[docIndex].status = 'archived';
+    return this.save();
+};
+
+/**
+ * Restore archived document
+ */
+consultantSchema.methods.restoreDocument = async function (documentId) {
+    const docIndex = this.documents.findIndex(d =>
+        d.documentId === documentId || d._id?.toString() === documentId
+    );
+
+    if (docIndex === -1) {
+        throw new Error('Document not found');
+    }
+
+    this.documents[docIndex].status = 'active';
+    return this.save();
+};
+
+/**
+ * Hard delete document (permanent removal)
+ */
+consultantSchema.methods.hardDeleteDocument = async function (documentId) {
+    this.documents = this.documents.filter(d =>
+        d.documentId !== documentId && d._id?.toString() !== documentId
+    );
+    return this.save();
+};
+
+/**
+ * Get active documents only
+ */
+consultantSchema.methods.getActiveDocuments = function () {
+    return this.documents.filter(d => d.status === 'active');
+};
+
+/**
+ * Add feedback to consultant
+ */
+consultantSchema.methods.addFeedback = async function (feedbackData, userId) {
+    // Build source object with proper ObjectId handling
+    const source = {};
+
+    if (!feedbackData.isAnonymous && userId && mongoose.Types.ObjectId.isValid(userId)) {
+        source.userId = new mongoose.Types.ObjectId(userId);
+    }
+
+    if (feedbackData.source?.clientId && mongoose.Types.ObjectId.isValid(feedbackData.source.clientId)) {
+        source.clientId = new mongoose.Types.ObjectId(feedbackData.source.clientId);
+    }
+
+    if (feedbackData.source?.projectId && mongoose.Types.ObjectId.isValid(feedbackData.source.projectId)) {
+        source.projectId = new mongoose.Types.ObjectId(feedbackData.source.projectId);
+    }
+
+    // Convert categories plain object to Map for Mongoose
+    const categoriesMap = new Map();
+    if (feedbackData.categories && typeof feedbackData.categories === 'object') {
+        Object.entries(feedbackData.categories).forEach(([key, value]) => {
+            if (typeof value === 'number' && value >= 1 && value <= 5) {
+                categoriesMap.set(key, value);
+            }
+        });
+    }
+
+    const feedback = {
+        feedbackId: `FBK-${Date.now()}`,
+        type: feedbackData.type || 'peer',
+        source,
+        rating: feedbackData.rating,
+        categories: categoriesMap,
+        content: feedbackData.content,
+        isAnonymous: feedbackData.isAnonymous || false,
+        status: 'active',
+        createdAt: new Date()
+    };
+
+    this.performance.feedback.push(feedback);
+    return this.save();
+};
+
+/**
+ * Update feedback for consultant
+ */
+consultantSchema.methods.updateFeedback = async function (feedbackId, updateData) {
+    const feedbackIndex = this.performance.feedback.findIndex(f =>
+        f.feedbackId === feedbackId || f._id?.toString() === feedbackId
+    );
+
+    if (feedbackIndex === -1) {
+        throw new Error('Feedback not found');
+    }
+
+    const feedback = this.performance.feedback[feedbackIndex];
+
+    // Update allowed fields
+    if (updateData.rating !== undefined) {
+        if (updateData.rating < 1 || updateData.rating > 5) {
+            throw new Error('Rating must be between 1 and 5');
+        }
+        feedback.rating = updateData.rating;
+    }
+
+    if (updateData.content !== undefined) {
+        feedback.content = updateData.content;
+    }
+
+    if (updateData.categories) {
+        const categoriesMap = new Map();
+        Object.entries(updateData.categories).forEach(([key, value]) => {
+            if (typeof value === 'number' && value >= 1 && value <= 5) {
+                categoriesMap.set(key, value);
+            }
+        });
+        feedback.categories = categoriesMap;
+    }
+
+    feedback.updatedAt = new Date();
+
+    return this.save();
+};
+
+/**
+ * Archive feedback (soft delete)
+ */
+consultantSchema.methods.archiveFeedback = async function (feedbackId) {
+    const feedbackIndex = this.performance.feedback.findIndex(f =>
+        f.feedbackId === feedbackId || f._id?.toString() === feedbackId
+    );
+
+    if (feedbackIndex === -1) {
+        throw new Error('Feedback not found');
+    }
+
+    this.performance.feedback[feedbackIndex].status = 'archived';
+    this.performance.feedback[feedbackIndex].archivedAt = new Date();
+    return this.save();
+};
+
+/**
+ * Restore archived feedback
+ */
+consultantSchema.methods.restoreFeedback = async function (feedbackId) {
+    const feedbackIndex = this.performance.feedback.findIndex(f =>
+        f.feedbackId === feedbackId || f._id?.toString() === feedbackId
+    );
+
+    if (feedbackIndex === -1) {
+        throw new Error('Feedback not found');
+    }
+
+    this.performance.feedback[feedbackIndex].status = 'active';
+    delete this.performance.feedback[feedbackIndex].archivedAt;
+    return this.save();
+};
+
+/**
+ * Hard delete feedback (permanent removal)
+ */
+consultantSchema.methods.hardDeleteFeedback = async function (feedbackId) {
+    this.performance.feedback = this.performance.feedback.filter(f =>
+        f.feedbackId !== feedbackId && f._id?.toString() !== feedbackId
+    );
+    return this.save();
+};
+
+/**
+ * Get active feedback only
+ */
+consultantSchema.methods.getActiveFeedback = function () {
+    return this.performance.feedback.filter(f => f.status === 'active' || !f.status);
 };
 
 /**
@@ -1088,7 +1296,7 @@ consultantSchema.statics.getStatistics = async function(tenantId) {
 module.exports = {
     schema: consultantSchema,
     modelName: 'Consultant',
-    createModel: function(connection) {
+    createModel: function (connection) {
         if (connection) {
             return connection.model('Consultant', consultantSchema);
         }

@@ -1960,18 +1960,98 @@ class ConsultantService {
     }
 
     /**
-     * Remove document from consultant
+     * Remove document from consultant (soft delete - archives document)
      * @param {string} consultantId - Consultant ID
      * @param {string} documentId - Document ID to remove
      * @param {Object} options - Update options
      * @param {string} options.tenantId - Tenant ID for access control
      * @param {string} options.userId - User ID performing the update
      * @param {boolean} options.skipTenantCheck - Skip tenant verification (for self-service operations)
+     * @param {boolean} options.hardDelete - Perform permanent deletion instead of archiving
      * @returns {Promise<Object>} Updated consultant
      */
     async removeDocument(consultantId, documentId, options = {}) {
         try {
             logger.info('Removing document from consultant', {
+                consultantId,
+                documentId,
+                hardDelete: options.hardDelete
+            });
+
+            const dbService = this._getDatabaseService();
+            const Consultant = dbService.getModel('Consultant', 'customer');
+
+            const consultant = await this._findConsultantRecord(consultantId);
+
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
+                consultant.tenantId.toString() !== options.tenantId) {
+                throw AppError.forbidden('Access denied to this consultant');
+            }
+
+            // Find document index to verify it exists
+            const docIndex = consultant.documents.findIndex(d =>
+                d.documentId === documentId || d._id?.toString() === documentId
+            );
+
+            if (docIndex === -1) {
+                throw AppError.notFound('Document not found', {
+                    context: { documentId }
+                });
+            }
+
+            let updatedConsultant;
+
+            if (options.hardDelete) {
+                // Hard delete - permanently remove document
+                updatedConsultant = await Consultant.findByIdAndUpdate(
+                    consultant._id,
+                    {
+                        $pull: { documents: { $or: [{ documentId }, { _id: documentId }] } },
+                        $set: { 'metadata.updatedBy': options.userId }
+                    },
+                    { new: true }
+                );
+                logger.info('Document permanently deleted', { consultantId, documentId });
+            } else {
+                // Soft delete - archive document
+                updatedConsultant = await Consultant.findByIdAndUpdate(
+                    consultant._id,
+                    {
+                        $set: {
+                            [`documents.${docIndex}.status`]: 'archived',
+                            'metadata.updatedBy': options.userId
+                        }
+                    },
+                    { new: true }
+                );
+                logger.info('Document archived', { consultantId, documentId });
+            }
+
+            return this._sanitizeConsultantOutput(updatedConsultant);
+
+        } catch (error) {
+            logger.error('Failed to remove document', {
+                error: error.message,
+                consultantId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Restore archived document
+     * @param {string} consultantId - Consultant ID
+     * @param {string} documentId - Document ID to restore
+     * @param {Object} options - Update options
+     * @param {string} options.tenantId - Tenant ID for access control
+     * @param {string} options.userId - User ID performing the update
+     * @param {boolean} options.skipTenantCheck - Skip tenant verification (for self-service operations)
+     * @returns {Promise<Object>} Updated consultant
+     */
+    async restoreDocument(consultantId, documentId, options = {}) {
+        try {
+            logger.info('Restoring archived document', {
                 consultantId,
                 documentId
             });
@@ -1987,21 +2067,34 @@ class ConsultantService {
                 throw AppError.forbidden('Access denied to this consultant');
             }
 
+            // Find document index
+            const docIndex = consultant.documents.findIndex(d =>
+                d.documentId === documentId || d._id?.toString() === documentId
+            );
+
+            if (docIndex === -1) {
+                throw AppError.notFound('Document not found', {
+                    context: { documentId }
+                });
+            }
+
             const updatedConsultant = await Consultant.findByIdAndUpdate(
                 consultant._id,
                 {
-                    $pull: { documents: { documentId } },
-                    $set: { 'metadata.updatedBy': options.userId }
+                    $set: {
+                        [`documents.${docIndex}.status`]: 'active',
+                        'metadata.updatedBy': options.userId
+                    }
                 },
                 { new: true }
             );
 
-            logger.info('Document removed', { consultantId, documentId });
+            logger.info('Document restored', { consultantId, documentId });
 
             return this._sanitizeConsultantOutput(updatedConsultant);
 
         } catch (error) {
-            logger.error('Failed to remove document', {
+            logger.error('Failed to restore document', {
                 error: error.message,
                 consultantId
             });
@@ -2128,6 +2221,7 @@ class ConsultantService {
      * @param {number} feedbackData.rating - Rating (1-5)
      * @param {string} feedbackData.content - Feedback content
      * @param {boolean} feedbackData.isAnonymous - Whether feedback is anonymous
+     * @param {Object} feedbackData.categories - Category ratings
      * @param {Object} feedbackData.source - Source information (projectId, clientId)
      * @param {Object} options - Update options
      * @param {string} options.tenantId - Tenant ID for access control
@@ -2153,41 +2247,246 @@ class ConsultantService {
                 throw AppError.forbidden('Access denied to this consultant');
             }
 
-            const feedback = {
-                feedbackId: `FBK-${Date.now()}`,
-                type: feedbackData.type || 'peer',
-                source: {
-                    userId: feedbackData.isAnonymous ? null : options.userId,
-                    clientId: feedbackData.source?.clientId,
-                    projectId: feedbackData.source?.projectId
-                },
-                rating: feedbackData.rating,
-                categories: feedbackData.categories || {},
-                content: feedbackData.content,
-                isAnonymous: feedbackData.isAnonymous || false,
-                createdAt: new Date()
-            };
+            // Validate rating
+            if (feedbackData.rating && (feedbackData.rating < 1 || feedbackData.rating > 5)) {
+                throw AppError.validation('Rating must be between 1 and 5');
+            }
 
-            const updatedConsultant = await Consultant.findByIdAndUpdate(
-                consultant._id,
-                {
-                    $push: { 'performance.feedback': feedback },
-                    $set: { 'metadata.updatedBy': options.userId }
-                },
-                { new: true }
-            );
+            // Validate content
+            if (!feedbackData.content || feedbackData.content.trim().length === 0) {
+                throw AppError.validation('Feedback content is required');
+            }
 
-            logger.info('Feedback added', {
-                consultantId,
-                feedbackId: feedback.feedbackId
+            // Use model instance method to add feedback
+            await consultant.addFeedback(feedbackData, options.userId);
+
+            // Update metadata
+            consultant.metadata.updatedBy = options.userId;
+            await consultant.save();
+
+            // Track event
+            await this._trackConsultantEvent(consultant, 'feedback_added', {
+                userId: options.userId,
+                feedbackType: feedbackData.type,
+                rating: feedbackData.rating
             });
 
-            return this._sanitizeConsultantOutput(updatedConsultant);
+            logger.info('Feedback added successfully', {
+                consultantId,
+                feedbackType: feedbackData.type
+            });
+
+            return this._sanitizeConsultantOutput(consultant);
 
         } catch (error) {
             logger.error('Failed to add feedback', {
                 error: error.message,
                 consultantId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Update feedback for consultant
+     * @param {string} consultantId - Consultant ID
+     * @param {string} feedbackId - Feedback ID to update
+     * @param {Object} updateData - Updated feedback information
+     * @param {number} updateData.rating - Updated rating
+     * @param {string} updateData.content - Updated content
+     * @param {Object} updateData.categories - Updated category ratings
+     * @param {Object} options - Update options
+     * @param {string} options.tenantId - Tenant ID for access control
+     * @param {string} options.userId - User ID performing the update
+     * @param {boolean} options.skipTenantCheck - Skip tenant verification (for self-service operations)
+     * @returns {Promise<Object>} Updated consultant
+     */
+    async updateFeedback(consultantId, feedbackId, updateData, options = {}) {
+        try {
+            logger.info('Updating feedback for consultant', {
+                consultantId,
+                feedbackId
+            });
+
+            const dbService = this._getDatabaseService();
+            const Consultant = dbService.getModel('Consultant', 'customer');
+
+            const consultant = await this._findConsultantRecord(consultantId);
+
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
+                consultant.tenantId.toString() !== options.tenantId) {
+                throw AppError.forbidden('Access denied to this consultant');
+            }
+
+            // Find the feedback to verify user authorization
+            const feedback = consultant.performance.feedback.find(f =>
+                f.feedbackId === feedbackId || f._id?.toString() === feedbackId
+            );
+
+            if (!feedback) {
+                throw AppError.notFound('Feedback not found', {
+                    context: { feedbackId }
+                });
+            }
+
+            // Only the original feedback provider can update their feedback
+            if (!feedback.isAnonymous && feedback.source?.userId?.toString() !== options.userId) {
+                throw AppError.forbidden('You can only update your own feedback');
+            }
+
+            // Use model instance method to update feedback
+            await consultant.updateFeedback(feedbackId, updateData);
+
+            // Update metadata
+            consultant.metadata.updatedBy = options.userId;
+            await consultant.save();
+
+            // Track event
+            await this._trackConsultantEvent(consultant, 'feedback_updated', {
+                userId: options.userId,
+                feedbackId
+            });
+
+            logger.info('Feedback updated successfully', {
+                consultantId,
+                feedbackId
+            });
+
+            return this._sanitizeConsultantOutput(consultant);
+
+        } catch (error) {
+            logger.error('Failed to update feedback', {
+                error: error.message,
+                consultantId,
+                feedbackId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Remove feedback from consultant (soft delete - archives feedback)
+     * @param {string} consultantId - Consultant ID
+     * @param {string} feedbackId - Feedback ID to remove
+     * @param {Object} options - Update options
+     * @param {string} options.tenantId - Tenant ID for access control
+     * @param {string} options.userId - User ID performing the update
+     * @param {boolean} options.skipTenantCheck - Skip tenant verification (for self-service operations)
+     * @param {boolean} options.hardDelete - Perform permanent deletion instead of archiving
+     * @returns {Promise<Object>} Updated consultant
+     */
+    async removeFeedback(consultantId, feedbackId, options = {}) {
+        try {
+            logger.info('Removing feedback from consultant', {
+                consultantId,
+                feedbackId,
+                hardDelete: options.hardDelete
+            });
+
+            const dbService = this._getDatabaseService();
+            const Consultant = dbService.getModel('Consultant', 'customer');
+
+            const consultant = await this._findConsultantRecord(consultantId);
+
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
+                consultant.tenantId.toString() !== options.tenantId) {
+                throw AppError.forbidden('Access denied to this consultant');
+            }
+
+            // Find the feedback to verify it exists and check authorization
+            const feedback = consultant.performance.feedback.find(f =>
+                f.feedbackId === feedbackId || f._id?.toString() === feedbackId
+            );
+
+            if (!feedback) {
+                throw AppError.notFound('Feedback not found', {
+                    context: { feedbackId }
+                });
+            }
+
+            // Only the original feedback provider can remove their feedback
+            if (!feedback.isAnonymous && feedback.source?.userId?.toString() !== options.userId) {
+                throw AppError.forbidden('You can only remove your own feedback');
+            }
+
+            // Use model instance method for deletion
+            if (options.hardDelete) {
+                await consultant.hardDeleteFeedback(feedbackId);
+                logger.info('Feedback permanently deleted', { consultantId, feedbackId });
+            } else {
+                await consultant.archiveFeedback(feedbackId);
+                logger.info('Feedback archived', { consultantId, feedbackId });
+            }
+
+            // Update metadata
+            consultant.metadata.updatedBy = options.userId;
+            await consultant.save();
+
+            // Track event
+            await this._trackConsultantEvent(consultant, 'feedback_removed', {
+                userId: options.userId,
+                feedbackId,
+                hardDelete: options.hardDelete
+            });
+
+            return this._sanitizeConsultantOutput(consultant);
+
+        } catch (error) {
+            logger.error('Failed to remove feedback', {
+                error: error.message,
+                consultantId,
+                feedbackId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Restore archived feedback
+     * @param {string} consultantId - Consultant ID
+     * @param {string} feedbackId - Feedback ID to restore
+     * @param {Object} options - Update options
+     * @param {string} options.tenantId - Tenant ID for access control
+     * @param {string} options.userId - User ID performing the update
+     * @param {boolean} options.skipTenantCheck - Skip tenant verification (for self-service operations)
+     * @returns {Promise<Object>} Updated consultant
+     */
+    async restoreFeedback(consultantId, feedbackId, options = {}) {
+        try {
+            logger.info('Restoring archived feedback', {
+                consultantId,
+                feedbackId
+            });
+
+            const dbService = this._getDatabaseService();
+            const Consultant = dbService.getModel('Consultant', 'customer');
+
+            const consultant = await this._findConsultantRecord(consultantId);
+
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
+                consultant.tenantId.toString() !== options.tenantId) {
+                throw AppError.forbidden('Access denied to this consultant');
+            }
+
+            // Use model instance method to restore feedback
+            await consultant.restoreFeedback(feedbackId);
+
+            // Update metadata
+            consultant.metadata.updatedBy = options.userId;
+            await consultant.save();
+
+            logger.info('Feedback restored successfully', { consultantId, feedbackId });
+
+            return this._sanitizeConsultantOutput(consultant);
+
+        } catch (error) {
+            logger.error('Failed to restore feedback', {
+                error: error.message,
+                consultantId,
+                feedbackId
             });
             throw error;
         }
@@ -2858,7 +3157,7 @@ class ConsultantService {
 
             // Get tenantId with validation
             const tenantId = options.tenantId || this.config.companyTenantId;
-            const tenantIdToUse = (tenantId && mongoose.Types.ObjectId.isValid(tenantId)) ? tenantId : this.config.companyTenantId;
+            const tenantIdToUse = (tenantId && mongoose.Types.ObjectId.isValid(tenantId) && tenantId == 'default') ? tenantId : this.config.companyTenantId;
 
             const results = await Consultant.searchBySkills(
                 tenantIdToUse,

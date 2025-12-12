@@ -51,8 +51,12 @@ class ConsultantController {
         this.addWorkHistory = this.addWorkHistory.bind(this);
         this.addDocument = this.addDocument.bind(this);
         this.removeDocument = this.removeDocument.bind(this);
+        this.restoreDocument = this.restoreDocument.bind(this);
         this.addPerformanceReview = this.addPerformanceReview.bind(this);
         this.addFeedback = this.addFeedback.bind(this);
+        this.updateFeedback = this.updateFeedback.bind(this);
+        this.removeFeedback = this.removeFeedback.bind(this);
+        this.restoreFeedback = this.restoreFeedback.bind(this);
         this.addAchievement = this.addAchievement.bind(this);
         this.updateComplianceStatus = this.updateComplianceStatus.bind(this);
         this.addConflictOfInterestDeclaration = this.addConflictOfInterestDeclaration.bind(this);
@@ -1033,6 +1037,30 @@ class ConsultantController {
         }
     }
 
+    /**
+     * Restore archived document
+     * @async
+     * @param {Object} req - Express request object
+     * @param {string} req.params.consultantId - Consultant ID
+     * @param {string} req.params.documentId - Document ID
+     * @param {Object} res - Express response object
+     */
+    async restoreDocument(req, res) {
+        try {
+            const { consultantId, documentId } = req.params;
+
+            const consultant = await consultantService.restoreDocument(consultantId, documentId, {
+                tenantId: this._getTenantId(req),
+                userId: this._getUserId(req)
+            });
+
+            this._sendSuccess(res, consultant, 'Document restored successfully');
+
+        } catch (error) {
+            this._sendError(res, error);
+        }
+    }
+
     // ============================================================================
     // PERFORMANCE MANAGEMENT
     // ============================================================================
@@ -1081,6 +1109,80 @@ class ConsultantController {
             });
 
             this._sendSuccess(res, consultant, 'Feedback added successfully', 201);
+
+        } catch (error) {
+            this._sendError(res, error);
+        }
+    }
+
+    /**
+     * Update feedback for consultant
+     * @async
+     * @param {Object} req - Express request object
+     * @param {string} req.params.consultantId - Consultant ID
+     * @param {string} req.params.feedbackId - Feedback ID
+     * @param {Object} req.body - Updated feedback data
+     * @param {Object} res - Express response object
+     */
+    async updateFeedback(req, res) {
+        try {
+            const { consultantId, feedbackId } = req.params;
+
+            const consultant = await consultantService.updateFeedback(consultantId, feedbackId, req.body, {
+                tenantId: this._getTenantId(req),
+                userId: this._getUserId(req)
+            });
+
+            this._sendSuccess(res, consultant, 'Feedback updated successfully');
+
+        } catch (error) {
+            this._sendError(res, error);
+        }
+    }
+
+    /**
+     * Remove feedback from consultant
+     * @async
+     * @param {Object} req - Express request object
+     * @param {string} req.params.consultantId - Consultant ID
+     * @param {string} req.params.feedbackId - Feedback ID
+     * @param {Object} res - Express response object
+     */
+    async removeFeedback(req, res) {
+        try {
+            const { consultantId, feedbackId } = req.params;
+
+            const consultant = await consultantService.removeFeedback(consultantId, feedbackId, {
+                tenantId: this._getTenantId(req),
+                userId: this._getUserId(req),
+                hardDelete: req.query.hard === 'true'
+            });
+
+            this._sendSuccess(res, consultant, 'Feedback removed successfully');
+
+        } catch (error) {
+            this._sendError(res, error);
+        }
+    }
+
+    /**
+     * Restore archived feedback
+     * @async
+     * @param {Object} req - Express request object
+     * @param {string} req.params.consultantId - Consultant ID
+     * @param {string} req.params.feedbackId - Feedback ID
+     * @param {Object} res - Express response object
+     */
+    async restoreFeedback(req, res) {
+        try {
+            const { consultantId, feedbackId } = req.params;
+
+            const consultant = await consultantService.restoreFeedback(consultantId, feedbackId, {
+                tenantId: this._getTenantId(req),
+                userId: this._getUserId(req)
+            });
+
+            this._sendSuccess(res, consultant, 'Feedback restored successfully');
 
         } catch (error) {
             this._sendError(res, error);
@@ -1354,6 +1456,10 @@ class ConsultantController {
      */
     async searchBySkills(req, res) {
         try {
+            // Temporary debugging
+            console.log('Request user object:', req.user);
+            console.log('Tenant ID from _getTenantId:', this._getTenantId(req));
+
             const skills = req.body.skills || req.query.skills?.split(',');
 
             if (!skills || skills.length === 0) {
