@@ -43,6 +43,22 @@ export default function LoginPage() {
     return true
   }
 
+  /**
+   * Get dashboard URL based on userType
+   * Maps userType to appropriate dashboard route
+   */
+  const getDashboardUrl = (userType: string): string => {
+    const dashboardMap: Record<string, string> = {
+      client: '/dashboard',
+      consultant: '/dashboard/consultant',
+      candidate: '/dashboard/candidate',
+      partner: '/dashboard/partner',
+      admin: '/admin',
+    }
+
+    return dashboardMap[userType.toLowerCase()] || '/dashboard'
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -51,13 +67,41 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      // Use real API call instead of simulation
+      // Login through API client
       const response = await auth.login(formData.email, formData.password)
+      console.log('=== LOGIN DEBUG ===')
+      console.log('Full response:', response)
+      console.log('UserType from response.userType:', response.userType)
+      console.log('UserType from response.data?.userType:', response.data?.userType)
+      console.log('UserType from response.user?.userType:', response.user?.userType)
 
+      // Extract userType from response
+      let userType = 'client' // default fallback
+
+      // Check multiple possible locations for userType
+      if (response.userType) {
+        userType = response.userType
+      } else if (response.data?.userType) {
+        userType = response.data.userType
+      } else if (response.user?.userType) {
+        userType = response.user.userType
+      } else if (response.data?.user?.userType) {
+        userType = response.data.user.userType
+      }
+
+      console.log('Detected userType:', userType)
+      
+      // Get the appropriate dashboard URL based on userType
+      const dashboardUrl = getDashboardUrl(userType)
+
+      console.log('Redirecting to:', dashboardUrl)
+      console.log('=== END DEBUG ===')
+
+      // Success message
       toast.success('Login successful! Welcome back.')
 
-      // Redirect to dashboard
-      router.push('/dashboard')
+      // Redirect to user-type-specific dashboard
+      router.push(dashboardUrl)
     } catch (error: any) {
       console.error('Login failed:', error)
 
@@ -91,7 +135,7 @@ export default function LoginPage() {
       <CardHeader className="space-y-1">
         <CardTitle className="text-xl font-bold">Welcome back</CardTitle>
         <CardDescription className="text-xs">
-          Sign in to your Enterprise Platform account
+          Sign in to your InsightSerenity account
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

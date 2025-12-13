@@ -574,7 +574,7 @@ class DirectAuthService {
                         userId: userWithToken._id
                     });
                 });
-                
+
             // Initialize onboarding
             let onboardingData = null;
             try {
@@ -1884,10 +1884,49 @@ class DirectAuthService {
         return sourceMap[userType] || REGISTRATION_SOURCES.DIRECT_INQUIRY;
     }
 
+    // _getUserTypeFromUser(user) {
+    //     return user.metadata?.userType ||
+    //         user.customFields?.userType ||
+    //         DIRECT_USER_TYPES.CLIENT;
+    // }
+
+    /**
+     * Determine user type from user document
+     * CRITICAL: Checks entity association fields first (consultantId, clientId, etc.)
+     * before falling back to metadata
+     * @private
+     */
     _getUserTypeFromUser(user) {
-        return user.metadata?.userType ||
-            user.customFields?.userType ||
-            DIRECT_USER_TYPES.CLIENT;
+        // Priority 1: Check for entity association fields
+        // These are the authoritative indicators of user type
+        if (user.consultantId) {
+            return DIRECT_USER_TYPES.CONSULTANT;
+        }
+
+        if (user.clientId) {
+            return DIRECT_USER_TYPES.CLIENT;
+        }
+
+        if (user.candidateId) {
+            return DIRECT_USER_TYPES.CANDIDATE;
+        }
+
+        if (user.partnerId) {
+            return DIRECT_USER_TYPES.PARTNER;
+        }
+
+        // Priority 2: Check metadata.userType
+        if (user.metadata?.userType) {
+            return user.metadata.userType;
+        }
+
+        // Priority 3: Check customFields.userType
+        if (user.customFields?.userType) {
+            return user.customFields.userType;
+        }
+
+        // Default fallback
+        return DIRECT_USER_TYPES.CLIENT;
     }
 
     _getRegistrationNextSteps(userType, user) {
