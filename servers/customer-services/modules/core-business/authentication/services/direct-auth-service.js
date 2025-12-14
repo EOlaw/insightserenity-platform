@@ -1949,6 +1949,17 @@ class DirectAuthService {
         return steps;
     }
 
+    // _getDashboardUrl(userType) {
+    //     const baseUrl = this.config.platformUrl;
+    //     const dashboardMap = {
+    //         [DIRECT_USER_TYPES.CLIENT]: `${baseUrl}/client/dashboard`,
+    //         [DIRECT_USER_TYPES.CONSULTANT]: `${baseUrl}/consultant/dashboard`,
+    //         [DIRECT_USER_TYPES.CANDIDATE]: `${baseUrl}/candidate/dashboard`,
+    //         [DIRECT_USER_TYPES.PARTNER]: `${baseUrl}/partner/dashboard`,
+    //     };
+    //     return dashboardMap[userType] || `${baseUrl}/dashboard`;
+    // }
+
     _getDashboardUrl(userType) {
         const baseUrl = this.config.platformUrl;
         const dashboardMap = {

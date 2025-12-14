@@ -47,12 +47,24 @@ export default function LoginPage() {
    * Get dashboard URL based on userType
    * Maps userType to appropriate dashboard route
    */
+  // const getDashboardUrl = (userType: string): string => {
+  //   const dashboardMap: Record<string, string> = {
+  //     client: '/dashboard',
+  //     consultant: '/dashboard/consultant',
+  //     candidate: '/dashboard/candidate',
+  //     partner: '/dashboard/partner',
+  //     admin: '/admin',
+  //   }
+
+  //   return dashboardMap[userType.toLowerCase()] || '/dashboard'
+  // }
+
   const getDashboardUrl = (userType: string): string => {
     const dashboardMap: Record<string, string> = {
-      client: '/dashboard',
-      consultant: '/dashboard/consultant',
-      candidate: '/dashboard/candidate',
-      partner: '/dashboard/partner',
+      client: '/client/dashboard',
+      consultant: '/consultant/dashboard',
+      candidate: '/candidate/dashboard',
+      partner: '/partner/dashboard',
       admin: '/admin',
     }
 
@@ -90,7 +102,7 @@ export default function LoginPage() {
       }
 
       console.log('Detected userType:', userType)
-      
+
       // Get the appropriate dashboard URL based on userType
       const dashboardUrl = getDashboardUrl(userType)
 
