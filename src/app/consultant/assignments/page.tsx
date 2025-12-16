@@ -50,20 +50,12 @@ export default function AssignmentsPage() {
         setIsLoading(true)
 
         try {
+            // Load assignments from dedicated collection
             const response = await consultantApi.getMyAssignments()
-            
-            // Handle both wrapped and unwrapped responses
-            let assignmentsData: Assignment[]
-            if (Array.isArray(response)) {
-                assignmentsData = response
-            } else if (response && typeof response === 'object' && 'data' in response) {
-                const extracted = (response as any).data
-                assignmentsData = Array.isArray(extracted) ? extracted : []
-            } else {
-                assignmentsData = []
-            }
-            
+            const assignmentsData = response.data || []
             setAssignments(assignmentsData)
+            
+            console.log('Loaded assignments:', assignmentsData.length)
         } catch (error: any) {
             console.error('Failed to load assignments:', error)
             toast.error('Failed to load assignments')
@@ -147,7 +139,7 @@ export default function AssignmentsPage() {
                 {/* Compact Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <Link href="/dashboard/consultant">
+                        <Link href="/consultant/dashboard">
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                                 <ArrowLeft className="h-3.5 w-3.5" />
                             </Button>

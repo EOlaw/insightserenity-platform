@@ -64,8 +64,8 @@ const PROFICIENCY_VALUES = {
  * Verification Status Constants
  */
 const VERIFICATION_STATUS = {
-    NOT_VERIFIED: 'not_verified',
-    SELF_ASSESSED: 'self_assessed',
+    UNVERIFIED: 'unverified',
+    SELF_REPORTED: 'self_reported',
     PEER_VERIFIED: 'peer_verified',
     MANAGER_VERIFIED: 'manager_verified',
     CERTIFIED: 'certified',
@@ -260,7 +260,10 @@ class ConsultantSkillService {
                     currentlyUsing: skillData.experience?.currentlyUsing ?? true,
                     totalProjects: 0,
                     totalHours: 0,
-                    contexts: skillData.experience?.contexts || []
+                    contexts: skillData.experience?.contexts?.map(ctx => ({
+                        context: typeof ctx === 'string' ? ctx : ctx.context,
+                        percentage: ctx.percentage
+                    })) || []
                 },
                 projectHistory: [],
                 training: {
@@ -270,7 +273,7 @@ class ConsultantSkillService {
                 },
                 endorsements: [],
                 verification: {
-                    status: VERIFICATION_STATUS.NOT_VERIFIED,
+                    status: VERIFICATION_STATUS.UNVERIFIED,
                     history: []
                 },
                 goals: {
@@ -508,7 +511,7 @@ class ConsultantSkillService {
             if (options.verified) {
                 query['verification.status'] = {
                     $in: [VERIFICATION_STATUS.PEER_VERIFIED, VERIFICATION_STATUS.MANAGER_VERIFIED,
-                          VERIFICATION_STATUS.CERTIFIED, VERIFICATION_STATUS.TESTED]
+                    VERIFICATION_STATUS.CERTIFIED, VERIFICATION_STATUS.TESTED]
                 };
             }
 
@@ -667,7 +670,7 @@ class ConsultantSkillService {
             if (options.verifiedOnly) {
                 matchStage['verification.status'] = {
                     $in: [VERIFICATION_STATUS.PEER_VERIFIED, VERIFICATION_STATUS.MANAGER_VERIFIED,
-                          VERIFICATION_STATUS.CERTIFIED, VERIFICATION_STATUS.TESTED]
+                    VERIFICATION_STATUS.CERTIFIED, VERIFICATION_STATUS.TESTED]
                 };
             }
 
@@ -910,8 +913,8 @@ class ConsultantSkillService {
             // Update verification status based on assessment type
             const verificationUpdate = {};
             if (assessmentData.type === ASSESSMENT_TYPES.SELF) {
-                if (skillRecord.verification.status === VERIFICATION_STATUS.NOT_VERIFIED) {
-                    verificationUpdate['verification.status'] = VERIFICATION_STATUS.SELF_ASSESSED;
+                if (skillRecord.verification.status === VERIFICATION_STATUS.UNVERIFIED) {
+                    verificationUpdate['verification.status'] = VERIFICATION_STATUS.SELF_REPORTED;
                 }
             } else if (assessmentData.type === ASSESSMENT_TYPES.MANAGER) {
                 verificationUpdate['verification.status'] = VERIFICATION_STATUS.MANAGER_VERIFIED;
@@ -1560,7 +1563,7 @@ class ConsultantSkillService {
             // If progress is 100%, move to completed
             if (progress >= 100) {
                 const enrollment = skillRecord.training.currentlyEnrolled[enrollmentIndex];
-                
+
                 const updatedRecord = await ConsultantSkill.findByIdAndUpdate(
                     skillRecord._id,
                     {
@@ -2271,7 +2274,7 @@ class ConsultantSkillService {
                             proficiencyLevel: skillRecord.proficiency.level,
                             yearsOfExperience: skillRecord.experience.yearsOfExperience,
                             lastUsed: skillRecord.experience.lastUsed,
-                            verified: skillRecord.verification?.status !== VERIFICATION_STATUS.NOT_VERIFIED
+                            verified: skillRecord.verification?.status !== VERIFICATION_STATUS.UNVERIFIED
                         }
                     }
                 });
@@ -2283,7 +2286,7 @@ class ConsultantSkillService {
                             'skills.$.proficiencyLevel': skillRecord.proficiency.level,
                             'skills.$.yearsOfExperience': skillRecord.experience.yearsOfExperience,
                             'skills.$.lastUsed': skillRecord.experience.lastUsed,
-                            'skills.$.verified': skillRecord.verification?.status !== VERIFICATION_STATUS.NOT_VERIFIED
+                            'skills.$.verified': skillRecord.verification?.status !== VERIFICATION_STATUS.UNVERIFIED
                         }
                     }
                 );

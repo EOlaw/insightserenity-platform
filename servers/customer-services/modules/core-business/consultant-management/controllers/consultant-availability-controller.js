@@ -64,18 +64,27 @@ class ConsultantAvailabilityController {
             body('type')
                 .notEmpty().withMessage('Availability type is required')
                 .isIn(Object.values(AVAILABILITY_TYPES)).withMessage('Invalid availability type'),
-            body('startDate')
+            body('period.startDate')
                 .notEmpty().withMessage('Start date is required')
                 .isISO8601().withMessage('Invalid date format'),
-            body('endDate')
+            body('period.endDate')
                 .notEmpty().withMessage('End date is required')
                 .isISO8601().withMessage('Invalid date format'),
-            body('status')
+            body('period.timezone')
+                .optional()
+                .isString().withMessage('Timezone must be a string'),
+            body('period.allDay')
+                .optional()
+                .isBoolean().withMessage('All day must be a boolean'),
+            body('availabilityStatus')
                 .optional()
                 .isIn(Object.values(AVAILABILITY_STATUS)).withMessage('Invalid availability status'),
-            body('capacityPercentage')
+            body('capacity.percentageAvailable')
                 .optional()
-                .isInt({ min: 0, max: 100 }).withMessage('Capacity must be between 0 and 100')
+                .isInt({ min: 0, max: 100 }).withMessage('Capacity percentage must be between 0 and 100'),
+            body('capacity.hoursAvailable')
+                .optional()
+                .isFloat({ min: 0, max: 24 }).withMessage('Hours available must be between 0 and 24')
         ];
     }
 
@@ -88,18 +97,18 @@ class ConsultantAvailabilityController {
         return [
             param('consultantId')
                 .notEmpty().withMessage('Consultant ID is required'),
-            body('startDate')
+            body('period.startDate')
                 .notEmpty().withMessage('Start date is required')
                 .isISO8601().withMessage('Invalid date format'),
-            body('endDate')
+            body('period.endDate')
                 .notEmpty().withMessage('End date is required')
                 .isISO8601().withMessage('Invalid date format'),
-            body('reason')
+            body('timeOff.reason')
                 .notEmpty().withMessage('Time-off reason is required')
                 .isIn(Object.values(TIME_OFF_REASONS)).withMessage('Invalid time-off reason'),
-            body('notes')
+            body('timeOff.description')
                 .optional()
-                .isLength({ max: 1000 }).withMessage('Notes must be at most 1000 characters')
+                .isLength({ max: 1000 }).withMessage('Description must be at most 1000 characters')
         ];
     }
 
@@ -112,18 +121,18 @@ class ConsultantAvailabilityController {
         return [
             param('availabilityId')
                 .notEmpty().withMessage('Availability ID is required'),
-            body('startDate')
+            body('period.startDate')
                 .optional()
                 .isISO8601().withMessage('Invalid date format'),
-            body('endDate')
+            body('period.endDate')
                 .optional()
                 .isISO8601().withMessage('Invalid date format'),
-            body('status')
+            body('availabilityStatus')
                 .optional()
                 .isIn(Object.values(AVAILABILITY_STATUS)).withMessage('Invalid availability status'),
-            body('capacityPercentage')
+            body('capacity.percentageAvailable')
                 .optional()
-                .isInt({ min: 0, max: 100 }).withMessage('Capacity must be between 0 and 100')
+                .isInt({ min: 0, max: 100 }).withMessage('Capacity percentage must be between 0 and 100')
         ];
     }
 

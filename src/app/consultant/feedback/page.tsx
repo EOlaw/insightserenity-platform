@@ -51,10 +51,11 @@ export default function FeedbackPage() {
         setIsLoading(true)
 
         try {
-            const data = await consultantApi.getMyProfile()
-            setConsultant(data)
-            setFeedback(data.performance?.feedback || [])
-            toast.success('Feedback loaded successfully')
+            const profileData = await consultantApi.getMyProfile()
+            setConsultant(profileData)
+            setFeedback(profileData.performance?.feedback || [])
+            
+            console.log('Loaded feedback:', profileData.performance?.feedback?.length || 0)
         } catch (error: any) {
             console.error('Failed to load feedback:', error)
             toast.error('Failed to load feedback')
@@ -116,7 +117,7 @@ export default function FeedbackPage() {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <Link href="/dashboard/consultant">
+                    <Link href="/consultant/dashboard">
                         <Button variant="ghost" size="icon">
                             <ArrowLeft className="h-4 w-4" />
                         </Button>

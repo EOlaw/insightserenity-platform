@@ -60,12 +60,11 @@ export default function CertificationsPage() {
         setIsLoading(true)
 
         try {
-            const response = await consultantApi.getMyProfile()
+            const profileData = await consultantApi.getMyProfile()
+            setConsultant(profileData)
+            setCertifications(profileData.certifications || [])
             
-            // Handle wrapped responses
-            const data = response?.data || response
-            setConsultant(data)
-            setCertifications(data.certifications || [])
+            console.log('Loaded certifications:', profileData.certifications?.length || 0)
         } catch (error: any) {
             console.error('Failed to load certifications:', error)
             toast.error('Failed to load certifications')
@@ -220,7 +219,7 @@ export default function CertificationsPage() {
                 {/* Compact Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <Link href="/dashboard/consultant">
+                        <Link href="/consultant/dashboard">
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                                 <ArrowLeft className="h-3.5 w-3.5" />
                             </Button>

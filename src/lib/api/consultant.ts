@@ -146,6 +146,75 @@ export interface Skill {
     projects?: SkillProject[]
 }
 
+export interface SkillRecord {
+    _id: string
+    consultantId: string
+    skillName: string
+    category: string
+    proficiencyLevel: string
+    yearsOfExperience?: number
+    lastUsed?: string
+    selfAssessment?: {
+        rating: number
+        notes?: string
+        assessedAt: string
+    }
+    endorsements?: SkillEndorsement[]
+    projectExperience?: ProjectExperience[]
+    training?: {
+        completedCourses?: CompletedCourse[]
+        enrollments?: CourseEnrollment[]
+    }
+    verified?: boolean
+    verifiedBy?: string
+    verifiedAt?: string
+    createdAt: string
+    updatedAt: string
+}
+
+export interface SkillEndorsement {
+    _id?: string
+    endorserId: string
+    endorserName?: string
+    relationship?: string
+    comment?: string
+    endorsedAt: string
+}
+
+export interface ProjectExperience {
+    _id?: string
+    projectId?: string
+    projectName: string
+    role: string
+    description?: string
+    startDate: string
+    endDate?: string
+    feedback?: {
+        rating?: number
+        comment?: string
+        source?: string
+    }
+}
+
+export interface CompletedCourse {
+    _id?: string
+    courseName: string
+    provider: string
+    completionDate: string
+    certificateUrl?: string
+    hours?: number
+}
+
+export interface CourseEnrollment {
+    _id?: string
+    courseName: string
+    provider: string
+    enrollmentDate: string
+    expectedCompletion?: string
+    progress?: number
+    status?: 'enrolled' | 'in_progress' | 'completed' | 'dropped'
+}
+
 export interface Endorsement {
     userId: string
     endorsedAt: string
@@ -274,15 +343,49 @@ export interface Assignment {
 
 export interface AvailabilityRecord {
     _id: string
+    availabilityId: string
     consultantId: string
-    type: 'vacation' | 'sick_leave' | 'training' | 'personal' | 'other'
-    startDate: string
-    endDate: string
-    reason?: string
-    status: 'pending' | 'approved' | 'rejected' | 'cancelled'
-    approvedBy?: string
-    approvedAt?: string
-    notes?: string
+    type: 'regular' | 'exception' | 'time_off' | 'holiday' | 'blackout' | 'override' | 'training' | 'internal'
+    period: {
+        startDate: string
+        endDate: string
+        startTime?: string
+        endTime?: string
+        timezone?: string
+        allDay?: boolean
+    }
+    capacity?: {
+        hoursAvailable?: number
+        percentageAvailable?: number
+        maxProjects?: number
+        preferredHoursPerDay?: number
+        billableTarget?: number
+    }
+    availabilityStatus: 'available' | 'partially_available' | 'unavailable' | 'tentative' | 'pending_approval'
+    timeOff?: {
+        reason: string
+        description?: string
+        isPaid?: boolean
+        hoursUsed?: number
+        approvalStatus: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'auto_approved'
+        approvedBy?: string
+        approvedAt?: string
+        rejectionReason?: string
+        requestedAt?: string
+    }
+    preferences?: {
+        workLocation?: string
+        preferredLocations?: string[]
+        projectTypes?: string[]
+        clientTypes?: string[]
+        travelWillingness?: string
+        travelPercentage?: number
+    }
+    status: {
+        current: string
+        isActive: boolean
+        isDeleted: boolean
+    }
     createdAt: string
     updatedAt: string
 }
@@ -313,10 +416,19 @@ export interface PaginatedResponse<T> {
     }
 }
 
+export interface TimeLogEntry {
+    date: string
+    hours: number
+    description?: string
+    billable?: boolean
+}
+
 // ==================== Consultant API Methods ====================
 
 export const consultantApi = {
-    // ============= Profile Management =============
+    // ============================================================================
+    // PROFILE MANAGEMENT (consultant-routes.js)
+    // ============================================================================
 
     /**
      * Get current consultant's profile (self-service /me endpoint)
@@ -381,175 +493,83 @@ export const consultantApi = {
         return api.get(`/consultants/${consultantId}/direct-reports`)
     },
 
-    // ============= Skills Management (Self-Service) =============
+    // ============================================================================
+    // EMBEDDED PROFILE OPERATIONS (consultant-routes.js)
+    // These operations work on embedded arrays within the consultant profile
+    // ============================================================================
 
     /**
-     * Add a skill to own profile
-     */
-    addSkill: async (consultantId: string, skill: Partial<Skill>): Promise<Skill> => {
-        return api.post(`/consultants/${consultantId}/skills`, skill)
-    },
-
-    /**
-     * Update a skill on own profile
-     */
-    updateSkill: async (consultantId: string, skillName: string, updates: Partial<Skill>): Promise<Skill> => {
-        return api.put(`/consultants/${consultantId}/skills/${skillName}`, updates)
-    },
-
-    /**
-     * Remove a skill from own profile
-     */
-    removeSkill: async (consultantId: string, skillName: string): Promise<void> => {
-        return api.delete(`/consultants/${consultantId}/skills/${skillName}`)
-    },
-
-    // ============= Certifications Management (Self-Service) =============
-
-    /**
-     * Add a certification to own profile
-     */
-    addCertification: async (consultantId: string, certification: Partial<Certification>): Promise<Certification> => {
-        return api.post(`/consultants/${consultantId}/certifications`, certification)
-    },
-
-    /**
-     * Update a certification on own profile
-     */
-    updateCertification: async (consultantId: string, certificationId: string, updates: Partial<Certification>): Promise<Certification> => {
-        return api.put(`/consultants/${consultantId}/certifications/${certificationId}`, updates)
-    },
-
-    /**
-     * Remove a certification from own profile
-     */
-    removeCertification: async (consultantId: string, certificationId: string): Promise<void> => {
-        return api.delete(`/consultants/${certificationId}`)
-    },
-
-    // ============= Education Management (Self-Service) =============
-
-    /**
-     * Add education to own profile
-     */
-    addEducation: async (consultantId: string, education: Partial<Education>): Promise<Education> => {
-        return api.post(`/consultants/${consultantId}/education`, education)
-    },
-
-    // ============= Work History Management (Self-Service) =============
-
-    /**
-     * Add work history to own profile
-     */
-    addWorkHistory: async (consultantId: string, workHistory: Partial<WorkHistory>): Promise<WorkHistory> => {
-        return api.post(`/consultants/${consultantId}/work-history`, workHistory)
-    },
-
-    // ============= Availability Management (Self-Service) =============
-
-    /**
-     * Update own availability preferences
+     * Update availability preferences (embedded in profile)
      */
     updateAvailability: async (consultantId: string, availability: Partial<ConsultantProfile['availability']>): Promise<ConsultantProfile> => {
         return api.put(`/consultants/${consultantId}/availability`, availability)
     },
 
     /**
-     * Add blackout dates to own calendar
+     * Add blackout dates (embedded in profile)
      */
     addBlackoutDate: async (consultantId: string, blackoutDate: Partial<BlackoutDate>): Promise<BlackoutDate> => {
         return api.post(`/consultants/${consultantId}/blackout-dates`, blackoutDate)
     },
 
     /**
-     * Get own availability records
+     * Add a skill (embedded in profile)
      */
-    getMyAvailability: async (): Promise<AvailabilityRecord[]> => {
-        const response = await api.get('/consultants/consultant-availability/me')
-        // Extract the data array from the paginated response
-        return response.data?.data || []
+    addSkill: async (consultantId: string, skill: Partial<Skill>): Promise<Skill> => {
+        return api.post(`/consultants/${consultantId}/skills`, skill)
     },
 
     /**
-     * Get consultant's availability (peer view)
+     * Update a skill (embedded in profile)
      */
-    getConsultantAvailability: async (consultantId: string): Promise<AvailabilityRecord[]> => {
-        const response = await api.get(`/consultants/consultant-availability/consultant/${consultantId}`)
-        return response.data?.data || []
+    updateSkill: async (consultantId: string, skillName: string, updates: Partial<Skill>): Promise<Skill> => {
+        return api.put(`/consultants/${consultantId}/skills/${skillName}`, updates)
     },
 
     /**
-     * Create availability record (time-off request)
+     * Remove a skill (embedded in profile)
      */
-    createAvailabilityRecord: async (consultantId: string, data: Partial<AvailabilityRecord>): Promise<AvailabilityRecord> => {
-        return api.post(`/consultants/consultant-availability/consultant/${consultantId}`, data)
+    removeSkill: async (consultantId: string, skillName: string): Promise<void> => {
+        return api.delete(`/consultants/${consultantId}/skills/${skillName}`)
     },
 
     /**
-     * Request time off (self-service)
+     * Add a certification (embedded in profile)
      */
-    requestTimeOff: async (consultantId: string, data: Partial<AvailabilityRecord>): Promise<AvailabilityRecord> => {
-        return api.post(`/consultants/consultant-availability/consultant/${consultantId}/time-off`, data)
+    addCertification: async (consultantId: string, certification: Partial<Certification>): Promise<Certification> => {
+        return api.post(`/consultants/${consultantId}/certifications`, certification)
     },
 
     /**
-     * Update availability record
+     * Update a certification (embedded in profile)
      */
-    updateAvailabilityRecord: async (availabilityId: string, data: Partial<AvailabilityRecord>): Promise<AvailabilityRecord> => {
-        return api.put(`/consultants/consultant-availability/${availabilityId}`, data)
+    updateCertification: async (consultantId: string, certificationId: string, updates: Partial<Certification>): Promise<Certification> => {
+        return api.put(`/consultants/${consultantId}/certifications/${certificationId}`, updates)
     },
 
     /**
-     * Cancel availability record (time-off)
+     * Remove a certification (embedded in profile)
      */
-    cancelAvailabilityRecord: async (availabilityId: string): Promise<void> => {
-        return api.post(`/consultants/consultant-availability/${availabilityId}/cancel`)
+    removeCertification: async (consultantId: string, certificationId: string): Promise<void> => {
+        return api.delete(`/consultants/${consultantId}/certifications/${certificationId}`)
     },
 
     /**
-     * Delete availability record
+     * Add education (embedded in profile)
      */
-    deleteAvailabilityRecord: async (availabilityId: string): Promise<void> => {
-        return api.delete(`/consultants/consultant-availability/${availabilityId}`)
-    },
-
-    // ============= Assignments (Peer View) =============
-
-    /**
-     * Get own assignments
-     */
-    getMyAssignments: async (): Promise<Assignment[]> => {
-        const response = await api.get('/consultants/consultant-assignments/me')
-        // Handle double-nested data structure: response.data.data
-        return response.data?.data || []
+    addEducation: async (consultantId: string, education: Partial<Education>): Promise<Education> => {
+        return api.post(`/consultants/${consultantId}/education`, education)
     },
 
     /**
-     * Get consultant's assignments (peer view)
+     * Add work history (embedded in profile)
      */
-    getConsultantAssignments: async (consultantId: string): Promise<Assignment[]> => {
-        const response = await api.get(`/consultants/consultant-assignments/consultant/${consultantId}`)
-        return response.data?.data || []
+    addWorkHistory: async (consultantId: string, workHistory: Partial<WorkHistory>): Promise<WorkHistory> => {
+        return api.post(`/consultants/${consultantId}/work-history`, workHistory)
     },
 
     /**
-     * Get consultant's allocation
-     */
-    getConsultantAllocation: async (consultantId: string): Promise<any> => {
-        return api.get(`/consultants/consultant-assignments/consultant/${consultantId}/allocation`)
-    },
-
-    /**
-     * Log time to assignment
-     */
-    logTime: async (assignmentId: string, timeLog: any): Promise<any> => {
-        return api.post(`/consultants/consultant-assignments/${assignmentId}/time-log`, timeLog)
-    },
-
-    // ============= Documents Management (Self-Service) =============
-
-    /**
-     * Upload document to own profile
+     * Upload document
      */
     uploadDocument: async (consultantId: string, file: File, metadata: Partial<Document>): Promise<Document> => {
         const formData = new FormData()
@@ -560,7 +580,7 @@ export const consultantApi = {
             }
         })
 
-        return api.post(`/consultants/consultants/${consultantId}/documents`, formData, {
+        return api.post(`/consultants/${consultantId}/documents`, formData, {
             headers: {
                 'Content-Type': 'multipart/form-data',
             },
@@ -568,28 +588,360 @@ export const consultantApi = {
     },
 
     /**
-     * Remove document from own profile
+     * Remove document
      */
     removeDocument: async (consultantId: string, documentId: string): Promise<void> => {
-        return api.delete(`/consultants/consultants/${consultantId}/documents/${documentId}`)
+        return api.delete(`/consultants/${consultantId}/documents/${documentId}`)
     },
-
-    // ============= Feedback (Peer Collaboration) =============
 
     /**
      * Submit feedback for a colleague
      */
     submitFeedback: async (consultantId: string, feedback: Partial<Feedback>): Promise<Feedback> => {
-        return api.post(`/consultants/consultants/${consultantId}/feedback`, feedback)
+        return api.post(`/consultants/${consultantId}/feedback`, feedback)
     },
 
-    // ============= Achievements (Self-Service) =============
-
     /**
-     * Record own achievement
+     * Record achievement
      */
     addAchievement: async (consultantId: string, achievement: Partial<Achievement>): Promise<Achievement> => {
-        return api.post(`/consultants/consultants/${consultantId}/achievements`, achievement)
+        return api.post(`/consultants/${consultantId}/achievements`, achievement)
+    },
+
+    // ============================================================================
+    // SKILL MANAGEMENT (consultant-skill-routes.js)
+    // These operations work with the dedicated ConsultantSkill collection
+    // ============================================================================
+
+    /**
+     * Get current user's skill records (self-service)
+     */
+    getMySkills: async (): Promise<PaginatedResponse<SkillRecord>> => {
+        return api.get('/consultants/consultant-skills/me')
+    },
+
+    /**
+     * Get all skills for a consultant (peer view)
+     */
+    getConsultantSkills: async (consultantId: string, params?: any): Promise<PaginatedResponse<SkillRecord>> => {
+        return api.get(`/consultants/consultant-skills/${consultantId}`, { params })
+    },
+
+    /**
+     * Get skill record by ID (peer view)
+     */
+    getSkillRecordById: async (skillRecordId: string): Promise<SkillRecord> => {
+        return api.get(`/consultants/consultant-skills/${skillRecordId}`)
+    },
+
+    /**
+     * Create a new skill record (self-service)
+     */
+    createSkillRecord: async (consultantId: string, data: Partial<SkillRecord>): Promise<SkillRecord> => {
+        return api.post(`/consultants/consultant-skills/${consultantId}`, data)
+    },
+
+    /**
+     * Update skill record (self-service)
+     */
+    updateSkillRecord: async (skillRecordId: string, data: Partial<SkillRecord>): Promise<SkillRecord> => {
+        return api.put(`/consultants/consultant-skills/${skillRecordId}`, data)
+    },
+
+    /**
+     * Delete skill record (self-service)
+     */
+    deleteSkillRecord: async (skillRecordId: string): Promise<void> => {
+        return api.delete(`/consultants/consultant-skills/${skillRecordId}`)
+    },
+
+    /**
+     * Submit self-assessment (self-service)
+     */
+    submitSelfAssessment: async (skillRecordId: string, assessment: { rating: number; notes?: string }): Promise<SkillRecord> => {
+        return api.post(`/consultants/consultant-skills/${skillRecordId}/self-assessment`, assessment)
+    },
+
+    /**
+     * Request skill assessment from manager or peer (self-service)
+     */
+    requestAssessment: async (skillRecordId: string, data: { assessorId: string; message?: string }): Promise<any> => {
+        return api.post(`/consultants/consultant-skills/${skillRecordId}/request-assessment`, data)
+    },
+
+    /**
+     * Add endorsement to skill (peer collaboration)
+     */
+    addSkillEndorsement: async (skillRecordId: string, endorsement: Partial<SkillEndorsement>): Promise<SkillRecord> => {
+        return api.post(`/consultants/consultant-skills/${skillRecordId}/endorsements`, endorsement)
+    },
+
+    /**
+     * Remove endorsement from skill (peer collaboration)
+     */
+    removeSkillEndorsement: async (skillRecordId: string, endorsementId: string): Promise<void> => {
+        return api.delete(`/consultants/consultant-skills/${skillRecordId}/endorsements/${endorsementId}`)
+    },
+
+    /**
+     * Add project experience to skill (self-service)
+     */
+    addProjectExperience: async (skillRecordId: string, project: Partial<ProjectExperience>): Promise<SkillRecord> => {
+        return api.post(`/consultants/consultant-skills/${skillRecordId}/projects`, project)
+    },
+
+    /**
+     * Update project experience feedback (self-service)
+     */
+    updateProjectFeedback: async (skillRecordId: string, projectId: string, feedback: any): Promise<SkillRecord> => {
+        return api.put(`/consultants/consultant-skills/${skillRecordId}/projects/${projectId}/feedback`, feedback)
+    },
+
+    /**
+     * Add completed course to skill (self-service)
+     */
+    addCompletedCourse: async (skillRecordId: string, course: Partial<CompletedCourse>): Promise<SkillRecord> => {
+        return api.post(`/consultants/consultant-skills/${skillRecordId}/courses/completed`, course)
+    },
+
+    /**
+     * Add course enrollment to skill (self-service)
+     */
+    addCourseEnrollment: async (skillRecordId: string, enrollment: Partial<CourseEnrollment>): Promise<SkillRecord> => {
+        return api.post(`/consultants/consultant-skills/${skillRecordId}/courses/enrollment`, enrollment)
+    },
+
+    /**
+     * Update course enrollment progress (self-service)
+     */
+    updateEnrollmentProgress: async (skillRecordId: string, courseId: string, progress: { progress?: number; status?: string }): Promise<SkillRecord> => {
+        return api.put(`/consultants/consultant-skills/${skillRecordId}/courses/${courseId}/progress`, progress)
+    },
+
+    // ============================================================================
+    // AVAILABILITY MANAGEMENT (consultant-availability-routes.js)
+    // These operations work with the dedicated ConsultantAvailability collection
+    // ============================================================================
+
+    /**
+     * Get current user's availability records (self-service)
+     * Returns all availability records including both availability slots and time-off requests
+     */
+    getMyAvailability: async (params?: any): Promise<PaginatedResponse<AvailabilityRecord>> => {
+        return api.get('/consultants/consultant-availability/me', { params })
+    },
+
+    /**
+     * Get current user's availability slots only (excludes time-off requests)
+     * Filters to show only records where consultant IS available for work
+     */
+    getMyAvailabilitySlots: async (params?: any): Promise<PaginatedResponse<AvailabilityRecord>> => {
+        const response = await api.get('/consultants/consultant-availability/me', { params })
+        
+        if (response.data) {
+            response.data = response.data.filter((record: AvailabilityRecord) => 
+                !record.timeOff?.approvalStatus && record.availabilityStatus !== 'unavailable'
+            )
+        }
+        
+        return response
+    },
+
+    /**
+     * Get current user's time-off requests only (excludes availability slots)
+     * Filters to show only records that have approval workflow
+     */
+    getMyTimeOffRequests: async (params?: any): Promise<PaginatedResponse<AvailabilityRecord>> => {
+        const response = await api.get('/consultants/consultant-availability/me', { params })
+        
+        if (response.data) {
+            response.data = response.data.filter((record: AvailabilityRecord) => 
+                record.timeOff?.approvalStatus !== undefined
+            )
+        }
+        
+        return response
+    },
+
+    /**
+     * Get consultant's availability records (peer view)
+     */
+    getConsultantAvailability: async (consultantId: string, params?: any): Promise<PaginatedResponse<AvailabilityRecord>> => {
+        return api.get(`/consultants/consultant-availability/consultant/${consultantId}`, { params })
+    },
+
+    /**
+     * Get consultant capacity for a date range (peer view)
+     */
+    getConsultantCapacity: async (consultantId: string, params: { startDate: string; endDate: string }): Promise<any> => {
+        return api.get(`/consultants/consultant-availability/consultant/${consultantId}/capacity`, { params })
+    },
+
+    /**
+     * Get availability record by ID (peer view)
+     */
+    getAvailabilityById: async (availabilityId: string): Promise<AvailabilityRecord> => {
+        return api.get(`/consultants/consultant-availability/${availabilityId}`)
+    },
+
+    /**
+     * Create availability record (self-service - generic)
+     * Use createAvailabilitySlot for availability windows or requestTimeOff for time-off requests
+     */
+    createAvailabilityRecord: async (consultantId: string, data: Partial<AvailabilityRecord>): Promise<AvailabilityRecord> => {
+        return api.post(`/consultants/consultant-availability/consultant/${consultantId}`, data)
+    },
+
+    /**
+     * Create availability slot (self-service)
+     * Use this method when consultant IS available for work and wants to signal capacity
+     */
+    createAvailabilitySlot: async (consultantId: string, data: {
+        period: {
+            startDate: string
+            endDate: string
+            startTime?: string
+            endTime?: string
+            timezone?: string
+            allDay?: boolean
+        }
+        capacity?: {
+            hoursAvailable?: number
+            percentageAvailable?: number
+            maxProjects?: number
+            preferredHoursPerDay?: number
+            billableTarget?: number
+        }
+        preferences?: {
+            workLocation?: string
+            preferredLocations?: string[]
+            projectTypes?: string[]
+            clientTypes?: string[]
+            travelWillingness?: string
+            travelPercentage?: number
+        }
+    }): Promise<AvailabilityRecord> => {
+        return api.post(`/consultants/consultant-availability/consultant/${consultantId}`, {
+            type: 'regular',
+            availabilityStatus: 'available',
+            ...data
+        })
+    },
+
+    /**
+     * Create time-off request (self-service)
+     * Use this method when consultant will NOT be available and needs manager approval
+     */
+    requestTimeOff: async (consultantId: string, data: {
+        period: {
+            startDate: string
+            endDate: string
+            allDay?: boolean
+        }
+        timeOff: {
+            reason: string
+            description?: string
+        }
+    }): Promise<AvailabilityRecord> => {
+        return api.post(`/consultants/consultant-availability/${consultantId}/time-off`, data)
+    },
+
+    /**
+     * Check for conflicts with existing availability (self-service)
+     */
+    checkAvailabilityConflicts: async (consultantId: string, params: { startDate: string; endDate: string }): Promise<any> => {
+        return api.get(`/consultants/consultant-availability/consultant/${consultantId}/conflicts`, { params })
+    },
+
+    /**
+     * Get time-off balance for consultant (self-service)
+     */
+    getTimeOffBalance: async (consultantId: string): Promise<any> => {
+        return api.get(`/consultants/consultant-availability/consultant/${consultantId}/time-off-balance`)
+    },
+
+    /**
+     * Update availability record (self-service - generic)
+     * Can be used for both availability slots and time-off requests
+     */
+    updateAvailabilityRecord: async (availabilityId: string, data: Partial<AvailabilityRecord>): Promise<AvailabilityRecord> => {
+        return api.put(`/consultants/consultant-availability/${availabilityId}`, data)
+    },
+
+    /**
+     * Update availability slot (self-service)
+     * Convenience wrapper for updating availability windows specifically
+     */
+    updateAvailabilitySlot: async (availabilityId: string, data: Partial<AvailabilityRecord>): Promise<AvailabilityRecord> => {
+        return api.put(`/consultants/consultant-availability/${availabilityId}`, data)
+    },
+
+    /**
+     * Delete availability record (self-service)
+     */
+    deleteAvailabilityRecord: async (availabilityId: string): Promise<void> => {
+        return api.delete(`/consultants/consultant-availability/${availabilityId}`)
+    },
+
+    /**
+     * Cancel time-off request (self-service)
+     */
+    cancelTimeOff: async (availabilityId: string): Promise<AvailabilityRecord> => {
+        return api.post(`/consultants/consultant-availability/${availabilityId}/cancel`)
+    },
+
+    // ============================================================================
+    // ASSIGNMENT MANAGEMENT (consultant-assignment-routes.js)
+    // These operations work with the dedicated ConsultantAssignment collection
+    // ============================================================================
+
+    /**
+     * Get current user's assignments (self-service)
+     */
+    getMyAssignments: async (params?: any): Promise<PaginatedResponse<Assignment>> => {
+        return api.get('/consultants/consultant-assignments/me', { params })
+    },
+
+    /**
+     * Get consultant's assignments (peer view)
+     */
+    getConsultantAssignments: async (consultantId: string, params?: any): Promise<PaginatedResponse<Assignment>> => {
+        return api.get(`/consultants/consultant-assignments/consultant/${consultantId}`, { params })
+    },
+
+    /**
+     * Get current allocation for a consultant (peer view)
+     */
+    getConsultantAllocation: async (consultantId: string): Promise<any> => {
+        return api.get(`/consultants/consultant-assignments/consultant/${consultantId}/allocation`)
+    },
+
+    /**
+     * Get project assignments (peer view)
+     */
+    getProjectAssignments: async (projectId: string, params?: any): Promise<PaginatedResponse<Assignment>> => {
+        return api.get(`/consultants/consultant-assignments/project/${projectId}`, { params })
+    },
+
+    /**
+     * Get client assignments (peer view)
+     */
+    getClientAssignments: async (clientId: string, params?: any): Promise<PaginatedResponse<Assignment>> => {
+        return api.get(`/consultants/consultant-assignments/client/${clientId}`, { params })
+    },
+
+    /**
+     * Get assignment by ID (peer view)
+     */
+    getAssignmentById: async (assignmentId: string): Promise<Assignment> => {
+        return api.get(`/consultants/consultant-assignments/${assignmentId}`)
+    },
+
+    /**
+     * Log time to assignment (self-service)
+     */
+    logTime: async (assignmentId: string, timeLog: TimeLogEntry): Promise<any> => {
+        return api.post(`/consultants/consultant-assignments/${assignmentId}/time-log`, timeLog)
     },
 }
 

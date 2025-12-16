@@ -200,7 +200,21 @@ const consultantSkillSchemaDefinition = {
         contexts: [{
             context: {
                 type: String,
-                enum: ['work', 'personal', 'education', 'certification', 'volunteer', 'open_source']
+                enum: [
+                    'work', 
+                    'personal', 
+                    'education', 
+                    'certification', 
+                    'volunteer', 
+                    'open_source', 
+                    'web_applications', 
+                    'mobile_applications', 
+                    'data_science', 
+                    'devops', 
+                    'dashboards', 
+                    'mobile_web', 
+                    'other'
+                ]
             },
             percentage: Number
         }]

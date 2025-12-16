@@ -454,7 +454,7 @@ class ConsultantSkillController {
                 sortOrder: req.query.sortOrder
             });
 
-            this._sendSuccess(res, result, 'Skills retrieved successfully');
+            this._sendSuccess(res, result, 'Consultant skills retrieved successfully');
 
         } catch (error) {
             this._sendError(res, error);
