@@ -62,7 +62,7 @@ export default function CertificationsPage() {
         try {
             const profileData = await consultantApi.getMyProfile()
             setConsultant(profileData)
-            setCertifications(profileData.certifications || [])
+            setCertifications(profileData.data.certifications || [])
             
             console.log('Loaded certifications:', profileData.certifications?.length || 0)
         } catch (error: any) {

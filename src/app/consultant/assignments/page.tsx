@@ -50,12 +50,14 @@ export default function AssignmentsPage() {
         setIsLoading(true)
 
         try {
-            // Load assignments from dedicated collection
             const response = await consultantApi.getMyAssignments()
-            const assignmentsData = response.data || []
+
+            // The response structure is: response.data.data (assignments array)
+            const assignmentsData = response.data?.data || []
             setAssignments(assignmentsData)
-            
+
             console.log('Loaded assignments:', assignmentsData.length)
+            console.log('Full response:', response) // Add this to debug
         } catch (error: any) {
             console.error('Failed to load assignments:', error)
             toast.error('Failed to load assignments')

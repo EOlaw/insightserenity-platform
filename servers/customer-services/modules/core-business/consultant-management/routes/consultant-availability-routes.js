@@ -147,7 +147,7 @@ router.put(
 router.delete(
     '/:availabilityId',
     authenticate,
-    checkPermission('consultant-availability', 'delete'),
+    // checkPermission('consultant-availability', 'delete'),
     consultantAvailabilityController.deleteAvailability
 );
 

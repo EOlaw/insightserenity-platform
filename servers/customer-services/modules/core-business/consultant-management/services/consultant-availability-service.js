@@ -186,11 +186,13 @@ class ConsultantAvailabilityService {
 
                 if (conflicts.length > 0) {
                     throw AppError.conflict('Availability conflicts detected', {
-                        context: { conflicts: conflicts.map(c => ({
-                            availabilityId: c.availabilityId,
-                            type: c.type,
-                            period: c.period
-                        }))}
+                        context: {
+                            conflicts: conflicts.map(c => ({
+                                availabilityId: c.availabilityId,
+                                type: c.type,
+                                period: c.period
+                            }))
+                        }
                     });
                 }
             }
@@ -294,11 +296,8 @@ class ConsultantAvailabilityService {
      * Create time-off request
      * @param {string} consultantId - Consultant ID
      * @param {Object} timeOffData - Time-off request information
-     * @param {Date} timeOffData.startDate - Start date of time off
-     * @param {Date} timeOffData.endDate - End date of time off
-     * @param {string} timeOffData.reason - Reason for time off
-     * @param {string} timeOffData.description - Detailed description
-     * @param {boolean} timeOffData.isPaid - Whether time off is paid
+     * @param {Object} timeOffData.period - Period with startDate and endDate
+     * @param {Object} timeOffData.timeOff - Time-off details with reason and description
      * @param {Object} options - Additional options
      * @param {string} options.tenantId - Tenant ID for multi-tenancy
      * @param {string} options.userId - User ID of the requestor
@@ -309,9 +308,9 @@ class ConsultantAvailabilityService {
         try {
             logger.info('Creating time-off request', {
                 consultantId,
-                reason: timeOffData.reason,
-                startDate: timeOffData.startDate,
-                endDate: timeOffData.endDate
+                reason: timeOffData.timeOff?.reason,
+                startDate: timeOffData.period?.startDate,
+                endDate: timeOffData.period?.endDate
             });
 
             // Validate time-off specific rules
@@ -321,29 +320,29 @@ class ConsultantAvailabilityService {
             const availabilityData = {
                 type: AVAILABILITY_TYPES.TIME_OFF,
                 period: {
-                    startDate: timeOffData.startDate,
-                    endDate: timeOffData.endDate,
-                    startTime: timeOffData.startTime,
-                    endTime: timeOffData.endTime,
-                    timezone: timeOffData.timezone || this.config.defaultTimezone,
-                    allDay: timeOffData.allDay ?? true
+                    startDate: timeOffData.period.startDate,
+                    endDate: timeOffData.period.endDate,
+                    startTime: timeOffData.period?.startTime,
+                    endTime: timeOffData.period?.endTime,
+                    timezone: timeOffData.period?.timezone || this.config.defaultTimezone,
+                    allDay: timeOffData.period?.allDay ?? true
                 },
                 capacity: {
                     hoursAvailable: 0,
                     percentageAvailable: 0
                 },
                 timeOff: {
-                    reason: timeOffData.reason,
-                    description: timeOffData.description,
-                    isPaid: timeOffData.isPaid ?? true,
-                    attachments: timeOffData.attachments || []
+                    reason: timeOffData.timeOff.reason,
+                    description: timeOffData.timeOff?.description,
+                    isPaid: timeOffData.timeOff?.isPaid ?? true,
+                    attachments: timeOffData.timeOff?.attachments || []
                 },
                 notifications: {
                     notifyManager: true,
-                    notifyTeam: timeOffData.notifyTeam ?? false
+                    notifyTeam: timeOffData.notifications?.notifyTeam ?? false
                 },
                 metadata: {
-                    notes: timeOffData.notes,
+                    notes: timeOffData.metadata?.notes,
                     tags: ['time-off-request']
                 }
             };
@@ -1699,22 +1698,23 @@ class ConsultantAvailabilityService {
     /**
      * Validate time-off request
      * @private
-     * @param {Object} data - Time-off data
+     * @param {Object} data - Time-off data with nested period and timeOff objects
      */
     async _validateTimeOffRequest(data) {
         const errors = [];
 
-        if (!data.startDate) {
-            errors.push('Start date is required');
+        // Check for nested period object
+        if (!data.period?.startDate) {
+            errors.push('Start date is required in period object');
         }
 
-        if (!data.endDate) {
-            errors.push('End date is required');
+        if (!data.period?.endDate) {
+            errors.push('End date is required in period object');
         }
 
-        if (data.startDate && data.endDate) {
-            const start = new Date(data.startDate);
-            const end = new Date(data.endDate);
+        if (data.period?.startDate && data.period?.endDate) {
+            const start = new Date(data.period.startDate);
+            const end = new Date(data.period.endDate);
             const now = new Date();
             now.setHours(0, 0, 0, 0);
 
@@ -1734,7 +1734,12 @@ class ConsultantAvailabilityService {
             }
         }
 
-        if (data.reason && !Object.values(TIME_OFF_REASONS).includes(data.reason)) {
+        // Check for nested timeOff object
+        if (!data.timeOff?.reason) {
+            errors.push('Time-off reason is required in timeOff object');
+        }
+
+        if (data.timeOff?.reason && !Object.values(TIME_OFF_REASONS).includes(data.timeOff.reason)) {
             errors.push('Invalid time-off reason');
         }
 
