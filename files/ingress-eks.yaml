@@ -1,0 +1,129 @@
+# Kubernetes Ingress Configuration for AWS EKS with ALB Ingress Controller
+# This replaces the standard ingress.yaml with AWS-specific annotations
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: insightserenity-ingress
+  namespace: insightserenity
+  annotations:
+    # AWS Load Balancer Controller annotations
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/load-balancer-name: insightserenity-alb
+    
+    # SSL/TLS Configuration
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERTIFICATE_ARN}
+    
+    # Security
+    alb.ingress.kubernetes.io/security-groups: ${ALB_SECURITY_GROUP_ID}
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-2017-01
+    
+    # Health checks
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-port: traffic-port
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '15'
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
+    alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/success-codes: '200'
+    
+    # Performance
+    alb.ingress.kubernetes.io/load-balancer-attributes: |
+      idle_timeout.timeout_seconds=60,
+      routing.http2.enabled=true,
+      routing.http.drop_invalid_header_fields.enabled=true
+    
+    # Target Group
+    alb.ingress.kubernetes.io/target-group-attributes: |
+      deregistration_delay.timeout_seconds=30,
+      stickiness.enabled=true,
+      stickiness.lb_cookie.duration_seconds=86400
+    
+    # WAF (if enabled)
+    # alb.ingress.kubernetes.io/wafv2-acl-arn: ${WAF_ARN}
+    
+    # Access Logs (if S3 bucket is configured)
+    # alb.ingress.kubernetes.io/load-balancer-attributes: |
+    #   access_logs.s3.enabled=true,
+    #   access_logs.s3.bucket=${ALB_LOGS_BUCKET},
+    #   access_logs.s3.prefix=alb
+    
+    # Tags
+    alb.ingress.kubernetes.io/tags: |
+      Environment=production,
+      Project=InsightSerenity,
+      ManagedBy=Kubernetes
+      
+spec:
+  ingressClassName: alb
+  
+  rules:
+    # API Gateway routes
+    - host: api.insightserenity.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway-service
+                port:
+                  number: 80
+    
+    # Admin Server routes (internal only - can be restricted)
+    - host: admin-api.insightserenity.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-server
+                port:
+                  number: 3000
+    
+    # Customer Services routes (internal, accessed via API Gateway)
+    - host: customer-api.insightserenity.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: customer-services
+                port:
+                  number: 3001
+
+---
+# Service Account for AWS Load Balancer Controller
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aws-load-balancer-controller
+  namespace: kube-system
+  annotations:
+    eks.amazonaws.com/role-arn: ${AWS_LOAD_BALANCER_CONTROLLER_ROLE_ARN}
+
+---
+# Service Account for Admin Server (with S3 access)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-server
+  namespace: insightserenity
+  annotations:
+    eks.amazonaws.com/role-arn: ${ADMIN_SERVER_ROLE_ARN}
+
+---
+# Service Account for Customer Services (with S3 access)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: customer-services
+  namespace: insightserenity
+  annotations:
+    eks.amazonaws.com/role-arn: ${CUSTOMER_SERVICES_ROLE_ARN}

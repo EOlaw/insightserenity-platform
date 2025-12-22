@@ -8,23 +8,23 @@ import { cn } from '@/lib/utils/cn'
 import { Button } from '@/components/ui/button'
 import {
   LayoutDashboard,
-  Users,
+  User,
+  Target,
   Briefcase,
-  Building2,
-  UserCheck,
+  Calendar,
+  Award,
+  FileText,
+  TrendingUp,
   Settings,
   HelpCircle,
   LogOut,
   Menu,
   X,
-  ChevronDown,
   Bell,
   Search,
-  Globe,
-  CreditCard,
-  FileText,
-  TrendingUp,
-  User as UserIcon,
+  CheckCircle,
+  Clock,
+  Star,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { auth } from '@/lib/api/client'
@@ -32,49 +32,57 @@ import { auth } from '@/lib/api/client'
 const navigation = [
   {
     name: 'Dashboard',
-    href: '/dashboard',
+    href: '/consultant/dashboard',
     icon: LayoutDashboard,
+    description: 'Overview and quick actions',
   },
   {
-    name: 'Core Business',
-    href: '/dashboard/core-business',
+    name: 'My Profile',
+    href: '/consultant/profile',
+    icon: User,
+    description: 'Personal and professional information',
+  },
+  {
+    name: 'Skills',
+    href: '/consultant/skills',
+    icon: Target,
+    description: 'Manage your skills and expertise',
+  },
+  {
+    name: 'Assignments',
+    href: '/consultant/assignments',
     icon: Briefcase,
-    children: [
-      { name: 'Clients', href: '/dashboard/core-business/clients' },
-      { name: 'Projects', href: '/dashboard/core-business/projects' },
-      { name: 'Consultants', href: '/dashboard/core-business/consultants' },
-      { name: 'Engagements', href: '/dashboard/core-business/engagements' },
-      { name: 'Analytics', href: '/dashboard/core-business/analytics' },
-    ],
+    description: 'Active and past projects',
   },
   {
-    name: 'Recruitment',
-    href: '/dashboard/recruitment',
-    icon: UserCheck,
-    children: [
-      { name: 'Jobs', href: '/dashboard/recruitment/jobs' },
-      { name: 'Candidates', href: '/dashboard/recruitment/candidates' },
-      { name: 'Applications', href: '/dashboard/recruitment/applications' },
-      { name: 'Partnerships', href: '/dashboard/recruitment/partnerships' },
-      { name: 'Analytics', href: '/dashboard/recruitment/analytics' },
-    ],
+    name: 'Availability',
+    href: '/consultant/availability',
+    icon: Calendar,
+    description: 'Manage your schedule and availability',
   },
   {
-    name: 'Organization',
-    href: '/dashboard/organization',
-    icon: Building2,
-    children: [
-      { name: 'Settings', href: '/dashboard/organization/settings' },
-      { name: 'Members', href: '/dashboard/organization/members' },
-      { name: 'Subscription', href: '/dashboard/organization/subscription' },
-      { name: 'Tenant', href: '/dashboard/organization/tenant' },
-    ],
+    name: 'Certifications',
+    href: '/consultant/certifications',
+    icon: Award,
+    description: 'Professional certifications and credentials',
+  },
+  {
+    name: 'Documents',
+    href: '/consultant/documents',
+    icon: FileText,
+    description: 'Contracts, reports, and files',
+  },
+  {
+    name: 'Performance',
+    href: '/consultant/performance',
+    icon: TrendingUp,
+    description: 'Feedback and performance reviews',
   },
 ]
 
 const bottomNavigation = [
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-  { name: 'Help & Support', href: '/dashboard/support', icon: HelpCircle },
+  { name: 'Settings', href: '/consultant/settings', icon: Settings },
+  { name: 'Help & Support', href: '/consultant/support', icon: HelpCircle },
 ]
 
 interface UserData {
@@ -89,20 +97,26 @@ interface UserData {
   }
 }
 
-export default function DashboardLayout({
-  children,
-}: {
+interface ConsultantLayoutProps {
   children: React.ReactNode
-}) {
+}
+
+export default function ConsultantLayout({ children }: ConsultantLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [expandedItems, setExpandedItems] = useState<string[]>([])
   const [user, setUser] = useState<UserData | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [stats, setStats] = useState({
+    activeAssignments: 0,
+    completedProjects: 0,
+    skillsCount: 0,
+    certificationsCount: 0,
+  })
 
   useEffect(() => {
     loadUserData()
+    loadStats()
   }, [])
 
   const loadUserData = async () => {
@@ -127,6 +141,17 @@ export default function DashboardLayout({
     }
   }
 
+  const loadStats = async () => {
+    // TODO: Implement actual stats loading from API
+    // For now, using placeholder values
+    setStats({
+      activeAssignments: 3,
+      completedProjects: 12,
+      skillsCount: 24,
+      certificationsCount: 5,
+    })
+  }
+
   const handleLogout = async () => {
     if (isLoggingOut) return
     
@@ -138,30 +163,21 @@ export default function DashboardLayout({
     } catch (error) {
       console.error('Logout failed:', error)
       toast.error('Failed to logout. Redirecting...')
-      // Even if logout fails, redirect to home
       router.push('/')
     } finally {
       setIsLoggingOut(false)
     }
   }
 
-  const toggleExpanded = (name: string) => {
-    setExpandedItems(prev =>
-      prev.includes(name)
-        ? prev.filter(item => item !== name)
-        : [...prev, name]
-    )
-  }
-
   const isActive = (href: string) => {
-    if (href === '/dashboard') {
-      return pathname === '/dashboard'
+    if (href === '/consultant/dashboard') {
+      return pathname === '/consultant/dashboard'
     }
     return pathname.startsWith(href)
   }
 
   const getUserInitials = () => {
-    if (!user) return 'U'
+    if (!user) return 'C'
     
     const firstName = user.profile?.firstName || user.firstName || ''
     const lastName = user.profile?.lastName || user.lastName || ''
@@ -178,11 +194,11 @@ export default function DashboardLayout({
       return user.email.charAt(0).toUpperCase()
     }
     
-    return 'U'
+    return 'C'
   }
 
   const getUserDisplayName = () => {
-    if (!user) return 'User'
+    if (!user) return 'Consultant'
     
     if (user.profile?.displayName) {
       return user.profile.displayName
@@ -199,7 +215,7 @@ export default function DashboardLayout({
       return firstName
     }
     
-    return 'User'
+    return 'Consultant'
   }
 
   return (
@@ -222,7 +238,7 @@ export default function DashboardLayout({
         <div className="flex h-full flex-col">
           {/* Logo */}
           <div className="flex h-16 items-center justify-between px-6 border-b border-white/10">
-            <Logo href="/" showText={false} />
+            <Logo href="/consultant/dashboard" showText={false} />
             <button
               onClick={() => setSidebarOpen(false)}
               className="lg:hidden text-white/60 hover:text-white"
@@ -231,20 +247,31 @@ export default function DashboardLayout({
             </button>
           </div>
 
-          {/* Tenant Switcher */}
-          <div className="px-4 py-3 border-b border-white/10">
-            <button className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-              <div className="flex items-center space-x-2">
-                <div className="w-7 h-7 bg-primary rounded-md flex items-center justify-center">
-                  <span className="text-black font-semibold text-2xs">TC</span>
+          {/* Consultant Info Card */}
+          <div className="px-4 py-4 border-b border-white/10">
+            <div className="bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg p-4 border border-primary/20">
+              <div className="flex items-center space-x-3 mb-3">
+                <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center">
+                  <span className="text-black font-semibold text-sm">{getUserInitials()}</span>
                 </div>
-                <div className="text-left">
-                  <p className="text-xs font-medium">TechCorp Inc</p>
-                  <p className="text-2xs text-white/60">Premium Plan</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{getUserDisplayName()}</p>
+                  <p className="text-xs text-white/60 truncate">Consultant</p>
                 </div>
               </div>
-              <ChevronDown className="h-3.5 w-3.5 text-white/60" />
-            </button>
+              
+              {/* Quick Stats */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-black/20 rounded p-2">
+                  <div className="text-white/60 mb-0.5">Active</div>
+                  <div className="font-semibold text-primary">{stats.activeAssignments}</div>
+                </div>
+                <div className="bg-black/20 rounded p-2">
+                  <div className="text-white/60 mb-0.5">Skills</div>
+                  <div className="font-semibold text-primary">{stats.skillsCount}</div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Navigation */}
@@ -252,64 +279,26 @@ export default function DashboardLayout({
             <ul className="space-y-1">
               {navigation.map((item) => (
                 <li key={item.name}>
-                  <div>
-                    {item.children ? (
-                      <button
-                        onClick={() => toggleExpanded(item.name)}
-                        className={cn(
-                          "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors",
-                          isActive(item.href)
-                            ? "bg-primary text-black"
-                            : "text-white/70 hover:bg-white/10 hover:text-white"
-                        )}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.name}</span>
-                        </div>
-                        <ChevronDown
-                          className={cn(
-                            "h-3.5 w-3.5 transition-transform",
-                            expandedItems.includes(item.name) && "rotate-180"
-                          )}
-                        />
-                      </button>
-                    ) : (
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          "flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors",
-                          isActive(item.href)
-                            ? "bg-primary text-black"
-                            : "text-white/70 hover:bg-white/10 hover:text-white"
-                        )}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.name}</span>
-                        </div>
-                      </Link>
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all group",
+                      isActive(item.href)
+                        ? "bg-primary text-black shadow-lg shadow-primary/20"
+                        : "text-white/70 hover:bg-white/10 hover:text-white"
                     )}
-                  </div>
-                  {item.children && expandedItems.includes(item.name) && (
-                    <ul className="mt-1 ml-7 space-y-1">
-                      {item.children.map((child) => (
-                        <li key={child.name}>
-                          <Link
-                            href={child.href}
-                            className={cn(
-                              "block px-3 py-1.5 rounded-md text-xs transition-colors",
-                              isActive(child.href)
-                                ? "bg-white/10 text-white"
-                                : "text-white/60 hover:bg-white/5 hover:text-white/90"
-                            )}
-                          >
-                            {child.name}
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  >
+                    <item.icon className={cn(
+                      "h-4 w-4 flex-shrink-0",
+                      isActive(item.href) ? "text-black" : "text-white/60 group-hover:text-white"
+                    )} />
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate">{item.name}</div>
+                    </div>
+                    {isActive(item.href) && (
+                      <div className="w-1.5 h-1.5 bg-black rounded-full" />
+                    )}
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -317,7 +306,7 @@ export default function DashboardLayout({
 
           {/* Bottom navigation */}
           <div className="border-t border-white/10 px-4 py-4">
-            <ul className="space-y-1">
+            <ul className="space-y-1 mb-4">
               {bottomNavigation.map((item) => (
                 <li key={item.name}>
                   <Link
@@ -335,31 +324,25 @@ export default function DashboardLayout({
                 </li>
               ))}
             </ul>
-          </div>
 
-          {/* User menu */}
-          <div className="border-t border-white/10 px-4 py-4">
-            <div className="flex items-center space-x-3 px-3">
-              <div className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center">
-                <span className="text-2xs font-medium">{getUserInitials()}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate">{getUserDisplayName()}</p>
-                <p className="text-2xs text-white/60 truncate">{user?.email || 'Loading...'}</p>
-              </div>
-              <button 
-                onClick={handleLogout}
-                disabled={isLoggingOut}
-                className="text-white/60 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title="Sign out"
-              >
-                {isLoggingOut ? (
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoggingOut ? (
+                <>
                   <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
+                  <span>Logging out...</span>
+                </>
+              ) : (
+                <>
                   <LogOut className="h-4 w-4" />
-                )}
-              </button>
-            </div>
+                  <span>Sign Out</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </aside>
@@ -376,31 +359,47 @@ export default function DashboardLayout({
               <Menu className="h-5 w-5" />
             </button>
 
-            {/* Search */}
-            <div className="relative hidden sm:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="search"
-                placeholder="Search..."
-                className="pl-9 pr-4 py-2 text-xs border rounded-lg w-64 focus:outline-none focus:ring-1 focus:ring-primary"
-              />
+            {/* Current Page Title */}
+            <div className="hidden sm:block">
+              <h1 className="text-lg font-semibold text-gray-900">
+                {navigation.find(item => isActive(item.href))?.name || 'Dashboard'}
+              </h1>
+              <p className="text-xs text-gray-500">
+                {navigation.find(item => isActive(item.href))?.description}
+              </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-3">
-            {/* Quick actions */}
+            {/* Search (Mobile) */}
+            <button className="p-2 text-gray-500 hover:text-gray-700 sm:hidden">
+              <Search className="h-4 w-4" />
+            </button>
+
+            {/* Quick Stats Badges - Desktop Only */}
+            <div className="hidden md:flex items-center space-x-2">
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 bg-green-50 rounded-full">
+                <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                <span className="text-xs font-medium text-green-700">{stats.activeAssignments} Active</span>
+              </div>
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-50 rounded-full">
+                <Clock className="h-3.5 w-3.5 text-blue-600" />
+                <span className="text-xs font-medium text-blue-700">{stats.completedProjects} Completed</span>
+              </div>
+            </div>
+
+            {/* Notifications */}
             <button className="p-2 text-gray-500 hover:text-gray-700 relative">
               <Bell className="h-4 w-4" />
               <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-red-500 rounded-full" />
             </button>
 
-            <button className="p-2 text-gray-500 hover:text-gray-700">
-              <Globe className="h-4 w-4" />
-            </button>
-
-            <button className="p-2 text-gray-500 hover:text-gray-700 sm:hidden">
-              <Search className="h-4 w-4" />
-            </button>
+            {/* Profile Menu */}
+            <div className="hidden sm:flex items-center space-x-2 pl-3 border-l">
+              <div className="w-8 h-8 bg-gradient-to-br from-primary to-yellow-600 rounded-full flex items-center justify-center">
+                <span className="text-xs font-semibold text-black">{getUserInitials()}</span>
+              </div>
+            </div>
           </div>
         </header>
 

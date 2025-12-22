@@ -1,0 +1,64 @@
+# AWS CodeBuild Buildspec for Next.js Frontend
+# This file defines the build and deployment process for the InsightSerenity frontend application
+
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Installing dependencies...
+      - cd frontend
+      - npm ci
+      - echo Setting up environment variables...
+      - |
+        cat > .env.production << EOF
+        NEXT_PUBLIC_API_URL=https://api.${DOMAIN_NAME}
+        NEXT_PUBLIC_ENVIRONMENT=${ENVIRONMENT}
+        NEXT_PUBLIC_APP_VERSION=${CODEBUILD_RESOLVED_SOURCE_VERSION}
+        EOF
+      
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building Next.js application...
+      - npm run build
+      - echo Exporting static files...
+      - npm run export || echo "Static export not configured, using build output"
+      
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Deploying to S3...
+      - |
+        if [ -d "out" ]; then
+          DEPLOY_DIR="out"
+        else
+          DEPLOY_DIR=".next"
+        fi
+      - echo Uploading from $DEPLOY_DIR directory...
+      - |
+        aws s3 sync $DEPLOY_DIR/ s3://${S3_BUCKET_NAME}/ \
+          --delete \
+          --cache-control "public, max-age=31536000, immutable" \
+          --exclude "*.html" \
+          --exclude "404.html" \
+          --exclude "index.html"
+      - |
+        aws s3 sync $DEPLOY_DIR/ s3://${S3_BUCKET_NAME}/ \
+          --cache-control "public, max-age=0, must-revalidate" \
+          --exclude "*" \
+          --include "*.html"
+      - echo Invalidating CloudFront cache...
+      - aws cloudfront create-invalidation --distribution-id ${CLOUDFRONT_DISTRIBUTION_ID} --paths "/*"
+      - echo Deployment completed successfully
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: 'frontend/out'
+  discard-paths: no
+
+cache:
+  paths:
+    - 'frontend/node_modules/**/*'
+    - 'frontend/.next/cache/**/*'

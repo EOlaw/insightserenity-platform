@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import {
     Dialog,
     DialogContent,
@@ -40,6 +39,7 @@ export default function CertificationsPage() {
     const [isLoading, setIsLoading] = useState(true)
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     const [isEditMode, setIsEditMode] = useState(false)
+    const [isSaving, setIsSaving] = useState(false)
     const [selectedCert, setSelectedCert] = useState<Certification | null>(null)
 
     const [certForm, setCertForm] = useState({
@@ -62,7 +62,7 @@ export default function CertificationsPage() {
         try {
             const profileData = await consultantApi.getMyProfile()
             setConsultant(profileData)
-            setCertifications(profileData.data.certifications || [])
+            setCertifications(profileData.certifications || [])
             
             console.log('Loaded certifications:', profileData.certifications?.length || 0)
         } catch (error: any) {
@@ -126,6 +126,8 @@ export default function CertificationsPage() {
             return
         }
 
+        setIsSaving(true)
+
         try {
             const certData = {
                 name: certForm.name,
@@ -151,6 +153,8 @@ export default function CertificationsPage() {
         } catch (error: any) {
             console.error('Failed to save certification:', error)
             toast.error(error.response?.data?.message || 'Failed to save certification')
+        } finally {
+            setIsSaving(false)
         }
     }
 
@@ -539,15 +543,25 @@ export default function CertificationsPage() {
                         </div>
 
                         <DialogFooter>
-                            <Button variant="outline" onClick={handleCloseDialog} size="sm" className="h-8 text-xs">
+                            <Button variant="outline" onClick={handleCloseDialog} size="sm" className="h-8 text-xs" disabled={isSaving}>
                                 Cancel
                             </Button>
                             <Button 
                                 onClick={handleSubmit} 
                                 size="sm"
                                 className="bg-gradient-to-r from-[#ffc451] to-[#ffb020] hover:from-[#ffb020] hover:to-[#ffc451] text-black font-medium h-8 text-xs"
+                                disabled={isSaving}
                             >
-                                {isEditMode ? 'Update' : 'Add'} Certification
+                                {isSaving ? (
+                                    <>
+                                        <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                                        Saving...
+                                    </>
+                                ) : (
+                                    <>
+                                        {isEditMode ? 'Update' : 'Add'} Certification
+                                    </>
+                                )}
                             </Button>
                         </DialogFooter>
                     </DialogContent>

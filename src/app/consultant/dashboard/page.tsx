@@ -75,6 +75,7 @@ import {
 } from 'recharts'
 import toast from 'react-hot-toast'
 import { consultantApi, type ConsultantProfile, type Assignment, type AvailabilityRecord } from '@/lib/api/consultant'
+import AvailabilityCalendar from '@/components/consultant/availability-calendar'
 
 interface DashboardStats {
   activeAssignments: number
@@ -122,8 +123,7 @@ export default function ConsultantDashboard() {
     setError('')
 
     try {
-      const profileResponse = await consultantApi.getMyProfile()
-      const profileData = profileResponse?.data || profileResponse
+      const profileData = await consultantApi.getMyProfile()
       setConsultant(profileData)
 
       const assignmentsResponse = await consultantApi.getMyAssignments()
@@ -156,7 +156,10 @@ export default function ConsultantDashboard() {
         
       const upcomingTimeOff = Array.isArray(availabilityData)
         ? availabilityData.filter(
-            (a: AvailabilityRecord) => a.status === 'approved' && new Date(a.startDate) > new Date()
+            (a: AvailabilityRecord) => {
+              const startDate = new Date(a.period.startDate)
+              return startDate > new Date()
+            }
           ).length
         : 0
 
@@ -164,9 +167,8 @@ export default function ConsultantDashboard() {
         ? assignmentsData.filter((a: Assignment) => a.status === 'completed').length
         : 0
 
-      // Calculate mock billable hours and revenue for demonstration
-      const billableHours = activeAssignments * 160 // Assume 160 hours per active project
-      const avgRate = 150 // Average hourly rate
+      const billableHours = activeAssignments * 160
+      const avgRate = 150
       const revenue = billableHours * avgRate
 
       setStats({
@@ -199,6 +201,57 @@ export default function ConsultantDashboard() {
       setIsLoading(false)
     }
   }
+
+  const generateCalendarData = () => {
+    const data = []
+    const today = new Date()
+    const currentMonth = today.getMonth()
+    const currentYear = today.getFullYear()
+
+    for (let i = 0; i < 30; i++) {
+      const date = new Date(currentYear, currentMonth, today.getDate() + i)
+      const dayOfWeek = date.getDay()
+
+      if (dayOfWeek === 0 || dayOfWeek === 6) continue
+
+      let status: 'available' | 'partially_available' | 'unavailable' | 'time_off' | 'on_project'
+      let hours = 8
+      let description = ''
+
+      if (i % 10 === 0) {
+        status = 'time_off'
+        hours = 0
+        description = 'Scheduled time off'
+      } else if (i % 7 === 0) {
+        status = 'partially_available'
+        hours = 4
+        description = 'Morning meetings, available afternoon'
+      } else if (i % 5 === 0) {
+        status = 'on_project'
+        hours = 8
+        description = 'Client engagement - Tech Innovations Inc'
+      } else if (i % 3 === 0) {
+        status = 'available'
+        hours = 8
+        description = 'Fully available for new assignments'
+      } else {
+        status = 'on_project'
+        hours = 6
+        description = 'Current project work'
+      }
+
+      data.push({
+        date,
+        status,
+        hours,
+        description,
+      })
+    }
+
+    return data
+  }
+
+  const calendarAvailabilityData = generateCalendarData()
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { label: string; className: string }> = {
@@ -256,7 +309,6 @@ export default function ConsultantDashboard() {
     )
   }
 
-  // Mock data for enhanced features
   const topSkills = consultant?.skills?.slice(0, 5) || []
   const recentActivities = [
     { id: 1, type: 'assignment', title: 'Started new project: Digital Transformation', time: '2 hours ago', icon: Briefcase },
@@ -277,7 +329,6 @@ export default function ConsultantDashboard() {
     { id: 3, title: 'Cloud Security Fundamentals', provider: 'AWS Training', duration: '4 weeks', relevance: 82 },
   ]
 
-  // Chart data
   const revenueByClientData = [
     { name: 'Tech Innovations Inc', value: 45000, color: '#ffc451' },
     { name: 'Global Finance Corp', value: 32000, color: '#10b981' },
@@ -420,7 +471,6 @@ export default function ConsultantDashboard() {
             </div>
           </div>
           
-          {/* Profile Bio */}
           {consultant?.profile?.summary && (
             <div className="mt-3 pt-3 border-t border-gray-100">
               <p className="text-xs text-gray-600 line-clamp-2">{consultant.profile.summary}</p>
@@ -979,12 +1029,20 @@ export default function ConsultantDashboard() {
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-medium text-gray-900">{skill.name}</span>
                             <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 capitalize">
-                              {skill.level}
+                              {skill.proficiencyLevel}
                             </Badge>
                           </div>
-                          <span className="text-xs font-bold text-gray-900">{skill.proficiency || 85}%</span>
+                          <span className="text-xs font-bold text-gray-900">
+                            {skill.proficiencyLevel === 'expert' ? 95 : 
+                             skill.proficiencyLevel === 'advanced' ? 85 : 
+                             skill.proficiencyLevel === 'intermediate' ? 70 : 50}%
+                          </span>
                         </div>
-                        <Progress value={skill.proficiency || 85} className="h-1.5" />
+                        <Progress value={
+                          skill.proficiencyLevel === 'expert' ? 95 : 
+                          skill.proficiencyLevel === 'advanced' ? 85 : 
+                          skill.proficiencyLevel === 'intermediate' ? 70 : 50
+                        } className="h-1.5" />
                       </div>
                     ))}
                   </div>
@@ -1118,6 +1176,22 @@ export default function ConsultantDashboard() {
 
           {/* Right Column - 1 column wide */}
           <div className="space-y-4">
+            {/* Availability Calendar */}
+            <Card className="border-[#ffc451]/20">
+              <CardHeader className="p-3 pb-2">
+                <CardTitle className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-[#ffc451]" />
+                  Availability Calendar
+                </CardTitle>
+                <CardDescription className="text-[10px]">
+                  Click dates to manage your schedule
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-3 pt-0">
+                <AvailabilityCalendar availabilityData={calendarAvailabilityData} />
+              </CardContent>
+            </Card>
+
             {/* Quick Actions */}
             <Card className="border-[#ffc451]/20">
               <CardHeader className="p-3 pb-2">

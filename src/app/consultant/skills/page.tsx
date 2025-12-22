@@ -27,11 +27,6 @@ import {
     SelectValue,
 } from '@/components/ui/select'
 import {
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import {
     Plus,
     Edit,
     Trash2,
@@ -311,11 +306,9 @@ export default function SkillsManagementPage() {
             
             let skillsData: SkillRecord[] = []
             
-            // Handle the double-nested data structure: response.data.data
             if (Array.isArray(skillsResponse)) {
                 skillsData = skillsResponse
             } else if (skillsResponse && typeof skillsResponse === 'object') {
-                // First check for data.data (double nested)
                 if ('data' in skillsResponse && skillsResponse.data && typeof skillsResponse.data === 'object') {
                     if ('data' in skillsResponse.data && Array.isArray(skillsResponse.data.data)) {
                         skillsData = skillsResponse.data.data
@@ -490,10 +483,13 @@ export default function SkillsManagementPage() {
 
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
+            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
                 <div className="text-center space-y-3">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                    <p className="text-sm text-muted-foreground">Loading skills profile...</p>
+                    <div className="relative">
+                        <div className="w-12 h-12 mx-auto rounded-full bg-gradient-to-r from-[#ffc451] to-[#ffb020] animate-pulse" />
+                        <Loader2 className="h-6 w-6 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white animate-spin" />
+                    </div>
+                    <p className="text-xs font-medium text-gray-600">Loading skills profile...</p>
                 </div>
             </div>
         )
@@ -502,835 +498,827 @@ export default function SkillsManagementPage() {
     const groupedSkills = getSkillsByCategory()
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <Link href="/consultant/dashboard">
-                        <Button variant="ghost" size="icon">
-                            <ArrowLeft className="h-4 w-4" />
-                        </Button>
-                    </Link>
-                    <div>
-                        <h1 className="text-2xl font-bold">Professional Skills Profile</h1>
-                        <p className="text-sm text-muted-foreground mt-0.5">
-                            Comprehensive skill tracking and development planning
-                        </p>
-                    </div>
-                </div>
-                <Button onClick={() => handleOpenDialog()} size="sm">
-                    <Plus className="mr-2 h-3.5 w-3.5" />
-                    Add Skill
-                </Button>
-            </div>
-
-            {/* Statistics Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
-                <Card>
-                    <CardHeader className="pb-3">
-                        <CardDescription>Total Skills</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{safeSkills.length}</div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-3">
-                        <CardDescription>Verified Skills</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{verifiedCount}</div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                            {safeSkills.length > 0 ? Math.round((verifiedCount / safeSkills.length) * 100) : 0}% of total
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-3">
-                        <CardDescription>Expert Level</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{expertCount}</div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                            Advanced proficiency skills
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-3">
-                        <CardDescription>Skill Categories</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{categoryCount}</div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                            Diverse skill portfolio
-                        </p>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Filters */}
-            <Card>
-                <CardContent className="pt-6">
-                    <div className="flex flex-col md:flex-row gap-3">
-                        <div className="flex-1">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Search skills, descriptions, or tags..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-9"
-                                />
-                            </div>
-                        </div>
-
-                        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                            <SelectTrigger className="w-full md:w-[180px]">
-                                <SelectValue placeholder="Category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Categories</SelectItem>
-                                {SKILL_CATEGORIES.map(cat => (
-                                    <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-
-                        <Select value={proficiencyFilter} onValueChange={setProficiencyFilter}>
-                            <SelectTrigger className="w-full md:w-[180px]">
-                                <SelectValue placeholder="Proficiency" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Levels</SelectItem>
-                                {PROFICIENCY_LEVELS.map(level => (
-                                    <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Skills Display */}
-            {filteredSkills.length === 0 ? (
-                <Card>
-                    <CardContent className="py-12 text-center">
-                        <Star className="h-12 w-12 text-muted-foreground/40 mx-auto mb-4" />
-                        <h3 className="font-semibold mb-2">No skills found</h3>
-                        <p className="text-sm text-muted-foreground mb-6">
-                            {searchTerm || categoryFilter !== 'all' || proficiencyFilter !== 'all'
-                                ? 'Try adjusting your filters to see more skills'
-                                : 'Begin building your professional skills profile by adding your first skill'}
-                        </p>
-                        {!searchTerm && categoryFilter === 'all' && proficiencyFilter === 'all' && (
-                            <Button onClick={() => handleOpenDialog()} size="sm">
-                                <Plus className="mr-2 h-3.5 w-3.5" />
-                                Add Your First Skill
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
+            <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Link href="/consultant/dashboard">
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <ArrowLeft className="h-3.5 w-3.5" />
                             </Button>
-                        )}
+                        </Link>
+                        <div>
+                            <h1 className="text-lg font-bold text-gray-900">Professional Skills Profile</h1>
+                            <p className="text-xs text-gray-500">
+                                Comprehensive skill tracking and development planning
+                            </p>
+                        </div>
+                    </div>
+                    <Button
+                        onClick={() => handleOpenDialog()}
+                        size="sm"
+                        className="bg-gradient-to-r from-[#ffc451] to-[#ffb020] hover:from-[#ffb020] hover:to-[#ffc451] text-black font-medium text-xs h-8"
+                    >
+                        <Plus className="mr-1.5 h-3 w-3" />
+                        Add Skill
+                    </Button>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-4">
+                    <Card className="border-[#ffc451]/20">
+                        <CardContent className="p-3">
+                            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1">Total Skills</p>
+                            <div className="text-xl font-bold text-gray-900">{safeSkills.length}</div>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-emerald-500/20">
+                        <CardContent className="p-3">
+                            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1">Verified Skills</p>
+                            <div className="text-xl font-bold text-gray-900">{verifiedCount}</div>
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                                {safeSkills.length > 0 ? Math.round((verifiedCount / safeSkills.length) * 100) : 0}% of total
+                            </p>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-blue-500/20">
+                        <CardContent className="p-3">
+                            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1">Expert Level</p>
+                            <div className="text-xl font-bold text-gray-900">{expertCount}</div>
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                                Advanced proficiency skills
+                            </p>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-purple-500/20">
+                        <CardContent className="p-3">
+                            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1">Skill Categories</p>
+                            <div className="text-xl font-bold text-gray-900">{categoryCount}</div>
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                                Diverse skill portfolio
+                            </p>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                <Card className="border-[#ffc451]/20">
+                    <CardContent className="p-3">
+                        <div className="flex flex-col md:flex-row gap-2">
+                            <div className="flex-1">
+                                <div className="relative">
+                                    <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                                    <Input
+                                        placeholder="Search skills, descriptions, or tags..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="pl-8 h-8 text-xs"
+                                    />
+                                </div>
+                            </div>
+
+                            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                                <SelectTrigger className="w-full md:w-[160px] h-8 text-xs">
+                                    <SelectValue placeholder="Category" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all" className="text-xs">All Categories</SelectItem>
+                                    {SKILL_CATEGORIES.map(cat => (
+                                        <SelectItem key={cat.value} value={cat.value} className="text-xs">{cat.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+
+                            <Select value={proficiencyFilter} onValueChange={setProficiencyFilter}>
+                                <SelectTrigger className="w-full md:w-[160px] h-8 text-xs">
+                                    <SelectValue placeholder="Proficiency" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all" className="text-xs">All Levels</SelectItem>
+                                    {PROFICIENCY_LEVELS.map(level => (
+                                        <SelectItem key={level.value} value={level.value} className="text-xs">{level.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </CardContent>
                 </Card>
-            ) : (
-                <div className="space-y-6">
-                    {Object.entries(groupedSkills).map(([category, categorySkills]) => {
-                        const categoryConfig = SKILL_CATEGORIES.find(c => c.value === category)
 
-                        return (
-                            <Card key={category}>
-                                <CardHeader>
-                                    <div className="flex items-center justify-between">
-                                        <CardTitle className="text-base">
-                                            {categoryConfig?.label || category}
-                                        </CardTitle>
-                                        <Badge variant="default">{categorySkills.length} skills</Badge>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    {categorySkills
-                                        .sort((a, b) => {
-                                            const levelOrder: Record<string, number> = { 
-                                                master: 5, expert: 4, advanced: 3, intermediate: 2, beginner: 1, none: 0
-                                            }
-                                            return (levelOrder[b.proficiency?.level] || 0) - (levelOrder[a.proficiency?.level] || 0)
-                                        })
-                                        .map((skill) => {
-                                            const isExpanded = expandedSkills.has(skill._id)
-                                            
-                                            return (
-                                                <Card key={skill._id} className="border-l-4" style={{ borderLeftColor: skill.status?.isFeatured ? '#ffc451' : 'transparent' }}>
-                                                    <CardHeader className="pb-3">
-                                                        <div className="flex items-start justify-between">
-                                                            <div className="flex-1">
-                                                                <div className="flex items-center gap-2 mb-2">
-                                                                    <h3 className="text-lg font-semibold">{skill.skill.name}</h3>
-                                                                    {skill.verification?.status && skill.verification.status !== 'unverified' && (
-                                                                        <Badge className={getVerificationBadgeColor(skill.verification.status)}>
-                                                                            {skill.verification.status.replace('_', ' ')}
-                                                                        </Badge>
-                                                                    )}
-                                                                    {skill.status?.isPrimary && (
-                                                                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                                                                            Primary
-                                                                        </Badge>
-                                                                    )}
-                                                                    {skill.experience?.currentlyUsing && (
-                                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                                                                            <Clock className="h-3 w-3 mr-1" />
-                                                                            In Use
-                                                                        </Badge>
-                                                                    )}
-                                                                </div>
-                                                                
-                                                                {skill.skill.subcategory && (
-                                                                    <p className="text-sm text-muted-foreground mb-2">
-                                                                        {skill.skill.subcategory}
-                                                                    </p>
-                                                                )}
-                                                                
-                                                                {skill.skill.description && (
-                                                                    <p className="text-sm text-muted-foreground mb-3">
-                                                                        {skill.skill.description}
-                                                                    </p>
-                                                                )}
+                {filteredSkills.length === 0 ? (
+                    <Card className="border-[#ffc451]/20">
+                        <CardContent className="py-12 text-center">
+                            <Star className="h-10 w-10 text-gray-400 mx-auto mb-3" />
+                            <h3 className="text-sm font-semibold text-gray-900 mb-1">No skills found</h3>
+                            <p className="text-xs text-gray-500 mb-4">
+                                {searchTerm || categoryFilter !== 'all' || proficiencyFilter !== 'all'
+                                    ? 'Try adjusting your filters to see more skills'
+                                    : 'Begin building your professional skills profile by adding your first skill'}
+                            </p>
+                            {!searchTerm && categoryFilter === 'all' && proficiencyFilter === 'all' && (
+                                <Button
+                                    onClick={() => handleOpenDialog()}
+                                    size="sm"
+                                    className="bg-gradient-to-r from-[#ffc451] to-[#ffb020] hover:from-[#ffb020] hover:to-[#ffc451] text-black font-medium text-xs h-8"
+                                >
+                                    <Plus className="mr-1.5 h-3 w-3" />
+                                    Add Your First Skill
+                                </Button>
+                            )}
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <div className="space-y-4">
+                        {Object.entries(groupedSkills).map(([category, categorySkills]) => {
+                            const categoryConfig = SKILL_CATEGORIES.find(c => c.value === category)
 
-                                                                {/* Tags */}
-                                                                {skill.skill.tags && skill.skill.tags.length > 0 && (
-                                                                    <div className="flex flex-wrap gap-1 mb-3">
-                                                                        {skill.skill.tags.map((tag, idx) => (
-                                                                            <Badge key={idx} variant="default" className="text-xs">
-                                                                                {tag}
+                            return (
+                                <Card key={category} className="border-[#ffc451]/20">
+                                    <CardHeader className="p-3 pb-2">
+                                        <div className="flex items-center justify-between">
+                                            <CardTitle className="text-xs font-bold text-gray-900">
+                                                {categoryConfig?.label || category}
+                                            </CardTitle>
+                                            <Badge variant="default" className="text-[10px] h-5">{categorySkills.length} skills</Badge>
+                                        </div>
+                                    </CardHeader>
+                                    <CardContent className="p-3 pt-0 space-y-2">
+                                        {categorySkills
+                                            .sort((a, b) => {
+                                                const levelOrder: Record<string, number> = { 
+                                                    master: 5, expert: 4, advanced: 3, intermediate: 2, beginner: 1, none: 0
+                                                }
+                                                return (levelOrder[b.proficiency?.level] || 0) - (levelOrder[a.proficiency?.level] || 0)
+                                            })
+                                            .map((skill) => {
+                                                const isExpanded = expandedSkills.has(skill._id)
+                                                
+                                                return (
+                                                    <Card key={skill._id} className="border-l-4 border-l-transparent hover:border-l-[#ffc451] transition-colors" style={{ borderLeftColor: skill.status?.isFeatured ? '#ffc451' : undefined }}>
+                                                        <CardHeader className="p-2.5 pb-2">
+                                                            <div className="flex items-start justify-between">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                                                        <h3 className="text-sm font-semibold text-gray-900">{skill.skill.name}</h3>
+                                                                        {skill.verification?.status && skill.verification.status !== 'unverified' && (
+                                                                            <Badge className={`${getVerificationBadgeColor(skill.verification.status)} text-[10px] h-5`}>
+                                                                                {skill.verification.status.replace('_', ' ')}
                                                                             </Badge>
-                                                                        ))}
+                                                                        )}
+                                                                        {skill.status?.isPrimary && (
+                                                                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] h-5">
+                                                                                Primary
+                                                                            </Badge>
+                                                                        )}
+                                                                        {skill.experience?.currentlyUsing && (
+                                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-[10px] h-5">
+                                                                                <Clock className="h-2.5 w-2.5 mr-1" />
+                                                                                In Use
+                                                                            </Badge>
+                                                                        )}
                                                                     </div>
-                                                                )}
-
-                                                                {/* Proficiency Overview */}
-                                                                <div className="space-y-2">
-                                                                    <div className="flex items-center justify-between">
-                                                                        <span className="text-sm font-medium">Proficiency Level</span>
-                                                                        <Badge className={`${getProficiencyColor(skill.proficiency.level)} capitalize`}>
-                                                                            {skill.proficiency.level}
-                                                                        </Badge>
-                                                                    </div>
-                                                                    {skill.proficiency.score !== undefined && (
-                                                                        <div className="space-y-1">
-                                                                            <Progress value={skill.proficiency.score} className="h-2" />
-                                                                            <p className="text-xs text-muted-foreground text-right">
-                                                                                Score: {skill.proficiency.score}/100
-                                                                            </p>
-                                                                        </div>
+                                                                    
+                                                                    {skill.skill.subcategory && (
+                                                                        <p className="text-[10px] text-gray-500 mb-1.5">
+                                                                            {skill.skill.subcategory}
+                                                                        </p>
                                                                     )}
-                                                                </div>
-
-                                                                {/* Quick Stats */}
-                                                                <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-muted-foreground">
-                                                                    {skill.experience?.yearsOfExperience !== undefined && (
-                                                                        <span className="flex items-center gap-1">
-                                                                            <Calendar className="h-4 w-4" />
-                                                                            {skill.experience.yearsOfExperience} {skill.experience.yearsOfExperience === 1 ? 'year' : 'years'}
-                                                                        </span>
-                                                                    )}
-                                                                    {skill.experience?.totalProjects !== undefined && skill.experience.totalProjects > 0 && (
-                                                                        <span className="flex items-center gap-1">
-                                                                            <Briefcase className="h-4 w-4" />
-                                                                            {skill.experience.totalProjects} {skill.experience.totalProjects === 1 ? 'project' : 'projects'}
-                                                                        </span>
-                                                                    )}
-                                                                    {skill.endorsements && skill.endorsements.length > 0 && (
-                                                                        <span className="flex items-center gap-1">
-                                                                            <Users className="h-4 w-4" />
-                                                                            {skill.endorsements.length} {skill.endorsements.length === 1 ? 'endorsement' : 'endorsements'}
-                                                                        </span>
-                                                                    )}
-                                                                    {skill.training?.coursesCompleted && skill.training.coursesCompleted.length > 0 && (
-                                                                        <span className="flex items-center gap-1">
-                                                                            <GraduationCap className="h-4 w-4" />
-                                                                            {skill.training.coursesCompleted.length} {skill.training.coursesCompleted.length === 1 ? 'course' : 'courses'}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Action Buttons */}
-                                                            <div className="flex items-center gap-1 ml-4">
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    onClick={() => toggleSkillExpansion(skill._id)}
-                                                                    className="h-8 w-8"
-                                                                >
-                                                                    {isExpanded ? (
-                                                                        <ChevronUp className="h-4 w-4" />
-                                                                    ) : (
-                                                                        <ChevronDown className="h-4 w-4" />
-                                                                    )}
-                                                                </Button>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    onClick={() => handleOpenDialog(skill)}
-                                                                    className="h-8 w-8"
-                                                                >
-                                                                    <Edit className="h-4 w-4" />
-                                                                </Button>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    onClick={() => handleDeleteSkill(skill)}
-                                                                    className="h-8 w-8 text-destructive hover:text-destructive"
-                                                                >
-                                                                    <Trash2 className="h-4 w-4" />
-                                                                </Button>
-                                                            </div>
-                                                        </div>
-                                                    </CardHeader>
-
-                                                    {/* Expanded Details */}
-                                                    {isExpanded && (
-                                                        <CardContent className="pt-0">
-                                                            <Separator className="mb-4" />
-                                                            
-                                                            <Tabs defaultValue="proficiency" className="w-full">
-                                                                <TabsList className="grid w-full grid-cols-5">
-                                                                    <TabsTrigger value="proficiency">Proficiency</TabsTrigger>
-                                                                    <TabsTrigger value="experience">Experience</TabsTrigger>
-                                                                    <TabsTrigger value="goals">Goals</TabsTrigger>
-                                                                    <TabsTrigger value="training">Training</TabsTrigger>
-                                                                    <TabsTrigger value="market">Market</TabsTrigger>
-                                                                </TabsList>
-
-                                                                {/* Proficiency Tab */}
-                                                                <TabsContent value="proficiency" className="space-y-4">
-                                                                    {skill.proficiency.selfAssessment && (
-                                                                        <div className="space-y-2">
-                                                                            <h4 className="font-medium flex items-center gap-2">
-                                                                                <Award className="h-4 w-4" />
-                                                                                Self Assessment
-                                                                            </h4>
-                                                                            <div className="bg-muted p-3 rounded-md space-y-2">
-                                                                                <div className="flex items-center justify-between">
-                                                                                    <span className="text-sm">Level: <strong className="capitalize">{skill.proficiency.selfAssessment.level}</strong></span>
-                                                                                    <span className="text-sm">Score: <strong>{skill.proficiency.selfAssessment.score}/100</strong></span>
-                                                                                </div>
-                                                                                <p className="text-sm text-muted-foreground">
-                                                                                    Assessed on {formatDate(skill.proficiency.selfAssessment.assessedAt)}
-                                                                                </p>
-                                                                                {skill.proficiency.selfAssessment.notes && (
-                                                                                    <p className="text-sm mt-2 italic">
-                                                                                        "{skill.proficiency.selfAssessment.notes}"
-                                                                                    </p>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
+                                                                    
+                                                                    {skill.skill.description && (
+                                                                        <p className="text-[10px] text-gray-500 mb-2 line-clamp-2">
+                                                                            {skill.skill.description}
+                                                                        </p>
                                                                     )}
 
-                                                                    {skill.proficiency.managerAssessment && (
-                                                                        <div className="space-y-2">
-                                                                            <h4 className="font-medium flex items-center gap-2">
-                                                                                <CheckCircle className="h-4 w-4 text-blue-600" />
-                                                                                Manager Assessment
-                                                                            </h4>
-                                                                            <div className="bg-blue-50 p-3 rounded-md space-y-2">
-                                                                                <div className="flex items-center justify-between">
-                                                                                    <span className="text-sm">Level: <strong className="capitalize">{skill.proficiency.managerAssessment.level}</strong></span>
-                                                                                    <span className="text-sm">Score: <strong>{skill.proficiency.managerAssessment.score}/100</strong></span>
-                                                                                </div>
-                                                                                <p className="text-sm text-muted-foreground">
-                                                                                    Assessed on {formatDate(skill.proficiency.managerAssessment.assessedAt)}
-                                                                                </p>
-                                                                                {skill.proficiency.managerAssessment.notes && (
-                                                                                    <p className="text-sm mt-2 italic">
-                                                                                        "{skill.proficiency.managerAssessment.notes}"
-                                                                                    </p>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-
-                                                                    {skill.proficiency.peerAssessments && skill.proficiency.peerAssessments.length > 0 && (
-                                                                        <div className="space-y-2">
-                                                                            <h4 className="font-medium flex items-center gap-2">
-                                                                                <Users className="h-4 w-4 text-indigo-600" />
-                                                                                Peer Assessments ({skill.proficiency.peerAssessments.length})
-                                                                            </h4>
-                                                                            <div className="space-y-2">
-                                                                                {skill.proficiency.peerAssessments.map((assessment: any, idx: number) => (
-                                                                                    <div key={idx} className="bg-indigo-50 p-3 rounded-md">
-                                                                                        <div className="flex items-center justify-between">
-                                                                                            <span className="text-sm capitalize">{assessment.level}</span>
-                                                                                            <span className="text-sm">{assessment.score}/100</span>
-                                                                                        </div>
-                                                                                        {assessment.notes && (
-                                                                                            <p className="text-sm mt-1 italic">"{assessment.notes}"</p>
-                                                                                        )}
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-
-                                                                    {skill.proficiency.certificationBased?.certified && (
-                                                                        <div className="space-y-2">
-                                                                            <h4 className="font-medium flex items-center gap-2">
-                                                                                <GraduationCap className="h-4 w-4 text-green-600" />
-                                                                                Certification
-                                                                            </h4>
-                                                                            <div className="bg-green-50 p-3 rounded-md">
-                                                                                <p className="text-sm font-medium">{skill.proficiency.certificationBased.certificationName || 'Certified'}</p>
-                                                                                {skill.proficiency.certificationBased.certificationId && (
-                                                                                    <p className="text-sm text-muted-foreground">ID: {skill.proficiency.certificationBased.certificationId}</p>
-                                                                                )}
-                                                                                {skill.proficiency.certificationBased.earnedAt && (
-                                                                                    <p className="text-sm text-muted-foreground">Earned: {formatDate(skill.proficiency.certificationBased.earnedAt)}</p>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-                                                                </TabsContent>
-
-                                                                {/* Experience Tab */}
-                                                                <TabsContent value="experience" className="space-y-4">
-                                                                    <div className="grid grid-cols-2 gap-4">
-                                                                        <div>
-                                                                            <p className="text-sm text-muted-foreground">Experience Duration</p>
-                                                                            <p className="text-lg font-semibold">
-                                                                                {skill.experience?.yearsOfExperience || 0} years, {skill.experience?.monthsOfExperience || 0} months
-                                                                            </p>
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="text-sm text-muted-foreground">Total Projects</p>
-                                                                            <p className="text-lg font-semibold">{skill.experience?.totalProjects || 0}</p>
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="text-sm text-muted-foreground">First Used</p>
-                                                                            <p className="text-sm">{formatDate(skill.experience?.firstUsed)}</p>
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="text-sm text-muted-foreground">Last Used</p>
-                                                                            <p className="text-sm">{formatDate(skill.experience?.lastUsed)}</p>
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {skill.experience?.totalHours && skill.experience.totalHours > 0 && (
-                                                                        <div>
-                                                                            <p className="text-sm text-muted-foreground">Total Hours Logged</p>
-                                                                            <p className="text-lg font-semibold">{skill.experience.totalHours.toLocaleString()} hours</p>
-                                                                        </div>
-                                                                    )}
-
-                                                                    {skill.experience?.contexts && skill.experience.contexts.length > 0 && (
-                                                                        <div className="space-y-2">
-                                                                            <h4 className="font-medium">Usage Contexts</h4>
-                                                                            <div className="flex flex-wrap gap-2">
-                                                                                {skill.experience.contexts.map((ctx, idx) => (
-                                                                                    <Badge key={idx} variant="outline">
-                                                                                        {CONTEXT_LABELS[ctx.context] || ctx.context}
-                                                                                        {ctx.percentage && ` (${ctx.percentage}%)`}
-                                                                                    </Badge>
-                                                                                ))}
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-                                                                </TabsContent>
-
-                                                                {/* Goals Tab */}
-                                                                <TabsContent value="goals" className="space-y-4">
-                                                                    {skill.goals?.targetLevel && (
-                                                                        <div className="bg-muted p-4 rounded-md space-y-3">
-                                                                            <div className="flex items-center justify-between">
-                                                                                <div>
-                                                                                    <p className="text-sm text-muted-foreground">Target Level</p>
-                                                                                    <p className="text-lg font-semibold capitalize">{skill.goals.targetLevel}</p>
-                                                                                </div>
-                                                                                {skill.goals.targetDate && (
-                                                                                    <div className="text-right">
-                                                                                        <p className="text-sm text-muted-foreground">Target Date</p>
-                                                                                        <p className="text-sm font-semibold">{formatDate(skill.goals.targetDate)}</p>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                            {skill.goals.priority && (
-                                                                                <Badge className={
-                                                                                    skill.goals.priority === 'critical' ? 'bg-red-100 text-red-800' :
-                                                                                    skill.goals.priority === 'high' ? 'bg-orange-100 text-orange-800' :
-                                                                                    skill.goals.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                                                                                    'bg-gray-100 text-gray-800'
-                                                                                }>
-                                                                                    Priority: {skill.goals.priority}
+                                                                    {skill.skill.tags && skill.skill.tags.length > 0 && (
+                                                                        <div className="flex flex-wrap gap-1 mb-2">
+                                                                            {skill.skill.tags.map((tag, idx) => (
+                                                                                <Badge key={idx} variant="default" className="text-[9px] h-4 px-1.5">
+                                                                                    {tag}
                                                                                 </Badge>
-                                                                            )}
+                                                                            ))}
                                                                         </div>
                                                                     )}
 
-                                                                    {skill.goals?.developmentPlan && (
-                                                                        <div>
-                                                                            <h4 className="font-medium mb-2">Development Plan</h4>
-                                                                            <p className="text-sm text-muted-foreground">{skill.goals.developmentPlan}</p>
+                                                                    <div className="space-y-1.5">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className="text-[10px] font-medium text-gray-600">Proficiency Level</span>
+                                                                            <Badge className={`${getProficiencyColor(skill.proficiency.level)} capitalize text-[10px] h-5`}>
+                                                                                {skill.proficiency.level}
+                                                                            </Badge>
                                                                         </div>
-                                                                    )}
+                                                                        {skill.proficiency.score !== undefined && (
+                                                                            <div className="space-y-0.5">
+                                                                                <Progress value={skill.proficiency.score} className="h-1.5" />
+                                                                                <p className="text-[9px] text-gray-400 text-right">
+                                                                                    Score: {skill.proficiency.score}/100
+                                                                                </p>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
 
-                                                                    {skill.goals?.milestones && skill.goals.milestones.length > 0 && (
-                                                                        <div>
-                                                                            <h4 className="font-medium mb-2">Milestones</h4>
-                                                                            <div className="space-y-2">
-                                                                                {skill.goals.milestones.map((milestone, idx) => (
-                                                                                    <div key={idx} className="flex items-center justify-between p-2 bg-muted rounded">
-                                                                                        <div className="flex items-center gap-2">
-                                                                                            {milestone.achieved ? (
-                                                                                                <CheckCircle className="h-4 w-4 text-green-600" />
-                                                                                            ) : (
-                                                                                                <div className="h-4 w-4 rounded-full border-2 border-muted-foreground" />
-                                                                                            )}
-                                                                                            <span className="text-sm">{milestone.milestone || 'Milestone'}</span>
-                                                                                        </div>
-                                                                                        <span className="text-xs text-muted-foreground">
-                                                                                            {formatDate(milestone.targetDate)}
-                                                                                        </span>
+                                                                    <div className="flex flex-wrap items-center gap-3 mt-2 text-[10px] text-gray-500">
+                                                                        {skill.experience?.yearsOfExperience !== undefined && (
+                                                                            <span className="flex items-center gap-1">
+                                                                                <Calendar className="h-3 w-3" />
+                                                                                {skill.experience.yearsOfExperience} {skill.experience.yearsOfExperience === 1 ? 'year' : 'years'}
+                                                                            </span>
+                                                                        )}
+                                                                        {skill.experience?.totalProjects !== undefined && skill.experience.totalProjects > 0 && (
+                                                                            <span className="flex items-center gap-1">
+                                                                                <Briefcase className="h-3 w-3" />
+                                                                                {skill.experience.totalProjects} {skill.experience.totalProjects === 1 ? 'project' : 'projects'}
+                                                                            </span>
+                                                                        )}
+                                                                        {skill.endorsements && skill.endorsements.length > 0 && (
+                                                                            <span className="flex items-center gap-1">
+                                                                                <Users className="h-3 w-3" />
+                                                                                {skill.endorsements.length} {skill.endorsements.length === 1 ? 'endorsement' : 'endorsements'}
+                                                                            </span>
+                                                                        )}
+                                                                        {skill.training?.coursesCompleted && skill.training.coursesCompleted.length > 0 && (
+                                                                            <span className="flex items-center gap-1">
+                                                                                <GraduationCap className="h-3 w-3" />
+                                                                                {skill.training.coursesCompleted.length} {skill.training.coursesCompleted.length === 1 ? 'course' : 'courses'}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex items-center gap-0.5 ml-2">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => toggleSkillExpansion(skill._id)}
+                                                                        className="h-7 w-7 p-0 text-gray-600 hover:text-gray-900"
+                                                                    >
+                                                                        {isExpanded ? (
+                                                                            <ChevronUp className="h-3.5 w-3.5" />
+                                                                        ) : (
+                                                                            <ChevronDown className="h-3.5 w-3.5" />
+                                                                        )}
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleOpenDialog(skill)}
+                                                                        className="h-7 w-7 p-0 text-gray-600 hover:text-gray-900"
+                                                                    >
+                                                                        <Edit className="h-3.5 w-3.5" />
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleDeleteSkill(skill)}
+                                                                        className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                    >
+                                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        </CardHeader>
+
+                                                        {isExpanded && (
+                                                            <CardContent className="p-2.5 pt-0">
+                                                                <Separator className="mb-3" />
+                                                                
+                                                                <Tabs defaultValue="proficiency" className="w-full">
+                                                                    <TabsList className="grid w-full grid-cols-5 h-7">
+                                                                        <TabsTrigger value="proficiency" className="text-[10px]">Proficiency</TabsTrigger>
+                                                                        <TabsTrigger value="experience" className="text-[10px]">Experience</TabsTrigger>
+                                                                        <TabsTrigger value="goals" className="text-[10px]">Goals</TabsTrigger>
+                                                                        <TabsTrigger value="training" className="text-[10px]">Training</TabsTrigger>
+                                                                        <TabsTrigger value="market" className="text-[10px]">Market</TabsTrigger>
+                                                                    </TabsList>
+
+                                                                    <TabsContent value="proficiency" className="space-y-3 mt-3">
+                                                                        {skill.proficiency.selfAssessment && (
+                                                                            <div className="space-y-1.5">
+                                                                                <h4 className="text-[10px] font-medium flex items-center gap-1.5 text-gray-700">
+                                                                                    <Award className="h-3 w-3" />
+                                                                                    Self Assessment
+                                                                                </h4>
+                                                                                <div className="bg-muted p-2 rounded-md space-y-1.5">
+                                                                                    <div className="flex items-center justify-between text-[10px]">
+                                                                                        <span>Level: <strong className="capitalize">{skill.proficiency.selfAssessment.level}</strong></span>
+                                                                                        <span>Score: <strong>{skill.proficiency.selfAssessment.score}/100</strong></span>
                                                                                     </div>
-                                                                                ))}
+                                                                                    <p className="text-[9px] text-gray-500">
+                                                                                        Assessed on {formatDate(skill.proficiency.selfAssessment.assessedAt)}
+                                                                                    </p>
+                                                                                    {skill.proficiency.selfAssessment.notes && (
+                                                                                        <p className="text-[10px] mt-1.5 italic text-gray-600">
+                                                                                            "{skill.proficiency.selfAssessment.notes}"
+                                                                                        </p>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {skill.proficiency.managerAssessment && (
+                                                                            <div className="space-y-1.5">
+                                                                                <h4 className="text-[10px] font-medium flex items-center gap-1.5 text-gray-700">
+                                                                                    <CheckCircle className="h-3 w-3 text-blue-600" />
+                                                                                    Manager Assessment
+                                                                                </h4>
+                                                                                <div className="bg-blue-50 p-2 rounded-md space-y-1.5">
+                                                                                    <div className="flex items-center justify-between text-[10px]">
+                                                                                        <span>Level: <strong className="capitalize">{skill.proficiency.managerAssessment.level}</strong></span>
+                                                                                        <span>Score: <strong>{skill.proficiency.managerAssessment.score}/100</strong></span>
+                                                                                    </div>
+                                                                                    <p className="text-[9px] text-gray-600">
+                                                                                        Assessed on {formatDate(skill.proficiency.managerAssessment.assessedAt)}
+                                                                                    </p>
+                                                                                    {skill.proficiency.managerAssessment.notes && (
+                                                                                        <p className="text-[10px] mt-1.5 italic text-gray-700">
+                                                                                            "{skill.proficiency.managerAssessment.notes}"
+                                                                                        </p>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {skill.proficiency.peerAssessments && skill.proficiency.peerAssessments.length > 0 && (
+                                                                            <div className="space-y-1.5">
+                                                                                <h4 className="text-[10px] font-medium flex items-center gap-1.5 text-gray-700">
+                                                                                    <Users className="h-3 w-3 text-indigo-600" />
+                                                                                    Peer Assessments ({skill.proficiency.peerAssessments.length})
+                                                                                </h4>
+                                                                                <div className="space-y-1.5">
+                                                                                    {skill.proficiency.peerAssessments.map((assessment: any, idx: number) => (
+                                                                                        <div key={idx} className="bg-indigo-50 p-2 rounded-md">
+                                                                                            <div className="flex items-center justify-between text-[10px]">
+                                                                                                <span className="capitalize">{assessment.level}</span>
+                                                                                                <span>{assessment.score}/100</span>
+                                                                                            </div>
+                                                                                            {assessment.notes && (
+                                                                                                <p className="text-[10px] mt-1 italic text-gray-700">"{assessment.notes}"</p>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {skill.proficiency.certificationBased?.certified && (
+                                                                            <div className="space-y-1.5">
+                                                                                <h4 className="text-[10px] font-medium flex items-center gap-1.5 text-gray-700">
+                                                                                    <GraduationCap className="h-3 w-3 text-green-600" />
+                                                                                    Certification
+                                                                                </h4>
+                                                                                <div className="bg-green-50 p-2 rounded-md">
+                                                                                    <p className="text-[10px] font-medium text-gray-900">{skill.proficiency.certificationBased.certificationName || 'Certified'}</p>
+                                                                                    {skill.proficiency.certificationBased.certificationId && (
+                                                                                        <p className="text-[9px] text-gray-600">ID: {skill.proficiency.certificationBased.certificationId}</p>
+                                                                                    )}
+                                                                                    {skill.proficiency.certificationBased.earnedAt && (
+                                                                                        <p className="text-[9px] text-gray-600">Earned: {formatDate(skill.proficiency.certificationBased.earnedAt)}</p>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </TabsContent>
+
+                                                                    <TabsContent value="experience" className="space-y-3 mt-3">
+                                                                        <div className="grid grid-cols-2 gap-2">
+                                                                            <div>
+                                                                                <p className="text-[9px] text-gray-500">Experience Duration</p>
+                                                                                <p className="text-xs font-semibold text-gray-900">
+                                                                                    {skill.experience?.yearsOfExperience || 0} years, {skill.experience?.monthsOfExperience || 0} months
+                                                                                </p>
+                                                                            </div>
+                                                                            <div>
+                                                                                <p className="text-[9px] text-gray-500">Total Projects</p>
+                                                                                <p className="text-xs font-semibold text-gray-900">{skill.experience?.totalProjects || 0}</p>
+                                                                            </div>
+                                                                            <div>
+                                                                                <p className="text-[9px] text-gray-500">First Used</p>
+                                                                                <p className="text-[10px] text-gray-700">{formatDate(skill.experience?.firstUsed)}</p>
+                                                                            </div>
+                                                                            <div>
+                                                                                <p className="text-[9px] text-gray-500">Last Used</p>
+                                                                                <p className="text-[10px] text-gray-700">{formatDate(skill.experience?.lastUsed)}</p>
                                                                             </div>
                                                                         </div>
-                                                                    )}
 
-                                                                    {skill.goals?.blockers && skill.goals.blockers.length > 0 && (
+                                                                        {skill.experience?.totalHours && skill.experience.totalHours > 0 && (
+                                                                            <div>
+                                                                                <p className="text-[9px] text-gray-500">Total Hours Logged</p>
+                                                                                <p className="text-xs font-semibold text-gray-900">{skill.experience.totalHours.toLocaleString()} hours</p>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {skill.experience?.contexts && skill.experience.contexts.length > 0 && (
+                                                                            <div className="space-y-1.5">
+                                                                                <h4 className="text-[10px] font-medium text-gray-700">Usage Contexts</h4>
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {skill.experience.contexts.map((ctx, idx) => (
+                                                                                        <Badge key={idx} variant="outline" className="text-[9px] h-4">
+                                                                                            {CONTEXT_LABELS[ctx.context] || ctx.context}
+                                                                                            {ctx.percentage && ` (${ctx.percentage}%)`}
+                                                                                        </Badge>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </TabsContent>
+
+                                                                    <TabsContent value="goals" className="space-y-3 mt-3">
+                                                                        {skill.goals?.targetLevel && (
+                                                                            <div className="bg-muted p-2.5 rounded-md space-y-2">
+                                                                                <div className="flex items-center justify-between">
+                                                                                    <div>
+                                                                                        <p className="text-[9px] text-gray-500">Target Level</p>
+                                                                                        <p className="text-xs font-semibold capitalize text-gray-900">{skill.goals.targetLevel}</p>
+                                                                                    </div>
+                                                                                    {skill.goals.targetDate && (
+                                                                                        <div className="text-right">
+                                                                                            <p className="text-[9px] text-gray-500">Target Date</p>
+                                                                                            <p className="text-[10px] font-semibold text-gray-900">{formatDate(skill.goals.targetDate)}</p>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                                {skill.goals.priority && (
+                                                                                    <Badge className={`text-[10px] h-5 ${
+                                                                                        skill.goals.priority === 'critical' ? 'bg-red-100 text-red-800' :
+                                                                                        skill.goals.priority === 'high' ? 'bg-orange-100 text-orange-800' :
+                                                                                        skill.goals.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                                                                                        'bg-gray-100 text-gray-800'
+                                                                                    }`}>
+                                                                                        Priority: {skill.goals.priority}
+                                                                                    </Badge>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+
+                                                                        {skill.goals?.developmentPlan && (
+                                                                            <div>
+                                                                                <h4 className="text-[10px] font-medium mb-1.5 text-gray-700">Development Plan</h4>
+                                                                                <p className="text-[10px] text-gray-600">{skill.goals.developmentPlan}</p>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {skill.goals?.milestones && skill.goals.milestones.length > 0 && (
+                                                                            <div>
+                                                                                <h4 className="text-[10px] font-medium mb-1.5 text-gray-700">Milestones</h4>
+                                                                                <div className="space-y-1.5">
+                                                                                    {skill.goals.milestones.map((milestone, idx) => (
+                                                                                        <div key={idx} className="flex items-center justify-between p-1.5 bg-muted rounded text-[10px]">
+                                                                                            <div className="flex items-center gap-1.5">
+                                                                                                {milestone.achieved ? (
+                                                                                                    <CheckCircle className="h-3 w-3 text-green-600" />
+                                                                                                ) : (
+                                                                                                    <div className="h-3 w-3 rounded-full border-2 border-gray-400" />
+                                                                                                )}
+                                                                                                <span>{milestone.milestone || 'Milestone'}</span>
+                                                                                            </div>
+                                                                                            <span className="text-[9px] text-gray-500">
+                                                                                                {formatDate(milestone.targetDate)}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {skill.goals?.blockers && skill.goals.blockers.length > 0 && (
+                                                                            <div>
+                                                                                <h4 className="text-[10px] font-medium mb-1.5 text-orange-700">Current Blockers</h4>
+                                                                                <div className="space-y-1.5">
+                                                                                    {skill.goals.blockers.filter(b => !b.resolved).map((blocker, idx) => (
+                                                                                        <div key={idx} className="p-1.5 bg-orange-50 border border-orange-200 rounded">
+                                                                                            <p className="text-[10px] text-gray-900">{blocker.description}</p>
+                                                                                            <p className="text-[9px] text-gray-500 mt-0.5">
+                                                                                                Identified: {formatDate(blocker.identifiedAt)}
+                                                                                            </p>
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </TabsContent>
+
+                                                                    <TabsContent value="training" className="space-y-3 mt-3">
+                                                                        {skill.training?.coursesCompleted && skill.training.coursesCompleted.length > 0 && (
+                                                                            <div>
+                                                                                <h4 className="text-[10px] font-medium mb-1.5 flex items-center gap-1.5 text-gray-700">
+                                                                                    <CheckCircle className="h-3 w-3 text-green-600" />
+                                                                                    Completed Courses ({skill.training.coursesCompleted.length})
+                                                                                </h4>
+                                                                                <div className="space-y-1.5">
+                                                                                    {skill.training.coursesCompleted.map((course: any, idx: number) => (
+                                                                                        <div key={idx} className="p-2 bg-green-50 rounded-md">
+                                                                                            <p className="font-medium text-[10px] text-gray-900">{course.courseName}</p>
+                                                                                            <p className="text-[9px] text-gray-600">{course.provider}</p>
+                                                                                            {course.completedAt && (
+                                                                                                <p className="text-[9px] text-gray-500">Completed: {formatDate(course.completedAt)}</p>
+                                                                                            )}
+                                                                                            {course.score && <p className="text-[9px] text-gray-700">Score: {course.score}%</p>}
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {skill.training?.currentlyEnrolled && skill.training.currentlyEnrolled.length > 0 && (
+                                                                            <div>
+                                                                                <h4 className="text-[10px] font-medium mb-1.5 flex items-center gap-1.5 text-gray-700">
+                                                                                    <BookOpen className="h-3 w-3 text-blue-600" />
+                                                                                    Currently Enrolled ({skill.training.currentlyEnrolled.length})
+                                                                                </h4>
+                                                                                <div className="space-y-1.5">
+                                                                                    {skill.training.currentlyEnrolled.map((course: any, idx: number) => (
+                                                                                        <div key={idx} className="p-2 bg-blue-50 rounded-md">
+                                                                                            <p className="font-medium text-[10px] text-gray-900">{course.courseName}</p>
+                                                                                            <p className="text-[9px] text-gray-600">{course.provider}</p>
+                                                                                            {course.progress && (
+                                                                                                <div className="mt-1.5">
+                                                                                                    <Progress value={course.progress} className="h-1.5" />
+                                                                                                    <p className="text-[9px] text-gray-500 mt-0.5">{course.progress}% complete</p>
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {skill.training?.recommendedCourses && skill.training.recommendedCourses.length > 0 && (
+                                                                            <div>
+                                                                                <h4 className="text-[10px] font-medium mb-1.5 flex items-center gap-1.5 text-gray-700">
+                                                                                    <Target className="h-3 w-3 text-purple-600" />
+                                                                                    Recommended Courses ({skill.training.recommendedCourses.length})
+                                                                                </h4>
+                                                                                <div className="space-y-1.5">
+                                                                                    {skill.training.recommendedCourses.map((course: any, idx: number) => (
+                                                                                        <div key={idx} className="p-2 bg-purple-50 rounded-md">
+                                                                                            <div className="flex items-start justify-between">
+                                                                                                <div>
+                                                                                                    <p className="font-medium text-[10px] text-gray-900">{course.courseName}</p>
+                                                                                                    <p className="text-[9px] text-gray-600">{course.provider}</p>
+                                                                                                    {course.reason && (
+                                                                                                        <p className="text-[9px] mt-1 italic text-gray-700">"{course.reason}"</p>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                                {course.priority && (
+                                                                                                    <Badge className="capitalize text-[9px] h-4">{course.priority}</Badge>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </TabsContent>
+
+                                                                    <TabsContent value="market" className="space-y-3 mt-3">
+                                                                        {skill.marketData && (
+                                                                            <>
+                                                                                <div className="grid grid-cols-2 gap-2">
+                                                                                    {skill.marketData.demandLevel && (
+                                                                                        <div>
+                                                                                            <p className="text-[9px] text-gray-500">Demand Level</p>
+                                                                                            <Badge className={`text-[10px] h-5 ${
+                                                                                                skill.marketData.demandLevel === 'critical' ? 'bg-red-100 text-red-800' :
+                                                                                                skill.marketData.demandLevel === 'high' ? 'bg-green-100 text-green-800' :
+                                                                                                skill.marketData.demandLevel === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
+                                                                                                'bg-gray-100 text-gray-800'
+                                                                                            }`}>
+                                                                                                {skill.marketData.demandLevel}
+                                                                                            </Badge>
+                                                                                        </div>
+                                                                                    )}
+
+                                                                                    {skill.marketData.trendDirection && (
+                                                                                        <div>
+                                                                                            <p className="text-[9px] text-gray-500">Trend Direction</p>
+                                                                                            <Badge className={`text-[10px] h-5 ${
+                                                                                                skill.marketData.trendDirection === 'emerging' ? 'bg-purple-100 text-purple-800' :
+                                                                                                skill.marketData.trendDirection === 'growing' ? 'bg-green-100 text-green-800' :
+                                                                                                skill.marketData.trendDirection === 'stable' ? 'bg-blue-100 text-blue-800' :
+                                                                                                'bg-orange-100 text-orange-800'
+                                                                                            }`}>
+                                                                                                {skill.marketData.trendDirection}
+                                                                                            </Badge>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {skill.marketData.marketRate && (
+                                                                                    <div className="p-2.5 bg-muted rounded-md">
+                                                                                        <p className="text-[9px] text-gray-500 mb-1.5">Market Rate ({skill.marketData.marketRate.currency || 'USD'})</p>
+                                                                                        <div className="flex items-center gap-3">
+                                                                                            {skill.marketData.marketRate.min && (
+                                                                                                <div>
+                                                                                                    <p className="text-[9px] text-gray-500">Minimum</p>
+                                                                                                    <p className="text-xs font-semibold text-gray-900">${skill.marketData.marketRate.min.toLocaleString()}</p>
+                                                                                                </div>
+                                                                                            )}
+                                                                                            {skill.marketData.marketRate.average && (
+                                                                                                <div>
+                                                                                                    <p className="text-[9px] text-gray-500">Average</p>
+                                                                                                    <p className="text-xs font-semibold text-gray-900">${skill.marketData.marketRate.average.toLocaleString()}</p>
+                                                                                                </div>
+                                                                                            )}
+                                                                                            {skill.marketData.marketRate.max && (
+                                                                                                <div>
+                                                                                                    <p className="text-[9px] text-gray-500">Maximum</p>
+                                                                                                    <p className="text-xs font-semibold text-gray-900">${skill.marketData.marketRate.max.toLocaleString()}</p>
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {skill.marketData.competitiveness && (
+                                                                                    <div>
+                                                                                        <p className="text-[9px] text-gray-500">Market Competitiveness</p>
+                                                                                        <Badge className="capitalize mt-1 text-[10px] h-5">{skill.marketData.competitiveness.replace('_', ' ')}</Badge>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {skill.marketData.lastMarketUpdate && (
+                                                                                    <p className="text-[9px] text-gray-400">
+                                                                                        Last updated: {formatDate(skill.marketData.lastMarketUpdate)}
+                                                                                    </p>
+                                                                                )}
+                                                                            </>
+                                                                        )}
+
+                                                                        {!skill.marketData && (
+                                                                            <div className="text-center py-6">
+                                                                                <TrendingUp className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                                                                                <p className="text-[10px] text-gray-500">
+                                                                                    No market data available for this skill
+                                                                                </p>
+                                                                            </div>
+                                                                        )}
+                                                                    </TabsContent>
+                                                                </Tabs>
+
+                                                                {skill.endorsements && skill.endorsements.length > 0 && (
+                                                                    <>
+                                                                        <Separator className="my-3" />
                                                                         <div>
-                                                                            <h4 className="font-medium mb-2 text-orange-600">Current Blockers</h4>
-                                                                            <div className="space-y-2">
-                                                                                {skill.goals.blockers.filter(b => !b.resolved).map((blocker, idx) => (
-                                                                                    <div key={idx} className="p-2 bg-orange-50 border border-orange-200 rounded">
-                                                                                        <p className="text-sm">{blocker.description}</p>
-                                                                                        <p className="text-xs text-muted-foreground mt-1">
-                                                                                            Identified: {formatDate(blocker.identifiedAt)}
+                                                                            <h4 className="text-[10px] font-medium mb-2 flex items-center gap-1.5 text-gray-700">
+                                                                                <Users className="h-3 w-3" />
+                                                                                Endorsements ({skill.endorsements.length})
+                                                                            </h4>
+                                                                            <div className="space-y-1.5">
+                                                                                {skill.endorsements.filter(e => e.visible !== false).map((endorsement, idx) => (
+                                                                                    <div key={idx} className="p-2 bg-muted rounded-md">
+                                                                                        <div className="flex items-start justify-between mb-1">
+                                                                                            <div>
+                                                                                                <p className="font-medium text-[10px] text-gray-900">{endorsement.endorserName || 'Anonymous'}</p>
+                                                                                                {endorsement.endorserTitle && (
+                                                                                                    <p className="text-[9px] text-gray-500">{endorsement.endorserTitle}</p>
+                                                                                                )}
+                                                                                            </div>
+                                                                                            <div className="text-right">
+                                                                                                {endorsement.rating && (
+                                                                                                    <div className="flex items-center gap-0.5">
+                                                                                                        <Star className="h-2.5 w-2.5 fill-yellow-400 text-yellow-400" />
+                                                                                                        <span className="text-[10px] font-medium">{endorsement.rating}/5</span>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {endorsement.relationship && (
+                                                                                                    <Badge variant="outline" className="text-[9px] h-4 mt-0.5">
+                                                                                                        {endorsement.relationship}
+                                                                                                    </Badge>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        {endorsement.comment && (
+                                                                                            <p className="text-[10px] mt-1.5 italic text-gray-600">"{endorsement.comment}"</p>
+                                                                                        )}
+                                                                                        <p className="text-[9px] text-gray-400 mt-1">
+                                                                                            {formatDate(endorsement.endorsedAt)}
                                                                                         </p>
                                                                                     </div>
                                                                                 ))}
                                                                             </div>
                                                                         </div>
-                                                                    )}
-                                                                </TabsContent>
-
-                                                                {/* Training Tab */}
-                                                                <TabsContent value="training" className="space-y-4">
-                                                                    {skill.training?.coursesCompleted && skill.training.coursesCompleted.length > 0 && (
-                                                                        <div>
-                                                                            <h4 className="font-medium mb-2 flex items-center gap-2">
-                                                                                <CheckCircle className="h-4 w-4 text-green-600" />
-                                                                                Completed Courses ({skill.training.coursesCompleted.length})
-                                                                            </h4>
-                                                                            <div className="space-y-2">
-                                                                                {skill.training.coursesCompleted.map((course: any, idx: number) => (
-                                                                                    <div key={idx} className="p-3 bg-green-50 rounded-md">
-                                                                                        <p className="font-medium text-sm">{course.courseName}</p>
-                                                                                        <p className="text-xs text-muted-foreground">{course.provider}</p>
-                                                                                        {course.completedAt && (
-                                                                                            <p className="text-xs text-muted-foreground">Completed: {formatDate(course.completedAt)}</p>
-                                                                                        )}
-                                                                                        {course.score && <p className="text-xs">Score: {course.score}%</p>}
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-
-                                                                    {skill.training?.currentlyEnrolled && skill.training.currentlyEnrolled.length > 0 && (
-                                                                        <div>
-                                                                            <h4 className="font-medium mb-2 flex items-center gap-2">
-                                                                                <BookOpen className="h-4 w-4 text-blue-600" />
-                                                                                Currently Enrolled ({skill.training.currentlyEnrolled.length})
-                                                                            </h4>
-                                                                            <div className="space-y-2">
-                                                                                {skill.training.currentlyEnrolled.map((course: any, idx: number) => (
-                                                                                    <div key={idx} className="p-3 bg-blue-50 rounded-md">
-                                                                                        <p className="font-medium text-sm">{course.courseName}</p>
-                                                                                        <p className="text-xs text-muted-foreground">{course.provider}</p>
-                                                                                        {course.progress && (
-                                                                                            <div className="mt-2">
-                                                                                                <Progress value={course.progress} className="h-2" />
-                                                                                                <p className="text-xs text-muted-foreground mt-1">{course.progress}% complete</p>
-                                                                                            </div>
-                                                                                        )}
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-
-                                                                    {skill.training?.recommendedCourses && skill.training.recommendedCourses.length > 0 && (
-                                                                        <div>
-                                                                            <h4 className="font-medium mb-2 flex items-center gap-2">
-                                                                                <Target className="h-4 w-4 text-purple-600" />
-                                                                                Recommended Courses ({skill.training.recommendedCourses.length})
-                                                                            </h4>
-                                                                            <div className="space-y-2">
-                                                                                {skill.training.recommendedCourses.map((course: any, idx: number) => (
-                                                                                    <div key={idx} className="p-3 bg-purple-50 rounded-md">
-                                                                                        <div className="flex items-start justify-between">
-                                                                                            <div>
-                                                                                                <p className="font-medium text-sm">{course.courseName}</p>
-                                                                                                <p className="text-xs text-muted-foreground">{course.provider}</p>
-                                                                                                {course.reason && (
-                                                                                                    <p className="text-xs mt-1 italic">"{course.reason}"</p>
-                                                                                                )}
-                                                                                            </div>
-                                                                                            {course.priority && (
-                                                                                                <Badge className="capitalize">{course.priority}</Badge>
-                                                                                            )}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-                                                                </TabsContent>
-
-                                                                {/* Market Tab */}
-                                                                <TabsContent value="market" className="space-y-4">
-                                                                    {skill.marketData && (
-                                                                        <>
-                                                                            <div className="grid grid-cols-2 gap-4">
-                                                                                {skill.marketData.demandLevel && (
-                                                                                    <div>
-                                                                                        <p className="text-sm text-muted-foreground">Demand Level</p>
-                                                                                        <Badge className={
-                                                                                            skill.marketData.demandLevel === 'critical' ? 'bg-red-100 text-red-800' :
-                                                                                            skill.marketData.demandLevel === 'high' ? 'bg-green-100 text-green-800' :
-                                                                                            skill.marketData.demandLevel === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
-                                                                                            'bg-gray-100 text-gray-800'
-                                                                                        }>
-                                                                                            {skill.marketData.demandLevel}
-                                                                                        </Badge>
-                                                                                    </div>
-                                                                                )}
-
-                                                                                {skill.marketData.trendDirection && (
-                                                                                    <div>
-                                                                                        <p className="text-sm text-muted-foreground">Trend Direction</p>
-                                                                                        <Badge className={
-                                                                                            skill.marketData.trendDirection === 'emerging' ? 'bg-purple-100 text-purple-800' :
-                                                                                            skill.marketData.trendDirection === 'growing' ? 'bg-green-100 text-green-800' :
-                                                                                            skill.marketData.trendDirection === 'stable' ? 'bg-blue-100 text-blue-800' :
-                                                                                            'bg-orange-100 text-orange-800'
-                                                                                        }>
-                                                                                            {skill.marketData.trendDirection}
-                                                                                        </Badge>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-
-                                                                            {skill.marketData.marketRate && (
-                                                                                <div className="p-4 bg-muted rounded-md">
-                                                                                    <p className="text-sm text-muted-foreground mb-2">Market Rate ({skill.marketData.marketRate.currency || 'USD'})</p>
-                                                                                    <div className="flex items-center gap-4">
-                                                                                        {skill.marketData.marketRate.min && (
-                                                                                            <div>
-                                                                                                <p className="text-xs text-muted-foreground">Minimum</p>
-                                                                                                <p className="text-lg font-semibold">${skill.marketData.marketRate.min.toLocaleString()}</p>
-                                                                                            </div>
-                                                                                        )}
-                                                                                        {skill.marketData.marketRate.average && (
-                                                                                            <div>
-                                                                                                <p className="text-xs text-muted-foreground">Average</p>
-                                                                                                <p className="text-lg font-semibold">${skill.marketData.marketRate.average.toLocaleString()}</p>
-                                                                                            </div>
-                                                                                        )}
-                                                                                        {skill.marketData.marketRate.max && (
-                                                                                            <div>
-                                                                                                <p className="text-xs text-muted-foreground">Maximum</p>
-                                                                                                <p className="text-lg font-semibold">${skill.marketData.marketRate.max.toLocaleString()}</p>
-                                                                                            </div>
-                                                                                        )}
-                                                                                    </div>
-                                                                                </div>
-                                                                            )}
-
-                                                                            {skill.marketData.competitiveness && (
-                                                                                <div>
-                                                                                    <p className="text-sm text-muted-foreground">Market Competitiveness</p>
-                                                                                    <Badge className="capitalize mt-1">{skill.marketData.competitiveness.replace('_', ' ')}</Badge>
-                                                                                </div>
-                                                                            )}
-
-                                                                            {skill.marketData.lastMarketUpdate && (
-                                                                                <p className="text-xs text-muted-foreground">
-                                                                                    Last updated: {formatDate(skill.marketData.lastMarketUpdate)}
-                                                                                </p>
-                                                                            )}
-                                                                        </>
-                                                                    )}
-
-                                                                    {!skill.marketData && (
-                                                                        <div className="text-center py-8">
-                                                                            <TrendingUp className="h-12 w-12 text-muted-foreground/40 mx-auto mb-2" />
-                                                                            <p className="text-sm text-muted-foreground">
-                                                                                No market data available for this skill
-                                                                            </p>
-                                                                        </div>
-                                                                    )}
-                                                                </TabsContent>
-                                                            </Tabs>
-
-                                                            {/* Endorsements Section */}
-                                                            {skill.endorsements && skill.endorsements.length > 0 && (
-                                                                <>
-                                                                    <Separator className="my-4" />
-                                                                    <div>
-                                                                        <h4 className="font-medium mb-3 flex items-center gap-2">
-                                                                            <Users className="h-4 w-4" />
-                                                                            Endorsements ({skill.endorsements.length})
-                                                                        </h4>
-                                                                        <div className="space-y-2">
-                                                                            {skill.endorsements.filter(e => e.visible !== false).map((endorsement, idx) => (
-                                                                                <div key={idx} className="p-3 bg-muted rounded-md">
-                                                                                    <div className="flex items-start justify-between mb-1">
-                                                                                        <div>
-                                                                                            <p className="font-medium text-sm">{endorsement.endorserName || 'Anonymous'}</p>
-                                                                                            {endorsement.endorserTitle && (
-                                                                                                <p className="text-xs text-muted-foreground">{endorsement.endorserTitle}</p>
-                                                                                            )}
-                                                                                        </div>
-                                                                                        <div className="text-right">
-                                                                                            {endorsement.rating && (
-                                                                                                <div className="flex items-center gap-1">
-                                                                                                    <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                                                                                                    <span className="text-sm font-medium">{endorsement.rating}/5</span>
-                                                                                                </div>
-                                                                                            )}
-                                                                                            {endorsement.relationship && (
-                                                                                                <Badge variant="outline" className="text-xs mt-1">
-                                                                                                    {endorsement.relationship}
-                                                                                                </Badge>
-                                                                                            )}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                    {endorsement.comment && (
-                                                                                        <p className="text-sm mt-2 italic">"{endorsement.comment}"</p>
-                                                                                    )}
-                                                                                    <p className="text-xs text-muted-foreground mt-1">
-                                                                                        {formatDate(endorsement.endorsedAt)}
-                                                                                    </p>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                </>
-                                                            )}
-
-                                                            {/* Metadata Footer */}
-                                                            <Separator className="my-4" />
-                                                            <div className="flex items-center justify-between text-xs text-muted-foreground">
-                                                                <span>Created: {formatDate(skill.createdAt)}</span>
-                                                                <span>Last Updated: {formatDate(skill.updatedAt)}</span>
-                                                                {skill.metadata?.source && (
-                                                                    <Badge variant="outline" className="text-xs">
-                                                                        Source: {skill.metadata.source}
-                                                                    </Badge>
+                                                                    </>
                                                                 )}
-                                                            </div>
-                                                        </CardContent>
-                                                    )}
-                                                </Card>
-                                            )
-                                        })}
-                                </CardContent>
-                            </Card>
-                        )
-                    })}
-                </div>
-            )}
 
-            {/* Add/Edit Skill Dialog */}
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>{isEditMode ? 'Edit Skill' : 'Add New Skill'}</DialogTitle>
-                        <DialogDescription>
-                            {isEditMode ? 'Update your skill information' : 'Add a new skill to your professional profile'}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="name">Skill Name *</Label>
-                            <Input
-                                id="name"
-                                value={skillForm.name}
-                                onChange={(e) => setSkillForm({ ...skillForm, name: e.target.value })}
-                                placeholder="e.g., React, Python, Project Management"
-                                disabled={isEditMode}
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="category">Category *</Label>
-                            <Select
-                                value={skillForm.category}
-                                onValueChange={(value) => setSkillForm({ ...skillForm, category: value })}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {SKILL_CATEGORIES.map(cat => (
-                                        <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="proficiencyLevel">Proficiency Level *</Label>
-                            <Select
-                                value={skillForm.proficiencyLevel}
-                                onValueChange={(value) => setSkillForm({ ...skillForm, proficiencyLevel: value })}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {PROFICIENCY_LEVELS.map(level => (
-                                        <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="yearsOfExperience">Years of Experience</Label>
-                            <Input
-                                id="yearsOfExperience"
-                                type="number"
-                                min="0"
-                                max="50"
-                                value={skillForm.yearsOfExperience}
-                                onChange={(e) => setSkillForm({ ...skillForm, yearsOfExperience: parseInt(e.target.value) || 0 })}
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="lastUsed">Last Used</Label>
-                            <Input
-                                id="lastUsed"
-                                type="date"
-                                value={skillForm.lastUsed}
-                                onChange={(e) => setSkillForm({ ...skillForm, lastUsed: e.target.value })}
-                            />
-                        </div>
+                                                                <Separator className="my-3" />
+                                                                <div className="flex items-center justify-between text-[9px] text-gray-400">
+                                                                    <span>Created: {formatDate(skill.createdAt)}</span>
+                                                                    <span>Last Updated: {formatDate(skill.updatedAt)}</span>
+                                                                    {skill.metadata?.source && (
+                                                                        <Badge variant="outline" className="text-[9px] h-4">
+                                                                            Source: {skill.metadata.source}
+                                                                        </Badge>
+                                                                    )}
+                                                                </div>
+                                                            </CardContent>
+                                                        )}
+                                                    </Card>
+                                                )
+                                            })}
+                                    </CardContent>
+                                </Card>
+                            )
+                        })}
                     </div>
+                )}
 
-                    <DialogFooter>
-                        <Button variant="outline" onClick={handleCloseDialog}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleSubmit}>
-                            {isEditMode ? 'Update Skill' : 'Add Skill'}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                    <DialogContent className="max-w-md">
+                        <DialogHeader>
+                            <DialogTitle className="text-base">{isEditMode ? 'Edit Skill' : 'Add New Skill'}</DialogTitle>
+                            <DialogDescription className="text-xs">
+                                {isEditMode ? 'Update your skill information' : 'Add a new skill to your professional profile'}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-3 py-4">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="name" className="text-xs font-medium">Skill Name *</Label>
+                                <Input
+                                    id="name"
+                                    value={skillForm.name}
+                                    onChange={(e) => setSkillForm({ ...skillForm, name: e.target.value })}
+                                    placeholder="e.g., React, Python, Project Management"
+                                    disabled={isEditMode}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="category" className="text-xs font-medium">Category *</Label>
+                                <Select
+                                    value={skillForm.category}
+                                    onValueChange={(value) => setSkillForm({ ...skillForm, category: value })}
+                                >
+                                    <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {SKILL_CATEGORIES.map(cat => (
+                                            <SelectItem key={cat.value} value={cat.value} className="text-xs">{cat.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="proficiencyLevel" className="text-xs font-medium">Proficiency Level *</Label>
+                                <Select
+                                    value={skillForm.proficiencyLevel}
+                                    onValueChange={(value) => setSkillForm({ ...skillForm, proficiencyLevel: value })}
+                                >
+                                    <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {PROFICIENCY_LEVELS.map(level => (
+                                            <SelectItem key={level.value} value={level.value} className="text-xs">{level.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="yearsOfExperience" className="text-xs font-medium">Years of Experience</Label>
+                                <Input
+                                    id="yearsOfExperience"
+                                    type="number"
+                                    min="0"
+                                    max="50"
+                                    value={skillForm.yearsOfExperience}
+                                    onChange={(e) => setSkillForm({ ...skillForm, yearsOfExperience: parseInt(e.target.value) || 0 })}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="lastUsed" className="text-xs font-medium">Last Used</Label>
+                                <Input
+                                    id="lastUsed"
+                                    type="date"
+                                    value={skillForm.lastUsed}
+                                    onChange={(e) => setSkillForm({ ...skillForm, lastUsed: e.target.value })}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+                        </div>
+
+                        <DialogFooter>
+                            <Button variant="outline" onClick={handleCloseDialog} size="sm" className="h-8 text-xs">
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleSubmit}
+                                size="sm"
+                                className="bg-gradient-to-r from-[#ffc451] to-[#ffb020] hover:from-[#ffb020] hover:to-[#ffc451] text-black font-medium h-8 text-xs"
+                            >
+                                {isEditMode ? 'Update Skill' : 'Add Skill'}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            </div>
         </div>
     )
 }

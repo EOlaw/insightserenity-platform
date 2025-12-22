@@ -231,7 +231,7 @@ export default function ConsultantProfilePage() {
                 {/* Compact Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <Link href="/dashboard/consultant">
+                        <Link href="/consultant/dashboard">
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                                 <ArrowLeft className="h-3.5 w-3.5" />
                             </Button>
