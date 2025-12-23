@@ -74,7 +74,7 @@ import {
   AreaChart,
 } from 'recharts'
 import toast from 'react-hot-toast'
-import { consultantApi, type ConsultantProfile, type Assignment, type AvailabilityRecord } from '@/lib/api/consultant'
+import { consultantApi, type ConsultantProfile, type Assignment, type AvailabilityRecord, type DashboardAnalytics } from '@/lib/api/consultant'
 import AvailabilityCalendar from '@/components/consultant/availability-calendar'
 
 interface DashboardStats {
@@ -97,6 +97,7 @@ export default function ConsultantDashboard() {
   const [consultant, setConsultant] = useState<ConsultantProfile | null>(null)
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [timeOffRequests, setTimeOffRequests] = useState<AvailabilityRecord[]>([])
+  const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null)
   const [stats, setStats] = useState<DashboardStats>({
     activeAssignments: 0,
     currentUtilization: 0,
@@ -126,6 +127,9 @@ export default function ConsultantDashboard() {
       const profileData = await consultantApi.getMyProfile()
       setConsultant(profileData)
 
+      const analyticsData = await consultantApi.getMyDashboardAnalytics(6)
+      setAnalytics(analyticsData)
+
       const assignmentsResponse = await consultantApi.getMyAssignments()
       let assignmentsData: Assignment[]
       if (Array.isArray(assignmentsResponse)) {
@@ -150,10 +154,6 @@ export default function ConsultantDashboard() {
       }
       setTimeOffRequests(availabilityData)
 
-      const activeAssignments = Array.isArray(assignmentsData) 
-        ? assignmentsData.filter((a: Assignment) => a.status === 'active').length
-        : 0
-        
       const upcomingTimeOff = Array.isArray(availabilityData)
         ? availabilityData.filter(
             (a: AvailabilityRecord) => {
@@ -163,26 +163,18 @@ export default function ConsultantDashboard() {
           ).length
         : 0
 
-      const completedProjects = Array.isArray(assignmentsData)
-        ? assignmentsData.filter((a: Assignment) => a.status === 'completed').length
-        : 0
-
-      const billableHours = activeAssignments * 160
-      const avgRate = 150
-      const revenue = billableHours * avgRate
-
       setStats({
-        activeAssignments,
-        currentUtilization: profileData.availability?.currentUtilization || 0,
+        activeAssignments: analyticsData.summary.activeAssignments,
+        currentUtilization: analyticsData.summary.currentUtilization,
         utilizationTarget: profileData.availability?.utilizationTarget || 80,
         totalSkills: profileData.skills?.length || 0,
         upcomingTimeOff,
         feedbackCount: profileData.performance?.feedback?.length || 0,
-        completedProjects,
-        certifications: profileData.certifications?.length || 0,
-        billableHours,
-        revenue,
-        clientSatisfaction: 4.7,
+        completedProjects: analyticsData.projectStatus.completed,
+        certifications: analyticsData.activeCertifications.length,
+        billableHours: analyticsData.summary.billableHoursLogged,
+        revenue: analyticsData.summary.totalRevenue,
+        clientSatisfaction: analyticsData.summary.averageSatisfaction,
         responseTime: 2.3,
       })
 
@@ -329,58 +321,93 @@ export default function ConsultantDashboard() {
     { id: 3, title: 'Cloud Security Fundamentals', provider: 'AWS Training', duration: '4 weeks', relevance: 82 },
   ]
 
-  const revenueByClientData = [
-    { name: 'Tech Innovations Inc', value: 45000, color: '#ffc451' },
-    { name: 'Global Finance Corp', value: 32000, color: '#10b981' },
-    { name: 'Healthcare Systems', value: 28000, color: '#3b82f6' },
-    { name: 'Retail Solutions Ltd', value: 18000, color: '#8b5cf6' },
-    { name: 'Others', value: 12000, color: '#6b7280' },
-  ]
-
-  const monthlyRevenueData = [
-    { month: 'Jul', revenue: 28000, billableHours: 180 },
-    { month: 'Aug', revenue: 32000, billableHours: 210 },
-    { month: 'Sep', revenue: 29000, billableHours: 195 },
-    { month: 'Oct', revenue: 35000, billableHours: 220 },
-    { month: 'Nov', revenue: 38000, billableHours: 240 },
-    { month: 'Dec', revenue: 41000, billableHours: 260 },
-  ]
-
-  const utilizationTrendData = [
-    { month: 'Jul', utilization: 72, target: 80 },
-    { month: 'Aug', utilization: 76, target: 80 },
-    { month: 'Sep', utilization: 74, target: 80 },
-    { month: 'Oct', utilization: 79, target: 80 },
-    { month: 'Nov', utilization: 82, target: 80 },
-    { month: 'Dec', utilization: 85, target: 80 },
-  ]
-
-  const projectStatusData = [
-    { name: 'Active', value: stats.activeAssignments, color: '#10b981' },
-    { name: 'Completed', value: stats.completedProjects, color: '#3b82f6' },
-    { name: 'On Hold', value: 1, color: '#f59e0b' },
-    { name: 'Scheduled', value: 2, color: '#8b5cf6' },
-  ]
-
-  const skillsProficiencyData = [
-    { skill: 'Strategy', proficiency: 90 },
-    { skill: 'Analytics', proficiency: 85 },
-    { skill: 'Leadership', proficiency: 88 },
-    { skill: 'Technology', proficiency: 82 },
-    { skill: 'Communication', proficiency: 92 },
-    { skill: 'Finance', proficiency: 78 },
-  ]
-
-  const clientSatisfactionData = [
-    { month: 'Jul', rating: 4.5 },
-    { month: 'Aug', rating: 4.6 },
-    { month: 'Sep', rating: 4.5 },
-    { month: 'Oct', rating: 4.7 },
-    { month: 'Nov', rating: 4.8 },
-    { month: 'Dec', rating: 4.7 },
-  ]
-
   const COLORS = ['#ffc451', '#10b981', '#3b82f6', '#8b5cf6', '#6b7280']
+  
+  const revenueByClientData = analytics?.revenueByClient.length 
+    ? analytics.revenueByClient.map((client, index) => ({
+        name: client.clientName,
+        value: client.revenue,
+        color: COLORS[index % COLORS.length]
+      }))
+    : [
+        { name: 'Tech Innovations Inc', value: 45000, color: '#ffc451' },
+        { name: 'Global Finance Corp', value: 32000, color: '#10b981' },
+        { name: 'Healthcare Systems', value: 28000, color: '#3b82f6' },
+        { name: 'Retail Solutions Ltd', value: 18000, color: '#8b5cf6' },
+        { name: 'Others', value: 12000, color: '#6b7280' },
+      ]
+
+  const monthlyRevenueData = analytics?.monthlyRevenue.length
+    ? analytics.monthlyRevenue.map(m => ({
+        month: m.label.split(' ')[0],
+        revenue: m.revenue,
+        billableHours: Math.round(m.revenue / 150)
+      }))
+    : [
+        { month: 'Jul', revenue: 28000, billableHours: 180 },
+        { month: 'Aug', revenue: 32000, billableHours: 210 },
+        { month: 'Sep', revenue: 29000, billableHours: 195 },
+        { month: 'Oct', revenue: 35000, billableHours: 220 },
+        { month: 'Nov', revenue: 38000, billableHours: 240 },
+        { month: 'Dec', revenue: 41000, billableHours: 260 },
+      ]
+
+  const utilizationTrendData = analytics?.utilizationTrends.length
+    ? analytics.utilizationTrends.map(u => ({
+        month: u.label.split(' ')[0],
+        utilization: u.utilization,
+        target: stats.utilizationTarget
+      }))
+    : [
+        { month: 'Jul', utilization: 72, target: 80 },
+        { month: 'Aug', utilization: 76, target: 80 },
+        { month: 'Sep', utilization: 74, target: 80 },
+        { month: 'Oct', utilization: 79, target: 80 },
+        { month: 'Nov', utilization: 82, target: 80 },
+        { month: 'Dec', utilization: 85, target: 80 },
+      ]
+
+  const projectStatusData = analytics?.projectStatus
+    ? [
+        { name: 'Active', value: analytics.projectStatus.active, color: '#10b981' },
+        { name: 'Completed', value: analytics.projectStatus.completed, color: '#3b82f6' },
+        { name: 'On Hold', value: analytics.projectStatus.on_hold, color: '#f59e0b' },
+        { name: 'Scheduled', value: analytics.projectStatus.scheduled, color: '#8b5cf6' },
+      ].filter(item => item.value > 0)
+    : [
+        { name: 'Active', value: stats.activeAssignments, color: '#10b981' },
+        { name: 'Completed', value: stats.completedProjects, color: '#3b82f6' },
+        { name: 'On Hold', value: 1, color: '#f59e0b' },
+        { name: 'Scheduled', value: 2, color: '#8b5cf6' },
+      ]
+
+  const skillsProficiencyData = analytics?.skillsProficiency.length
+    ? analytics.skillsProficiency.map(s => ({
+        skill: s.skill,
+        proficiency: s.proficiency
+      }))
+    : [
+        { skill: 'Strategy', proficiency: 90 },
+        { skill: 'Analytics', proficiency: 85 },
+        { skill: 'Leadership', proficiency: 88 },
+        { skill: 'Technology', proficiency: 82 },
+        { skill: 'Communication', proficiency: 92 },
+        { skill: 'Finance', proficiency: 78 },
+      ]
+
+  const clientSatisfactionData = analytics?.clientSatisfaction.length
+    ? analytics.clientSatisfaction.map(c => ({
+        month: c.label.split(' ')[0],
+        rating: c.satisfaction
+      }))
+    : [
+        { month: 'Jul', rating: 4.5 },
+        { month: 'Aug', rating: 4.6 },
+        { month: 'Sep', rating: 4.5 },
+        { month: 'Oct', rating: 4.7 },
+        { month: 'Nov', rating: 4.8 },
+        { month: 'Dec', rating: 4.7 },
+      ]
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {

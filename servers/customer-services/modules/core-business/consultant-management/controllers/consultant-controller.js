@@ -69,6 +69,7 @@ class ConsultantController {
         this.getConsultantStatistics = this.getConsultantStatistics.bind(this);
         this.searchBySkills = this.searchBySkills.bind(this);
         this.getUtilizationReport = this.getUtilizationReport.bind(this);
+        this.getMyDashboardAnalytics = this.getMyDashboardAnalytics.bind(this);
     }
 
     // ============================================================================
@@ -1499,6 +1500,38 @@ class ConsultantController {
             );
 
             this._sendSuccess(res, report, 'Utilization report generated successfully');
+
+        } catch (error) {
+            this._sendError(res, error);
+        }
+    }
+
+    /**
+     * Get dashboard analytics for current user (self-service)
+     * @async
+     * @param {Object} req - Express request object
+     * @param {Object} req.query - Query parameters
+     * @param {number} req.query.monthsBack - Number of months to include in trends
+     * @param {Object} res - Express response object
+     */
+    async getMyDashboardAnalytics(req, res) {
+        try {
+            const userId = this._getUserId(req);
+
+            // First get consultant by user ID
+            const consultant = await consultantService.getConsultantByUserId(userId, {
+                tenantId: this._getTenantId(req),
+                skipTenantCheck: true
+            });
+
+            // Then get analytics with skipTenantCheck
+            const analytics = await consultantService.getConsultantDashboardAnalytics(consultant._id, {
+                tenantId: this._getTenantId(req),
+                skipTenantCheck: true,
+                monthsBack: parseInt(req.query.monthsBack, 10) || 6
+            });
+
+            this._sendSuccess(res, analytics, 'Dashboard analytics retrieved successfully');
 
         } catch (error) {
             this._sendError(res, error);

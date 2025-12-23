@@ -498,6 +498,65 @@ export interface DashboardRefreshResult {
     dashboard: DashboardData
 }
 
+export interface DashboardAnalytics {
+  summary: {
+    totalRevenue: number
+    activeAssignments: number
+    currentUtilization: number
+    averageSatisfaction: number
+    totalHoursLogged: number
+    billableHoursLogged: number
+  }
+  monthlyRevenue: Array<{
+    month: string
+    label: string
+    revenue: number
+  }>
+  utilizationTrends: Array<{
+    month: string
+    label: string
+    utilization: number
+  }>
+  revenueByClient: Array<{
+    clientId: string
+    clientName: string
+    revenue: number
+  }>
+  clientSatisfaction: Array<{
+    month: string
+    label: string
+    satisfaction: number
+    feedbackCount: number
+  }>
+  skillsProficiency: Array<{
+    skill: string
+    proficiency: number
+    level: string
+    yearsOfExperience: number
+    verified: boolean
+  }>
+  projectStatus: {
+    active: number
+    completed: number
+    on_hold: number
+    scheduled: number
+    cancelled: number
+  }
+  activeCertifications: Array<{
+    name: string
+    issuingOrganization: string
+    issueDate: string
+    expirationDate?: string
+    verified: boolean
+  }>
+  generatedAt: string
+  period: {
+    start: string
+    end: string
+    months: number
+  }
+}
+
 // ==================== Consultant API Methods ====================
 
 export const consultantApi = {
@@ -510,6 +569,23 @@ export const consultantApi = {
      */
     getMyProfile: async (): Promise<ConsultantProfile> => {
         const response = await api.get('/consultants/me')
+        return response.data
+    },
+
+    // ============================================================================
+    // ANALYTICS & DASHBOARD (Backend-Computed Metrics)
+    // ============================================================================
+
+    /**
+     * Get comprehensive dashboard analytics for current consultant
+     * Backend computes all metrics using MongoDB aggregation pipelines
+     * @param monthsBack - Number of months to include in trends (default: 6)
+     * @returns Complete dashboard analytics with computed metrics
+     */
+    getMyDashboardAnalytics: async (monthsBack: number = 6): Promise<DashboardAnalytics> => {
+        const response = await api.get('/consultants/me/dashboard-analytics', {
+            params: { monthsBack }
+        })
         return response.data
     },
 
@@ -1022,7 +1098,7 @@ export const consultantApi = {
      */
     getMyAssignments: async (params?: any): Promise<PaginatedResponse<Assignment>> => {
         const response = await api.get('/consultants/consultant-assignments/me', { params })
-        return response.data
+        return response.data.data
     },
 
     /**

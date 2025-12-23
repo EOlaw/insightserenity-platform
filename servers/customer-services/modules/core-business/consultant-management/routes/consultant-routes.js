@@ -42,6 +42,17 @@ router.put(
     consultantController.updateMyProfile
 );
 
+/**
+ * @route GET /api/v1/consultants/me/dashboard-analytics
+ * @description Get comprehensive dashboard analytics for current user (self-service)
+ * @access Private - Requires authentication only
+ */
+router.get(
+    '/me/dashboard-analytics',
+    authenticate,
+    consultantController.getMyDashboardAnalytics
+);
+
 // ============================================================================
 // PEER VIEWING ROUTES
 // ============================================================================

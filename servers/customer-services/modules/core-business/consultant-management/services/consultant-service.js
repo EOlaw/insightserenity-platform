@@ -3248,6 +3248,459 @@ class ConsultantService {
         }
     }
 
+    /**
+     * Get comprehensive dashboard analytics for a consultant
+     * @param {string} consultantId - Consultant ID
+     * @param {Object} options - Analytics options
+     * @param {string} options.tenantId - Tenant ID for access control
+     * @param {boolean} options.skipTenantCheck - Skip tenant verification (for self-service operations)
+     * @param {number} options.monthsBack - Number of months to include in trends (default: 6)
+     * @param {Date} options.asOfDate - Date to calculate analytics (default: today)
+     * @returns {Promise<Object>} Comprehensive dashboard analytics
+     */
+    async getConsultantDashboardAnalytics(consultantId, options = {}) {
+        try {
+            logger.info('Generating consultant dashboard analytics', {
+                consultantId,
+                monthsBack: options.monthsBack || 6
+            });
+
+            // Validate consultantId
+            if (!consultantId || !mongoose.Types.ObjectId.isValid(consultantId)) {
+                throw AppError.validation('Invalid consultant ID format');
+            }
+
+            const dbService = this._getDatabaseService();
+            const Consultant = dbService.getModel('Consultant', 'customer');
+            const ConsultantAssignment = dbService.getModel('ConsultantAssignment', 'customer');
+
+            // Get consultant with all necessary data
+            const consultant = await Consultant.findById(consultantId)
+                .select('profile billing.utilization performance.feedback skills certifications assignments availability.status status.current tenantId')
+                .lean();
+
+            if (!consultant) {
+                throw AppError.notFound('Consultant not found', {
+                    context: { consultantId }
+                });
+            }
+
+            // Check tenant access with validation
+            if (options.tenantId && !options.skipTenantCheck && mongoose.Types.ObjectId.isValid(options.tenantId) &&
+                consultant.tenantId.toString() !== options.tenantId) {
+                throw AppError.forbidden('Access denied to this consultant');
+            }
+
+            // Set date parameters
+            const asOfDate = options.asOfDate ? new Date(options.asOfDate) : new Date();
+            const monthsBack = options.monthsBack || 6;
+            const startDate = new Date(asOfDate);
+            startDate.setMonth(startDate.getMonth() - monthsBack);
+            startDate.setDate(1);
+            startDate.setHours(0, 0, 0, 0);
+
+            // Get detailed assignment data for the period
+            const assignments = await ConsultantAssignment.find({
+                consultantId: new mongoose.Types.ObjectId(consultantId),
+                'status.isDeleted': false,
+                $or: [
+                    {
+                        'timeline.proposedStart': { $lte: asOfDate },
+                        'timeline.proposedEnd': { $gte: startDate }
+                    },
+                    {
+                        'status.current': { $in: ['active', 'confirmed'] }
+                    }
+                ]
+            })
+                .populate('clientId', 'name clientCode')
+                .select('clientId billing timeTracking allocation timeline status details')
+                .lean();
+
+            // Compute analytics
+            const analytics = {
+                // Key metrics summary
+                summary: this._computeSummaryMetrics(consultant, assignments, asOfDate),
+
+                // Monthly revenue trends
+                monthlyRevenue: this._computeMonthlyRevenue(assignments, startDate, asOfDate),
+
+                // Utilization trends
+                utilizationTrends: this._computeUtilizationTrends(consultant, assignments, startDate, asOfDate),
+
+                // Revenue by client
+                revenueByClient: this._computeRevenueByClient(assignments),
+
+                // Client satisfaction trends
+                clientSatisfaction: this._computeClientSatisfaction(consultant.performance?.feedback || [], startDate, asOfDate),
+
+                // Skills proficiency for radar chart
+                skillsProficiency: this._computeSkillsProficiency(consultant.skills || []),
+
+                // Project status distribution
+                projectStatus: this._computeProjectStatus(assignments),
+
+                // Active certifications
+                activeCertifications: this._getActiveCertifications(consultant.certifications || []),
+
+                // Metadata
+                generatedAt: new Date(),
+                period: {
+                    start: startDate,
+                    end: asOfDate,
+                    months: monthsBack
+                }
+            };
+
+            logger.info('Dashboard analytics generated successfully', {
+                consultantId,
+                assignmentsAnalyzed: assignments.length
+            });
+
+            return analytics;
+
+        } catch (error) {
+            logger.error('Failed to generate dashboard analytics', {
+                error: error.message,
+                stack: error.stack,
+                consultantId
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Compute summary metrics
+     * @private
+     * @param {Object} consultant - Consultant document
+     * @param {Array} assignments - Assignment documents
+     * @param {Date} asOfDate - As of date
+     * @returns {Object} Summary metrics
+     */
+    _computeSummaryMetrics(consultant, assignments, asOfDate) {
+        const activeAssignments = assignments.filter(a =>
+            ['active', 'confirmed'].includes(a.status?.current) &&
+            new Date(a.timeline?.proposedEnd) >= asOfDate
+        );
+
+        const totalRevenue = assignments.reduce((sum, a) => {
+            if (a.billing?.billable && a.timeTracking?.billableHoursLogged) {
+                return sum + (a.timeTracking.billableHoursLogged * (a.billing.rate || 0));
+            }
+            return sum;
+        }, 0);
+
+        const activeFeedback = (consultant.performance?.feedback || []).filter(f =>
+            f.status === 'active' || !f.status
+        );
+
+        const avgSatisfaction = activeFeedback.length > 0
+            ? activeFeedback.reduce((sum, f) => sum + (f.rating || 0), 0) / activeFeedback.length
+            : 0;
+
+        const currentUtilization = consultant.billing?.utilization?.current || 0;
+
+        return {
+            totalRevenue: Math.round(totalRevenue * 100) / 100,
+            activeAssignments: activeAssignments.length,
+            currentUtilization: Math.round(currentUtilization * 10) / 10,
+            averageSatisfaction: Math.round(avgSatisfaction * 10) / 10,
+            totalHoursLogged: assignments.reduce((sum, a) => sum + (a.timeTracking?.totalHoursLogged || 0), 0),
+            billableHoursLogged: assignments.reduce((sum, a) => sum + (a.timeTracking?.billableHoursLogged || 0), 0)
+        };
+    }
+
+    /**
+     * Compute monthly revenue trends
+     * @private
+     * @param {Array} assignments - Assignment documents
+     * @param {Date} startDate - Start date
+     * @param {Date} endDate - End date
+     * @returns {Array} Monthly revenue data
+     */
+    _computeMonthlyRevenue(assignments, startDate, endDate) {
+        const months = [];
+        const currentDate = new Date(startDate);
+
+        while (currentDate <= endDate) {
+            const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+            const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+
+            const monthRevenue = assignments.reduce((sum, a) => {
+                if (!a.billing?.billable || !a.timeline) return sum;
+
+                const assignmentStart = new Date(a.timeline.proposedStart);
+                const assignmentEnd = new Date(a.timeline.proposedEnd);
+
+                if (assignmentStart <= monthEnd && assignmentEnd >= monthStart) {
+                    if (a.timeTracking?.billableHoursLogged) {
+                        return sum + (a.timeTracking.billableHoursLogged * (a.billing.rate || 0));
+                    } else if (a.allocation?.hoursPerWeek && a.billing.rate) {
+                        const weeksInMonth = 4.33;
+                        const estimatedHours = a.allocation.hoursPerWeek * weeksInMonth;
+                        return sum + (estimatedHours * a.billing.rate);
+                    }
+                }
+                return sum;
+            }, 0);
+
+            months.push({
+                month: monthStart.toISOString().substring(0, 7),
+                label: monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+                revenue: Math.round(monthRevenue * 100) / 100
+            });
+
+            currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+
+        return months;
+    }
+
+    /**
+     * Compute utilization trends
+     * @private
+     * @param {Object} consultant - Consultant document
+     * @param {Array} assignments - Assignment documents
+     * @param {Date} startDate - Start date
+     * @param {Date} endDate - End date
+     * @returns {Array} Monthly utilization data
+     */
+    _computeUtilizationTrends(consultant, assignments, startDate, endDate) {
+        const months = [];
+        const currentDate = new Date(startDate);
+        const now = new Date();
+
+        while (currentDate <= endDate) {
+            const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+            const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+
+            let utilization;
+
+            if (monthEnd >= now) {
+                utilization = consultant.billing?.utilization?.current || 0;
+            } else {
+                const monthAssignments = assignments.filter(a => {
+                    if (!a.timeline) return false;
+                    const assignmentStart = new Date(a.timeline.proposedStart);
+                    const assignmentEnd = new Date(a.timeline.proposedEnd);
+                    return assignmentStart <= monthEnd && assignmentEnd >= monthStart;
+                });
+
+                utilization = monthAssignments.reduce((sum, a) => {
+                    return sum + (a.allocation?.percentage || 0);
+                }, 0);
+            }
+
+            months.push({
+                month: monthStart.toISOString().substring(0, 7),
+                label: monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+                utilization: Math.min(Math.round(utilization * 10) / 10, 100)
+            });
+
+            currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+
+        return months;
+    }
+
+    /**
+     * Compute revenue by client
+     * @private
+     * @param {Array} assignments - Assignment documents
+     * @returns {Array} Revenue by client
+     */
+    _computeRevenueByClient(assignments) {
+        const clientRevenue = new Map();
+
+        assignments.forEach(a => {
+            if (!a.billing?.billable || !a.clientId) return;
+
+            const clientKey = a.clientId._id?.toString() || a.clientId.toString();
+            const clientName = a.clientId.name || 'Unknown Client';
+
+            let revenue = 0;
+            if (a.timeTracking?.billableHoursLogged) {
+                revenue = a.timeTracking.billableHoursLogged * (a.billing.rate || 0);
+            } else if (a.allocation?.hoursPerWeek && a.billing.rate && a.timeline) {
+                const start = new Date(a.timeline.proposedStart);
+                const end = new Date(a.timeline.proposedEnd);
+                const weeks = Math.ceil((end - start) / (7 * 24 * 60 * 60 * 1000));
+                revenue = weeks * a.allocation.hoursPerWeek * a.billing.rate;
+            }
+
+            if (clientRevenue.has(clientKey)) {
+                const existing = clientRevenue.get(clientKey);
+                existing.revenue += revenue;
+            } else {
+                clientRevenue.set(clientKey, {
+                    clientId: clientKey,
+                    clientName,
+                    revenue
+                });
+            }
+        });
+
+        const sorted = Array.from(clientRevenue.values())
+            .sort((a, b) => b.revenue - a.revenue);
+
+        const top5 = sorted.slice(0, 5).map(c => ({
+            ...c,
+            revenue: Math.round(c.revenue * 100) / 100
+        }));
+
+        if (sorted.length > 5) {
+            const othersRevenue = sorted.slice(5).reduce((sum, c) => sum + c.revenue, 0);
+            if (othersRevenue > 0) {
+                top5.push({
+                    clientId: 'others',
+                    clientName: 'Others',
+                    revenue: Math.round(othersRevenue * 100) / 100
+                });
+            }
+        }
+
+        return top5;
+    }
+
+    /**
+     * Compute client satisfaction trends
+     * @private
+     * @param {Array} feedback - Feedback array
+     * @param {Date} startDate - Start date
+     * @param {Date} endDate - End date
+     * @returns {Array} Monthly satisfaction data
+     */
+    _computeClientSatisfaction(feedback, startDate, endDate) {
+        const clientFeedback = feedback.filter(f =>
+            f.type === 'client' &&
+            (f.status === 'active' || !f.status) &&
+            f.rating
+        );
+
+        if (clientFeedback.length === 0) {
+            return [];
+        }
+
+        const months = [];
+        const currentDate = new Date(startDate);
+
+        while (currentDate <= endDate) {
+            const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+            const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+
+            const monthFeedback = clientFeedback.filter(f => {
+                const feedbackDate = new Date(f.createdAt);
+                return feedbackDate >= monthStart && feedbackDate <= monthEnd;
+            });
+
+            if (monthFeedback.length > 0) {
+                const avgRating = monthFeedback.reduce((sum, f) => sum + f.rating, 0) / monthFeedback.length;
+                months.push({
+                    month: monthStart.toISOString().substring(0, 7),
+                    label: monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+                    satisfaction: Math.round(avgRating * 10) / 10,
+                    feedbackCount: monthFeedback.length
+                });
+            }
+
+            currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+
+        return months;
+    }
+
+    /**
+     * Compute skills proficiency for radar chart
+     * @private
+     * @param {Array} skills - Skills array
+     * @returns {Array} Skills proficiency data
+     */
+    _computeSkillsProficiency(skills) {
+        if (!skills || skills.length === 0) {
+            return [];
+        }
+
+        const proficiencyMap = {
+            'expert': 95,
+            'master': 98,
+            'advanced': 85,
+            'intermediate': 70,
+            'beginner': 50
+        };
+
+        const topSkills = skills
+            .filter(s => s.proficiencyLevel)
+            .sort((a, b) => {
+                const aScore = proficiencyMap[a.proficiencyLevel] || 0;
+                const bScore = proficiencyMap[b.proficiencyLevel] || 0;
+                return bScore - aScore;
+            })
+            .slice(0, 8);
+
+        return topSkills.map(s => ({
+            skill: s.name,
+            proficiency: proficiencyMap[s.proficiencyLevel] || 50,
+            level: s.proficiencyLevel,
+            yearsOfExperience: s.yearsOfExperience || 0,
+            verified: s.verified || false
+        }));
+    }
+
+    /**
+     * Compute project status distribution
+     * @private
+     * @param {Array} assignments - Assignment documents
+     * @returns {Object} Status distribution
+     */
+    _computeProjectStatus(assignments) {
+        const statusCounts = {
+            active: 0,
+            completed: 0,
+            on_hold: 0,
+            scheduled: 0,
+            cancelled: 0
+        };
+
+        const now = new Date();
+
+        assignments.forEach(a => {
+            const status = a.status?.current;
+            const proposedStart = new Date(a.timeline?.proposedStart);
+
+            if (status === 'active') {
+                statusCounts.active++;
+            } else if (status === 'completed') {
+                statusCounts.completed++;
+            } else if (status === 'on_hold') {
+                statusCounts.on_hold++;
+            } else if (status === 'confirmed' && proposedStart > now) {
+                statusCounts.scheduled++;
+            } else if (status === 'cancelled') {
+                statusCounts.cancelled++;
+            }
+        });
+
+        return statusCounts;
+    }
+
+    /**
+     * Get active certifications
+     * @private
+     * @param {Array} certifications - Certifications array
+     * @returns {Array} Active certifications
+     */
+    _getActiveCertifications(certifications) {
+        return certifications
+            .filter(c => c.status === 'active')
+            .map(c => ({
+                name: c.name,
+                issuingOrganization: c.issuingOrganization,
+                issueDate: c.issueDate,
+                expirationDate: c.expirationDate,
+                verified: c.verificationStatus === 'verified'
+            }));
+    }
+
     // ============================================================================
     // PRIVATE HELPER METHODS
     // ============================================================================
