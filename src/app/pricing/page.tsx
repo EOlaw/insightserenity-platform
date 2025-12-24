@@ -34,30 +34,40 @@ import {
   Mail,
   Phone,
   MessageSquare,
+  UserCheck,
+  Briefcase,
+  Target,
+  FileText,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const plans = [
   {
     name: 'Starter',
-    description: 'Perfect for small teams getting started',
-    price: { monthly: 29, annual: 24 },
+    description: 'Perfect for boutique consulting firms and specialized agencies',
+    price: { monthly: 39, annual: 32 },
     popular: false,
+    userLimit: 'Up to 25 users',
+    targetAudience: 'Boutique firms with 10-25 employees',
     features: [
-      { name: 'Up to 10 users', included: true },
+      { name: 'Up to 25 users', included: true },
       { name: '5 GB storage', included: true },
-      { name: 'Basic analytics', included: true },
-      { name: 'Email support', included: true },
-      { name: 'API access', included: true },
-      { name: 'Mobile app', included: true },
+      { name: 'Core consultant profile management', included: true },
+      { name: 'Basic client relationship tracking', included: true },
+      { name: 'Simple project assignment workflows', included: true },
+      { name: 'Standard reporting', included: true },
+      { name: 'Email support (48-hour response)', included: true },
+      { name: 'Consultant availability calendar', included: true },
+      { name: 'Basic recruitment pipeline', included: true },
+      { name: 'Mobile app access', included: true },
       { name: 'SSL encryption', included: true },
-      { name: 'Daily backups', included: true },
-      { name: 'Custom domain', included: false },
+      { name: 'Advanced analytics dashboards', included: false },
+      { name: 'Custom branding', included: false },
+      { name: 'API access', included: false },
       { name: 'SSO authentication', included: false },
-      { name: 'Advanced security', included: false },
       { name: 'Priority support', included: false },
-      { name: 'Custom integrations', included: false },
       { name: 'Dedicated account manager', included: false },
+      { name: 'Custom integrations', included: false },
       { name: 'SLA guarantee', included: false },
     ],
     cta: 'Start Free Trial',
@@ -65,23 +75,31 @@ const plans = [
   },
   {
     name: 'Professional',
-    description: 'For growing businesses with advanced needs',
-    price: { monthly: 99, annual: 84 },
+    description: 'For growing firms scaling their consulting and recruitment operations',
+    price: { monthly: 119, annual: 99 },
     popular: true,
+    userLimit: 'Up to 200 users',
+    targetAudience: 'Growing firms with 25-150 employees',
     features: [
-      { name: 'Up to 50 users', included: true },
-      { name: '100 GB storage', included: true },
-      { name: 'Advanced analytics', included: true },
-      { name: 'Priority email & chat support', included: true },
+      { name: 'Up to 200 users', included: true },
+      { name: '250 GB storage', included: true },
+      { name: 'Advanced consultant profile system', included: true },
+      { name: 'Comprehensive client management', included: true },
+      { name: 'Advanced project assignment & tracking', included: true },
+      { name: 'Advanced analytics & dashboards', included: true },
+      { name: 'Email & chat support (8-hour response)', included: true },
+      { name: 'Consultant utilization tracking', included: true },
+      { name: 'Full recruitment pipeline management', included: true },
+      { name: 'Mobile app access', included: true },
+      { name: 'SSL encryption & advanced security', included: true },
+      { name: 'Project profitability analysis', included: true },
+      { name: 'Custom branding options', included: true },
       { name: 'Full API access', included: true },
-      { name: 'Mobile app', included: true },
-      { name: 'SSL encryption', included: true },
-      { name: 'Hourly backups', included: true },
-      { name: 'Custom domain', included: true },
       { name: 'SSO authentication', included: true },
-      { name: 'Advanced security', included: true },
-      { name: 'Priority support', included: true },
-      { name: 'Custom integrations', included: false },
+      { name: 'Extended business hour support', included: true },
+      { name: 'Client engagement metrics', included: true },
+      { name: 'Role-based access controls', included: true },
+      { name: 'Custom integrations (limited)', included: false },
       { name: 'Dedicated account manager', included: false },
       { name: '99.9% SLA guarantee', included: false },
     ],
@@ -90,25 +108,35 @@ const plans = [
   },
   {
     name: 'Enterprise',
-    description: 'Tailored solutions for large organizations',
+    description: 'Tailored solutions for large consulting firms and global agencies',
     price: { monthly: 'Custom', annual: 'Custom' },
     popular: false,
+    userLimit: 'Unlimited users',
+    targetAudience: 'Enterprise firms with 150+ employees',
+    minimumContract: '$60,000 annual minimum',
     features: [
       { name: 'Unlimited users', included: true },
       { name: 'Unlimited storage', included: true },
+      { name: 'Enterprise consultant management', included: true },
+      { name: 'Multi-office client relationship system', included: true },
+      { name: 'Complex project delivery workflows', included: true },
       { name: 'Custom analytics & reporting', included: true },
-      { name: '24/7 phone & chat support', included: true },
-      { name: 'Full API access', included: true },
-      { name: 'Mobile app', included: true },
-      { name: 'SSL encryption', included: true },
-      { name: 'Real-time backups', included: true },
-      { name: 'Multiple custom domains', included: true },
-      { name: 'SSO & SAML authentication', included: true },
-      { name: 'Enterprise security', included: true },
-      { name: 'Dedicated priority support', included: true },
+      { name: '24/7 phone & chat support (1-hour response)', included: true },
+      { name: 'Real-time utilization dashboards', included: true },
+      { name: 'Enterprise recruitment operations', included: true },
+      { name: 'Mobile app with offline capabilities', included: true },
+      { name: 'Enterprise-grade security & compliance', included: true },
+      { name: 'Revenue forecasting & predictive analytics', included: true },
+      { name: 'Complete white-label branding', included: true },
+      { name: 'Unlimited API access', included: true },
+      { name: 'SAML authentication', included: true },
+      { name: 'Dedicated customer success manager', included: true },
+      { name: 'Custom consultant matching algorithms', included: true },
+      { name: 'Advanced audit logging', included: true },
       { name: 'Unlimited custom integrations', included: true },
-      { name: 'Dedicated account manager', included: true },
+      { name: 'On-premise deployment option', included: true },
       { name: '99.99% SLA guarantee', included: true },
+      { name: 'SOC 2, ISO 27001, GDPR compliance', included: true },
     ],
     cta: 'Contact Sales',
     color: 'purple',
@@ -117,83 +145,83 @@ const plans = [
 
 const addons = [
   {
-    name: 'Additional Storage',
-    description: 'Expand your storage capacity',
-    price: '$10/month per 100 GB',
-    icon: Database,
-  },
-  {
-    name: 'Advanced Analytics',
-    description: 'Deeper insights and custom reports',
-    price: '$29/month',
-    icon: BarChart3,
-  },
-  {
-    name: 'White Label',
-    description: 'Remove our branding and use yours',
-    price: '$49/month',
+    name: 'Consultant Skills Assessment',
+    description: 'Advanced skills testing and certification tracking for consultants',
+    price: '$299/month',
     icon: Award,
   },
   {
-    name: 'API Rate Limit Increase',
-    description: 'Higher API request limits',
-    price: '$19/month',
-    icon: Zap,
+    name: 'Client Portal Plus',
+    description: 'Enhanced client self-service with custom branding and advanced features',
+    price: '$199/month',
+    icon: Building2,
+  },
+  {
+    name: 'Compliance & Audit Suite',
+    description: 'Industry-specific compliance tracking and audit trail management',
+    price: '$399/month',
+    icon: Shield,
+  },
+  {
+    name: 'Advanced Recruitment Analytics',
+    description: 'AI-powered recruitment insights and candidate sourcing optimization',
+    price: '$249/month',
+    icon: TrendingUp,
   },
 ]
 
 const faqs = [
   {
-    question: 'Can I change my plan later?',
-    answer: 'Yes, you can upgrade or downgrade your plan at any time. Changes will be reflected in your next billing cycle.',
+    question: 'How quickly can we migrate our existing consultant database?',
+    answer: 'Most firms complete data migration within 2-3 business days using our guided import tools. Professional and Enterprise customers receive dedicated migration support to ensure zero downtime and data integrity throughout the process.',
   },
   {
-    question: 'Is there a free trial?',
-    answer: 'Yes, we offer a 14-day free trial for all plans except Enterprise. No credit card required.',
+    question: 'Can consultants update their own profiles and availability?',
+    answer: 'Yes, all plans include consultant self-service portals where consultants can update their profiles, mark availability, submit time entries, and track assignments. Administrators maintain oversight and approval capabilities as needed.',
   },
   {
-    question: 'What payment methods do you accept?',
-    answer: 'We accept all major credit cards, PayPal, and wire transfers for Enterprise plans.',
+    question: 'How does the platform handle client confidentiality?',
+    answer: 'InsightSerenity implements enterprise-grade security with tenant isolation, role-based access controls, and comprehensive audit logging. All data is encrypted in transit and at rest, with SOC 2 and ISO 27001 compliance available for Enterprise customers.',
   },
   {
-    question: 'Can I cancel my subscription?',
-    answer: 'Yes, you can cancel your subscription at any time. You\'ll continue to have access until the end of your billing period.',
+    question: 'Does the system integrate with our existing billing and accounting software?',
+    answer: 'Professional and Enterprise plans include API access for custom integrations. We provide pre-built connectors for major accounting platforms like QuickBooks, Xero, and NetSuite. Enterprise customers can request custom integration development.',
   },
   {
-    question: 'Do you offer discounts for nonprofits?',
-    answer: 'Yes, we offer a 30% discount for registered nonprofits. Contact our sales team for more information.',
+    question: 'What happens during the free trial period?',
+    answer: 'The 14-day trial includes full access to all features in your selected plan tier. You can import real data, configure workflows, and invite your team. No credit card is required to start, and you can upgrade, downgrade, or cancel at any time.',
   },
   {
-    question: 'What happens to my data if I cancel?',
-    answer: 'You can export all your data before cancellation. We keep your data for 30 days after cancellation in case you want to reactivate.',
+    question: 'How does pricing work as our firm grows?',
+    answer: 'You only pay for active users. As you add consultants or staff, your monthly cost scales proportionally. Professional customers can add users up to 200 before needing to upgrade to Enterprise. We offer volume discounts for larger deployments.',
   },
   {
-    question: 'Is there a setup fee?',
-    answer: 'No, there are no setup fees for any of our plans. Enterprise customers may opt for professional onboarding services.',
+    question: 'Can we track consultant performance and client feedback?',
+    answer: 'Yes, all plans include performance tracking capabilities. Professional and Enterprise tiers provide advanced analytics on consultant utilization, client satisfaction ratings, project success metrics, and individual consultant performance trends over time.',
   },
   {
-    question: 'Do you offer custom contracts?',
-    answer: 'Yes, for Enterprise customers we can create custom contracts with specific terms, pricing, and SLAs.',
+    question: 'What support is included for implementation and training?',
+    answer: 'Starter customers receive comprehensive documentation and video tutorials. Professional customers get email and chat support with 8-hour response times. Enterprise customers receive dedicated onboarding, custom training sessions, and a dedicated customer success manager.',
   },
 ]
 
 const testimonials = [
   {
-    quote: 'The platform has transformed how we manage our consulting projects. ROI was evident within the first month.',
-    author: 'Sarah Chen',
-    role: 'CEO, TechConsult Inc',
+    quote: 'InsightSerenity transformed our consultant management overnight. We increased utilization rates by 23% in the first quarter and can now handle twice the client volume with the same team.',
+    author: 'David Morrison',
+    role: 'Managing Partner, Strategic Advisors Group',
     rating: 5,
   },
   {
-    quote: 'Best investment we\'ve made. The recruitment module alone saved us 40% in operational costs.',
-    author: 'Michael Rodriguez',
-    role: 'HR Director, Global Staffing',
+    quote: 'The recruitment pipeline features cut our time-to-hire in half. We track candidates from sourcing through onboarding seamlessly, and the integration with our consultant profiles is brilliant.',
+    author: 'Jennifer Wu',
+    role: 'Head of Talent Acquisition, Executive Search Partners',
     rating: 5,
   },
   {
-    quote: 'Enterprise-grade security and compliance features gave us the confidence to migrate our entire operation.',
-    author: 'Emma Thompson',
-    role: 'CTO, Finance Corp',
+    quote: 'As a global consulting firm, we needed enterprise-grade security and multi-office capabilities. InsightSerenity delivered both while remaining intuitive enough for our entire team to adopt within weeks.',
+    author: 'Robert Callahan',
+    role: 'COO, International Consulting Associates',
     rating: 5,
   },
 ]
@@ -253,12 +281,16 @@ export default function PricingPage() {
       <section className="bg-gradient-to-b from-muted/50 to-background py-16 lg:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto text-center">
+            <div className="inline-flex items-center space-x-2 bg-primary/10 rounded-full px-4 py-2 mb-6">
+              <Briefcase className="h-4 w-4 text-primary" />
+              <span className="text-xs font-medium text-primary">Purpose-Built for Professional Services</span>
+            </div>
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-6 text-foreground">
-              Simple, Transparent Pricing
+              Pricing for Consulting & Recruitment Firms
             </h1>
             <p className="text-base text-muted-foreground mb-8">
-              Choose the perfect plan for your business. All plans include core features,
-              with no hidden fees or surprises.
+              Transparent pricing designed for firms managing consultants and recruitment operations. 
+              From boutique agencies to global enterprises, choose the plan that matches your scale.
             </p>
 
             {/* Billing Toggle */}
@@ -282,7 +314,7 @@ export default function PricingPage() {
                 }`}
               >
                 Annual
-                <span className="ml-2 text-xs text-green-600 dark:text-green-400">Save 20%</span>
+                <span className="ml-2 text-xs text-green-600 dark:text-green-400">Save 18%</span>
               </button>
             </div>
           </div>
@@ -313,6 +345,9 @@ export default function PricingPage() {
                   <CardDescription className="text-xs">
                     {plan.description}
                   </CardDescription>
+                  <div className="mt-2 pt-2 border-t border-border">
+                    <p className="text-xs text-muted-foreground">{plan.targetAudience}</p>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div>
@@ -335,6 +370,16 @@ export default function PricingPage() {
                         Save ${(plan.price.monthly - plan.price.annual) * 12} per user/year
                       </p>
                     )}
+                    {plan.minimumContract && (
+                      <p className="text-xs text-muted-foreground mt-2">{plan.minimumContract}</p>
+                    )}
+                  </div>
+
+                  <div className="bg-muted/30 rounded-lg p-3">
+                    <div className="flex items-center space-x-2">
+                      <Users className="h-4 w-4 text-primary" />
+                      <span className="text-xs font-medium text-foreground">{plan.userLimit}</span>
+                    </div>
                   </div>
 
                   <Button
@@ -347,14 +392,14 @@ export default function PricingPage() {
                   </Button>
 
                   <div className="space-y-3">
-                    <p className="text-xs font-semibold text-foreground">Features included:</p>
+                    <p className="text-xs font-semibold text-foreground">Key features included:</p>
                     <ul className="space-y-2">
-                      {plan.features.slice(0, 8).map((feature, idx) => (
+                      {plan.features.slice(0, 10).map((feature, idx) => (
                         <li key={idx} className="flex items-start space-x-2">
                           {feature.included ? (
-                            <Check className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
+                            <Check className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
                           ) : (
-                            <X className="h-4 w-4 text-muted-foreground/30 mt-0.5" />
+                            <X className="h-4 w-4 text-muted-foreground/30 mt-0.5 flex-shrink-0" />
                           )}
                           <span className={`text-xs ${
                             feature.included ? 'text-foreground' : 'text-muted-foreground'
@@ -378,6 +423,49 @@ export default function PricingPage() {
               </Card>
             ))}
           </div>
+
+          {/* Value Proposition Banner */}
+          <div className="mt-12 max-w-4xl mx-auto">
+            <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
+              <CardContent className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="flex items-start space-x-3">
+                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Target className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground mb-1">Purpose-Built Platform</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Designed specifically for consulting and recruitment firms, not generic project management
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-3">
+                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <BarChart3 className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground mb-1">Consultant-Centric Analytics</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Track utilization, profitability, and performance with industry-specific metrics
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-3">
+                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <UserCheck className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground mb-1">Integrated Recruitment</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Manage the entire lifecycle from candidate sourcing to active consultant
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </section>
 
@@ -389,11 +477,11 @@ export default function PricingPage() {
               Detailed Features Comparison
             </h2>
             <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
-              Compare all features across our plans to find the perfect fit
+              Compare all capabilities across our plans to find the perfect fit for your firm
             </p>
           </div>
 
-          <div className="max-w-5xl mx-auto overflow-x-auto">
+          <div className="max-w-6xl mx-auto overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
@@ -412,7 +500,7 @@ export default function PricingPage() {
               </thead>
               <tbody>
                 {plans[0].features.map((_, featureIdx) => (
-                  <tr key={featureIdx} className="border-b border-border">
+                  <tr key={featureIdx} className="border-b border-border hover:bg-muted/20">
                     <td className="py-3 px-4 text-xs text-foreground">{plans[0].features[featureIdx].name}</td>
                     {plans.map((plan, planIdx) => (
                       <td key={planIdx} className="text-center py-3 px-4">
@@ -436,14 +524,14 @@ export default function PricingPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
-              Power Up with Add-ons
+              Specialized Add-ons for Professional Services
             </h2>
             <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
-              Enhance your plan with additional features and capabilities
+              Enhance your platform with industry-specific capabilities designed for consulting and recruitment excellence
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
             {addons.map((addon, index) => {
               const Icon = addon.icon
               return (
@@ -472,10 +560,10 @@ export default function PricingPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">
-              Trusted by Industry Leaders
+              Trusted by Consulting and Recruitment Leaders
             </h2>
             <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
-              See what our customers have to say about their experience
+              See how professional services firms are transforming their operations with InsightSerenity
             </p>
           </div>
 
@@ -508,7 +596,7 @@ export default function PricingPage() {
               Frequently Asked Questions
             </h2>
             <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
-              Everything you need to know about our pricing and plans
+              Common questions from consulting and recruitment firms about our platform
             </p>
           </div>
 
@@ -519,9 +607,9 @@ export default function PricingPage() {
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-foreground">{faq.question}</h3>
                     {expandedFaq === index ? (
-                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     ) : (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     )}
                   </div>
                 </CardHeader>
@@ -535,7 +623,7 @@ export default function PricingPage() {
           </div>
 
           <div className="text-center mt-12">
-            <p className="text-sm text-muted-foreground mb-4">Still have questions?</p>
+            <p className="text-sm text-muted-foreground mb-4">Need specific information for your firm?</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link href="/contact">
                 <Button variant="outline">
@@ -546,7 +634,7 @@ export default function PricingPage() {
               <Link href="/contact?type=sales">
                 <Button>
                   <Phone className="mr-2 h-3.5 w-3.5" />
-                  Talk to Sales
+                  Talk to Sales Team
                 </Button>
               </Link>
             </div>
@@ -558,10 +646,11 @@ export default function PricingPage() {
       <section className="py-16 lg:py-24 bg-primary">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-2xl sm:text-3xl font-bold text-black mb-4">
-            Start Your Free Trial Today
+            Transform Your Consulting Operations Today
           </h2>
           <p className="text-sm text-black/80 mb-8 max-w-2xl mx-auto">
-            Join thousands of businesses already using our platform. No credit card required.
+            Join hundreds of consulting and recruitment firms already maximizing consultant utilization 
+            and streamlining their operations with InsightSerenity.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link href="/register">
@@ -572,13 +661,13 @@ export default function PricingPage() {
             </Link>
             <Link href="/demo">
               <Button variant="outline" size="lg" className="bg-black/10 border-black/20 hover:bg-black/20">
-                Schedule Demo
+                Schedule a Demo
                 <Calendar className="ml-2 h-4 w-4" />
               </Button>
             </Link>
           </div>
           <p className="text-xs text-black/60 mt-6">
-            No credit card required • Setup in minutes • Cancel anytime
+            No credit card required • Full feature access • Guided onboarding included
           </p>
         </div>
       </section>
@@ -593,16 +682,16 @@ export default function PricingPage() {
                 <li><Link href="/features" className="text-xs text-muted-foreground hover:text-foreground">Features</Link></li>
                 <li><Link href="/pricing" className="text-xs text-muted-foreground hover:text-foreground">Pricing</Link></li>
                 <li><Link href="/security" className="text-xs text-muted-foreground hover:text-foreground">Security</Link></li>
-                <li><Link href="/roadmap" className="text-xs text-muted-foreground hover:text-foreground">Roadmap</Link></li>
+                <li><Link href="/integrations" className="text-xs text-muted-foreground hover:text-foreground">Integrations</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-xs font-semibold mb-4">Company</h3>
+              <h3 className="text-xs font-semibold mb-4">Solutions</h3>
               <ul className="space-y-2">
-                <li><Link href="/about" className="text-xs text-muted-foreground hover:text-foreground">About</Link></li>
-                <li><Link href="/blog" className="text-xs text-muted-foreground hover:text-foreground">Blog</Link></li>
-                <li><Link href="/careers" className="text-xs text-muted-foreground hover:text-foreground">Careers</Link></li>
-                <li><Link href="/press" className="text-xs text-muted-foreground hover:text-foreground">Press</Link></li>
+                <li><Link href="/consulting-firms" className="text-xs text-muted-foreground hover:text-foreground">Consulting Firms</Link></li>
+                <li><Link href="/recruitment-agencies" className="text-xs text-muted-foreground hover:text-foreground">Recruitment Agencies</Link></li>
+                <li><Link href="/enterprise" className="text-xs text-muted-foreground hover:text-foreground">Enterprise</Link></li>
+                <li><Link href="/case-studies" className="text-xs text-muted-foreground hover:text-foreground">Case Studies</Link></li>
               </ul>
             </div>
             <div>
@@ -610,27 +699,27 @@ export default function PricingPage() {
               <ul className="space-y-2">
                 <li><Link href="/docs" className="text-xs text-muted-foreground hover:text-foreground">Documentation</Link></li>
                 <li><Link href="/api" className="text-xs text-muted-foreground hover:text-foreground">API Reference</Link></li>
-                <li><Link href="/support" className="text-xs text-muted-foreground hover:text-foreground">Support</Link></li>
-                <li><Link href="/status" className="text-xs text-muted-foreground hover:text-foreground">Status</Link></li>
+                <li><Link href="/support" className="text-xs text-muted-foreground hover:text-foreground">Support Center</Link></li>
+                <li><Link href="/blog" className="text-xs text-muted-foreground hover:text-foreground">Blog</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-xs font-semibold mb-4">Legal</h3>
+              <h3 className="text-xs font-semibold mb-4">Company</h3>
               <ul className="space-y-2">
-                <li><Link href="/privacy" className="text-xs text-muted-foreground hover:text-foreground">Privacy</Link></li>
-                <li><Link href="/terms" className="text-xs text-muted-foreground hover:text-foreground">Terms</Link></li>
-                <li><Link href="/cookies" className="text-xs text-muted-foreground hover:text-foreground">Cookie Policy</Link></li>
-                <li><Link href="/licenses" className="text-xs text-muted-foreground hover:text-foreground">Licenses</Link></li>
+                <li><Link href="/about" className="text-xs text-muted-foreground hover:text-foreground">About Us</Link></li>
+                <li><Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground">Contact</Link></li>
+                <li><Link href="/careers" className="text-xs text-muted-foreground hover:text-foreground">Careers</Link></li>
+                <li><Link href="/privacy" className="text-xs text-muted-foreground hover:text-foreground">Privacy Policy</Link></li>
               </ul>
             </div>
           </div>
           <div className="border-t border-white/10 dark:border-border mt-8 pt-8 flex flex-col sm:flex-row items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              © 2024 Enterprise Platform. All rights reserved.
+              © 2024 InsightSerenity. All rights reserved.
             </p>
             <div className="flex items-center space-x-4 mt-4 sm:mt-0">
-              <Lock className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Secured by Enterprise-grade encryption</span>
+              <Shield className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">SOC 2 & ISO 27001 Certified</span>
             </div>
           </div>
         </div>

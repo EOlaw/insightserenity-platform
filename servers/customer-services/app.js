@@ -47,6 +47,7 @@ const authRoutes = require('./modules/core-business/authentication/routes'); // 
 const userRoutes = require('./modules/core-business/user-management/routes/user-routes');
 const clientManagementRoutes = require('./modules/core-business/client-management/routes/');
 const consultantManagementRoutes = require('./modules/core-business/consultant-management/routes/');
+const consultationManagementRoutes = require('./modules/core-business/consultation-management/routes');
 const projectRoutes = require('./modules/core-business/project-management/routes/project.routes');
 
 // Import route modules - Hosted Organizations
@@ -619,6 +620,7 @@ class CustomerServicesApp {
         apiRouter.use('/users', userRoutes);
         apiRouter.use('/clients', clientManagementRoutes);
         apiRouter.use('/consultants', consultantManagementRoutes);
+        apiRouter.use('/consultations', consultationManagementRoutes);
         apiRouter.use('/projects', projectRoutes);
 
         // ==================== HOSTED ORGANIZATIONS ROUTES ====================

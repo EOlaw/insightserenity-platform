@@ -487,6 +487,7 @@ module.exports = {
     authenticate,
     optionalAuthenticate,
     requireRole,
+    authorize: requireRole,
     requireEmailVerification,
     rateLimitByUser
 };
