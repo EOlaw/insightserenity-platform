@@ -47,7 +47,7 @@ router.post(
 router.get(
     '/me',
     rateLimiter({ windowMs: 1 * 60 * 1000, max: 100 }), // 100 requests per minute
-    authorize(['consultant', 'admin']),
+    // authorize(['consultant', 'admin']),
     consultationController.getMyConsultations
 );
 

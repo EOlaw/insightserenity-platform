@@ -1,0 +1,723 @@
+{
+  "info": {
+    "name": "InsightSerenity - Complete API Tests",
+    "description": "Comprehensive test suite for consultation booking, payment processing, and billing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Register New Client",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"userType\": \"client\",\n  \"profile\": {\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\",\n    \"phone\": \"+1234567890\"\n  },\n  \"company\": \"Acme Corporation\",\n  \"industry\": \"technology\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/auth/register",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login Client",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/auth/login",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Billing - Consultation Packages",
+      "item": [
+        {
+          "name": "Get All Available Packages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/billing/packages",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "billing", "packages"]
+            }
+          }
+        },
+        {
+          "name": "Get Featured Packages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/billing/packages?featured=true",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "billing", "packages"],
+              "query": [
+                {
+                  "key": "featured",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Packages by Type",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/billing/packages?type=consultation_bundle&category=business",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "billing", "packages"],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "consultation_bundle"
+                },
+                {
+                  "key": "category",
+                  "value": "business"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Billing - Credits & Balance",
+      "item": [
+        {
+          "name": "Check Credit Balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/billing/credits/balance",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "billing", "credits", "balance"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Billing - Payments",
+      "item": [
+        {
+          "name": "Create Payment Intent - Professional Package",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packageId\": \"PACKAGE_ID_HERE\",\n  \"amount\": 45000,\n  \"currency\": \"USD\",\n  \"quantity\": 1,\n  \"paymentMethodId\": \"pm_card_visa\",\n  \"savePaymentMethod\": true\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/billing/payments/intent",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "billing", "payments", "intent"]
+            }
+          }
+        },
+        {
+          "name": "Create Payment Intent - Starter Package",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packageId\": \"STARTER_PACKAGE_ID\",\n  \"amount\": 29700,\n  \"currency\": \"USD\",\n  \"quantity\": 1,\n  \"paymentMethodId\": \"pm_card_visa\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/billing/payments/intent",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "billing", "payments", "intent"]
+            }
+          }
+        },
+        {
+          "name": "Confirm Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/billing/payments/PAYMENT_INTENT_ID/confirm",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "billing", "payments", "PAYMENT_INTENT_ID", "confirm"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/billing/payments/TRANSACTION_ID",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "billing", "payments", "TRANSACTION_ID"]
+            }
+          }
+        },
+        {
+          "name": "Get Client Payment History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/billing/payments/client/CLIENT_ID/history?page=1&limit=20",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "billing", "payments", "client", "CLIENT_ID", "history"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Process Refund (Admin Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer ADMIN_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 45000,\n  \"reason\": \"Customer requested refund - unused credits\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/billing/payments/TRANSACTION_ID/refund",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "billing", "payments", "TRANSACTION_ID", "refund"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Consultations - Booking",
+      "item": [
+        {
+          "name": "Book Free Trial Consultation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consultantId\": \"CONSULTANT_ID_HERE\",\n  \"clientId\": \"CLIENT_ID_HERE\",\n  \"title\": \"Free Trial - Marketing Strategy Consultation\",\n  \"description\": \"15-minute introduction to discuss my marketing needs and challenges\",\n  \"type\": \"strategy_session\",\n  \"scheduledStart\": \"2025-12-26T14:00:00Z\",\n  \"scheduledEnd\": \"2025-12-26T14:15:00Z\",\n  \"objectives\": [\n    \"Understand current marketing challenges\",\n    \"Get initial recommendations\",\n    \"Determine if consultant is good fit\"\n  ],\n  \"timezone\": \"America/New_York\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/consultations",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations"]
+            }
+          }
+        },
+        {
+          "name": "Book Paid Consultation (Using Credits)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consultantId\": \"CONSULTANT_ID_HERE\",\n  \"clientId\": \"CLIENT_ID_HERE\",\n  \"title\": \"Business Strategy Deep Dive\",\n  \"description\": \"60-minute consultation to review Q4 performance and plan Q1 2025 strategy\",\n  \"type\": \"strategy_session\",\n  \"priority\": \"high\",\n  \"scheduledStart\": \"2025-12-27T10:00:00Z\",\n  \"scheduledEnd\": \"2025-12-27T11:00:00Z\",\n  \"objectives\": [\n    \"Review Q4 2024 performance metrics\",\n    \"Identify areas for improvement\",\n    \"Create Q1 2025 strategic plan\",\n    \"Define key performance indicators\"\n  ],\n  \"agenda\": [\n    \"Performance review - 20 minutes\",\n    \"Strategy discussion - 30 minutes\",\n    \"Action planning - 10 minutes\"\n  ],\n  \"location\": {\n    \"type\": \"remote\",\n    \"platform\": \"Zoom\",\n    \"timezone\": \"America/New_York\"\n  },\n  \"timezone\": \"America/New_York\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/consultations",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations"]
+            }
+          }
+        },
+        {
+          "name": "Book Technical Consultation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consultantId\": \"CONSULTANT_ID_HERE\",\n  \"clientId\": \"CLIENT_ID_HERE\",\n  \"title\": \"Technical Architecture Review\",\n  \"description\": \"Review current system architecture and provide recommendations for scaling\",\n  \"type\": \"technical_consultation\",\n  \"priority\": \"medium\",\n  \"scheduledStart\": \"2025-12-28T15:00:00Z\",\n  \"scheduledEnd\": \"2025-12-28T16:00:00Z\",\n  \"objectives\": [\n    \"Review current tech stack\",\n    \"Identify bottlenecks\",\n    \"Recommend scaling strategies\"\n  ],\n  \"timezone\": \"America/New_York\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/consultations",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Consultations - Management",
+      "item": [
+        {
+          "name": "Get Consultation by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/consultations/CONSULTATION_ID",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations", "CONSULTATION_ID"]
+            }
+          }
+        },
+        {
+          "name": "Get My Consultations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/consultations/me",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations", "me"]
+            }
+          }
+        },
+        {
+          "name": "Get Upcoming Consultations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/consultations/upcoming",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations", "upcoming"]
+            }
+          }
+        },
+        {
+          "name": "Start Consultation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/consultations/CONSULTATION_ID/start",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations", "CONSULTATION_ID", "start"]
+            }
+          }
+        },
+        {
+          "name": "Complete Consultation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"summary\": \"Excellent consultation session. We reviewed Q4 performance, identified key growth areas, and created a comprehensive Q1 strategy. Client was highly engaged and receptive to recommendations.\",\n  \"status\": \"successful\",\n  \"metrics\": {\n    \"goalsAchieved\": 4,\n    \"issuesResolved\": 3\n  },\n  \"nextSteps\": [\n    \"Client to review and approve proposed Q1 budget by Jan 5\",\n    \"Schedule follow-up session in 3 weeks to review progress\",\n    \"Implement recommended analytics tracking this week\"\n  ],\n  \"deliverables\": [\n    {\n      \"title\": \"Q1 2025 Strategic Plan\",\n      \"description\": \"Comprehensive strategy document with KPIs and initiatives\",\n      \"fileUrl\": \"https://example.com/documents/q1-strategy.pdf\"\n    },\n    {\n      \"title\": \"Analytics Dashboard Template\",\n      \"description\": \"Spreadsheet template for tracking key metrics\",\n      \"fileUrl\": \"https://example.com/documents/analytics-template.xlsx\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/consultations/CONSULTATION_ID/complete",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations", "CONSULTATION_ID", "complete"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Consultation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Schedule conflict - need to reschedule for next week\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/consultations/CONSULTATION_ID/cancel",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations", "CONSULTATION_ID", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Reschedule Consultation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newStart\": \"2025-12-29T10:00:00Z\",\n  \"newEnd\": \"2025-12-29T11:00:00Z\",\n  \"reason\": \"Requested by client due to meeting conflict\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/consultations/CONSULTATION_ID/reschedule",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations", "CONSULTATION_ID", "reschedule"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Consultations - Feedback",
+      "item": [
+        {
+          "name": "Submit Client Feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 5,\n  \"comments\": \"Outstanding consultation! Sarah provided incredibly valuable insights and actionable recommendations. Her expertise in digital marketing strategy was evident throughout the session. The deliverables were comprehensive and immediately useful.\",\n  \"wouldRecommend\": true,\n  \"recommendations\": [\n    \"Excellent communication skills\",\n    \"Deep subject matter expertise\",\n    \"Practical and actionable advice\",\n    \"Well-prepared and organized\"\n  ],\n  \"mostValuable\": \"The custom analytics dashboard template will save us hours of work\",\n  \"areasForImprovement\": \"None - perfect session\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/consultations/CONSULTATION_ID/feedback/client",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations", "CONSULTATION_ID", "feedback", "client"]
+            }
+          }
+        },
+        {
+          "name": "Submit Consultant Feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer CONSULTANT_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientEngagement\": \"highly_engaged\",\n  \"preparedness\": \"well_prepared\",\n  \"notes\": \"Client came well-prepared with specific questions and data. Very receptive to feedback and willing to implement recommendations. Great session overall.\",\n  \"followUpNeeded\": true,\n  \"recommendedNextSteps\": [\n    \"Schedule follow-up in 3 weeks\",\n    \"Review implementation progress\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/consultations/CONSULTATION_ID/feedback/consultant",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "consultations", "CONSULTATION_ID", "feedback", "consultant"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Consultant Availability",
+      "item": [
+        {
+          "name": "Create Regular Availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer CONSULTANT_TOKEN_HERE"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"regular\",\n  \"period\": {\n    \"startDate\": \"2025-01-01T00:00:00.000Z\",\n    \"endDate\": \"2025-01-31T23:59:59.000Z\",\n    \"startTime\": \"09:00\",\n    \"endTime\": \"17:00\",\n    \"timezone\": \"America/New_York\",\n    \"allDay\": false\n  },\n  \"capacity\": {\n    \"hoursAvailable\": 8,\n    \"percentageAvailable\": 100,\n    \"maxProjects\": 5,\n    \"preferredHoursPerDay\": 8,\n    \"billableTarget\": 80\n  },\n  \"availabilityStatus\": \"available\",\n  \"preferences\": {\n    \"workLocation\": \"remote\",\n    \"preferredLocations\": [\"Remote\"],\n    \"projectTypes\": [\"strategy_session\", \"technical_consultation\"],\n    \"clientTypes\": [\"all\"],\n    \"travelWillingness\": \"none\",\n    \"travelPercentage\": 0\n  },\n  \"notifications\": {\n    \"notifyManager\": false,\n    \"notifyTeam\": false,\n    \"notifyClients\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3001/api/v1/consultant-availability/consultant/CONSULTANT_ID_HERE",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "v1", "consultant-availability", "consultant", "CONSULTANT_ID_HERE"]
+            }
+          }
+        },
+        {
+          "name": "Get Consultant Availability",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/v1/consultant-availability/consultant/CONSULTANT_ID_HERE",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "v1", "consultant-availability", "consultant", "CONSULTANT_ID_HERE"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Health & Status",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3001/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "API Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer YOUR_TOKEN_HERE"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/api/metrics",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3001",
+              "path": ["api", "metrics"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

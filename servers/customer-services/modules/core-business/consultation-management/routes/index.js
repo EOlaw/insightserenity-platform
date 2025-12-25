@@ -10,6 +10,6 @@ const router = express.Router();
 const consultationRoutes = require('./consultation-routes');
 
 // Mount consultation routes
-router.use('/consultations', consultationRoutes);
+router.use('/', consultationRoutes);
 
 module.exports = router;

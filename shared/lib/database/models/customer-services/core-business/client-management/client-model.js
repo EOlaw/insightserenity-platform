@@ -408,6 +408,122 @@ const clientSchemaDefinition = {
     }
   },
 
+  // ==================== Consultation Credits & Billing ====================
+  consultationCredits: {
+    // Free Trial Consultation Tracking
+    freeTrial: {
+      eligible: {
+        type: Boolean,
+        default: true
+      },
+      used: {
+        type: Boolean,
+        default: false
+      },
+      consultationId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Consultation'
+      },
+      usedAt: Date,
+      expiresAt: Date
+    },
+
+    // Current Available Credits
+    availableCredits: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+
+    // Credits History
+    credits: [{
+      packageId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'ConsultationPackage'
+      },
+      packageName: String,
+      creditsAdded: Number,
+      creditsUsed: Number,
+      creditsRemaining: Number,
+      purchaseDate: Date,
+      expiryDate: Date,
+      billingId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Billing'
+      },
+      status: {
+        type: String,
+        enum: ['active', 'expired', 'depleted', 'refunded']
+      }
+    }],
+
+    // Stripe Customer Information
+    stripeCustomerId: {
+      type: String,
+      index: true,
+      sparse: true
+    },
+
+    // Payment Methods on File
+    paymentMethods: [{
+      stripePaymentMethodId: String,
+      type: {
+        type: String,
+        enum: ['card', 'bank_account', 'wallet']
+      },
+      brand: String,
+      last4: String,
+      expiryMonth: Number,
+      expiryYear: Number,
+      isDefault: Boolean,
+      addedAt: Date,
+      verified: Boolean
+    }],
+
+    // Subscription Information
+    activeSubscriptions: [{
+      subscriptionId: String,
+      stripeSubscriptionId: String,
+      packageId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'ConsultationPackage'
+      },
+      packageName: String,
+      status: {
+        type: String,
+        enum: ['active', 'past_due', 'cancelled', 'expired']
+      },
+      startDate: Date,
+      currentPeriodStart: Date,
+      currentPeriodEnd: Date,
+      nextBillingDate: Date,
+      cancelAt: Date,
+      cancelledAt: Date
+    }],
+
+    // Lifetime Consultation Statistics
+    lifetime: {
+      totalConsultations: {
+        type: Number,
+        default: 0
+      },
+      totalSpent: {
+        type: Number,
+        default: 0
+      },
+      totalCreditsPurchased: {
+        type: Number,
+        default: 0
+      },
+      totalCreditsUsed: {
+        type: Number,
+        default: 0
+      },
+      averageConsultationValue: Number,
+      lastConsultationDate: Date
+    }
+  },
+
   // ==================== Service & Contract Management ====================
   contracts: [{
     contractId: {

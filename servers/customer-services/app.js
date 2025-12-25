@@ -48,6 +48,7 @@ const userRoutes = require('./modules/core-business/user-management/routes/user-
 const clientManagementRoutes = require('./modules/core-business/client-management/routes/');
 const consultantManagementRoutes = require('./modules/core-business/consultant-management/routes/');
 const consultationManagementRoutes = require('./modules/core-business/consultation-management/routes');
+const paymentManagementRoutes = require('./modules/core-business/billing-management/routes/payment-routes');
 const projectRoutes = require('./modules/core-business/project-management/routes/project.routes');
 
 // Import route modules - Hosted Organizations
@@ -60,6 +61,7 @@ const jobRoutes = require('./modules/recruitment-services/jobs/routes/job.routes
 const candidateRoutes = require('./modules/recruitment-services/candidates/routes/candidate.routes');
 const applicationRoutes = require('./modules/recruitment-services/applications/routes/application.routes');
 const partnershipRoutes = require('./modules/recruitment-services/partnerships/routes/partnership.routes');
+const { api } = require('../../shared/lib/auth/middleware/rate-limit');
 
 // Import route modules - Content Management Systems
 // (e.g., blog, knowledge base) can be added here as needed
@@ -621,6 +623,7 @@ class CustomerServicesApp {
         apiRouter.use('/clients', clientManagementRoutes);
         apiRouter.use('/consultants', consultantManagementRoutes);
         apiRouter.use('/consultations', consultationManagementRoutes);
+        apiRouter.use('/billing', paymentManagementRoutes);
         apiRouter.use('/projects', projectRoutes);
 
         // ==================== HOSTED ORGANIZATIONS ROUTES ====================

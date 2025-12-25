@@ -1,0 +1,599 @@
+{
+  "info": {
+    "name": "Consultation & Payment API Tests",
+    "description": "Complete test suite for consultation booking and payment processing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "clientId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "consultantId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "packageId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transactionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "consultationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "paymentIntentId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Register Client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('authToken', response.data.token);",
+                  "    pm.environment.set('clientId', response.data.user.clientId);",
+                  "    console.log('Auth token saved:', response.data.token);",
+                  "    console.log('Client ID saved:', response.data.user.clientId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testclient@example.com\",\n  \"password\": \"Test123!@#\",\n  \"userType\": \"client\",\n  \"profile\": {\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\",\n    \"phone\": \"+1234567890\"\n  },\n  \"company\": \"Test Company Inc\",\n  \"industry\": \"technology\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login Client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('authToken', response.data.token);",
+                  "    pm.environment.set('clientId', response.data.user.clientId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testclient@example.com\",\n  \"password\": \"Test123!@#\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Consultation Packages",
+      "item": [
+        {
+          "name": "Get Available Packages",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.length > 0) {",
+                  "        pm.environment.set('packageId', response.data[0]._id);",
+                  "        console.log('Package ID saved:', response.data[0]._id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/billing/packages?featured=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "billing", "packages"],
+              "query": [
+                {
+                  "key": "featured",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get All Active Packages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/billing/packages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "billing", "packages"]
+            }
+          }
+        },
+        {
+          "name": "Get Packages by Type",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/billing/packages?type=consultation_bundle",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "billing", "packages"],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "consultation_bundle"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Payment & Credits",
+      "item": [
+        {
+          "name": "Check Credit Balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/billing/credits/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "billing", "credits", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Create Payment Intent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('paymentIntentId', response.data.paymentIntentId);",
+                  "    pm.environment.set('transactionId', response.data.transactionId);",
+                  "    console.log('Payment Intent ID:', response.data.paymentIntentId);",
+                  "    console.log('Transaction ID:', response.data.transactionId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packageId\": \"{{packageId}}\",\n  \"amount\": 45000,\n  \"currency\": \"USD\",\n  \"quantity\": 1,\n  \"paymentMethodId\": \"pm_card_visa\",\n  \"savePaymentMethod\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/billing/payments/intent",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "billing", "payments", "intent"]
+            }
+          }
+        },
+        {
+          "name": "Confirm Payment",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/billing/payments/{{paymentIntentId}}/confirm",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "billing", "payments", "{{paymentIntentId}}", "confirm"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/billing/payments/{{transactionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "billing", "payments", "{{transactionId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/billing/payments/client/{{clientId}}/history?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "billing", "payments", "client", "{{clientId}}", "history"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Consultations",
+      "item": [
+        {
+          "name": "Book Consultation (Using Free Trial)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('consultationId', response.data.consultationId);",
+                  "    console.log('Consultation ID:', response.data.consultationId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consultantId\": \"{{consultantId}}\",\n  \"clientId\": \"{{clientId}}\",\n  \"title\": \"Free Trial Consultation - Marketing Strategy\",\n  \"description\": \"15-minute consultation to discuss marketing needs\",\n  \"type\": \"strategy_session\",\n  \"scheduledStart\": \"2025-12-26T10:00:00Z\",\n  \"scheduledEnd\": \"2025-12-26T10:15:00Z\",\n  \"objectives\": [\n    \"Understand current marketing challenges\",\n    \"Identify opportunities for growth\"\n  ],\n  \"timezone\": \"America/New_York\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/consultations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "consultations"]
+            }
+          }
+        },
+        {
+          "name": "Book Consultation (Using Credits)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consultantId\": \"{{consultantId}}\",\n  \"clientId\": \"{{clientId}}\",\n  \"title\": \"Business Strategy Consultation\",\n  \"description\": \"60-minute deep dive into business strategy\",\n  \"type\": \"strategy_session\",\n  \"scheduledStart\": \"2025-12-27T14:00:00Z\",\n  \"scheduledEnd\": \"2025-12-27T15:00:00Z\",\n  \"objectives\": [\n    \"Review Q4 performance\",\n    \"Plan Q1 2025 strategy\",\n    \"Identify key initiatives\"\n  ],\n  \"agenda\": [\n    \"Performance review - 20 mins\",\n    \"Strategy discussion - 30 mins\",\n    \"Action planning - 10 mins\"\n  ],\n  \"timezone\": \"America/New_York\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/consultations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "consultations"]
+            }
+          }
+        },
+        {
+          "name": "Get Consultation by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/consultations/{{consultationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "consultations", "{{consultationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get My Consultations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/consultations/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "consultations", "me"]
+            }
+          }
+        },
+        {
+          "name": "Get Upcoming Consultations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/consultations/upcoming",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "consultations", "upcoming"]
+            }
+          }
+        },
+        {
+          "name": "Start Consultation",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/consultations/{{consultationId}}/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "consultations", "{{consultationId}}", "start"]
+            }
+          }
+        },
+        {
+          "name": "Complete Consultation",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"summary\": \"Excellent consultation. Discussed marketing strategy and created action plan.\",\n  \"status\": \"successful\",\n  \"metrics\": {\n    \"goalsAchieved\": 3,\n    \"issuesResolved\": 2\n  },\n  \"nextSteps\": [\n    \"Client to review marketing budget by next week\",\n    \"Schedule follow-up in 2 weeks to review progress\"\n  ],\n  \"deliverables\": [\n    {\n      \"title\": \"Marketing Strategy Document\",\n      \"description\": \"Comprehensive marketing plan for Q1 2025\",\n      \"fileUrl\": \"https://example.com/documents/strategy.pdf\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/consultations/{{consultationId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "consultations", "{{consultationId}}", "complete"]
+            }
+          }
+        },
+        {
+          "name": "Submit Client Feedback",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 5,\n  \"comments\": \"Outstanding session! Very helpful and actionable advice.\",\n  \"recommendations\": [\n    \"Would recommend to others\",\n    \"Clear communication\",\n    \"Expert knowledge\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/consultations/{{consultationId}}/feedback/client",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "consultations", "{{consultationId}}", "feedback", "client"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Consultation",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Schedule conflict, need to reschedule\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/consultations/{{consultationId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "consultations", "{{consultationId}}", "cancel"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Admin - Package Management",
+      "item": [
+        {
+          "name": "Create Free Trial Package (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"details\": {\n    \"name\": \"Free Trial Consultation\",\n    \"description\": \"First-time 15-minute consultation for new clients\",\n    \"type\": \"free_trial\",\n    \"category\": \"individual\"\n  },\n  \"credits\": {\n    \"total\": 1,\n    \"duration\": {\n      \"minutes\": 15\n    },\n    \"expiresAfterDays\": 30\n  },\n  \"pricing\": {\n    \"amount\": 0,\n    \"currency\": \"USD\"\n  },\n  \"eligibility\": {\n    \"clientTypes\": [\"new\"],\n    \"maximumPurchasePerClient\": 1\n  },\n  \"availability\": {\n    \"status\": \"active\",\n    \"visibleToPublic\": true\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/packages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "packages"]
+            }
+          }
+        },
+        {
+          "name": "Create Starter Package (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"details\": {\n    \"name\": \"Starter Package\",\n    \"description\": \"3 consultations for getting started\",\n    \"type\": \"consultation_bundle\",\n    \"category\": \"individual\"\n  },\n  \"credits\": {\n    \"total\": 3,\n    \"duration\": {\n      \"minutes\": 60\n    },\n    \"expiresAfterDays\": 60\n  },\n  \"pricing\": {\n    \"amount\": 29700,\n    \"currency\": \"USD\",\n    \"originalPrice\": 35700,\n    \"discount\": {\n      \"amount\": 6000,\n      \"reason\": \"Launch special\"\n    }\n  },\n  \"availability\": {\n    \"status\": \"active\",\n    \"visibleToPublic\": true,\n    \"featuredPackage\": true,\n    \"displayOrder\": 1\n  },\n  \"marketing\": {\n    \"tagline\": \"Perfect for getting started\",\n    \"badge\": \"popular\",\n    \"highlights\": [\n      \"3 one-hour consultations\",\n      \"Save $60\",\n      \"60 days validity\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/packages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "packages"]
+            }
+          }
+        },
+        {
+          "name": "Create Professional Package (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"details\": {\n    \"name\": \"Professional Package\",\n    \"description\": \"5 consultations for professional growth\",\n    \"type\": \"consultation_bundle\",\n    \"category\": \"business\"\n  },\n  \"credits\": {\n    \"total\": 5,\n    \"duration\": {\n      \"minutes\": 60\n    },\n    \"expiresAfterDays\": 90\n  },\n  \"pricing\": {\n    \"amount\": 45000,\n    \"currency\": \"USD\",\n    \"originalPrice\": 55000,\n    \"discount\": {\n      \"percentage\": 18,\n      \"reason\": \"Bundle discount\"\n    }\n  },\n  \"availability\": {\n    \"status\": \"active\",\n    \"visibleToPublic\": true,\n    \"featuredPackage\": true,\n    \"displayOrder\": 2\n  },\n  \"marketing\": {\n    \"tagline\": \"Most popular choice for businesses\",\n    \"badge\": \"best_value\",\n    \"highlights\": [\n      \"5 one-hour consultations\",\n      \"Save $100 (18% off)\",\n      \"90 days validity\",\n      \"Priority scheduling\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/packages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "packages"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Health & Status",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "API Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "metrics"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

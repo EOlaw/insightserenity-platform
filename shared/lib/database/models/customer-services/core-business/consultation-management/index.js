@@ -7,6 +7,7 @@
  */
 
 const consultationModel = require('./consultation-model');
+const consultationPackageModel = require('./consultation-package-model');
 
 module.exports = {
     // Consultation Model
@@ -14,8 +15,14 @@ module.exports = {
     consultationSchema: consultationModel.consultationSchema,
     createConsultationModel: consultationModel.createModel,
 
+    // Consultation Package Model
+    ConsultationPackage: consultationPackageModel.ConsultationPackage,
+    consultationPackageSchema: consultationPackageModel.consultationPackageSchema,
+    createConsultationPackageModel: consultationPackageModel.createModel,
+
     // Schema collection for ConnectionManager registration
     schemas: {
-        Consultation: consultationModel
+        Consultation: consultationModel,
+        ConsultationPackage: consultationPackageModel
     }
 };

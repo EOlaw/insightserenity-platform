@@ -18,6 +18,7 @@ const database = require('../../../../../../shared/lib/database');
 // Import related services
 const NotificationService = require('../../notifications/services/notification-service');
 const AnalyticsService = require('../../analytics/services/analytics-service');
+const PaymentService = require('../../billing-management/services/payment-service');
 
 /**
  * Consultation Status Constants
@@ -96,6 +97,7 @@ class ConsultationService {
         this._dbService = null;
         this.notificationService = NotificationService;
         this.analyticsService = AnalyticsService;
+        this.paymentService = new PaymentService();
 
         // Configuration
         this.config = {
@@ -188,16 +190,45 @@ class ConsultationService {
                 consultationData.scheduledEnd
             );
 
+            // Calculate duration in minutes
+            const durationMinutes = this._calculateDuration(
+                consultationData.scheduledStart,
+                consultationData.scheduledEnd
+            );
+
+            // ==================== PAYMENT VALIDATION LOGIC ====================
+            // Enforce business rule: All consultations must be paid OR use free trial/credits
+            const paymentValidation = await this.paymentService.validateConsultationPayment(
+                consultationData.clientId,
+                durationMinutes,
+                { tenantId: options.tenantId || consultant.tenantId }
+            );
+
+            if (!paymentValidation.valid) {
+                logger.warn('Consultation creation blocked - payment required', {
+                    clientId: consultationData.clientId,
+                    durationMinutes,
+                    message: paymentValidation.message
+                });
+                throw AppError.payment(
+                    paymentValidation.message || 'Payment or consultation credits required to book this consultation'
+                );
+            }
+
+            // Log payment method being used
+            logger.info('Payment validation passed', {
+                clientId: consultationData.clientId,
+                paymentMethod: paymentValidation.method,
+                message: paymentValidation.message
+            });
+
             // Generate consultation ID
             const consultationId = await this._generateConsultationId(
                 options.tenantId || consultant.tenantId
             );
 
-            // Calculate duration
-            const duration = this._calculateDuration(
-                consultationData.scheduledStart,
-                consultationData.scheduledEnd
-            );
+            // Store duration for later use
+            const duration = durationMinutes;
 
             // Create consultation object
             const consultationRecord = new Consultation({
@@ -267,6 +298,54 @@ class ConsultationService {
                 consultantId: consultationRecord.consultantId,
                 clientId: consultationRecord.clientId
             });
+
+            // ==================== POST-CREATION PAYMENT PROCESSING ====================
+            // Handle payment method-specific actions after successful consultation creation
+            try {
+                if (paymentValidation.method === 'free_trial') {
+                    // Mark free trial as used
+                    await this.paymentService.markFreeTrialUsed(
+                        consultationData.clientId,
+                        consultationRecord._id,
+                        { tenantId: options.tenantId || consultant.tenantId }
+                    );
+                    logger.info('Free trial marked as used', {
+                        clientId: consultationData.clientId,
+                        consultationId: consultationRecord.consultationId
+                    });
+                } else if (paymentValidation.method === 'credits') {
+                    // Deduct consultation credit from client account
+                    await this.paymentService.deductConsultationCredit(
+                        consultationData.clientId,
+                        consultationRecord._id,
+                        {
+                            tenantId: options.tenantId || consultant.tenantId,
+                            durationMinutes,
+                            consultationId: consultationRecord.consultationId
+                        }
+                    );
+                    logger.info('Consultation credit deducted', {
+                        clientId: consultationData.clientId,
+                        consultationId: consultationRecord.consultationId,
+                        creditsDeducted: 1
+                    });
+                }
+                // If method is 'payment', it means payment was already processed before booking
+            } catch (paymentError) {
+                // Log error but don't fail the consultation creation
+                // The consultation exists, but we need to handle payment issues separately
+                logger.error('Error processing post-creation payment logic', {
+                    consultationId: consultationRecord.consultationId,
+                    paymentMethod: paymentValidation.method,
+                    error: paymentError.message
+                });
+
+                // Optionally: Mark consultation with payment issue flag
+                // This allows admin to review and handle manually
+                consultationRecord.metadata.paymentProcessingError = true;
+                consultationRecord.metadata.paymentErrorDetails = paymentError.message;
+                await consultationRecord.save();
+            }
 
             // Send confirmation notification
             if (this.config.sendConfirmationEmail) {
@@ -622,6 +701,79 @@ class ConsultationService {
             await consultation.cancel(options.userId, reason);
 
             logger.info('Consultation cancelled', { consultationId });
+
+            // ==================== REFUND/CREDIT RESTORATION LOGIC ====================
+            // Handle payment refunds or credit restoration based on cancellation policy
+            try {
+                const dbService = this._getDatabaseService();
+                const Client = dbService.getModel('Client', 'customer');
+                const client = await Client.findById(consultation.clientId);
+
+                if (client) {
+                    // Check if free trial was used for this consultation
+                    const usedFreeTrial = client.consultationCredits?.freeTrial?.consultationId?.toString() ===
+                                         consultation._id.toString();
+
+                    if (usedFreeTrial && hoursUntilStart > 0) {
+                        // Restore free trial if cancelled before the session
+                        client.consultationCredits.freeTrial.used = false;
+                        client.consultationCredits.freeTrial.consultationId = null;
+                        client.consultationCredits.freeTrial.usedAt = null;
+                        await client.save();
+
+                        logger.info('Free trial restored due to cancellation', {
+                            clientId: client._id,
+                            consultationId
+                        });
+                    }
+
+                    // Check if credits were used for this consultation
+                    const creditEntry = client.consultationCredits?.credits?.find(c =>
+                        c.status === 'active' && c.creditsUsed > 0
+                    );
+
+                    if (creditEntry && hoursUntilStart > 0) {
+                        // Restore credit if cancelled before the session
+                        creditEntry.creditsUsed -= 1;
+                        creditEntry.creditsRemaining += 1;
+                        await client.save();
+
+                        logger.info('Consultation credit restored due to cancellation', {
+                            clientId: client._id,
+                            consultationId,
+                            creditsRestored: 1
+                        });
+                    }
+
+                    // Check for billing record that needs refund
+                    const Billing = dbService.getModel('Billing', 'customer');
+                    const billing = await Billing.findOne({
+                        relatedConsultation: consultation._id,
+                        'status.current': { $in: ['succeeded', 'processing'] }
+                    });
+
+                    if (billing && hoursUntilStart >= this.config.cancellationWindowHours) {
+                        // Eligible for refund if cancelled outside cancellation window
+                        logger.info('Consultation eligible for refund', {
+                            consultationId,
+                            billingId: billing.transactionId,
+                            refundAmount: billing.amount.net
+                        });
+
+                        // Note: Actual refund processing should be triggered manually or via admin
+                        // to ensure proper business review. We log it here for tracking.
+                        consultation.metadata.refundEligible = true;
+                        consultation.metadata.refundAmount = billing.amount.net;
+                        await consultation.save();
+                    }
+                }
+            } catch (refundError) {
+                // Log error but don't fail the cancellation
+                logger.error('Error processing cancellation refund/credit logic', {
+                    consultationId,
+                    error: refundError.message
+                });
+            }
 
             // Send cancellation notification
             await this._sendCancellationNotification(consultation, reason);
