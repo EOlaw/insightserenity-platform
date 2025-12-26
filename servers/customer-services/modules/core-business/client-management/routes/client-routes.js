@@ -20,6 +20,23 @@ const { rateLimiter } = require('../../../../middleware/rate-limiter');
 router.use(authenticate);
 
 /**
+ * @route   GET /api/v1/clients/me
+ * @desc    Get current user's client profile
+ * @access  Private (Authenticated Client)
+ * @note    Returns the authenticated client's own record
+ */
+router.get(
+    '/me',
+    rateLimiter({ maxRequests: 100, windowMs: 60000 }),
+    (req, _res, next) => {
+        // Set the ID parameter to the authenticated user's clientId
+        req.params.id = req.user.clientId;
+        next();
+    },
+    ClientController.getClientById
+);
+
+/**
  * @route   GET /api/v1/clients/statistics
  * @desc    Get client's own statistics
  * @access  Private (Authenticated Client)

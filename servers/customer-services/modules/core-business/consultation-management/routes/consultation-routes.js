@@ -27,7 +27,33 @@ router.use(authenticate);
 // ============================================================================
 
 /**
- * Create new consultation
+ * Book consultation (Client-facing booking endpoint)
+ * POST /api/consultations/book
+ * @access Private - Clients, Consultants, Admins
+ */
+router.post(
+    '/book',
+    consultationController.constructor.createValidation(),
+    rateLimiter({ windowMs: 15 * 60 * 1000, max: 50 }), // 50 requests per 15 minutes
+    authorize(['client', 'consultant', 'admin', 'manager']),
+    consultationController.createConsultation
+);
+
+/**
+ * OPTION B: Book consultation with package (awards credits automatically)
+ * POST /api/consultations/book-with-package
+ * @access Private - Clients, Consultants, Admins
+ */
+router.post(
+    '/book-with-package',
+    consultationController.constructor.bookWithPackageValidation(),
+    rateLimiter({ windowMs: 15 * 60 * 1000, max: 50 }), // 50 requests per 15 minutes
+    authorize(['client', 'consultant', 'admin', 'manager']),
+    consultationController.bookConsultationWithPackage
+);
+
+/**
+ * Create new consultation (Admin/Consultant endpoint)
  * POST /api/consultations
  * @access Private - Consultants, Admins
  */
@@ -42,24 +68,24 @@ router.post(
 /**
  * Get current user's consultations
  * GET /api/consultations/me
- * @access Private - Consultants
+ * @access Private - Clients, Consultants, Admins
  */
 router.get(
     '/me',
     rateLimiter({ windowMs: 1 * 60 * 1000, max: 100 }), // 100 requests per minute
-    // authorize(['consultant', 'admin']),
+    authorize(['client', 'consultant', 'admin', 'manager']),
     consultationController.getMyConsultations
 );
 
 /**
  * Get upcoming consultations
  * GET /api/consultations/upcoming
- * @access Private - Consultants, Admins
+ * @access Private - Clients, Consultants, Admins
  */
 router.get(
     '/upcoming',
     rateLimiter({ windowMs: 1 * 60 * 1000, max: 100 }),
-    authorize(['consultant', 'admin', 'manager']),
+    authorize(['client', 'consultant', 'admin', 'manager']),
     consultationController.getUpcomingConsultations
 );
 

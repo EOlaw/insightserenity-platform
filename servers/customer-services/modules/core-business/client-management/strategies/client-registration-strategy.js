@@ -125,8 +125,10 @@ class ClientRegistrationStrategy extends UniversalRegistrationStrategy {
             const clientDocument = {
                 clientCode,
                 companyName,
-                
-                tenantId: this._ensureObjectId(options.tenantId),
+
+                // CRITICAL FIX: Client schema expects tenantId as String, NOT ObjectId
+                // Do not convert to ObjectId (unlike Consultant which uses ObjectId for tenantId)
+                tenantId: options.tenantId || 'default',
                 organizationId: this._ensureObjectId(options.organizationId),
                 
                 addresses: {
@@ -163,7 +165,32 @@ class ClientRegistrationStrategy extends UniversalRegistrationStrategy {
                         range: userData.numberOfEmployees
                     } : undefined
                 },
-                
+
+                // OPTION A: Award free trial credits on registration
+                consultationCredits: {
+                    freeTrial: {
+                        eligible: true,
+                        used: false,
+                        expiresAt: new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)) // 30 days from now
+                    },
+                    availableCredits: 1, // Award 1 free trial credit
+                    credits: [{
+                        packageName: 'Free Trial Consultation',
+                        creditsAdded: 1,
+                        creditsUsed: 0,
+                        creditsRemaining: 1,
+                        purchaseDate: new Date(),
+                        expiryDate: new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)),
+                        status: 'active'
+                    }],
+                    lifetime: {
+                        totalConsultations: 0,
+                        totalSpent: 0,
+                        totalCreditsPurchased: 1,
+                        totalCreditsUsed: 0
+                    }
+                },
+
                 metadata: {
                     source: 'api',
                     linkedUserId: user._id,

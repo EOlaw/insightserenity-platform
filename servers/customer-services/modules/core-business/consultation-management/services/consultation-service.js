@@ -210,8 +210,9 @@ class ConsultationService {
                     durationMinutes,
                     message: paymentValidation.message
                 });
-                throw AppError.payment(
-                    paymentValidation.message || 'Payment or consultation credits required to book this consultation'
+                throw AppError.forbidden(
+                    paymentValidation.message || 'Payment or consultation credits required to book this consultation',
+                    { reason: 'insufficient_credits' }
                 );
             }
 
@@ -364,6 +365,176 @@ class ConsultationService {
 
         } catch (error) {
             logger.error('Error creating consultation', { error: error.message, stack: error.stack });
+            throw error;
+        }
+    }
+
+    /**
+     * OPTION B: Book consultation with package (awards credits automatically)
+     * @param {Object} bookingData - Booking information
+     * @param {Object} options - Booking options
+     * @returns {Promise<Object>} Created consultation with package details
+     */
+    async bookConsultationWithPackage(bookingData, options = {}) {
+        try {
+            const {
+                packageId,
+                consultantId,
+                clientId,
+                scheduledStart,
+                scheduledEnd,
+                title,
+                description,
+                type,
+                timezone
+            } = bookingData;
+
+            logger.info('Booking consultation with package', {
+                packageId,
+                consultantId,
+                clientId,
+                tenantId: options.tenantId
+            });
+
+            // Get database models
+            const dbService = database.getDatabaseService();
+            const ConsultationPackage = dbService.getModel('ConsultationPackage', 'customer');
+            const Client = dbService.getModel('Client', 'customer');
+
+            // Validate package
+            const consultationPackage = await ConsultationPackage.findOne({
+                packageId: packageId,
+                'availability.status': 'active',
+                $or: [
+                    { isDeleted: false },
+                    { isDeleted: { $exists: false } }
+                ]
+            });
+
+            if (!consultationPackage) {
+                throw AppError.notFound(`Consultation package ${packageId} not found or not available`);
+            }
+
+            logger.info('Package validated', {
+                packageId,
+                packageName: consultationPackage.details.name,
+                isFree: consultationPackage.pricing.amount === 0
+            });
+
+            // Get client
+            const client = await Client.findById(clientId);
+            if (!client) {
+                throw AppError.notFound('Client not found');
+            }
+
+            // Check if it's the free trial package
+            const isFreeTrialPackage = consultationPackage.details.type === 'free_trial';
+
+            if (isFreeTrialPackage) {
+                // Verify free trial eligibility
+                if (client.consultationCredits?.freeTrial?.used) {
+                    throw AppError.forbidden('Free trial already used');
+                }
+
+                if (!client.consultationCredits?.freeTrial?.eligible) {
+                    throw AppError.forbidden('Not eligible for free trial');
+                }
+
+                logger.info('Free trial eligibility confirmed', { clientId });
+            } else {
+                // For paid packages, this endpoint awards credits immediately
+                // In production, you'd typically integrate with Stripe here
+                logger.info('Paid package - awarding credits', {
+                    packageId,
+                    credits: consultationPackage.credits.total
+                });
+
+                // Award credits from package
+                const expiryDate = new Date();
+                expiryDate.setDate(expiryDate.getDate() + (consultationPackage.credits.expiresAfterDays || 90));
+
+                if (!client.consultationCredits) {
+                    client.consultationCredits = {
+                        availableCredits: 0,
+                        credits: [],
+                        lifetime: {
+                            totalConsultations: 0,
+                            totalSpent: 0,
+                            totalCreditsPurchased: 0,
+                            totalCreditsUsed: 0
+                        }
+                    };
+                }
+
+                client.consultationCredits.credits.push({
+                    packageId: consultationPackage._id,
+                    packageName: consultationPackage.details.name,
+                    creditsAdded: consultationPackage.credits.total,
+                    creditsUsed: 0,
+                    creditsRemaining: consultationPackage.credits.total,
+                    purchaseDate: new Date(),
+                    expiryDate: expiryDate,
+                    status: 'active'
+                });
+
+                client.consultationCredits.availableCredits =
+                    (client.consultationCredits.availableCredits || 0) + consultationPackage.credits.total;
+
+                client.consultationCredits.lifetime.totalCreditsPurchased =
+                    (client.consultationCredits.lifetime.totalCreditsPurchased || 0) + consultationPackage.credits.total;
+
+                client.consultationCredits.lifetime.totalSpent =
+                    (client.consultationCredits.lifetime.totalSpent || 0) + consultationPackage.pricing.amount;
+
+                await client.save();
+
+                logger.info('Credits awarded to client', {
+                    clientId,
+                    creditsAwarded: consultationPackage.credits.total,
+                    newBalance: client.consultationCredits.availableCredits
+                });
+            }
+
+            // Now create the consultation using the standard method
+            const consultationData = {
+                consultantId,
+                clientId,
+                title: title || `${consultationPackage.details.name} Session`,
+                description: description || consultationPackage.details.description,
+                type: type || CONSULTATION_TYPES.STRATEGY_SESSION,
+                scheduledStart,
+                scheduledEnd,
+                timezone: timezone || 'UTC',
+                packageInfo: {
+                    packageId: consultationPackage.packageId,
+                    packageName: consultationPackage.details.name,
+                    isFreeConsultation: isFreeTrialPackage
+                }
+            };
+
+            const consultation = await this.createConsultation(consultationData, options);
+
+            logger.info('Consultation booked with package successfully', {
+                consultationId: consultation.consultationId,
+                packageId,
+                clientId
+            });
+
+            return {
+                ...consultation.toObject(),
+                packageDetails: {
+                    packageId: consultationPackage.packageId,
+                    packageName: consultationPackage.details.name,
+                    creditsUsed: isFreeTrialPackage ? 0 : 1,
+                    creditsRemaining: client.consultationCredits?.availableCredits || 0
+                }
+            };
+
+        } catch (error) {
+            logger.error('Error booking consultation with package', {
+                error: error.message,
+                stack: error.stack
+            });
             throw error;
         }
     }

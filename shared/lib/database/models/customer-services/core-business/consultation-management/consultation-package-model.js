@@ -29,11 +29,11 @@ const consultationPackageSchemaDefinition = {
 
     // ==================== Multi-Tenancy ====================
     tenantId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Tenant',
+        type: String,
         required: true,
         index: true,
-        immutable: true
+        immutable: true,
+        default: 'default'
     },
 
     organizationId: {
@@ -523,14 +523,25 @@ consultationPackageSchema.statics.findActivePackages = function(tenantId, option
     const query = {
         tenantId,
         'availability.status': 'active',
-        isDeleted: false,
-        $or: [
-            { 'availability.startDate': { $lte: new Date() } },
-            { 'availability.startDate': { $exists: false } }
-        ],
-        $or: [
-            { 'availability.endDate': { $gte: new Date() } },
-            { 'availability.endDate': { $exists: false } }
+        $and: [
+            {
+                $or: [
+                    { 'availability.startDate': { $lte: new Date() } },
+                    { 'availability.startDate': { $exists: false } }
+                ]
+            },
+            {
+                $or: [
+                    { 'availability.endDate': { $gte: new Date() } },
+                    { 'availability.endDate': { $exists: false } }
+                ]
+            },
+            {
+                $or: [
+                    { isDeleted: false },
+                    { isDeleted: { $exists: false } }
+                ]
+            }
         ]
     };
 
@@ -555,7 +566,10 @@ consultationPackageSchema.statics.getFreeTrialPackage = function(tenantId) {
         tenantId,
         'details.type': 'free_trial',
         'availability.status': 'active',
-        isDeleted: false
+        $or: [
+            { isDeleted: false },
+            { isDeleted: { $exists: false } }
+        ]
     });
 };
 
@@ -563,7 +577,10 @@ consultationPackageSchema.statics.getPopularPackages = function(tenantId, limit 
     return this.find({
         tenantId,
         'availability.status': 'active',
-        isDeleted: false
+        $or: [
+            { isDeleted: false },
+            { isDeleted: { $exists: false } }
+        ]
     })
         .sort({ 'statistics.totalPurchases': -1 })
         .limit(limit);
@@ -573,8 +590,11 @@ consultationPackageSchema.statics.getPackageStatistics = async function(tenantId
     const stats = await this.aggregate([
         {
             $match: {
-                tenantId: new mongoose.Types.ObjectId(tenantId),
-                isDeleted: false
+                tenantId: tenantId,
+                $or: [
+                    { isDeleted: false },
+                    { isDeleted: { $exists: false } }
+                ]
             }
         },
         {

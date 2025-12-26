@@ -366,6 +366,13 @@ class PaymentController {
             const tenantId = req.user.tenantId;
             const { type, category, featured } = req.query;
 
+            logger.info('Getting available packages', {
+                tenantId,
+                type,
+                category,
+                featured
+            });
+
             const dbService = require('../../../../../../shared/lib/database').getDatabaseService();
             const ConsultationPackage = dbService.getModel('ConsultationPackage', 'customer');
 
@@ -374,7 +381,9 @@ class PaymentController {
             if (category) options.category = category;
             if (featured === 'true') options.featured = true;
 
+            logger.info('Calling findActivePackages', { tenantId, options });
             const packages = await ConsultationPackage.findActivePackages(tenantId, options);
+            logger.info('Packages found', { count: packages.length });
 
             res.status(200).json({
                 success: true,

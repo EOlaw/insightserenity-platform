@@ -114,8 +114,8 @@ const DEFAULT_PERMISSIONS_BY_TYPE = {
  * Default Roles by User Type
  */
 const DEFAULT_ROLES_BY_TYPE = {
-    client: ['user'],
-    consultant: ['user'],
+    client: ['client', 'user'],
+    consultant: ['consultant', 'user'],
     candidate: ['user'],
     partner: ['user', 'partner'],
     admin: ['admin']
@@ -332,14 +332,18 @@ class DirectAuthService {
                 defaultOrganizationId: organizationMembership.organizationId,
                 tenantId: this.config.companyTenantId,
                 accountStatus: {
-                    status: 'pending',
-                    reason: 'Account created - awaiting email verification',
+                    status: this.config.requireEmailVerification ? 'pending' : 'active',
+                    reason: this.config.requireEmailVerification
+                        ? 'Account created - awaiting email verification'
+                        : 'Account created and activated',
+                    ...(this.config.requireEmailVerification ? {} : { activatedAt: new Date() })
                 },
                 verification: {
                     email: {
-                        verified: false,
-                        token: this._generateVerificationToken(),
-                        tokenExpires: new Date(Date.now() + 86400000),
+                        verified: !this.config.requireEmailVerification,
+                        token: this.config.requireEmailVerification ? this._generateVerificationToken() : undefined,
+                        tokenExpires: this.config.requireEmailVerification ? new Date(Date.now() + 86400000) : undefined,
+                        ...(this.config.requireEmailVerification ? {} : { verifiedAt: new Date() })
                     }
                 },
                 metadata: {
@@ -412,7 +416,11 @@ class DirectAuthService {
                         strategy: strategy,
                         userData: userData,
                         options: {
-                            tenantId: this._getDefaultTenantObjectId(),
+                            // CRITICAL FIX: Pass tenantId as String for Client (not ObjectId)
+                            // Client schema expects String, Consultant schema expects ObjectId
+                            tenantId: entityType === 'Client'
+                                ? (this.config.companyTenantId || 'default')
+                                : this._getDefaultTenantObjectId(),
                             organizationId: this._getDefaultOrganizationObjectId(),
                             accountManager: options.accountManager,
                             utmParams: options.utmParams
@@ -882,13 +890,22 @@ class DirectAuthService {
             const registrationSource = this._determineRegistrationSource(DIRECT_USER_TYPES.CLIENT, options);
             const acquisitionSource = sourceMapping[registrationSource] || 'other';
 
+            // CRITICAL DEBUG: Log tenantId value before creating client
+            const tenantIdValue = this.config.companyTenantId || 'default';
+            logger.info('Creating Client with tenantId', {
+                tenantIdValue,
+                type: typeof tenantIdValue,
+                configValue: this.config.companyTenantId
+            });
+
             const clientData = {
                 clientCode: clientCode,
                 companyName: userData.companyName ||
                     userData.customFields?.companyName ||
                     `${user.profile.firstName} ${user.profile.lastName}'s Company`,
 
-                tenantId: this._getDefaultTenantObjectId(),
+                // CRITICAL FIX: Client schema expects tenantId as String, not ObjectId
+                tenantId: tenantIdValue,
                 organizationId: this._getDefaultOrganizationObjectId(),
 
                 addresses: {

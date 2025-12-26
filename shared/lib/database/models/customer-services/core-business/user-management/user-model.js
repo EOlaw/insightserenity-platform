@@ -280,7 +280,7 @@ const userSchemaDefinition = {
   roles: {
     type: [String],
     default: [],
-    enum: ['super_admin', 'admin', 'manager', 'user', 'guest'],
+    enum: ['super_admin', 'admin', 'manager', 'user', 'client', 'consultant', 'candidate', 'partner', 'guest'],
     index: true
   },
 

@@ -57,11 +57,11 @@ const clientSchemaDefinition = {
 
   // ==================== Multi-Tenancy & Organization ====================
   tenantId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Tenant',
+    type: String,
     required: true,
     index: true,
-    immutable: true
+    immutable: true,
+    default: 'default'
   },
 
   organizationId: {

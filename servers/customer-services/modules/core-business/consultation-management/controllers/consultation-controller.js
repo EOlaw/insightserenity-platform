@@ -25,6 +25,7 @@ class ConsultationController {
     constructor() {
         // Bind methods to preserve 'this' context
         this.createConsultation = this.createConsultation.bind(this);
+        this.bookConsultationWithPackage = this.bookConsultationWithPackage.bind(this);
         this.getConsultationById = this.getConsultationById.bind(this);
         this.getConsultationsByConsultant = this.getConsultationsByConsultant.bind(this);
         this.getMyConsultations = this.getMyConsultations.bind(this);
@@ -68,6 +69,23 @@ class ConsultationController {
     static updateValidation() {
         return [
             param('consultationId').notEmpty().withMessage('Consultation ID is required')
+        ];
+    }
+
+    static bookWithPackageValidation() {
+        return [
+            body('packageId').notEmpty().withMessage('Package ID is required'),
+            body('consultantId').notEmpty().withMessage('Consultant ID is required'),
+            body('scheduledStart').notEmpty().withMessage('Start date/time is required')
+                .isISO8601().withMessage('Invalid date format'),
+            body('scheduledEnd').notEmpty().withMessage('End date/time is required')
+                .isISO8601().withMessage('Invalid date format'),
+            body('type').optional()
+                .isIn(Object.values(CONSULTATION_TYPES)).withMessage('Invalid consultation type'),
+            body('title').optional().isLength({ max: 200 })
+                .withMessage('Title must be at most 200 characters'),
+            body('description').optional().isLength({ max: 5000 })
+                .withMessage('Description must be at most 5000 characters')
         ];
     }
 
@@ -160,6 +178,41 @@ class ConsultationController {
     }
 
     /**
+     * OPTION B: Book consultation with package
+     * POST /consultations/book-with-package
+     */
+    async bookConsultationWithPackage(req, res, next) {
+        try {
+            this._validateRequest(req);
+
+            const bookingData = {
+                packageId: req.body.packageId,
+                consultantId: req.body.consultantId,
+                clientId: req.body.clientId || this._getClientId(req),
+                scheduledStart: req.body.scheduledStart,
+                scheduledEnd: req.body.scheduledEnd,
+                title: req.body.title,
+                description: req.body.description,
+                type: req.body.type,
+                timezone: req.body.timezone || 'UTC'
+            };
+
+            const result = await consultationService.bookConsultationWithPackage(
+                bookingData,
+                {
+                    tenantId: this._getTenantId(req),
+                    userId: this._getUserId(req)
+                }
+            );
+
+            this._sendSuccess(res, result, 'Consultation booked with package successfully', 201);
+
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
      * Get consultation by ID
      * GET /consultations/:consultationId
      */
@@ -217,10 +270,7 @@ class ConsultationController {
     async getMyConsultations(req, res, next) {
         try {
             const consultantId = req.user.consultantId;
-
-            if (!consultantId) {
-                throw AppError.validation('User does not have a consultant profile');
-            }
+            const clientId = req.user.clientId;
 
             const filters = {
                 status: req.query.status,
@@ -230,11 +280,25 @@ class ConsultationController {
                 limit: req.query.limit
             };
 
-            const result = await consultationService.getConsultationsByConsultant(
-                consultantId,
-                filters,
-                { tenantId: this._getTenantId(req) }
-            );
+            let result;
+
+            if (consultantId) {
+                // User is a consultant - get their consultations
+                result = await consultationService.getConsultationsByConsultant(
+                    consultantId,
+                    filters,
+                    { tenantId: this._getTenantId(req) }
+                );
+            } else if (clientId) {
+                // User is a client - get their consultations
+                result = await consultationService.getConsultationsByClient(
+                    clientId,
+                    filters,
+                    { tenantId: this._getTenantId(req) }
+                );
+            } else {
+                throw AppError.validation('User does not have a client or consultant profile');
+            }
 
             this._sendSuccess(res, result);
 
