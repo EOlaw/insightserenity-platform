@@ -310,7 +310,55 @@ class PaymentController {
      */
     static async getCreditBalance(req, res, next) {
         try {
-            const clientId = req.user.clientId || req.user.id;
+            logger.info('Credit balance request received', {
+                hasUser: !!req.user,
+                userId: req.user?.id,
+                email: req.user?.email,
+                clientId: req.user?.clientId,
+                roles: req.user?.roles
+            });
+
+            // CRITICAL FIX: Check if req.user exists
+            if (!req.user) {
+                logger.error('No user found in request - authentication may have failed');
+                return res.status(401).json({
+                    success: false,
+                    error: 'Authentication required'
+                });
+            }
+
+            // CRITICAL FIX: Only use clientId if it exists
+            const clientId = req.user.clientId;
+
+            if (!clientId) {
+                logger.warn('Client ID not found in user token', {
+                    userId: req.user.id,
+                    email: req.user.email,
+                    userType: req.user.userType,
+                    roles: req.user.roles
+                });
+
+                // Return zero balance instead of error for better UX
+                return res.status(200).json({
+                    success: true,
+                    data: {
+                        availableCredits: 0,
+                        freeTrial: {
+                            eligible: false,
+                            used: false,
+                            expiresAt: null
+                        },
+                        activeCredits: [],
+                        activeSubscriptions: [],
+                        lifetime: {
+                            totalCredits: 0,
+                            totalSpent: 0
+                        },
+                        warning: 'Client profile not found. Please complete your profile setup.'
+                    }
+                });
+            }
+
             const tenantId = req.user.tenantId;
 
             const dbService = require('../../../../../../shared/lib/database').getDatabaseService();
@@ -322,7 +370,12 @@ class PaymentController {
             }).select('consultationCredits');
 
             if (!client) {
-                throw AppError.notFound('Client not found');
+                logger.error('Client record not found despite having clientId', {
+                    userId: req.user.id,
+                    clientId: clientId,
+                    tenantId: tenantId
+                });
+                throw AppError.notFound('Client profile not found. Please contact support.');
             }
 
             // Check free trial eligibility

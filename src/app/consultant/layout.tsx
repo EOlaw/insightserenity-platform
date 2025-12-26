@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import {
   LayoutDashboard,
   User,
+  Video,
   Target,
   Briefcase,
   Calendar,
@@ -41,6 +42,12 @@ const navigation = [
     href: '/consultant/profile',
     icon: User,
     description: 'Personal and professional information',
+  },
+  {
+    name: 'Consultations',
+    href: '/consultant/consultations',
+    icon: Video,
+    description: 'Your consultation sessions',
   },
   {
     name: 'Skills',
@@ -122,9 +129,9 @@ export default function ConsultantLayout({ children }: ConsultantLayoutProps) {
   const loadUserData = async () => {
     try {
       const userData = await auth.getCurrentUser()
-      
+
       let actualUserData: UserData
-      
+
       if (userData.data?.user) {
         actualUserData = userData.data.user
       } else if (userData.user) {
@@ -134,7 +141,7 @@ export default function ConsultantLayout({ children }: ConsultantLayoutProps) {
       } else {
         return
       }
-      
+
       setUser(actualUserData)
     } catch (error) {
       console.error('Failed to load user data:', error)
@@ -154,7 +161,7 @@ export default function ConsultantLayout({ children }: ConsultantLayoutProps) {
 
   const handleLogout = async () => {
     if (isLoggingOut) return
-    
+
     setIsLoggingOut(true)
     try {
       await auth.logout()
@@ -178,43 +185,43 @@ export default function ConsultantLayout({ children }: ConsultantLayoutProps) {
 
   const getUserInitials = () => {
     if (!user) return 'C'
-    
+
     const firstName = user.profile?.firstName || user.firstName || ''
     const lastName = user.profile?.lastName || user.lastName || ''
-    
+
     if (firstName && lastName) {
       return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
     }
-    
+
     if (firstName) {
       return firstName.charAt(0).toUpperCase()
     }
-    
+
     if (user.email) {
       return user.email.charAt(0).toUpperCase()
     }
-    
+
     return 'C'
   }
 
   const getUserDisplayName = () => {
     if (!user) return 'Consultant'
-    
+
     if (user.profile?.displayName) {
       return user.profile.displayName
     }
-    
+
     const firstName = user.profile?.firstName || user.firstName
     const lastName = user.profile?.lastName || user.lastName
-    
+
     if (firstName && lastName) {
       return `${firstName} ${lastName}`
     }
-    
+
     if (firstName) {
       return firstName
     }
-    
+
     return 'Consultant'
   }
 
@@ -259,7 +266,7 @@ export default function ConsultantLayout({ children }: ConsultantLayoutProps) {
                   <p className="text-xs text-white/60 truncate">Consultant</p>
                 </div>
               </div>
-              
+
               {/* Quick Stats */}
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="bg-black/20 rounded p-2">

@@ -111,6 +111,10 @@ class ConsultationController {
         return req.user?.id || req.user?._id || req.userId;
     }
 
+    _getClientId(req) {
+        return req.user?.clientId;
+    }
+
     _validateRequest(req) {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -185,17 +189,40 @@ class ConsultationController {
         try {
             this._validateRequest(req);
 
+            // Get clientId from request body or authenticated user
+            const clientId = req.body.clientId || this._getClientId(req);
+
+            // Validate that clientId exists
+            if (!clientId) {
+                throw AppError.validation(
+                    'Client ID is required. Your profile may not be complete. Please contact support.',
+                    {
+                        userId: this._getUserId(req),
+                        email: req.user?.email,
+                        userType: req.user?.userType,
+                        roles: req.user?.roles
+                    }
+                );
+            }
+
             const bookingData = {
                 packageId: req.body.packageId,
                 consultantId: req.body.consultantId,
-                clientId: req.body.clientId || this._getClientId(req),
+                clientId: clientId,
                 scheduledStart: req.body.scheduledStart,
                 scheduledEnd: req.body.scheduledEnd,
-                title: req.body.title,
+                title: req.body.title || req.body.topic,
                 description: req.body.description,
-                type: req.body.type,
+                type: req.body.type || 'advisory',  // Default to 'advisory' - valid enum value
                 timezone: req.body.timezone || 'UTC'
             };
+
+            logger.info('Booking consultation with package', {
+                clientId: bookingData.clientId,
+                packageId: bookingData.packageId,
+                consultantId: bookingData.consultantId,
+                userId: this._getUserId(req)
+            });
 
             const result = await consultationService.bookConsultationWithPackage(
                 bookingData,
@@ -208,6 +235,12 @@ class ConsultationController {
             this._sendSuccess(res, result, 'Consultation booked with package successfully', 201);
 
         } catch (error) {
+            logger.error('Error booking consultation with package', {
+                error: error.message,
+                stack: error.stack,
+                userId: this._getUserId(req),
+                packageId: req.body.packageId
+            });
             next(error);
         }
     }

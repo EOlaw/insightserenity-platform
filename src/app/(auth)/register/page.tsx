@@ -150,22 +150,17 @@ export default function RegisterPage() {
 
       console.log('Registration response:', response)
 
-      // IMPROVED: Handle different registration outcomes based on backend response
-      if (response.data?.tokens?.accessToken) {
-        // Case 1: User can log in immediately (email verification disabled or pre-verified)
-        toast.success('Registration successful! Welcome to InsightSerenity.')
-        setTimeout(() => {
-          router.push('/dashboard')
-        }, 1500)
-      } else if (response.data?.requiresAction?.includes('VERIFY_EMAIL') || response.verificationEmailSent) {
-        // Case 2: Email verification required - redirect to awaiting verification page
-        toast.success('Registration successful! Please check your email to verify your account.')
+      // IMPORTANT: Email verification is REQUIRED - do NOT auto-login users
+      // They must verify their email before accessing the system
+      if (response.data?.requiresAction?.includes('VERIFY_EMAIL') || response.verificationEmailSent || response.data?.user) {
+        // Registration successful - email verification required
+        toast.success('Registration successful! Please check your email to verify your account before logging in.')
         setTimeout(() => {
           router.push('/awaiting-verification?email=' + encodeURIComponent(formData.email))
         }, 1500)
       } else {
-        // Case 3: Other scenarios - redirect to login
-        toast.success('Registration successful! Please log in to continue.')
+        // Fallback - redirect to login page
+        toast.success('Registration successful! Please check your email and then log in.')
         setTimeout(() => {
           router.push('/login')
         }, 1500)

@@ -1032,7 +1032,7 @@ export default function ClientManagementPage() {
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center space-x-4 mb-4">
-            <Link href="/dashboard">
+            <Link href="/client/dashboard">
               <Button variant="ghost" size="sm" className="text-gray-600 hover:text-gray-900">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back to Dashboard

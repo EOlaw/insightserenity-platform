@@ -392,7 +392,7 @@ export default function DocumentUploadPage() {
             toast.success('Document uploaded successfully')
 
             setTimeout(() => {
-                router.push('/dashboard/client-management?tab=documents')
+                router.push('/client/dashboard')
             }, 1500)
 
         } catch (error: any) {
@@ -441,10 +441,10 @@ export default function DocumentUploadPage() {
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
-                            <Link href="/dashboard/client-management?tab=documents">
+                            <Link href="/client/dashboard">
                                 <Button variant="ghost" size="sm" className="text-gray-600 hover:text-gray-900">
                                     <ArrowLeft className="h-4 w-4 mr-2" />
-                                    Back to Documents
+                                    Back to Dashboard
                                 </Button>
                             </Link>
                             <Separator orientation="vertical" className="h-6" />
@@ -831,7 +831,7 @@ export default function DocumentUploadPage() {
                                 >
                                     Reset Form
                                 </Button>
-                                <Link href="/dashboard/client-management?tab=documents" className="block">
+                                <Link href="/client/dashboard" className="block">
                                     <Button
                                         variant="ghost"
                                         disabled={uploadState.isUploading}

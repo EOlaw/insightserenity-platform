@@ -337,9 +337,9 @@ export default function NoteDetailPage() {
                     </CardHeader>
                     <CardContent>
                         <p className="text-gray-600 mb-4">{error || 'Note not found'}</p>
-                        <Button onClick={() => router.push('/dashboard/client-management?tab=notes')}>
+                        <Button onClick={() => router.push('/client/dashboard')}>
                             <ArrowLeft className="h-4 w-4 mr-2" />
-                            Back to Notes
+                            Back to Dashboard
                         </Button>
                     </CardContent>
                 </Card>
@@ -360,7 +360,7 @@ export default function NoteDetailPage() {
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => router.push('/dashboard/client-management?tab=notes')}
+                                onClick={() => router.push('/client/dashboard')}
                             >
                                 <ArrowLeft className="h-4 w-4 mr-2" />
                                 Back

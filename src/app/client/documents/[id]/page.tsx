@@ -361,9 +361,9 @@ export default function DocumentDetailPage() {
                     </CardHeader>
                     <CardContent>
                         <p className="text-gray-600 mb-4">{error || 'Document not found'}</p>
-                        <Button onClick={() => router.push('/dashboard/client-management?tab=documents')}>
+                        <Button onClick={() => router.push('/client/dashboard')}>
                             <ArrowLeft className="h-4 w-4 mr-2" />
-                            Back to Documents
+                            Back to Dashboard
                         </Button>
                     </CardContent>
                 </Card>
@@ -381,7 +381,7 @@ export default function DocumentDetailPage() {
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => router.push('/dashboard/client-management?tab=documents')}
+                                onClick={() => router.push('/client/dashboard')}
                             >
                                 <ArrowLeft className="h-4 w-4 mr-2" />
                                 Back

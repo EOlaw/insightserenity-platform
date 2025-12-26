@@ -94,6 +94,7 @@ const consultationSchemaDefinition = {
         type: {
             type: String,
             enum: [
+                'general_consultation',
                 'strategy_session',
                 'technical_consultation',
                 'advisory',

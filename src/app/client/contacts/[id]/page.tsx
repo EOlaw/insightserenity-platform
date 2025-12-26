@@ -149,7 +149,7 @@ export default function ContactDetailPage() {
       console.error('Failed to load contact:', error)
       toast.error('Failed to load contact')
       if (error.response?.status === 404) {
-        router.push('/dashboard/client-management?tab=contacts')
+        router.push('/client/dashboard')
       }
     } finally {
       setIsLoading(false)
@@ -179,7 +179,7 @@ export default function ContactDetailPage() {
     try {
       await api.delete(`/clients/contacts/${contactId}`)
       toast.success('Contact deleted successfully')
-      router.push('/dashboard/client-management?tab=contacts')
+      router.push('/client/dashboard')
     } catch (error: any) {
       console.error('Failed to delete contact:', error)
       toast.error(error.response?.data?.message || 'Failed to delete contact')
@@ -250,8 +250,8 @@ export default function ContactDetailPage() {
             <p className="text-sm text-gray-600 mb-4">
               The contact you're looking for doesn't exist or has been deleted.
             </p>
-            <Link href="/dashboard/client-management?tab=contacts">
-              <Button>Back to Contacts</Button>
+            <Link href="/client/dashboard">
+              <Button>Back to Dashboard</Button>
             </Link>
           </CardContent>
         </Card>
@@ -265,10 +265,10 @@ export default function ContactDetailPage() {
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
-            <Link href="/dashboard/client-management?tab=contacts">
+            <Link href="/client/dashboard">
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Contacts
+                Back to Dashboard
               </Button>
             </Link>
             <div className="flex items-center space-x-2">

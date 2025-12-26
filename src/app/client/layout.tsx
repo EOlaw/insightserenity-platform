@@ -5,26 +5,21 @@ import Link from 'next/link'
 import { Logo } from '@/components/Logo'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
-import { Button } from '@/components/ui/button'
 import {
   LayoutDashboard,
+  Calendar,
+  FileText,
   Users,
-  Briefcase,
-  Building2,
-  UserCheck,
+  MessageSquare,
+  CreditCard,
   Settings,
   HelpCircle,
   LogOut,
   Menu,
   X,
-  ChevronDown,
   Bell,
   Search,
-  Globe,
-  CreditCard,
-  FileText,
-  TrendingUp,
-  User as UserIcon,
+  Sparkles,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { auth } from '@/lib/api/client'
@@ -32,49 +27,45 @@ import { auth } from '@/lib/api/client'
 const navigation = [
   {
     name: 'Dashboard',
-    href: '/dashboard',
+    href: '/client/dashboard',
     icon: LayoutDashboard,
+    description: 'Overview and insights',
   },
   {
-    name: 'Core Business',
-    href: '/dashboard/core-business',
-    icon: Briefcase,
-    children: [
-      { name: 'Clients', href: '/dashboard/core-business/clients' },
-      { name: 'Projects', href: '/dashboard/core-business/projects' },
-      { name: 'Consultants', href: '/dashboard/core-business/consultants' },
-      { name: 'Engagements', href: '/dashboard/core-business/engagements' },
-      { name: 'Analytics', href: '/dashboard/core-business/analytics' },
-    ],
+    name: 'Consultations',
+    href: '/client/consultations',
+    icon: Calendar,
+    description: 'Your consultation sessions',
   },
   {
-    name: 'Recruitment',
-    href: '/dashboard/recruitment',
-    icon: UserCheck,
-    children: [
-      { name: 'Jobs', href: '/dashboard/recruitment/jobs' },
-      { name: 'Candidates', href: '/dashboard/recruitment/candidates' },
-      { name: 'Applications', href: '/dashboard/recruitment/applications' },
-      { name: 'Partnerships', href: '/dashboard/recruitment/partnerships' },
-      { name: 'Analytics', href: '/dashboard/recruitment/analytics' },
-    ],
+    name: 'Documents',
+    href: '/client/documents',
+    icon: FileText,
+    description: 'Files and uploads',
   },
   {
-    name: 'Organization',
-    href: '/dashboard/organization',
-    icon: Building2,
-    children: [
-      { name: 'Settings', href: '/dashboard/organization/settings' },
-      { name: 'Members', href: '/dashboard/organization/members' },
-      { name: 'Subscription', href: '/dashboard/organization/subscription' },
-      { name: 'Tenant', href: '/dashboard/organization/tenant' },
-    ],
+    name: 'Contacts',
+    href: '/client/contacts',
+    icon: Users,
+    description: 'Your connections',
+  },
+  {
+    name: 'Notes',
+    href: '/client/notes',
+    icon: MessageSquare,
+    description: 'Your personal notes',
+  },
+  {
+    name: 'Billing',
+    href: '/client/billing',
+    icon: CreditCard,
+    description: 'Credits and payments',
   },
 ]
 
 const bottomNavigation = [
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-  { name: 'Help & Support', href: '/dashboard/support', icon: HelpCircle },
+  { name: 'Settings', href: '/client/settings', icon: Settings },
+  { name: 'Help & Support', href: '/client/support', icon: HelpCircle },
 ]
 
 interface UserData {
@@ -89,15 +80,14 @@ interface UserData {
   }
 }
 
-export default function DashboardLayout({
-  children,
-}: {
+interface ClientLayoutProps {
   children: React.ReactNode
-}) {
+}
+
+export default function ClientLayout({ children }: ClientLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [expandedItems, setExpandedItems] = useState<string[]>([])
   const [user, setUser] = useState<UserData | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
@@ -108,9 +98,9 @@ export default function DashboardLayout({
   const loadUserData = async () => {
     try {
       const userData = await auth.getCurrentUser()
-      
+
       let actualUserData: UserData
-      
+
       if (userData.data?.user) {
         actualUserData = userData.data.user
       } else if (userData.user) {
@@ -120,7 +110,7 @@ export default function DashboardLayout({
       } else {
         return
       }
-      
+
       setUser(actualUserData)
     } catch (error) {
       console.error('Failed to load user data:', error)
@@ -129,7 +119,7 @@ export default function DashboardLayout({
 
   const handleLogout = async () => {
     if (isLoggingOut) return
-    
+
     setIsLoggingOut(true)
     try {
       await auth.logout()
@@ -138,67 +128,58 @@ export default function DashboardLayout({
     } catch (error) {
       console.error('Logout failed:', error)
       toast.error('Failed to logout. Redirecting...')
-      // Even if logout fails, redirect to home
       router.push('/')
     } finally {
       setIsLoggingOut(false)
     }
   }
 
-  const toggleExpanded = (name: string) => {
-    setExpandedItems(prev =>
-      prev.includes(name)
-        ? prev.filter(item => item !== name)
-        : [...prev, name]
-    )
-  }
-
   const isActive = (href: string) => {
-    if (href === '/dashboard') {
-      return pathname === '/dashboard'
+    if (href === '/client/dashboard') {
+      return pathname === '/client/dashboard'
     }
     return pathname.startsWith(href)
   }
 
   const getUserInitials = () => {
     if (!user) return 'U'
-    
+
     const firstName = user.profile?.firstName || user.firstName || ''
     const lastName = user.profile?.lastName || user.lastName || ''
-    
+
     if (firstName && lastName) {
       return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
     }
-    
+
     if (firstName) {
       return firstName.charAt(0).toUpperCase()
     }
-    
+
     if (user.email) {
       return user.email.charAt(0).toUpperCase()
     }
-    
+
     return 'U'
   }
 
   const getUserDisplayName = () => {
     if (!user) return 'User'
-    
+
     if (user.profile?.displayName) {
       return user.profile.displayName
     }
-    
+
     const firstName = user.profile?.firstName || user.firstName
     const lastName = user.profile?.lastName || user.lastName
-    
+
     if (firstName && lastName) {
       return `${firstName} ${lastName}`
     }
-    
+
     if (firstName) {
       return firstName
     }
-    
+
     return 'User'
   }
 
@@ -221,111 +202,75 @@ export default function DashboardLayout({
       >
         <div className="flex h-full flex-col">
           {/* Logo */}
-          <div className="flex h-16 items-center justify-between px-6 border-b border-white/10">
-            <Logo href="/" showText={false} />
+          <div className="flex h-16 items-center justify-between px-6 border-b border-[#ffc451]/20">
+            <Logo href="/client/dashboard" showText={false} />
             <button
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden text-white/60 hover:text-white"
+              className="lg:hidden text-white/60 hover:text-[#ffc451] transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
           </div>
 
-          {/* Tenant Switcher */}
-          <div className="px-4 py-3 border-b border-white/10">
-            <button className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-              <div className="flex items-center space-x-2">
-                <div className="w-7 h-7 bg-primary rounded-md flex items-center justify-center">
-                  <span className="text-black font-semibold text-2xs">TC</span>
+          {/* User Info Card */}
+          <div className="px-4 py-4 border-b border-[#ffc451]/20">
+            <div className="bg-gradient-to-br from-[#ffc451]/10 via-[#ffc451]/5 to-[#ffc451]/10 rounded-xl p-4 border border-[#ffc451]/30">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-[#ffc451] to-[#d4a947] rounded-full flex items-center justify-center ring-2 ring-[#ffc451]/50 shadow-lg shadow-[#ffc451]/20">
+                  <span className="text-black font-bold text-sm">{getUserInitials()}</span>
                 </div>
-                <div className="text-left">
-                  <p className="text-xs font-medium">TechCorp Inc</p>
-                  <p className="text-2xs text-white/60">Premium Plan</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate text-white">{getUserDisplayName()}</p>
+                  <div className="flex items-center space-x-1 mt-0.5">
+                    <Sparkles className="h-3 w-3 text-[#ffc451]" />
+                    <p className="text-xs text-[#ffc451]">Client</p>
+                  </div>
                 </div>
               </div>
-              <ChevronDown className="h-3.5 w-3.5 text-white/60" />
-            </button>
+            </div>
           </div>
 
           {/* Navigation */}
           <nav className="flex-1 overflow-y-auto px-4 py-4">
-            <ul className="space-y-1">
+            <ul className="space-y-1.5">
               {navigation.map((item) => (
                 <li key={item.name}>
-                  <div>
-                    {item.children ? (
-                      <button
-                        onClick={() => toggleExpanded(item.name)}
-                        className={cn(
-                          "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors",
-                          isActive(item.href)
-                            ? "bg-primary text-black"
-                            : "text-white/70 hover:bg-white/10 hover:text-white"
-                        )}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.name}</span>
-                        </div>
-                        <ChevronDown
-                          className={cn(
-                            "h-3.5 w-3.5 transition-transform",
-                            expandedItems.includes(item.name) && "rotate-180"
-                          )}
-                        />
-                      </button>
-                    ) : (
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          "flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors",
-                          isActive(item.href)
-                            ? "bg-primary text-black"
-                            : "text-white/70 hover:bg-white/10 hover:text-white"
-                        )}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.name}</span>
-                        </div>
-                      </Link>
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group",
+                      isActive(item.href)
+                        ? "bg-[#ffc451] text-black shadow-lg shadow-[#ffc451]/30"
+                        : "text-white/70 hover:bg-white/10 hover:text-white"
                     )}
-                  </div>
-                  {item.children && expandedItems.includes(item.name) && (
-                    <ul className="mt-1 ml-7 space-y-1">
-                      {item.children.map((child) => (
-                        <li key={child.name}>
-                          <Link
-                            href={child.href}
-                            className={cn(
-                              "block px-3 py-1.5 rounded-md text-xs transition-colors",
-                              isActive(child.href)
-                                ? "bg-white/10 text-white"
-                                : "text-white/60 hover:bg-white/5 hover:text-white/90"
-                            )}
-                          >
-                            {child.name}
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  >
+                    <item.icon className={cn(
+                      "h-4 w-4 flex-shrink-0",
+                      isActive(item.href) ? "text-black" : "text-white/60 group-hover:text-[#ffc451]"
+                    )} />
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate">{item.name}</div>
+                    </div>
+                    {isActive(item.href) && (
+                      <div className="w-1.5 h-1.5 bg-black rounded-full animate-pulse" />
+                    )}
+                  </Link>
                 </li>
               ))}
             </ul>
           </nav>
 
           {/* Bottom navigation */}
-          <div className="border-t border-white/10 px-4 py-4">
-            <ul className="space-y-1">
+          <div className="border-t border-[#ffc451]/20 px-4 py-4">
+            <ul className="space-y-1 mb-4">
               {bottomNavigation.map((item) => (
                 <li key={item.name}>
                   <Link
                     href={item.href}
                     className={cn(
-                      "flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors",
+                      "flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                       isActive(item.href)
-                        ? "bg-primary text-black"
+                        ? "bg-[#ffc451] text-black"
                         : "text-white/70 hover:bg-white/10 hover:text-white"
                     )}
                   >
@@ -335,31 +280,25 @@ export default function DashboardLayout({
                 </li>
               ))}
             </ul>
-          </div>
 
-          {/* User menu */}
-          <div className="border-t border-white/10 px-4 py-4">
-            <div className="flex items-center space-x-3 px-3">
-              <div className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center">
-                <span className="text-2xs font-medium">{getUserInitials()}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate">{getUserDisplayName()}</p>
-                <p className="text-2xs text-white/60 truncate">{user?.email || 'Loading...'}</p>
-              </div>
-              <button 
-                onClick={handleLogout}
-                disabled={isLoggingOut}
-                className="text-white/60 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title="Sign out"
-              >
-                {isLoggingOut ? (
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium text-white/70 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-white/10 hover:border-red-500/30"
+            >
+              {isLoggingOut ? (
+                <>
                   <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
+                  <span>Logging out...</span>
+                </>
+              ) : (
+                <>
                   <LogOut className="h-4 w-4" />
-                )}
-              </button>
-            </div>
+                  <span>Sign Out</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </aside>
@@ -367,40 +306,60 @@ export default function DashboardLayout({
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="bg-white border-b h-16 flex items-center justify-between px-4 sm:px-6">
+        <header className="bg-white border-b h-16 flex items-center justify-between px-4 sm:px-6 shadow-sm">
           <div className="flex items-center space-x-4">
             <button
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden text-gray-500 hover:text-gray-700"
+              className="lg:hidden text-gray-500 hover:text-gray-700 transition-colors"
             >
               <Menu className="h-5 w-5" />
             </button>
 
-            {/* Search */}
-            <div className="relative hidden sm:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="search"
-                placeholder="Search..."
-                className="pl-9 pr-4 py-2 text-xs border rounded-lg w-64 focus:outline-none focus:ring-1 focus:ring-primary"
-              />
+            {/* Current Page Title */}
+            <div className="hidden sm:block">
+              <h1 className="text-lg font-bold text-gray-900">
+                {navigation.find(item => isActive(item.href))?.name || 'Dashboard'}
+              </h1>
+              <p className="text-xs text-gray-500">
+                {navigation.find(item => isActive(item.href))?.description}
+              </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-3">
-            {/* Quick actions */}
-            <button className="p-2 text-gray-500 hover:text-gray-700 relative">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-red-500 rounded-full" />
-            </button>
+            {/* Search */}
+            <div className="relative hidden md:block">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="search"
+                placeholder="Search..."
+                className="pl-9 pr-4 py-2 text-sm border rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-[#ffc451]/50 focus:border-[#ffc451]"
+              />
+            </div>
 
-            <button className="p-2 text-gray-500 hover:text-gray-700">
-              <Globe className="h-4 w-4" />
-            </button>
-
-            <button className="p-2 text-gray-500 hover:text-gray-700 sm:hidden">
+            {/* Search (Mobile) */}
+            <button className="p-2 text-gray-500 hover:text-gray-700 md:hidden transition-colors">
               <Search className="h-4 w-4" />
             </button>
+
+            {/* Notifications */}
+            <button className="p-2 text-gray-500 hover:text-gray-700 relative transition-colors">
+              <Bell className="h-5 w-5" />
+              <span className="absolute top-1 right-1 h-2 w-2 bg-[#ffc451] rounded-full animate-pulse" />
+            </button>
+
+            {/* Profile Menu */}
+            <Link href="/client/profile">
+              <div className="hidden sm:flex items-center space-x-2 pl-3 border-l cursor-pointer hover:opacity-80 transition-opacity">
+                <div className="w-8 h-8 bg-gradient-to-br from-[#ffc451] to-[#d4a947] rounded-full flex items-center justify-center shadow-md">
+                  <span className="text-xs font-bold text-black">{getUserInitials()}</span>
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-medium text-gray-900">{getUserDisplayName()}</p>
+                  <p className="text-2xs text-gray-500">View profile</p>
+                </div>
+              </div>
+            </Link>
           </div>
         </header>
 

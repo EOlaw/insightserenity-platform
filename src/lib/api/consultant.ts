@@ -394,12 +394,18 @@ export interface ConsultantSearchParams {
     search?: string
     status?: string
     availability?: string
+    availabilityStatus?: string  // Backend uses availabilityStatus for filtering
     skills?: string[]
     level?: string
+    employmentType?: string
     department?: string
+    team?: string
+    manager?: string
+    tags?: string[]
     location?: string
     page?: number
     limit?: number
+    skip?: number
     sortBy?: string
     sortOrder?: 'asc' | 'desc'
 }
@@ -631,9 +637,28 @@ export const consultantApi = {
 
     /**
      * Find available consultants (peer view)
+     * @param filters - Optional filters for available consultants
+     * @param filters.minCapacity - Minimum capacity percentage
+     * @param filters.skills - Comma-separated skills
+     * @param filters.level - Consultant level (junior, mid, senior, etc.)
+     * @param filters.availableFrom - Available from date (ISO format)
+     * @param filters.availableUntil - Available until date (ISO format)
+     * @param filters.remotePreference - Remote work preference
+     * @param filters.availability - Availability status filter
      */
-    getAvailableConsultants: async (): Promise<ConsultantProfile[]> => {
-        const response = await api.get('/consultants/available')
+    getAvailableConsultants: async (filters?: {
+        minCapacity?: number
+        skills?: string
+        level?: string
+        availableFrom?: string
+        availableUntil?: string
+        remotePreference?: string
+        availability?: string
+        limit?: number
+    }): Promise<ConsultantProfile[]> => {
+        const response = await api.get('/consultants/available', {
+            params: filters
+        })
         return response.data
     },
 

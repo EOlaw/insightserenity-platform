@@ -362,7 +362,7 @@ export default function ProfilePage() {
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Try Again
               </Button>
-              <Link href="/dashboard">
+              <Link href="/client/dashboard">
                 <Button>
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Back to Dashboard
