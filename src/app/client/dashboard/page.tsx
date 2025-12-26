@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Input } from '@/components/ui/input'
 import {
   Building2,
   TrendingUp,
@@ -22,8 +21,6 @@ import {
   Loader2,
   AlertCircle,
   Edit,
-  Search,
-  Filter,
   BarChart3,
   PieChart,
   Activity,
@@ -40,7 +37,6 @@ import {
   RefreshCw,
   Download,
   Eye,
-  ChevronRight,
   Plus,
   MessageSquare,
   Bell,
@@ -81,7 +77,7 @@ import {
   Radar,
 } from 'recharts'
 import toast from 'react-hot-toast'
-import { clientApi, contactsApi, documentsApi, notesApi, consultantSearchApi } from '@/lib/api/client'
+import { clientApi, contactsApi, documentsApi, notesApi } from '@/lib/api/client'
 
 interface ClientProfile {
   _id: string
@@ -220,10 +216,6 @@ export default function ClientDashboardPage() {
   const [recentDocuments, setRecentDocuments] = useState<any[]>([])
   const [recentNotes, setRecentNotes] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isSearchOpen, setIsSearchOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
-  const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -274,33 +266,6 @@ export default function ClientDashboardPage() {
       }
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const handleSearchConsultants = async () => {
-    if (!searchQuery.trim()) {
-      toast.error('Please enter a search query')
-      return
-    }
-
-    setIsSearching(true)
-    try {
-      const response = await consultantSearchApi.search({
-        q: searchQuery,
-        limit: 10
-      })
-
-      const results = response.data?.consultants || response.data || []
-      setSearchResults(results)
-      
-      if (results.length === 0) {
-        toast.info('No consultants found matching your search')
-      }
-    } catch (error) {
-      console.error('Search failed:', error)
-      toast.error('Failed to search consultants')
-    } finally {
-      setIsSearching(false)
     }
   }
 
@@ -480,15 +445,6 @@ export default function ClientDashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="h-8 text-xs"
-              onClick={() => setIsSearchOpen(!isSearchOpen)}
-            >
-              <Search className="mr-1.5 h-3 w-3" />
-              Find Consultants
-            </Button>
             <Button variant="outline" size="sm" className="h-8 text-xs">
               <Download className="mr-1.5 h-3 w-3" />
               Export Report
@@ -501,81 +457,6 @@ export default function ClientDashboardPage() {
             </Link>
           </div>
         </div>
-
-        {/* Consultant Search Section */}
-        {isSearchOpen && (
-          <Card className="border-[#ffc451]/20 bg-gradient-to-br from-[#ffc451]/5 to-white">
-            <CardHeader className="p-3 pb-2">
-              <CardTitle className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                <Search className="h-3.5 w-3.5 text-[#ffc451]" />
-                Search Consultants
-              </CardTitle>
-              <CardDescription className="text-[10px]">
-                Find and connect with expert consultants for your business needs
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="flex gap-2 mb-3">
-                <Input
-                  placeholder="Search by name, skills, or expertise..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSearchConsultants()}
-                  className="h-8 text-xs"
-                />
-                <Button 
-                  size="sm" 
-                  onClick={handleSearchConsultants}
-                  disabled={isSearching}
-                  className="bg-gradient-to-r from-[#ffc451] to-[#ffb020] hover:from-[#ffb020] hover:to-[#ffc451] text-black font-medium h-8 px-4"
-                >
-                  {isSearching ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <>
-                      <Search className="mr-1.5 h-3 w-3" />
-                      Search
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {searchResults.length > 0 && (
-                <div className="space-y-2">
-                  {searchResults.map((consultant) => (
-                    <Link key={consultant._id} href={`/client/consultants/${consultant._id}`}>
-                      <div className="p-3 rounded-lg border border-gray-100 hover:border-[#ffc451]/30 bg-white hover:shadow-sm transition-all cursor-pointer group">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#ffc451] to-[#ffb020] flex items-center justify-center flex-shrink-0">
-                            <span className="text-xs font-bold text-black">
-                              {consultant.profile?.firstName?.[0]}{consultant.profile?.lastName?.[0]}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="text-xs font-semibold text-gray-900 group-hover:text-[#ffc451] transition-colors">
-                              {consultant.profile?.firstName} {consultant.profile?.lastName}
-                            </h4>
-                            <p className="text-[10px] text-gray-600 capitalize">
-                              {consultant.professional?.level} {consultant.professional?.specialization}
-                            </p>
-                            <div className="flex items-center gap-2 mt-1">
-                              {consultant.skills?.slice(0, 3).map((skill: any, idx: number) => (
-                                <span key={idx} className="px-1.5 py-0.5 rounded text-[9px] bg-gray-100 text-gray-700">
-                                  {skill.name}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-[#ffc451] transition-colors" />
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
 
         {/* Company Profile Section */}
         <div className="bg-white rounded-lg shadow-sm p-4 border border-[#ffc451]/20">

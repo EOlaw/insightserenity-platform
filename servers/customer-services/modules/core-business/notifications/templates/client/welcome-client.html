@@ -90,12 +90,6 @@
             font-weight: 700;
             line-height: 1.3;
         }
-        .email-subtitle {
-            color: #666666;
-            font-size: 16px;
-            margin-bottom: 30px;
-            font-weight: 400;
-        }
         .email-text {
             color: #555555;
             font-size: 15px;
@@ -138,8 +132,6 @@
             font-weight: 700;
             font-size: 14px;
             margin-bottom: 8px;
-            display: flex;
-            align-items: center;
         }
         .info-box-text {
             color: #666666;
@@ -198,18 +190,6 @@
             padding-top: 25px;
             border-top: 1px solid #333333;
         }
-        .discount-code {
-            background-color: #000000;
-            color: #ffc451;
-            padding: 12px 20px;
-            border-radius: 6px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 18px;
-            font-weight: 700;
-            letter-spacing: 2px;
-            margin: 20px 0;
-            border: 2px dashed #ffc451;
-        }
         @media only screen and (max-width: 600px) {
             .email-body {
                 padding: 30px 20px !important;
@@ -255,7 +235,7 @@
                     </p>
 
                     <p class="email-text">
-                        Your account is now active and ready to use. You can start exploring our platform and booking consultations with industry-leading professionals.
+                        Your account is now active and ready to use. Start exploring our platform and book consultations with industry-leading professionals.
                     </p>
 
                     <div class="button-container">
@@ -270,44 +250,13 @@
                     <p class="email-text">
                         ✓ Browse expert consultants across various specializations<br>
                         ✓ Book one-on-one consultation sessions<br>
-                        ✓ Manage your consultation schedule and history<br>
+                        ✓ Manage your consultation schedule<br>
                         ✓ Access session recordings and notes<br>
-                        ✓ Track your consultation credits and billing
-                    </p>
-
-                    {{#if discountCode}}
-                    <div class="info-box">
-                        <div class="info-box-title">
-                            🎁 Special Welcome Offer
-                        </div>
-                        <div class="info-box-text">
-                            As a new member, enjoy <strong>15% off your first consultation</strong>!<br>
-                            Use this code at checkout:
-                        </div>
-                        <div class="discount-code" style="text-align: center; margin-top: 15px;">
-                            {{discountCode}}
-                        </div>
-                        <div class="info-box-text" style="margin-top: 10px; font-size: 12px;">
-                            Valid for 30 days • One-time use only
-                        </div>
-                    </div>
-                    {{/if}}
-
-                    <div class="divider"></div>
-
-                    <p class="email-text">
-                        <strong>Quick Start Guide:</strong>
-                    </p>
-                    <p class="email-text">
-                        1️⃣ Complete your profile with your interests and goals<br>
-                        2️⃣ Browse our consultant directory by expertise<br>
-                        3️⃣ Select a consultation package that fits your needs<br>
-                        4️⃣ Schedule your session at a convenient time<br>
-                        5️⃣ Join your video consultation and get expert advice
+                        ✓ Track your consultation credits
                     </p>
 
                     <p class="email-text" style="margin-top: 30px;">
-                        Need assistance? Our support team is available to help you at <a href="mailto:support@insightserenity.com" style="color: #ffc451;">support@insightserenity.com</a>
+                        Need assistance? Our support team is available at <a href="mailto:support@insightserenity.com" style="color: #ffc451;">support@insightserenity.com</a>
                     </p>
 
                     <p class="help-text">

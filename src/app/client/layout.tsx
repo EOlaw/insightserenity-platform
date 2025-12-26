@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { Logo } from '@/components/Logo'
 import { usePathname, useRouter } from 'next/navigation'
@@ -20,9 +20,11 @@ import {
   Bell,
   Search,
   Sparkles,
+  Loader2,
+  ChevronRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { auth } from '@/lib/api/client'
+import { auth, api } from '@/lib/api/client'
 
 const navigation = [
   {
@@ -80,6 +82,29 @@ interface UserData {
   }
 }
 
+interface Consultant {
+  _id: string
+  profile?: {
+    firstName?: string
+    lastName?: string
+    avatar?: string
+  }
+  professional?: {
+    level?: string
+    specialization?: string
+  }
+  skills?: Array<{ name: string }>
+}
+
+interface Notification {
+  _id: string
+  title: string
+  message: string
+  type: string
+  read: boolean
+  createdAt: string
+}
+
 interface ClientLayoutProps {
   children: React.ReactNode
 }
@@ -91,9 +116,78 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const [user, setUser] = useState<UserData | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
+  // Search states
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<Consultant[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [showSearchResults, setShowSearchResults] = useState(false)
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const searchRef = useRef<HTMLDivElement>(null)
+
+  // Notification states
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [showNotifications, setShowNotifications] = useState(false)
+  const notificationRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     loadUserData()
+    loadNotifications()
+
+    // Poll for new notifications every 30 seconds
+    const notificationInterval = setInterval(loadNotifications, 30000)
+
+    return () => clearInterval(notificationInterval)
   }, [])
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSearchResults(false)
+      }
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setShowNotifications(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Search consultants as user types
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+
+    if (searchQuery.trim().length > 0) {
+      setIsSearching(true)
+      searchTimeoutRef.current = setTimeout(async () => {
+        try {
+          const response = await api.get(`/consultants/search?q=${encodeURIComponent(searchQuery)}&limit=10`)
+          const results = response.data?.consultants || response.data || []
+          setSearchResults(results)
+          setShowSearchResults(true)
+        } catch (error) {
+          console.error('Search failed:', error)
+          setSearchResults([])
+        } finally {
+          setIsSearching(false)
+        }
+      }, 300) // Debounce for 300ms
+    } else {
+      setSearchResults([])
+      setShowSearchResults(false)
+      setIsSearching(false)
+    }
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+    }
+  }, [searchQuery])
 
   const loadUserData = async () => {
     try {
@@ -114,6 +208,37 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       setUser(actualUserData)
     } catch (error) {
       console.error('Failed to load user data:', error)
+    }
+  }
+
+  const loadNotifications = async () => {
+    try {
+      const response = await api.get('/notifications/me?limit=10')
+      const notifs = response.data?.notifications || response.data || []
+      setNotifications(notifs)
+      setUnreadCount(notifs.filter((n: Notification) => !n.read).length)
+    } catch (error) {
+      console.error('Failed to load notifications:', error)
+    }
+  }
+
+  const markAsRead = async (notificationId: string) => {
+    try {
+      await api.put(`/notifications/${notificationId}/read`)
+      loadNotifications()
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error)
+    }
+  }
+
+  const markAllAsRead = async () => {
+    try {
+      await api.put('/notifications/mark-all-read')
+      loadNotifications()
+      toast.success('All notifications marked as read')
+    } catch (error) {
+      console.error('Failed to mark all as read:', error)
+      toast.error('Failed to update notifications')
     }
   }
 
@@ -327,14 +452,69 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
           </div>
 
           <div className="flex items-center space-x-3">
-            {/* Search */}
-            <div className="relative hidden md:block">
+            {/* Live Consultant Search */}
+            <div className="relative hidden md:block" ref={searchRef}>
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              {isSearching && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#ffc451] animate-spin" />
+              )}
               <input
                 type="search"
-                placeholder="Search..."
-                className="pl-9 pr-4 py-2 text-sm border rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-[#ffc451]/50 focus:border-[#ffc451]"
+                placeholder="Search consultants..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-10 py-2 text-sm border rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-[#ffc451]/50 focus:border-[#ffc451]"
               />
+
+              {/* Search Results Dropdown */}
+              {showSearchResults && searchResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 max-h-96 overflow-y-auto z-50">
+                  <div className="p-2 space-y-1">
+                    {searchResults.map((consultant) => (
+                      <Link
+                        key={consultant._id}
+                        href={`/client/consultants/${consultant._id}`}
+                        onClick={() => {
+                          setShowSearchResults(false)
+                          setSearchQuery('')
+                        }}
+                      >
+                        <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-[#ffc451]/10 transition-colors cursor-pointer group">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#ffc451] to-[#ffb020] flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-bold text-black">
+                              {consultant.profile?.firstName?.[0]}{consultant.profile?.lastName?.[0]}
+                            </span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-semibold text-gray-900 group-hover:text-[#ffc451] transition-colors truncate">
+                              {consultant.profile?.firstName} {consultant.profile?.lastName}
+                            </h4>
+                            <p className="text-xs text-gray-600 capitalize truncate">
+                              {consultant.professional?.level} {consultant.professional?.specialization}
+                            </p>
+                            {consultant.skills && consultant.skills.length > 0 && (
+                              <div className="flex items-center gap-1 mt-1">
+                                {consultant.skills.slice(0, 2).map((skill, idx) => (
+                                  <span key={idx} className="px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-700">
+                                    {skill.name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-[#ffc451] transition-colors" />
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {showSearchResults && searchQuery && searchResults.length === 0 && !isSearching && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 p-4 z-50 text-center">
+                  <p className="text-sm text-gray-500">No consultants found</p>
+                </div>
+              )}
             </div>
 
             {/* Search (Mobile) */}
@@ -343,10 +523,77 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
             </button>
 
             {/* Notifications */}
-            <button className="p-2 text-gray-500 hover:text-gray-700 relative transition-colors">
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-1 right-1 h-2 w-2 bg-[#ffc451] rounded-full animate-pulse" />
-            </button>
+            <div className="relative" ref={notificationRef}>
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="p-2 text-gray-500 hover:text-gray-700 relative transition-colors"
+              >
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 h-5 w-5 bg-[#ffc451] rounded-full flex items-center justify-center">
+                    <span className="text-xs font-bold text-black">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                  </span>
+                )}
+              </button>
+
+              {/* Notifications Dropdown */}
+              {showNotifications && (
+                <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 max-h-96 overflow-y-auto z-50">
+                  <div className="p-3 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+                    <h3 className="text-sm font-bold text-gray-900">Notifications</h3>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllAsRead}
+                        className="text-xs text-[#ffc451] hover:text-[#ffb020] font-medium"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {notifications.length > 0 ? (
+                      notifications.map((notification) => (
+                        <div
+                          key={notification._id}
+                          onClick={() => !notification.read && markAsRead(notification._id)}
+                          className={cn(
+                            "p-3 hover:bg-gray-50 transition-colors cursor-pointer",
+                            !notification.read && "bg-[#ffc451]/5"
+                          )}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={cn(
+                              "w-2 h-2 rounded-full mt-1.5 flex-shrink-0",
+                              !notification.read ? "bg-[#ffc451]" : "bg-gray-300"
+                            )} />
+                            <div className="flex-1 min-w-0">
+                              <h4 className={cn(
+                                "text-sm truncate",
+                                !notification.read ? "font-semibold text-gray-900" : "font-medium text-gray-700"
+                              )}>
+                                {notification.title}
+                              </h4>
+                              <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">
+                                {notification.message}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                {new Date(notification.createdAt).toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-8 text-center">
+                        <Bell className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+                        <p className="text-sm text-gray-500">No notifications</p>
+                        <p className="text-xs text-gray-400 mt-1">You&apos;re all caught up!</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Profile Menu */}
             <Link href="/client/profile">

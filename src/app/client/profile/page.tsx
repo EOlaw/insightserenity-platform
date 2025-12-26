@@ -342,7 +342,7 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <RefreshCw className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <RefreshCw className="h-8 w-8 animate-spin text-[#ffc451] mx-auto mb-4" />
           <p className="text-sm text-gray-600">Loading your profile...</p>
         </div>
       </div>
@@ -412,8 +412,8 @@ export default function ProfilePage() {
             <Card>
               <CardContent className="p-4">
                 <div className="text-center mb-6">
-                  <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <User className="h-10 w-10 text-primary" />
+                  <div className="w-20 h-20 bg-[#ffc451]/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <User className="h-10 w-10 text-[#ffc451]" />
                   </div>
                   <h3 className="text-base font-semibold">
                     {user.profile?.displayName || `${user.firstName} ${user.lastName}`}
@@ -439,7 +439,7 @@ export default function ProfilePage() {
                     onClick={() => setActiveTab('general')}
                     className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       activeTab === 'general'
-                        ? 'bg-primary text-black'
+                        ? 'bg-[#ffc451] text-black'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
@@ -450,7 +450,7 @@ export default function ProfilePage() {
                     onClick={() => setActiveTab('professional')}
                     className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       activeTab === 'professional'
-                        ? 'bg-primary text-black'
+                        ? 'bg-[#ffc451] text-black'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
@@ -461,7 +461,7 @@ export default function ProfilePage() {
                     onClick={() => setActiveTab('preferences')}
                     className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       activeTab === 'preferences'
-                        ? 'bg-primary text-black'
+                        ? 'bg-[#ffc451] text-black'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
@@ -472,7 +472,7 @@ export default function ProfilePage() {
                     onClick={() => setActiveTab('security')}
                     className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       activeTab === 'security'
-                        ? 'bg-primary text-black'
+                        ? 'bg-[#ffc451] text-black'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
@@ -650,12 +650,12 @@ export default function ProfilePage() {
                       {professionalForm.skills.map((skill, index) => (
                         <span
                           key={index}
-                          className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-primary/10 text-primary"
+                          className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-[#ffc451]/10 text-black border border-[#ffc451]/30"
                         >
                           {skill}
                           <button
                             onClick={() => handleRemoveSkill(skill)}
-                            className="ml-2 text-primary hover:text-primary/80"
+                            className="ml-2 text-black hover:text-black/80"
                           >
                             <Trash2 className="h-3 w-3" />
                           </button>
@@ -671,7 +671,7 @@ export default function ProfilePage() {
                       value={professionalForm.bio}
                       onChange={(e) => setProfessionalForm(prev => ({ ...prev, bio: e.target.value }))}
                       rows={4}
-                      className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#ffc451] resize-none"
                       placeholder="Tell us about yourself..."
                     />
                   </div>
@@ -714,7 +714,7 @@ export default function ProfilePage() {
                       <select
                         value={preferencesForm.theme}
                         onChange={(e) => setPreferencesForm(prev => ({ ...prev, theme: e.target.value }))}
-                        className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#ffc451]"
                       >
                         <option value="light">Light</option>
                         <option value="dark">Dark</option>
@@ -730,7 +730,7 @@ export default function ProfilePage() {
                       <select
                         value={preferencesForm.language}
                         onChange={(e) => setPreferencesForm(prev => ({ ...prev, language: e.target.value }))}
-                        className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#ffc451]"
                       >
                         <option value="en">English</option>
                         <option value="es">Spanish</option>
@@ -778,7 +778,7 @@ export default function ProfilePage() {
                             ...prev,
                             notifications: { ...prev.notifications, email: e.target.checked }
                           }))}
-                          className="w-4 h-4 text-primary focus:ring-primary border-gray-300 rounded"
+                          className="w-4 h-4 text-[#ffc451] focus:ring-[#ffc451] border-gray-300 rounded"
                         />
                       </div>
                       <div className="flex items-center justify-between">
@@ -793,7 +793,7 @@ export default function ProfilePage() {
                             ...prev,
                             notifications: { ...prev.notifications, push: e.target.checked }
                           }))}
-                          className="w-4 h-4 text-primary focus:ring-primary border-gray-300 rounded"
+                          className="w-4 h-4 text-[#ffc451] focus:ring-[#ffc451] border-gray-300 rounded"
                         />
                       </div>
                       <div className="flex items-center justify-between">
@@ -808,7 +808,7 @@ export default function ProfilePage() {
                             ...prev,
                             notifications: { ...prev.notifications, marketing: e.target.checked }
                           }))}
-                          className="w-4 h-4 text-primary focus:ring-primary border-gray-300 rounded"
+                          className="w-4 h-4 text-[#ffc451] focus:ring-[#ffc451] border-gray-300 rounded"
                         />
                       </div>
                     </div>
@@ -829,7 +829,7 @@ export default function ProfilePage() {
                             ...prev,
                             privacy: { ...prev.privacy, profileVisibility: e.target.value }
                           }))}
-                          className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                          className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#ffc451]"
                         >
                           <option value="public">Public</option>
                           <option value="private">Private</option>
@@ -848,7 +848,7 @@ export default function ProfilePage() {
                             ...prev,
                             privacy: { ...prev.privacy, allowSearchIndexing: e.target.checked }
                           }))}
-                          className="w-4 h-4 text-primary focus:ring-primary border-gray-300 rounded"
+                          className="w-4 h-4 text-[#ffc451] focus:ring-[#ffc451] border-gray-300 rounded"
                         />
                       </div>
                     </div>
