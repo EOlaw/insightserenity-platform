@@ -264,6 +264,34 @@ router.post(
 );
 
 // ============================================================================
+// NOTES & ATTENDANCE
+// ============================================================================
+
+/**
+ * Add note to consultation
+ * POST /api/consultations/:consultationId/notes
+ * @access Private - Consultants, Admins
+ */
+router.post(
+    '/:consultationId/notes',
+    rateLimiter({ windowMs: 15 * 60 * 1000, max: 100 }),
+    authorize(['consultant', 'admin']),
+    consultationController.addNote
+);
+
+/**
+ * Mark client attendance
+ * POST /api/consultations/:consultationId/attendance
+ * @access Private - Consultants, Admins
+ */
+router.post(
+    '/:consultationId/attendance',
+    rateLimiter({ windowMs: 15 * 60 * 1000, max: 50 }),
+    authorize(['consultant', 'admin']),
+    consultationController.markAttendance
+);
+
+// ============================================================================
 // QUERY ROUTES
 // ============================================================================
 

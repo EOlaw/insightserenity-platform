@@ -632,8 +632,6 @@ class ConsultationService {
 
             const [consultations, total] = await Promise.all([
                 Consultation.find(query)
-                    .populate('clientId', 'companyName clientCode')
-                    .populate('assignmentId', 'assignmentId details.role')
                     .sort({ 'schedule.scheduledStart': -1 })
                     .skip(skip)
                     .limit(limit),
@@ -694,8 +692,6 @@ class ConsultationService {
 
             const [consultations, total] = await Promise.all([
                 Consultation.find(query)
-                    .populate('consultantId', 'profile.firstName profile.lastName consultantCode professional.level')
-                    .populate('assignmentId', 'assignmentId details.role')
                     .sort({ 'schedule.scheduledStart': -1 })
                     .skip(skip)
                     .limit(limit),
@@ -1192,6 +1188,60 @@ class ConsultationService {
 
         } catch (error) {
             logger.error('Error getting upcoming consultations', { consultantId, error: error.message });
+            throw error;
+        }
+    }
+
+    /**
+     * Add note to consultation
+     * @param {string} consultationId - Consultation ID
+     * @param {Object} noteData - Note data
+     * @param {string} noteData.content - Note content
+     * @param {string} noteData.type - Note type (general, technical, action, decision, private)
+     * @param {string} noteData.visibility - Visibility (public, internal, private)
+     * @param {Object} options - Options
+     * @returns {Promise<Object>} Updated consultation
+     */
+    async addNote(consultationId, noteData, options = {}) {
+        try {
+            logger.info('Adding note to consultation', { consultationId });
+
+            const consultation = await this.getConsultationById(consultationId, options);
+
+            await consultation.addNote(noteData, options.userId);
+
+            logger.info('Note added to consultation', { consultationId, noteType: noteData.type });
+
+            return consultation;
+
+        } catch (error) {
+            logger.error('Error adding note to consultation', { consultationId, error: error.message });
+            throw error;
+        }
+    }
+
+    /**
+     * Mark client attendance
+     * @param {string} consultationId - Consultation ID
+     * @param {string} userId - User ID to mark attendance for
+     * @param {boolean} attended - Attendance status
+     * @param {Object} options - Options
+     * @returns {Promise<Object>} Updated consultation
+     */
+    async markAttendance(consultationId, userId, attended, options = {}) {
+        try {
+            logger.info('Marking attendance', { consultationId, userId, attended });
+
+            const consultation = await this.getConsultationById(consultationId, options);
+
+            await consultation.markAttended(userId, attended);
+
+            logger.info('Attendance marked', { consultationId, userId, attended });
+
+            return consultation;
+
+        } catch (error) {
+            logger.error('Error marking attendance', { consultationId, error: error.message });
             throw error;
         }
     }

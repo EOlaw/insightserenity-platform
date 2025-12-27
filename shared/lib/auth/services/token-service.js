@@ -675,8 +675,8 @@ class TokenService {
 
             const decoded = jwt.verify(token, this.jwtConfig.secret, verifyOptions);
 
-            // Validate token type
-            if (decoded.type !== type) {
+            // Validate token type (only if token has a type field)
+            if (decoded.type && decoded.type !== type) {
                 throw new AppError(
                     `Invalid token type. Expected ${type}, got ${decoded.type}`,
                     401,
@@ -715,21 +715,31 @@ class TokenService {
 
         } catch (error) {
             this.stats.validationFailures++;
-            
+
+            // Log the actual JWT error for debugging
+            console.log('[TOKEN-SERVICE] JWT verification error:', {
+                name: error.name,
+                message: error.message,
+                code: error.code,
+                isAppError: error instanceof AppError
+            });
+
             // Handle specific JWT errors with switch case
             switch (error.name) {
                 case 'TokenExpiredError':
                     this.stats.tokensExpired++;
                     throw new AppError('Token has expired', 401, 'TOKEN_EXPIRED');
-                
+
                 case 'JsonWebTokenError':
+                    console.log('[TOKEN-SERVICE] JsonWebTokenError details:', error.message);
                     throw new AppError('Invalid token', 401, 'INVALID_TOKEN');
-                
+
                 case 'NotBeforeError':
                     throw new AppError('Token not yet valid', 401, 'TOKEN_NOT_ACTIVE');
-                
+
                 default:
                     if (error instanceof AppError) {
+                        console.log('[TOKEN-SERVICE] Re-throwing AppError:', error.code);
                         throw error;
                     }
                     logger.error('Token verification failed', { error: error.message });

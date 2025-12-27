@@ -50,6 +50,7 @@ const consultantManagementRoutes = require('./modules/core-business/consultant-m
 const consultationManagementRoutes = require('./modules/core-business/consultation-management/routes');
 const paymentManagementRoutes = require('./modules/core-business/billing-management/routes/payment-routes');
 const projectRoutes = require('./modules/core-business/project-management/routes/project.routes');
+// const notificationRoutes = require('./modules/core-business/notifications/routes'); // Disabled for now
 
 // Import route modules - Hosted Organizations
 const organizationRoutes = require('./modules/hosted-organizations/organization-management/routes/organization.routes');
@@ -186,11 +187,11 @@ class CustomerServicesApp {
                     windowMs: 15 * 60 * 1000,
                     max: process.env.RATE_LIMIT || 100,
                     message: 'Too many requests from this IP',
-                    // standardHeaders: true,
-                    // legacyHeaders: false,
-                    // validate: {
-                    //     trustProxy: false  // This fixes the trust proxy validation error
-                    // }
+                    standardHeaders: true,
+                    legacyHeaders: false,
+                    validate: {
+                        trustProxy: false  // This fixes the trust proxy validation error
+                    }
                 }
             },
 
@@ -625,6 +626,7 @@ class CustomerServicesApp {
         apiRouter.use('/consultations', consultationManagementRoutes);
         apiRouter.use('/billing', paymentManagementRoutes);
         apiRouter.use('/projects', projectRoutes);
+        // apiRouter.use('/notifications', notificationRoutes); // Disabled for now - will implement later
 
         // ==================== HOSTED ORGANIZATIONS ROUTES ====================
         apiRouter.use('/organizations', organizationRoutes);

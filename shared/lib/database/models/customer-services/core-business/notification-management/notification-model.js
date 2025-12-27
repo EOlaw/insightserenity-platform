@@ -1,416 +1,353 @@
-'use strict';
-
 /**
- * @fileoverview Notification Model - Universal activity tracking and notification system
- * @module shared/lib/database/models/customer-services/core-business/notification-management/notification-model
- * @description Multi-tenant notification model supporting all entity types with multi-channel delivery
+ * @fileoverview Notification Model for Customer Services - Universal Multi-Role Notification System
+ * @module shared/lib/database/models/customer-services/core-business/notification-management/notification-model.js
+ * @description Universal notification model supporting all user roles with entity relationships
  * @requires mongoose
- * @requires module:shared/lib/utils/logger
- * @requires module:shared/lib/utils/app-error
- * @requires module:shared/lib/utils/helpers/string-helper
+ * @version 1.0.0
  */
 
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
-const logger = require('../../../../../utils/logger');
-const { AppError } = require('../../../../../utils/app-error');
-const stringHelper = require('../../../../../utils/helpers/string-helper');
 
 /**
  * Notification Schema Definition
- * Supports comprehensive notification and activity tracking for all entities
+ * Universal notification system that works across all user roles (client, consultant, admin, partner, etc.)
  */
 const notificationSchemaDefinition = {
-  // ==================== Core Identity ====================
-  notificationId: {
-    type: String,
-    unique: true,
+  // ==================== Core Fields ====================
+
+  /**
+   * User who receives this notification
+   * Can be any user regardless of role
+   */
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
     required: true,
-    uppercase: true,
-    match: /^NOTIF-[A-Z0-9]{10,}$/,
-    index: true,
-    immutable: true
+    index: true
   },
 
-  // ==================== Multi-Tenancy & Organization ====================
+  /**
+   * Role of the user receiving the notification
+   * Used to contextualize notification content
+   */
+  userRole: {
+    type: String,
+    enum: ['client', 'consultant', 'admin', 'manager', 'partner', 'candidate', 'guest', 'super_admin'],
+    required: true,
+    index: true
+  },
+
+  /**
+   * Tenant ID for multi-tenant isolation
+   */
   tenantId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Tenant',
-    required: true,
-    index: true,
-    immutable: true
-  },
-
-  organizationId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Organization',
-    index: true
-  },
-
-  // ==================== Recipient Information ====================
-  recipientId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    index: true
-  },
-
-  recipientModel: {
     type: String,
     required: true,
-    enum: ['User', 'Client', 'Consultant', 'Candidate', 'Partner'],
-    index: true
+    index: true,
+    default: 'default'
   },
 
-  recipientInfo: {
-    name: String,
-    email: String,
-    phone: String,
-    preferredChannel: {
-      type: String,
-      enum: ['email', 'sms', 'push', 'in_app', 'all']
-    }
+  // ==================== Notification Content ====================
+
+  /**
+   * Notification title - short summary
+   */
+  title: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 200
   },
 
-  // ==================== Notification Type & Category ====================
-  notificationType: {
+  /**
+   * Notification message - detailed content
+   */
+  message: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 1000
+  },
+
+  /**
+   * Notification type/category
+   */
+  type: {
     type: String,
     enum: [
       // System notifications
-      'system', 'security', 'account',
-      
-      // Activity notifications
-      'message', 'mention', 'comment', 'reaction',
-      
-      // Business notifications
-      'project_update', 'task_assigned', 'deadline_reminder',
-      'document_shared', 'document_updated',
-      
-      // Meeting & Calendar
-      'event_invitation', 'event_reminder', 'event_cancelled', 'event_updated',
-      
-      // Financial
-      'invoice_sent', 'payment_received', 'payment_due', 'subscription_update',
-      
-      // Recruitment
-      'application_received', 'interview_scheduled', 'candidate_update',
-      
-      // Client Management
-      'client_update', 'engagement_update', 'contract_expiring',
-      
+      'system',
+      'security',
+      'update',
+
+      // Authentication & Account
+      'account_created',
+      'email_verified',
+      'password_changed',
+      'login_alert',
+
+      // Consultation-related
+      'consultation_booked',
+      'consultation_confirmed',
+      'consultation_cancelled',
+      'consultation_rescheduled',
+      'consultation_reminder',
+      'consultation_completed',
+
+      // Payment & Billing
+      'payment_received',
+      'payment_failed',
+      'refund_processed',
+      'invoice_generated',
+      'subscription_renewed',
+      'subscription_cancelled',
+
+      // Messaging & Communication
+      'message_received',
+      'mention',
+      'comment',
+      'reply',
+
+      // Project & Task
+      'task_assigned',
+      'task_completed',
+      'project_update',
+      'deadline_approaching',
+
+      // Client-specific
+      'consultant_assigned',
+      'document_shared',
+      'report_available',
+
+      // Consultant-specific
+      'client_request',
+      'review_received',
+      'earnings_updated',
+      'availability_request',
+
       // General
-      'alert', 'info', 'success', 'warning', 'error'
+      'info',
+      'warning',
+      'error',
+      'success',
+      'announcement'
     ],
     required: true,
     index: true
   },
 
-  category: {
-    type: String,
-    enum: [
-      'security', 'updates', 'marketing', 'social', 'billing',
-      'projects', 'messages', 'calendar', 'documents', 'system', 'other'
-    ],
-    required: true,
-    index: true
-  },
-
-  // ==================== Content ====================
-  content: {
-    title: {
-      type: String,
-      required: true,
-      maxlength: 200
-    },
-    body: {
-      type: String,
-      required: true,
-      maxlength: 2000
-    },
-    summary: {
-      type: String,
-      maxlength: 500
-    },
-    icon: String,
-    iconColor: String,
-    actionText: String,
-    actionUrl: String
-  },
-
-  // ==================== Priority & Importance ====================
+  /**
+   * Priority level
+   */
   priority: {
     type: String,
-    enum: ['low', 'medium', 'high', 'urgent', 'critical'],
-    default: 'medium',
+    enum: ['low', 'normal', 'high', 'urgent'],
+    default: 'normal',
     index: true
   },
 
-  importance: {
-    type: String,
-    enum: ['info', 'success', 'warning', 'error'],
-    default: 'info'
-  },
+  // ==================== Status & Read Tracking ====================
 
-  // ==================== Source & Trigger ====================
-  source: {
-    // What triggered this notification
-    triggerId: {
-      type: mongoose.Schema.Types.ObjectId
-    },
-    triggerModel: {
-      type: String,
-      enum: [
-        'Message', 'Comment', 'CalendarEvent', 'Document', 'Project',
-        'Task', 'Invoice', 'Application', 'Engagement', 'Contract', 'System'
-      ]
-    },
-    triggerAction: {
-      type: String,
-      enum: [
-        'created', 'updated', 'deleted', 'shared', 'mentioned',
-        'assigned', 'completed', 'cancelled', 'approved', 'rejected',
-        'expired', 'reminder', 'status_changed'
-      ]
-    },
-    triggeredBy: {
-      actorId: {
-        type: mongoose.Schema.Types.ObjectId
-      },
-      actorModel: {
-        type: String,
-        enum: ['User', 'Client', 'Consultant', 'Candidate', 'Partner', 'System']
-      },
-      actorInfo: {
-        name: String,
-        email: String,
-        avatar: String
-      }
-    },
-    triggeredAt: {
-      type: Date,
-      default: Date.now
-    }
-  },
-
-  // ==================== Related Entities ====================
-  relatedEntities: [{
-    entityId: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: true
-    },
-    entityModel: {
-      type: String,
-      required: true,
-      enum: [
-        'User', 'Client', 'Consultant', 'Candidate', 'Partner',
-        'Project', 'Engagement', 'Job', 'Application', 'Document',
-        'CalendarEvent', 'Task', 'Invoice', 'Contract'
-      ]
-    },
-    role: {
-      type: String,
-      enum: ['primary', 'secondary', 'mentioned', 'related']
-    }
-  }],
-
-  // ==================== Delivery Channels ====================
-  channels: {
-    inApp: {
-      enabled: {
-        type: Boolean,
-        default: true
-      },
-      delivered: Boolean,
-      deliveredAt: Date,
-      read: Boolean,
-      readAt: Date
-    },
-    
-    email: {
-      enabled: Boolean,
-      sent: Boolean,
-      sentAt: Date,
-      delivered: Boolean,
-      deliveredAt: Date,
-      opened: Boolean,
-      openedAt: Date,
-      clicked: Boolean,
-      clickedAt: Date,
-      bounced: Boolean,
-      bouncedAt: Date,
-      messageId: String,
-      error: String
-    },
-    
-    sms: {
-      enabled: Boolean,
-      sent: Boolean,
-      sentAt: Date,
-      delivered: Boolean,
-      deliveredAt: Date,
-      messageId: String,
-      error: String
-    },
-    
-    push: {
-      enabled: Boolean,
-      sent: Boolean,
-      sentAt: Date,
-      delivered: Boolean,
-      deliveredAt: Date,
-      clicked: Boolean,
-      clickedAt: Date,
-      deviceTokens: [String],
-      error: String
-    }
-  },
-
-  // ==================== Status & Lifecycle ====================
-  status: {
-    current: {
-      type: String,
-      enum: ['pending', 'queued', 'sent', 'delivered', 'read', 'failed', 'cancelled'],
-      default: 'pending',
-      index: true
-    },
-    isRead: {
-      type: Boolean,
-      default: false,
-      index: true
-    },
-    readAt: Date,
-    isArchived: {
-      type: Boolean,
-      default: false,
-      index: true
-    },
-    archivedAt: Date,
-    expiresAt: Date
-  },
-
-  // ==================== User Actions ====================
-  actions: [{
-    actionType: {
-      type: String,
-      enum: ['clicked', 'dismissed', 'snoozed', 'archived', 'flagged', 'forwarded']
-    },
-    performedAt: {
-      type: Date,
-      default: Date.now
-    },
-    metadata: mongoose.Schema.Types.Mixed
-  }],
-
-  // ==================== Grouping & Threading ====================
-  grouping: {
-    groupId: String, // For grouping similar notifications
-    threadId: String, // For threading related notifications
-    isGrouped: Boolean,
-    groupCount: Number,
-    latestInGroup: Boolean
-  },
-
-  // ==================== Scheduling ====================
-  scheduling: {
-    scheduledFor: Date,
-    timezone: String,
-    recurring: {
-      enabled: Boolean,
-      pattern: {
-        type: String,
-        enum: ['daily', 'weekly', 'monthly']
-      },
-      interval: Number,
-      endDate: Date
-    }
-  },
-
-  // ==================== Preferences & Rules ====================
-  preferences: {
-    canDismiss: {
-      type: Boolean,
-      default: true
-    },
-    canSnooze: {
-      type: Boolean,
-      default: true
-    },
-    requiresAction: {
-      type: Boolean,
-      default: false
-    },
-    persistUntilRead: {
-      type: Boolean,
-      default: false
-    },
-    playSound: {
-      type: Boolean,
-      default: false
-    },
-    showBadge: {
-      type: Boolean,
-      default: true
-    }
-  },
-
-  // ==================== Analytics & Metrics ====================
-  analytics: {
-    deliveryAttempts: {
-      type: Number,
-      default: 0
-    },
-    lastDeliveryAttempt: Date,
-    deliveryDuration: Number, // milliseconds
-    engagementScore: Number,
-    clickThroughRate: Number
-  },
-
-  // ==================== Metadata ====================
-  metadata: {
-    source: {
-      type: String,
-      enum: ['system', 'manual', 'automation', 'workflow', 'integration'],
-      default: 'system'
-    },
-    campaignId: String,
-    batchId: String,
-    templateId: String,
-    tags: [String],
-    customData: {
-      type: Map,
-      of: mongoose.Schema.Types.Mixed
-    },
-    flags: {
-      isImportant: {
-        type: Boolean,
-        default: false
-      },
-      requiresAcknowledgment: {
-        type: Boolean,
-        default: false
-      },
-      isSilent: {
-        type: Boolean,
-        default: false
-      }
-    }
-  },
-
-  // ==================== Search Optimization ====================
-  searchTokens: {
-    type: [String],
-    select: false
-  },
-
-  // ==================== Soft Delete ====================
-  isDeleted: {
+  /**
+   * Whether the notification has been read
+   */
+  read: {
     type: Boolean,
     default: false,
     index: true
   },
 
-  deletedAt: Date
+  /**
+   * Timestamp when notification was read
+   */
+  readAt: {
+    type: Date,
+    default: null
+  },
+
+  /**
+   * Notification status
+   */
+  status: {
+    type: String,
+    enum: ['active', 'archived', 'deleted'],
+    default: 'active',
+    index: true
+  },
+
+  // ==================== Action & Navigation ====================
+
+  /**
+   * Action to take when notification is clicked
+   */
+  action: {
+    // Type of action (navigate, external, modal, etc.)
+    type: {
+      type: String,
+      enum: ['navigate', 'external_link', 'modal', 'download', 'none'],
+      default: 'none'
+    },
+
+    // URL or path to navigate to
+    url: {
+      type: String,
+      trim: true
+    },
+
+    // Additional action data
+    data: {
+      type: Schema.Types.Mixed
+    }
+  },
+
+  // ==================== Entity Relationships ====================
+
+  /**
+   * Related entity references
+   * Allows linking notifications to specific resources
+   */
+  relatedEntity: {
+    // Type of entity (consultation, payment, user, etc.)
+    entityType: {
+      type: String,
+      enum: [
+        'user',
+        'client',
+        'consultant',
+        'consultation',
+        'payment',
+        'invoice',
+        'project',
+        'task',
+        'message',
+        'document',
+        'review',
+        'application',
+        'job',
+        'candidate'
+      ]
+    },
+
+    // ID of the related entity
+    entityId: {
+      type: mongoose.Schema.Types.ObjectId
+    },
+
+    // Additional entity metadata
+    metadata: {
+      type: Schema.Types.Mixed
+    }
+  },
+
+  // ==================== Sender Information ====================
+
+  /**
+   * User or system that triggered the notification
+   */
+  sender: {
+    // Sender user ID (null for system notifications)
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+
+    // Sender name (for display)
+    name: {
+      type: String,
+      trim: true
+    },
+
+    // Sender type
+    type: {
+      type: String,
+      enum: ['user', 'system', 'automated'],
+      default: 'system'
+    }
+  },
+
+  // ==================== Delivery Channels ====================
+
+  /**
+   * Channels through which notification should be delivered
+   */
+  channels: {
+    // In-app notification (always true)
+    inApp: {
+      type: Boolean,
+      default: true
+    },
+
+    // Email notification
+    email: {
+      sent: {
+        type: Boolean,
+        default: false
+      },
+      sentAt: Date,
+      error: String
+    },
+
+    // SMS notification
+    sms: {
+      sent: {
+        type: Boolean,
+        default: false
+      },
+      sentAt: Date,
+      error: String
+    },
+
+    // Push notification
+    push: {
+      sent: {
+        type: Boolean,
+        default: false
+      },
+      sentAt: Date,
+      error: String
+    }
+  },
+
+  // ==================== Scheduling ====================
+
+  /**
+   * Scheduled delivery time (null for immediate)
+   */
+  scheduledFor: {
+    type: Date,
+    default: null
+  },
+
+  /**
+   * Expiration time (after which notification should be removed)
+   */
+  expiresAt: {
+    type: Date,
+    default: null
+  },
+
+  // ==================== Metadata ====================
+
+  /**
+   * Additional metadata
+   */
+  metadata: {
+    // Source of notification
+    source: String,
+
+    // Campaign or batch ID
+    campaignId: String,
+
+    // Tags for categorization
+    tags: [String],
+
+    // Custom data
+    custom: Schema.Types.Mixed
+  }
 };
 
+// Create schema with timestamps
 const notificationSchema = new Schema(notificationSchemaDefinition, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -418,361 +355,277 @@ const notificationSchema = new Schema(notificationSchemaDefinition, {
 });
 
 // ==================== Indexes ====================
-notificationSchema.index({ tenantId: 1, notificationId: 1 }, { unique: true });
-notificationSchema.index({ tenantId: 1, recipientId: 1, 'status.isRead': 1, createdAt: -1 });
-notificationSchema.index({ tenantId: 1, recipientId: 1, notificationType: 1, createdAt: -1 });
-notificationSchema.index({ tenantId: 1, recipientId: 1, category: 1, createdAt: -1 });
-notificationSchema.index({ tenantId: 1, 'status.current': 1, 'scheduling.scheduledFor': 1 });
-notificationSchema.index({ tenantId: 1, 'grouping.groupId': 1 });
-notificationSchema.index({ tenantId: 1, 'source.triggerId': 1 });
-notificationSchema.index({ 'status.expiresAt': 1 }, { expireAfterSeconds: 0 });
-notificationSchema.index({ createdAt: -1 });
-notificationSchema.index({ searchTokens: 1 });
 
-// Text search index
-notificationSchema.index({
-  'content.title': 'text',
-  'content.body': 'text'
-});
+// Compound index for efficient user notification queries
+notificationSchema.index({ userId: 1, read: 1, status: 1 });
+notificationSchema.index({ userId: 1, createdAt: -1 });
+notificationSchema.index({ userId: 1, type: 1, read: 1 });
+
+// Tenant isolation
+notificationSchema.index({ tenantId: 1, userId: 1 });
+
+// Status and priority queries
+notificationSchema.index({ status: 1, priority: -1, createdAt: -1 });
+
+// Scheduled notifications
+notificationSchema.index({ scheduledFor: 1, status: 1 });
+
+// Expiration cleanup
+notificationSchema.index({ expiresAt: 1 });
+
+// Entity relationship queries
+notificationSchema.index({ 'relatedEntity.entityType': 1, 'relatedEntity.entityId': 1 });
 
 // ==================== Virtual Fields ====================
-notificationSchema.virtual('isUnread').get(function() {
-  return !this.status.isRead;
-});
 
+/**
+ * Check if notification is expired
+ */
 notificationSchema.virtual('isExpired').get(function() {
-  return this.status.expiresAt && this.status.expiresAt < new Date();
+  if (!this.expiresAt) return false;
+  return this.expiresAt < new Date();
 });
 
-notificationSchema.virtual('isDelivered').get(function() {
-  return this.channels.inApp.delivered || 
-         this.channels.email.delivered || 
-         this.channels.sms.delivered || 
-         this.channels.push.delivered;
+/**
+ * Check if notification is scheduled for future
+ */
+notificationSchema.virtual('isScheduled').get(function() {
+  if (!this.scheduledFor) return false;
+  return this.scheduledFor > new Date();
 });
 
-notificationSchema.virtual('primaryChannel').get(function() {
-  if (this.channels.inApp.enabled) return 'in_app';
-  if (this.channels.email.enabled) return 'email';
-  if (this.channels.push.enabled) return 'push';
-  if (this.channels.sms.enabled) return 'sms';
-  return 'in_app';
-});
-
-// ==================== Pre-save Middleware ====================
-notificationSchema.pre('save', async function(next) {
-  try {
-    if (!this.notificationId && this.isNew) {
-      this.notificationId = await this.constructor.generateNotificationId(this.tenantId);
-    }
-
-    // Auto-expire old notifications if not persistent
-    if (!this.status.expiresAt && !this.preferences.persistUntilRead) {
-      const expiryDays = 30;
-      this.status.expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);
-    }
-
-    this.updateSearchTokens();
-    next();
-  } catch (error) {
-    next(error);
-  }
+/**
+ * Check if notification is unread and active
+ */
+notificationSchema.virtual('isUnread').get(function() {
+  return !this.read && this.status === 'active' && !this.isExpired;
 });
 
 // ==================== Instance Methods ====================
-notificationSchema.methods.updateSearchTokens = function() {
-  const tokens = new Set();
-  
-  if (this.content.title) {
-    this.content.title.toLowerCase().split(/\s+/).forEach(token => {
-      if (token.length > 2) tokens.add(token);
-    });
-  }
-  
-  if (this.content.body) {
-    this.content.body.toLowerCase().split(/\s+/).forEach(token => {
-      if (token.length > 2) tokens.add(token);
-    });
-  }
-  
-  if (this.notificationId) {
-    tokens.add(this.notificationId.toLowerCase());
-  }
-  
-  this.searchTokens = Array.from(tokens);
-};
 
+/**
+ * Mark notification as read
+ */
 notificationSchema.methods.markAsRead = async function() {
-  this.status.isRead = true;
-  this.status.readAt = new Date();
-  this.channels.inApp.read = true;
-  this.channels.inApp.readAt = new Date();
-  
+  if (this.read) return this;
+
+  this.read = true;
+  this.readAt = new Date();
   await this.save();
-  
-  logger.debug('Notification marked as read', {
-    notificationId: this.notificationId,
-    recipientId: this.recipientId
-  });
-  
-  return true;
+
+  return this;
 };
 
+/**
+ * Mark notification as unread
+ */
 notificationSchema.methods.markAsUnread = async function() {
-  this.status.isRead = false;
-  this.status.readAt = null;
-  this.channels.inApp.read = false;
-  this.channels.inApp.readAt = null;
-  
+  this.read = false;
+  this.readAt = null;
   await this.save();
-  return true;
+
+  return this;
 };
 
+/**
+ * Archive notification
+ */
 notificationSchema.methods.archive = async function() {
-  this.status.isArchived = true;
-  this.status.archivedAt = new Date();
-  
+  this.status = 'archived';
   await this.save();
-  return true;
+
+  return this;
 };
 
-notificationSchema.methods.dismiss = async function() {
-  if (!this.preferences.canDismiss) {
-    throw new AppError('Notification cannot be dismissed', 400, 'CANNOT_DISMISS');
-  }
-  
-  this.actions.push({
-    actionType: 'dismissed',
-    performedAt: new Date()
-  });
-  
-  this.status.isRead = true;
-  this.status.readAt = new Date();
-  
+/**
+ * Soft delete notification
+ */
+notificationSchema.methods.softDelete = async function() {
+  this.status = 'deleted';
   await this.save();
-  return true;
+
+  return this;
 };
 
-notificationSchema.methods.snooze = async function(snoozeUntil) {
-  if (!this.preferences.canSnooze) {
-    throw new AppError('Notification cannot be snoozed', 400, 'CANNOT_SNOOZE');
-  }
-  
-  this.actions.push({
-    actionType: 'snoozed',
-    performedAt: new Date(),
-    metadata: { snoozeUntil }
-  });
-  
-  this.scheduling.scheduledFor = snoozeUntil;
-  
-  await this.save();
-  return true;
+/**
+ * Check if notification should be sent via email
+ */
+notificationSchema.methods.shouldSendEmail = function() {
+  return !this.channels.email.sent &&
+         this.priority !== 'low' &&
+         !this.isExpired;
 };
 
-notificationSchema.methods.recordClick = async function() {
-  this.actions.push({
-    actionType: 'clicked',
-    performedAt: new Date()
-  });
-  
-  if (this.channels.inApp.enabled) {
-    this.channels.inApp.read = true;
-    this.channels.inApp.readAt = new Date();
+/**
+ * Record email sent
+ */
+notificationSchema.methods.recordEmailSent = async function(error = null) {
+  this.channels.email.sent = !error;
+  this.channels.email.sentAt = new Date();
+  if (error) {
+    this.channels.email.error = error.message || String(error);
   }
-  
-  this.status.isRead = true;
-  this.status.readAt = new Date();
-  
   await this.save();
-  return true;
-};
 
-notificationSchema.methods.updateDeliveryStatus = async function(channel, status, metadata = {}) {
-  const channelData = this.channels[channel];
-  
-  if (!channelData) {
-    throw new AppError('Invalid channel', 400, 'INVALID_CHANNEL');
-  }
-  
-  switch (status) {
-    case 'sent':
-      channelData.sent = true;
-      channelData.sentAt = new Date();
-      if (metadata.messageId) channelData.messageId = metadata.messageId;
-      break;
-      
-    case 'delivered':
-      channelData.delivered = true;
-      channelData.deliveredAt = new Date();
-      this.status.current = 'delivered';
-      break;
-      
-    case 'opened':
-      if (channel === 'email') {
-        channelData.opened = true;
-        channelData.openedAt = new Date();
-      }
-      break;
-      
-    case 'clicked':
-      if (channel === 'email' || channel === 'push') {
-        channelData.clicked = true;
-        channelData.clickedAt = new Date();
-      }
-      break;
-      
-    case 'failed':
-      channelData.error = metadata.error;
-      this.status.current = 'failed';
-      break;
-  }
-  
-  this.analytics.deliveryAttempts += 1;
-  this.analytics.lastDeliveryAttempt = new Date();
-  
-  await this.save();
-  return true;
+  return this;
 };
 
 // ==================== Static Methods ====================
-notificationSchema.statics.generateNotificationId = async function(tenantId) {
-  const prefix = 'NOTIF';
-  const randomPart = stringHelper.generateRandomString(10, 'ALPHANUMERIC').toUpperCase();
-  return `${prefix}-${randomPart}`;
-};
 
-notificationSchema.statics.findByRecipient = async function(tenantId, recipientId, options = {}) {
+/**
+ * Get all notifications for a user
+ */
+notificationSchema.statics.getByUserId = async function(userId, options = {}) {
   const {
-    unreadOnly = false,
-    category,
-    type,
-    includeArchived = false,
-    limit = 50,
+    limit = 20,
     skip = 0,
+    unreadOnly = false,
+    type = null,
+    priority = null,
     sort = { createdAt: -1 }
   } = options;
-  
+
   const query = {
-    tenantId,
-    recipientId,
-    isDeleted: false
+    userId,
+    status: 'active'
   };
-  
+
   if (unreadOnly) {
-    query['status.isRead'] = false;
+    query.read = false;
   }
-  
-  if (!includeArchived) {
-    query['status.isArchived'] = false;
-  }
-  
-  if (category) {
-    query.category = category;
-  }
-  
+
   if (type) {
-    query.notificationType = type;
+    query.type = type;
   }
-  
-  const [notifications, total] = await Promise.all([
+
+  if (priority) {
+    query.priority = priority;
+  }
+
+  // Exclude expired notifications
+  query.$or = [
+    { expiresAt: { $exists: false } },
+    { expiresAt: { $gt: new Date() } }
+  ];
+
+  const [notifications, total, unreadCount] = await Promise.all([
     this.find(query)
       .limit(limit)
       .skip(skip)
       .sort(sort)
-      .select('-searchTokens'),
-    this.countDocuments(query)
+      .populate('sender.userId', 'profile.firstName profile.lastName profile.avatar'),
+    this.countDocuments(query),
+    this.countDocuments({ userId, read: false, status: 'active' })
   ]);
-  
+
   return {
     notifications,
     total,
+    unreadCount,
     hasMore: total > skip + notifications.length
   };
 };
 
-notificationSchema.statics.getUnreadCount = async function(tenantId, recipientId, options = {}) {
-  const { category } = options;
-  
-  const query = {
-    tenantId,
-    recipientId,
-    'status.isRead': false,
-    'status.isArchived': false,
-    isDeleted: false
-  };
-  
-  if (category) {
-    query.category = category;
-  }
-  
-  return await this.countDocuments(query);
-};
-
-notificationSchema.statics.markAllAsRead = async function(tenantId, recipientId, options = {}) {
-  const { category, type } = options;
-  
-  const query = {
-    tenantId,
-    recipientId,
-    'status.isRead': false,
-    isDeleted: false
-  };
-  
-  if (category) {
-    query.category = category;
-  }
-  
-  if (type) {
-    query.notificationType = type;
-  }
-  
-  const result = await this.updateMany(query, {
-    $set: {
-      'status.isRead': true,
-      'status.readAt': new Date(),
-      'channels.inApp.read': true,
-      'channels.inApp.readAt': new Date()
-    }
+/**
+ * Get unread count for user
+ */
+notificationSchema.statics.getUnreadCount = async function(userId) {
+  return await this.countDocuments({
+    userId,
+    read: false,
+    status: 'active',
+    $or: [
+      { expiresAt: { $exists: false } },
+      { expiresAt: { $gt: new Date() } }
+    ]
   });
-  
-  return result.modifiedCount;
 };
 
-notificationSchema.statics.getPendingScheduled = async function() {
-  const now = new Date();
-  
-  const notifications = await this.find({
-    'status.current': 'pending',
-    'scheduling.scheduledFor': { $lte: now },
-    isDeleted: false
-  })
-  .sort({ 'scheduling.scheduledFor': 1 })
-  .limit(100);
-  
-  return notifications;
+/**
+ * Mark all notifications as read for a user
+ */
+notificationSchema.statics.markAllAsRead = async function(userId) {
+  const result = await this.updateMany(
+    { userId, read: false, status: 'active' },
+    {
+      $set: {
+        read: true,
+        readAt: new Date()
+      }
+    }
+  );
+
+  return result;
 };
 
+/**
+ * Create notification for user
+ */
+notificationSchema.statics.createForUser = async function(userId, userRole, notificationData) {
+  const notification = new this({
+    userId,
+    userRole,
+    ...notificationData,
+    status: 'active'
+  });
+
+  await notification.save();
+
+  return notification;
+};
+
+/**
+ * Create bulk notifications for multiple users
+ */
+notificationSchema.statics.createBulk = async function(notifications) {
+  const results = await this.insertMany(
+    notifications.map(n => ({
+      ...n,
+      status: 'active',
+      createdAt: new Date()
+    }))
+  );
+
+  return results;
+};
+
+/**
+ * Delete old archived/read notifications
+ */
+notificationSchema.statics.cleanupOld = async function(daysOld = 30) {
+  const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
+
+  const result = await this.deleteMany({
+    $or: [
+      { status: 'deleted' },
+      { status: 'archived', updatedAt: { $lt: cutoffDate } },
+      { read: true, createdAt: { $lt: cutoffDate } }
+    ]
+  });
+
+  return result;
+};
+
+/**
+ * Delete expired notifications
+ */
 notificationSchema.statics.cleanupExpired = async function() {
   const result = await this.deleteMany({
-    'status.expiresAt': { $lt: new Date() },
-    'status.isRead': true
+    expiresAt: { $exists: true, $lt: new Date() }
   });
-  
-  logger.info('Cleaned up expired notifications', {
-    deletedCount: result.deletedCount
-  });
-  
-  return result.deletedCount;
+
+  return result;
 };
 
-notificationSchema.statics.getNotificationStats = async function(tenantId, recipientId) {
+/**
+ * Get notification statistics for user
+ */
+notificationSchema.statics.getStats = async function(userId) {
   const stats = await this.aggregate([
     {
       $match: {
-        tenantId: new mongoose.Types.ObjectId(tenantId),
-        recipientId: new mongoose.Types.ObjectId(recipientId),
-        isDeleted: false
+        userId: mongoose.Types.ObjectId(userId),
+        status: 'active'
       }
     },
     {
@@ -783,21 +636,13 @@ notificationSchema.statics.getNotificationStats = async function(tenantId, recip
               _id: null,
               total: { $sum: 1 },
               unread: {
-                $sum: { $cond: [{ $eq: ['$status.isRead', false] }, 1, 0] }
+                $sum: { $cond: [{ $eq: ['$read', false] }, 1, 0] }
               },
-              archived: {
-                $sum: { $cond: ['$status.isArchived', 1, 0] }
-              }
-            }
-          }
-        ],
-        byCategory: [
-          {
-            $group: {
-              _id: '$category',
-              count: { $sum: 1 },
-              unread: {
-                $sum: { $cond: [{ $eq: ['$status.isRead', false] }, 1, 0] }
+              byPriority: {
+                $push: {
+                  priority: '$priority',
+                  read: '$read'
+                }
               }
             }
           }
@@ -805,25 +650,34 @@ notificationSchema.statics.getNotificationStats = async function(tenantId, recip
         byType: [
           {
             $group: {
-              _id: '$notificationType',
-              count: { $sum: 1 }
+              _id: '$type',
+              count: { $sum: 1 },
+              unread: {
+                $sum: { $cond: [{ $eq: ['$read', false] }, 1, 0] }
+              }
             }
-          },
-          { $sort: { count: -1 } },
-          { $limit: 10 }
+          }
         ]
       }
     }
   ]);
-  
-  const result = stats[0];
-  
-  return {
-    overview: result.overview[0] || { total: 0, unread: 0, archived: 0 },
-    byCategory: result.byCategory,
-    byType: result.byType
-  };
+
+  return stats[0] || { overview: [], byType: [] };
 };
+
+// ==================== Middleware ====================
+
+/**
+ * Pre-save middleware
+ */
+notificationSchema.pre('save', function(next) {
+  // Set default expiration for certain notification types (7 days)
+  if (!this.expiresAt && this.type === 'announcement') {
+    this.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  }
+
+  next();
+});
 
 /**
  * Export schema for ConnectionManager registration
@@ -831,15 +685,18 @@ notificationSchema.statics.getNotificationStats = async function(tenantId, recip
 module.exports = {
   schema: notificationSchema,
   modelName: 'Notification',
-  
+
+  // Legacy export for backward compatibility
   createModel: function(connection) {
     if (connection) {
       return connection.model('Notification', notificationSchema);
     } else {
+      // Fallback to default mongoose connection
       return mongoose.model('Notification', notificationSchema);
     }
   }
 };
 
+// For backward compatibility, also export as direct model
 module.exports.Notification = mongoose.model('Notification', notificationSchema);
 module.exports.notificationSchema = notificationSchema;

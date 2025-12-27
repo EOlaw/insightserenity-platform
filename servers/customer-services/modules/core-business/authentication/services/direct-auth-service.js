@@ -2251,6 +2251,11 @@ class DirectAuthService {
             payload.clientId = user.clientId;
         }
 
+        // Add consultantId if user is a consultant type
+        if (user.consultantId) {
+            payload.consultantId = user.consultantId;
+        }
+
         return jwt.sign(
             payload,
             this.config.jwtSecret,

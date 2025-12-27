@@ -85,6 +85,19 @@ export interface Consultation {
   }
 }
 
+export interface ConsultationMetrics {
+  totalConsultations: number
+  completedConsultations: number
+  cancelledConsultations: number
+  completionRate: number
+  totalHours: number
+  averageRating: number
+  uniqueClients: number
+  totalRevenue: number
+  averageSatisfaction: number
+  objectivesMetAverage: number
+}
+
 export interface BookingData {
   packageId: string
   consultantId: string
@@ -145,7 +158,7 @@ export const consultationsApi = {
     const url = `/consultations/me${query ? `?${query}` : ''}`
 
     const response = await api.get<{ success: boolean; data: Consultation[] }>(url)
-    return response.data.data
+    return response.data
   },
 
   /**
@@ -182,6 +195,125 @@ export const consultationsApi = {
         reason,
       }
     )
+    return response.data
+  },
+
+  /**
+   * Start consultation
+   */
+  startConsultation: async (consultationId: string): Promise<Consultation> => {
+    const response = await api.post<{ success: boolean; data: Consultation }>(
+      `/consultations/${consultationId}/start`
+    )
+    return response.data
+  },
+
+  /**
+   * Complete consultation
+   */
+  completeConsultation: async (
+    consultationId: string,
+    outcomeData?: {
+      summary?: string
+      overallStatus?: string
+      keyAchievements?: string[]
+    }
+  ): Promise<Consultation> => {
+    const response = await api.post<{ success: boolean; data: Consultation }>(
+      `/consultations/${consultationId}/complete`,
+      outcomeData
+    )
+    return response.data
+  },
+
+  /**
+   * Add note to consultation
+   */
+  addNote: async (
+    consultationId: string,
+    noteData: {
+      content: string
+      type?: 'general' | 'technical' | 'action' | 'decision' | 'private'
+      visibility?: 'public' | 'internal' | 'private'
+    }
+  ): Promise<Consultation> => {
+    const response = await api.post<{ success: boolean; data: Consultation }>(
+      `/consultations/${consultationId}/notes`,
+      noteData
+    )
+    return response.data
+  },
+
+  /**
+   * Mark client attendance
+   */
+  markAttendance: async (
+    consultationId: string,
+    userId: string,
+    attended: boolean
+  ): Promise<Consultation> => {
+    const response = await api.post<{ success: boolean; data: Consultation }>(
+      `/consultations/${consultationId}/attendance`,
+      { userId, attended }
+    )
+    return response.data
+  },
+
+  /**
+   * Submit consultant feedback
+   */
+  submitConsultantFeedback: async (
+    consultationId: string,
+    feedbackData: {
+      feedback: string
+      rating?: number
+      strengths?: string[]
+      areasForImprovement?: string[]
+      wouldRecommend?: boolean
+    }
+  ): Promise<Consultation> => {
+    const response = await api.post<{ success: boolean; data: Consultation }>(
+      `/consultations/${consultationId}/feedback/consultant`,
+      feedbackData
+    )
+    return response.data
+  },
+
+  /**
+   * Get consultation metrics
+   */
+  getMetrics: async (filters?: {
+    consultantId?: string
+    startDate?: string
+    endDate?: string
+  }): Promise<ConsultationMetrics> => {
+    const queryParams = new URLSearchParams()
+    if (filters?.consultantId) queryParams.append('consultantId', filters.consultantId)
+    if (filters?.startDate) queryParams.append('startDate', filters.startDate)
+    if (filters?.endDate) queryParams.append('endDate', filters.endDate)
+
+    const query = queryParams.toString()
+    const url = `/consultations/metrics${query ? `?${query}` : ''}`
+
+    const response = await api.get<{ success: boolean; data: ConsultationMetrics }>(url)
+    return response.data
+  },
+
+  /**
+   * Get upcoming consultations
+   */
+  getUpcomingConsultations: async (filters?: {
+    consultantId?: string
+    days?: number
+  }): Promise<Consultation[]> => {
+    const queryParams = new URLSearchParams()
+    if (filters?.consultantId) queryParams.append('consultantId', filters.consultantId)
+    if (filters?.days) queryParams.append('days', filters.days.toString())
+
+    const query = queryParams.toString()
+    const url = `/consultations/upcoming${query ? `?${query}` : ''}`
+
+    const response = await api.get<{ success: boolean; data: Consultation[] }>(url)
     return response.data
   },
 

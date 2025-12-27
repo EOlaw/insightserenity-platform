@@ -42,6 +42,8 @@ class ConsultationController {
         this.submitConsultantFeedback = this.submitConsultantFeedback.bind(this);
         this.getConsultationMetrics = this.getConsultationMetrics.bind(this);
         this.getUpcomingConsultations = this.getUpcomingConsultations.bind(this);
+        this.addNote = this.addNote.bind(this);
+        this.markAttendance = this.markAttendance.bind(this);
         this.deleteConsultation = this.deleteConsultation.bind(this);
     }
 
@@ -667,6 +669,57 @@ class ConsultationController {
             );
 
             this._sendSuccess(res, consultations);
+
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Add note to consultation
+     * POST /consultations/:consultationId/notes
+     */
+    async addNote(req, res, next) {
+        try {
+            const { consultationId } = req.params;
+            const noteData = req.body;
+
+            const consultation = await consultationService.addNote(
+                consultationId,
+                noteData,
+                {
+                    tenantId: this._getTenantId(req),
+                    userId: this._getUserId(req)
+                }
+            );
+
+            this._sendSuccess(res, consultation, 'Note added successfully', 201);
+
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Mark client attendance
+     * POST /consultations/:consultationId/attendance
+     */
+    async markAttendance(req, res, next) {
+        try {
+            const { consultationId } = req.params;
+            const { userId, attended } = req.body;
+
+            const consultation = await consultationService.markAttendance(
+                consultationId,
+                userId,
+                attended,
+                {
+                    tenantId: this._getTenantId(req),
+                    userId: this._getUserId(req)
+                }
+            );
+
+            this._sendSuccess(res, consultation, 'Attendance marked successfully');
 
         } catch (error) {
             next(error);

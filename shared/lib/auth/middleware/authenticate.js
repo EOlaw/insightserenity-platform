@@ -6,7 +6,7 @@
  */
 
 const { AppError } = require('../../utils/app-error');
-const logger = require('../../utils/logger');
+const logger = require('../../utils/logger').createLogger({ serviceName: 'authenticate-middleware' });
 const TokenService = require('../services/token-service');
 const BlacklistService = require('../services/blacklist-service');
 const SessionService = require('../services/session-service');
@@ -416,10 +416,12 @@ function authenticate(options = {}) {
 
     return async (req, res, next) => {
         try {
+            console.log('[AUTH MIDDLEWARE] Middleware invoked for path:', req.path);
             authStats.totalRequests++;
 
             // Extract token from request
             const { token, source } = extractToken(req, config.tokenSources);
+            console.log('[AUTH MIDDLEWARE] Token extracted:', token ? 'YES' : 'NO', 'Source:', source);
 
             // Handle missing token
             if (!token) {
@@ -467,10 +469,23 @@ function authenticate(options = {}) {
                 decoded = TokenService.verifyToken(token, 'access', {
                     ip: req.ip,
                     userAgent: req.get('user-agent'),
-                    fingerprint: req.body?.deviceFingerprint || req.headers['x-device-fingerprint']
+                    fingerprint: req.body?.deviceFingerprint || req.headers['x-device-fingerprint'],
+                    verifyOptions: {
+                        // Make audience and issuer optional for universal compatibility
+                        audience: undefined,
+                        issuer: undefined
+                    }
                 });
             } catch (error) {
                 authStats.failedAuth++;
+
+                // Log full error details for debugging
+                console.log('[TOKEN VERIFY ERROR]', {
+                    name: error.name,
+                    message: error.message,
+                    code: error.code,
+                    stack: error.stack
+                });
 
                 // Handle specific token errors
                 switch (error.code) {
@@ -483,11 +498,26 @@ function authenticate(options = {}) {
                         ));
 
                     case 'INVALID_TOKEN':
+                    case 'INVALID_TOKEN_TYPE':
+                    case 'VERIFICATION_FAILED':
                         authStats.invalidTokens++;
+                        logger.error('Invalid token', {
+                            error: error.message,
+                            code: error.code,
+                            path: req.path
+                        });
                         return next(new AppError(
                             'Invalid access token provided.',
                             401,
                             'INVALID_TOKEN'
+                        ));
+
+                    case 'TOKEN_NOT_ACTIVE':
+                        authStats.invalidTokens++;
+                        return next(new AppError(
+                            'Token not yet valid.',
+                            401,
+                            'TOKEN_NOT_ACTIVE'
                         ));
 
                     case 'IP_MISMATCH':
@@ -509,9 +539,10 @@ function authenticate(options = {}) {
 
                     default:
                         authStats.invalidTokens++;
-                        logger.error('Token verification failed', {
+                        logger.error('Unhandled token verification error', {
                             error: error.message,
                             code: error.code,
+                            name: error.name,
                             path: req.path
                         });
                         return next(new AppError(
@@ -555,11 +586,33 @@ function authenticate(options = {}) {
             }
 
             // Get user from database for fresh data
-            const User = database.getModel('User');
-            const user = await User.findOne({
-                _id: decoded.id,
-                'organizations.organizationId': decoded.tenantId
-            });
+            const dbService = database.getDatabaseService();
+            const User = dbService.getModel('User', 'customer');
+
+            if (!User) {
+                authStats.failedAuth++;
+                logger.error('User model not available', {
+                    userId: decoded.id
+                });
+                return next(new AppError(
+                    'Database model not available.',
+                    500,
+                    'MODEL_NOT_AVAILABLE'
+                ));
+            }
+
+            // Universal user lookup - BYPASS THE MODEL AND USE RAW CONNECTION
+            console.log('[AUTH MIDDLEWARE] Looking up user:', decoded.id);
+            console.log('[AUTH MIDDLEWARE] Bypassing User model - querying directly via connection');
+
+            // Get the MongoDB native collection directly
+            const mongoose = require('mongoose');
+            const ObjectId = mongoose.Types.ObjectId;
+            const usersCollection = User.db.collection('users');
+
+            console.log('[AUTH MIDDLEWARE] Querying users collection directly...');
+            const user = await usersCollection.findOne({ _id: new ObjectId(decoded.id) });
+            console.log('[AUTH MIDDLEWARE] Direct query completed! User found:', user ? 'YES' : 'NO');
 
             if (!user) {
                 authStats.failedAuth++;
@@ -678,6 +731,8 @@ function authenticate(options = {}) {
                 organizationId: decoded.organizationId,
                 permissions: user.permissions || [],
                 organizations: user.organizations || [],  // ✅ ADD THIS LINE
+                clientId: decoded.clientId || user.clientId,
+                consultantId: decoded.consultantId || user.consultantId,
                 mfaEnabled: user.mfa?.enabled || false,
                 emailVerified: user.verification?.email?.verified || false,
                 phoneVerified: user.verification?.phone?.verified || false,
@@ -709,7 +764,9 @@ function authenticate(options = {}) {
                 });
             }
 
+            console.log('[AUTH MIDDLEWARE] Authentication successful, calling next()');
             next();
+            console.log('[AUTH MIDDLEWARE] next() called successfully');
 
         } catch (error) {
             authStats.failedAuth++;

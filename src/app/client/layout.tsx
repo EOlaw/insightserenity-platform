@@ -17,7 +17,7 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
+  // Bell, // Disabled with notifications
   Search,
   Sparkles,
   Loader2,
@@ -96,14 +96,15 @@ interface Consultant {
   skills?: Array<{ name: string }>
 }
 
-interface Notification {
-  _id: string
-  title: string
-  message: string
-  type: string
-  read: boolean
-  createdAt: string
-}
+// Notification interface - Disabled for now
+// interface Notification {
+//   _id: string
+//   title: string
+//   message: string
+//   type: string
+//   read: boolean
+//   createdAt: string
+// }
 
 interface ClientLayoutProps {
   children: React.ReactNode
@@ -124,20 +125,20 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
 
-  // Notification states
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [showNotifications, setShowNotifications] = useState(false)
-  const notificationRef = useRef<HTMLDivElement>(null)
+  // Notification states - Disabled for now
+  // const [notifications, setNotifications] = useState<Notification[]>([])
+  // const [unreadCount, setUnreadCount] = useState(0)
+  // const [showNotifications, setShowNotifications] = useState(false)
+  // const notificationRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadUserData()
-    loadNotifications()
+    // loadNotifications() // Disabled for now
 
     // Poll for new notifications every 30 seconds
-    const notificationInterval = setInterval(loadNotifications, 30000)
+    // const notificationInterval = setInterval(loadNotifications, 30000)
 
-    return () => clearInterval(notificationInterval)
+    // return () => clearInterval(notificationInterval)
   }, [])
 
   // Close dropdowns when clicking outside
@@ -146,9 +147,9 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setShowSearchResults(false)
       }
-      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
-        setShowNotifications(false)
-      }
+      // if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+      //   setShowNotifications(false)
+      // }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
@@ -211,36 +212,37 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     }
   }
 
-  const loadNotifications = async () => {
-    try {
-      const response = await api.get('/notifications/me?limit=10')
-      const notifs = response.data?.notifications || response.data || []
-      setNotifications(notifs)
-      setUnreadCount(notifs.filter((n: Notification) => !n.read).length)
-    } catch (error) {
-      console.error('Failed to load notifications:', error)
-    }
-  }
+  // Notification functions - Disabled for now
+  // const loadNotifications = async () => {
+  //   try {
+  //     const response = await api.get('/notifications/me?limit=10')
+  //     const notifs = response.data?.notifications || response.data || []
+  //     setNotifications(notifs)
+  //     setUnreadCount(notifs.filter((n: Notification) => !n.read).length)
+  //   } catch (error) {
+  //     console.error('Failed to load notifications:', error)
+  //   }
+  // }
 
-  const markAsRead = async (notificationId: string) => {
-    try {
-      await api.put(`/notifications/${notificationId}/read`)
-      loadNotifications()
-    } catch (error) {
-      console.error('Failed to mark notification as read:', error)
-    }
-  }
+  // const markAsRead = async (notificationId: string) => {
+  //   try {
+  //     await api.put(`/notifications/${notificationId}/read`)
+  //     loadNotifications()
+  //   } catch (error) {
+  //     console.error('Failed to mark notification as read:', error)
+  //   }
+  // }
 
-  const markAllAsRead = async () => {
-    try {
-      await api.put('/notifications/mark-all-read')
-      loadNotifications()
-      toast.success('All notifications marked as read')
-    } catch (error) {
-      console.error('Failed to mark all as read:', error)
-      toast.error('Failed to update notifications')
-    }
-  }
+  // const markAllAsRead = async () => {
+  //   try {
+  //     await api.put('/notifications/mark-all-read')
+  //     loadNotifications()
+  //     toast.success('All notifications marked as read')
+  //   } catch (error) {
+  //     console.error('Failed to mark all as read:', error)
+  //     toast.error('Failed to update notifications')
+  //   }
+  // }
 
   const handleLogout = async () => {
     if (isLoggingOut) return
@@ -522,8 +524,8 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
               <Search className="h-4 w-4" />
             </button>
 
-            {/* Notifications */}
-            <div className="relative" ref={notificationRef}>
+            {/* Notifications - Disabled for now */}
+            {/* <div className="relative" ref={notificationRef}>
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="p-2 text-gray-500 hover:text-gray-700 relative transition-colors"
@@ -536,7 +538,6 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                 )}
               </button>
 
-              {/* Notifications Dropdown */}
               {showNotifications && (
                 <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 max-h-96 overflow-y-auto z-50">
                   <div className="p-3 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
@@ -593,7 +594,7 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
                   </div>
                 </div>
               )}
-            </div>
+            </div> */}
 
             {/* Profile Menu */}
             <Link href="/client/profile">
