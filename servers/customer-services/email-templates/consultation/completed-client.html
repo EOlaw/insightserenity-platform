@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consultation Completed</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
+        .content { padding: 40px 30px; }
+        .success-badge { background-color: #10b981; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+        .summary-box { background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 20px; margin: 25px 0; border-radius: 4px; }
+        .detail-row { margin-bottom: 12px; }
+        .detail-label { font-weight: 600; color: #6b7280; }
+        .detail-value { color: #111827; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; margin: 10px 8px; }
+        .button-secondary { background: #ffffff; color: #10b981; border: 2px solid #10b981; }
+        .deliverables { background-color: #f8fafc; padding: 20px; border-radius: 6px; margin: 20px 0; }
+        .deliverables h3 { margin-top: 0; color: #111827; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+        @media only screen and (max-width: 600px) {
+            .email-container { margin: 0; border-radius: 0; }
+            .content { padding: 30px 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>✓ Consultation Completed</h1>
+        </div>
+
+        <div class="content">
+            <div class="success-badge">COMPLETED</div>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Hi <strong>{{clientName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Thank you for your consultation with <strong>{{consultantName}}</strong>. We hope it was valuable and insightful.
+            </p>
+
+            <div class="summary-box">
+                <h3 style="margin-top: 0; color: #111827;">Consultation Summary</h3>
+                <div class="detail-row">
+                    <div class="detail-label">Topic:</div>
+                    <div class="detail-value">{{consultationTitle}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Date:</div>
+                    <div class="detail-value">{{completedDate}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Duration:</div>
+                    <div class="detail-value">{{actualDuration}} minutes</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Credits Used:</div>
+                    <div class="detail-value">{{creditsDeducted}} credit(s)</div>
+                </div>
+            </div>
+
+            {{#if hasDeliverables}}
+            <div class="deliverables">
+                <h3>📄 Deliverables</h3>
+                <p style="margin: 10px 0;">Your consultant has provided the following materials:</p>
+                <ul style="margin: 10px 0; padding-left: 20px;">
+                    {{#each deliverables}}
+                    <li><a href="{{this.url}}" style="color: #10b981;">{{this.name}}</a></li>
+                    {{/each}}
+                </ul>
+            </div>
+            {{/if}}
+
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{{feedbackUrl}}" class="cta-button">Share Your Feedback</a>
+                <a href="{{dashboardUrl}}" class="cta-button button-secondary">View Dashboard</a>
+            </div>
+
+            <div style="background-color: #eff6ff; padding: 16px; border-radius: 6px; margin: 25px 0;">
+                <strong>💡 What's Next?</strong>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px;">
+                    <li>Review deliverables and action items</li>
+                    <li>Schedule a follow-up if needed</li>
+                    <li>Share your feedback to help us improve</li>
+                    <li>Check your remaining credit balance</li>
+                </ul>
+            </div>
+
+            <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">
+                Questions about this consultation? <a href="mailto:{{supportEmail}}" style="color: #10b981;">Contact Support</a>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Professional Business Consulting
+            </p>
+        </div>
+    </div>
+</body>
+</html>

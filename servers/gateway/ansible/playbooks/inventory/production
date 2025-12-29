@@ -1,0 +1,28 @@
+[gateways]
+gateway-1 ansible_host=10.0.1.101 ansible_user=ubuntu is_master=true priority=100
+gateway-2 ansible_host=10.0.1.102 ansible_user=ubuntu is_master=false priority=90
+
+[gateways:vars]
+virtual_ip=10.0.1.100
+vrrp_router_id=51
+vrrp_interface=eth0
+
+[admin_backends]
+admin-1 ansible_host=10.0.2.101 ansible_user=ubuntu weight=100
+admin-2 ansible_host=10.0.2.102 ansible_user=ubuntu weight=100
+admin-3 ansible_host=10.0.2.103 ansible_user=ubuntu weight=50
+
+[customer_backends]
+customer-1 ansible_host=10.0.3.101 ansible_user=ubuntu
+customer-2 ansible_host=10.0.3.102 ansible_user=ubuntu
+customer-3 ansible_host=10.0.3.103 ansible_user=ubuntu
+customer-4 ansible_host=10.0.3.104 ansible_user=ubuntu
+customer-5 ansible_host=10.0.3.105 ansible_user=ubuntu
+
+[monitoring]
+prometheus ansible_host=10.0.6.101 ansible_user=ubuntu
+grafana ansible_host=10.0.6.102 ansible_user=ubuntu
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'

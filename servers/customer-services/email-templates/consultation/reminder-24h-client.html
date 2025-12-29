@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consultation Tomorrow</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); padding: 35px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 26px; font-weight: 600; }
+        .content { padding: 35px 30px; }
+        .reminder-badge { background-color: #f59e0b; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+        .time-box { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff; padding: 25px; text-align: center; border-radius: 8px; margin: 25px 0; }
+        .time-box .countdown { font-size: 36px; font-weight: 700; margin: 10px 0; }
+        .consultation-details { background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 20px; margin: 25px 0; border-radius: 4px; }
+        .detail-row { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb; }
+        .detail-row:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+        .detail-label { font-weight: 600; color: #6b7280; margin-bottom: 4px; }
+        .detail-value { color: #111827; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; margin: 10px 8px; }
+        .button-secondary { background: #ffffff; color: #3b82f6; border: 2px solid #3b82f6; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+        @media only screen and (max-width: 600px) {
+            .email-container { margin: 0; border-radius: 0; }
+            .content { padding: 25px 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>⏰ Consultation Tomorrow</h1>
+        </div>
+
+        <div class="content">
+            <div class="reminder-badge">24-HOUR REMINDER</div>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Hi <strong>{{clientName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                This is a friendly reminder that your consultation is scheduled for tomorrow.
+            </p>
+
+            <div class="time-box">
+                <div style="font-size: 14px; opacity: 0.9;">YOUR CONSULTATION STARTS IN</div>
+                <div class="countdown">~24 Hours</div>
+                <div style="font-size: 16px; font-weight: 600;">{{scheduledDate}} at {{scheduledTime}}</div>
+            </div>
+
+            <div class="consultation-details">
+                <div class="detail-row">
+                    <div class="detail-label">Consultation:</div>
+                    <div class="detail-value"><strong>{{consultationTitle}}</strong></div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Consultant:</div>
+                    <div class="detail-value">{{consultantName}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Duration:</div>
+                    <div class="detail-value">{{duration}} minutes</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Location:</div>
+                    <div class="detail-value">{{location}}</div>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{{meetingLink}}" class="cta-button">Join Meeting</a>
+                <a href="{{rescheduleUrl}}" class="cta-button button-secondary">Reschedule</a>
+            </div>
+
+            <div style="background-color: #eff6ff; padding: 16px; border-radius: 6px; margin: 20px 0;">
+                <strong>💡 Preparation Tips:</strong>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px;">
+                    <li>Review your consultation objectives</li>
+                    <li>Prepare any questions or materials</li>
+                    <li>Test your internet connection and audio/video</li>
+                    <li>Find a quiet space for the call</li>
+                </ul>
+            </div>
+
+            <p style="font-size: 13px; color: #6b7280; text-align: center; margin-top: 25px;">
+                You'll receive another reminder 1 hour before the consultation.
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0;">
+                <strong>Insight Serenity</strong> | Professional Business Consulting
+            </p>
+        </div>
+    </div>
+</body>
+</html>

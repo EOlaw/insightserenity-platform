@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credits Expiring Tomorrow!</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 30px; font-weight: 700; }
+        .content { padding: 40px 30px; }
+        .urgent-badge { background-color: #dc2626; color: #ffffff; padding: 10px 20px; border-radius: 25px; display: inline-block; font-size: 16px; font-weight: 700; margin-bottom: 20px; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .expiry-box { background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); padding: 35px; text-align: center; border-radius: 8px; margin: 25px 0; border: 3px solid #dc2626; }
+        .hours-remaining { font-size: 52px; font-weight: 700; color: #b91c1c; margin: 10px 0; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #ffffff; text-decoration: none; padding: 18px 45px; border-radius: 6px; font-weight: 700; margin: 20px 0; font-size: 18px; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>🚨 Last Chance - Expiring Tomorrow!</h1>
+        </div>
+
+        <div class="content">
+            <div class="urgent-badge">URGENT: EXPIRES IN 24 HOURS</div>
+
+            <p style="font-size: 17px; line-height: 1.7; font-weight: 500;">
+                Hi <strong>{{clientName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.7;">
+                <strong style="color: #dc2626;">FINAL REMINDER:</strong> Your consultation credits expire tomorrow! This is your last chance to use them.
+            </p>
+
+            <div class="expiry-box">
+                <div style="font-size: 16px; color: #7f1d1d; font-weight: 700;">EXPIRES IN LESS THAN</div>
+                <div class="hours-remaining">24 HOURS</div>
+                <div style="font-size: 20px; color: #7f1d1d; font-weight: 700; margin-top: 10px;">
+                    {{expiringCredits}} {{#if (eq expiringCredits 1)}}Credit{{else}}Credits{{/if}} Expiring
+                </div>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{bookConsultationUrl}}" class="cta-button">BOOK NOW - DON'T LOSE YOUR CREDITS!</a>
+            </div>
+
+            <div style="background-color: #7f1d1d; color: #ffffff; padding: 20px; margin: 25px 0; border-radius: 6px; text-align: center;">
+                <p style="margin: 0; font-size: 16px; font-weight: 600;">
+                    ⚠️ After tomorrow, these credits will be permanently lost!
+                </p>
+            </div>
+
+            <div style="background-color: #fffbeb; padding: 18px; border-radius: 6px; margin: 20px 0;">
+                <h4 style="margin-top: 0; color: #92400e;">Quick Booking Guide:</h4>
+                <ol style="margin: 10px 0; padding-left: 20px; font-size: 14px;">
+                    <li>Click "Book Now" button above</li>
+                    <li>Choose an available consultant</li>
+                    <li>Select a time slot (even for next week)</li>
+                    <li>Your credits will be reserved immediately</li>
+                </ol>
+            </div>
+
+            <p style="font-size: 14px; color: #6b7280; text-align: center; margin-top: 30px;">
+                Need help booking? Call us immediately at <strong>{{supportPhone}}</strong>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0;">
+                <strong>Insight Serenity</strong> | Professional Business Consulting
+            </p>
+        </div>
+    </div>
+</body>
+</html>

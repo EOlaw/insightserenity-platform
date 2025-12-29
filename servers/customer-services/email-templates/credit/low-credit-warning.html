@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Low Credit Balance</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
+        .content { padding: 40px 30px; }
+        .warning-badge { background-color: #f59e0b; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+        .balance-box { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 30px; text-align: center; border-radius: 8px; margin: 25px 0; border: 2px solid #f59e0b; }
+        .balance-amount { font-size: 44px; font-weight: 700; color: #d97706; margin: 10px 0; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: 600; margin: 15px 0; font-size: 16px; }
+        .packages { background-color: #f8fafc; padding: 20px; border-radius: 6px; margin: 20px 0; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>⚠️ Low Credit Balance</h1>
+        </div>
+
+        <div class="content">
+            <div class="warning-badge">ACTION NEEDED</div>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Hi <strong>{{clientName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Your consultation credit balance is running low. Purchase more credits to continue booking consultations.
+            </p>
+
+            <div class="balance-box">
+                <div style="font-size: 14px; color: #92400e; font-weight: 600;">REMAINING CREDITS</div>
+                <div class="balance-amount">{{remainingCredits}}</div>
+                <div style="font-size: 14px; color: #92400e;">{{#if (eq remainingCredits 1)}}Credit{{else}}Credits{{/if}} Left</div>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{purchaseUrl}}" class="cta-button">Purchase More Credits</a>
+            </div>
+
+            <div class="packages">
+                <h3 style="margin-top: 0; color: #111827; text-align: center;">Popular Packages</h3>
+                <div style="margin: 15px 0;">
+                    <div style="padding: 12px; border-bottom: 1px solid #e5e7eb;">
+                        <strong>Discovery & Assessment</strong> - 4 credits for $4,500
+                    </div>
+                    <div style="padding: 12px; border-bottom: 1px solid #e5e7eb;">
+                        <strong>Strategic Planning</strong> - 8 credits for $12,500
+                    </div>
+                    <div style="padding: 12px;">
+                        <strong>Quarterly Advisory</strong> - 16 credits for $8,900
+                    </div>
+                </div>
+            </div>
+
+            <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong>💡 Why Purchase Now?</strong>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px;">
+                    <li>Maintain momentum with your consultants</li>
+                    <li>Never miss an important session</li>
+                    <li>Best value with our multi-credit packages</li>
+                </ul>
+            </div>
+
+            <p style="font-size: 14px; color: #6b7280; text-align: center; margin-top: 25px;">
+                View all packages in your <a href="{{dashboardUrl}}" style="color: #f59e0b;">dashboard</a>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Professional Business Consulting
+            </p>
+        </div>
+    </div>
+</body>
+</html>

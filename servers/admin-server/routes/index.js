@@ -13,6 +13,14 @@ const router = express.Router();
 const { getLogger } = require('../../../shared/lib/utils/logger');
 const logger = getLogger({ serviceName: 'admin-routes' });
 
+// Helper function to check if a module exports a valid Express router
+function isValidRouter(routerModule) {
+    return routerModule && (
+        typeof routerModule === 'function' ||
+        (typeof routerModule === 'object' && routerModule.stack)
+    );
+}
+
 // ============================================================================
 // Import Module Routes
 // ============================================================================
@@ -20,8 +28,13 @@ const logger = getLogger({ serviceName: 'admin-routes' });
 // Content Management System
 let cmsRoutes;
 try {
-    cmsRoutes = require('../modules/content-management-system/routes');
-    logger.info('CMS routes loaded');
+    const routes = require('../modules/content-management-system/routes');
+    if (isValidRouter(routes)) {
+        cmsRoutes = routes;
+        logger.info('CMS routes loaded');
+    } else {
+        logger.warn('CMS routes not available - invalid router export');
+    }
 } catch (error) {
     logger.warn('CMS routes not available', { error: error.message });
 }
@@ -29,8 +42,13 @@ try {
 // User Management System
 let userManagementRoutes;
 try {
-    userManagementRoutes = require('../modules/user-management-system/routes');
-    logger.info('User management routes loaded');
+    const routes = require('../modules/user-management-system/routes');
+    if (isValidRouter(routes)) {
+        userManagementRoutes = routes;
+        logger.info('User management routes loaded');
+    } else {
+        logger.warn('User management routes not available - invalid router export');
+    }
 } catch (error) {
     logger.warn('User management routes not available', { error: error.message });
 }
@@ -38,8 +56,13 @@ try {
 // Client Administration
 let clientAdminRoutes;
 try {
-    clientAdminRoutes = require('../modules/client-administration/routes');
-    logger.info('Client administration routes loaded');
+    const routes = require('../modules/client-administration/routes');
+    if (isValidRouter(routes)) {
+        clientAdminRoutes = routes;
+        logger.info('Client administration routes loaded');
+    } else {
+        logger.warn('Client administration routes not available - invalid router export');
+    }
 } catch (error) {
     logger.warn('Client administration routes not available', { error: error.message });
 }
@@ -47,8 +70,13 @@ try {
 // Billing System
 let billingRoutes;
 try {
-    billingRoutes = require('../modules/billing-system/routes');
-    logger.info('Billing routes loaded');
+    const routes = require('../modules/billing-system/routes');
+    if (isValidRouter(routes)) {
+        billingRoutes = routes;
+        logger.info('Billing routes loaded');
+    } else {
+        logger.warn('Billing routes not available - invalid router export');
+    }
 } catch (error) {
     logger.warn('Billing routes not available', { error: error.message });
 }
@@ -56,8 +84,13 @@ try {
 // Tenant Management
 let tenantRoutes;
 try {
-    tenantRoutes = require('../modules/tenant-management/routes');
-    logger.info('Tenant management routes loaded');
+    const routes = require('../modules/tenant-management/routes');
+    if (isValidRouter(routes)) {
+        tenantRoutes = routes;
+        logger.info('Tenant management routes loaded');
+    } else {
+        logger.warn('Tenant management routes not available - invalid router export');
+    }
 } catch (error) {
     logger.warn('Tenant management routes not available', { error: error.message });
 }
@@ -65,8 +98,13 @@ try {
 // Analytics & Reporting
 let analyticsRoutes;
 try {
-    analyticsRoutes = require('../modules/analytics-reporting/routes');
-    logger.info('Analytics routes loaded');
+    const routes = require('../modules/analytics-reporting/routes');
+    if (isValidRouter(routes)) {
+        analyticsRoutes = routes;
+        logger.info('Analytics routes loaded');
+    } else {
+        logger.warn('Analytics routes not available - invalid router export');
+    }
 } catch (error) {
     logger.warn('Analytics routes not available', { error: error.message });
 }
@@ -74,8 +112,13 @@ try {
 // System Configuration
 let systemRoutes;
 try {
-    systemRoutes = require('../modules/system-configuration/routes');
-    logger.info('System configuration routes loaded');
+    const routes = require('../modules/system-configuration/routes');
+    if (isValidRouter(routes)) {
+        systemRoutes = routes;
+        logger.info('System configuration routes loaded');
+    } else {
+        logger.warn('System configuration routes not available - invalid router export');
+    }
 } catch (error) {
     logger.warn('System configuration routes not available', { error: error.message });
 }
@@ -83,8 +126,13 @@ try {
 // Audit & Compliance
 let auditRoutes;
 try {
-    auditRoutes = require('../modules/audit-compliance/routes');
-    logger.info('Audit routes loaded');
+    const routes = require('../modules/audit-compliance/routes');
+    if (isValidRouter(routes)) {
+        auditRoutes = routes;
+        logger.info('Audit routes loaded');
+    } else {
+        logger.warn('Audit routes not available - invalid router export');
+    }
 } catch (error) {
     logger.warn('Audit routes not available', { error: error.message });
 }
@@ -92,8 +140,13 @@ try {
 // Monitoring & Health
 let monitoringRoutes;
 try {
-    monitoringRoutes = require('../modules/monitoring-health/routes');
-    logger.info('Monitoring routes loaded');
+    const routes = require('../modules/monitoring-health/routes');
+    if (isValidRouter(routes)) {
+        monitoringRoutes = routes;
+        logger.info('Monitoring routes loaded');
+    } else {
+        logger.warn('Monitoring routes not available - invalid router export');
+    }
 } catch (error) {
     logger.warn('Monitoring routes not available', { error: error.message });
 }

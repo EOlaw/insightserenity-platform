@@ -1,0 +1,181 @@
+# ============================================================================
+# Gateway Alert Rules
+# ============================================================================
+# Description: Prometheus alert rules for gateway monitoring
+# Version: 1.0.0
+# ============================================================================
+
+groups:
+  # ==========================================================================
+  # Gateway Health & Availability Alerts
+  # ==========================================================================
+
+  - name: gateway_health
+    interval: 30s
+    rules:
+      # Gateway down
+      - alert: GatewayDown
+        expr: up{job="nginx-gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "Gateway {{ $labels.instance }} is down"
+          description: "Gateway {{ $labels.instance }} has been down for more than 1 minute"
+          runbook_url: "https://docs.insightserenity.com/runbooks/gateway-down"
+
+      # High error rate (>5%)
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(nginx_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(nginx_http_requests_total[5m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "High error rate on gateway"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+          runbook_url: "https://docs.insightserenity.com/runbooks/high-error-rate"
+
+      # High latency (P95 > 1.5s)
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(nginx_http_request_duration_seconds_bucket[5m])) by (le, instance)
+          ) > 1.5
+        for: 5m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "High latency on {{ $labels.instance }}"
+          description: "P95 latency is {{ $value }}s (threshold: 1.5s)"
+          runbook_url: "https://docs.insightserenity.com/runbooks/high-latency"
+
+      # Too many 4xx errors (>10% of traffic)
+      - alert: HighClientErrorRate
+        expr: |
+          (
+            sum(rate(nginx_http_requests_total{status=~"4.."}[5m]))
+            /
+            sum(rate(nginx_http_requests_total[5m]))
+          ) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "High client error rate"
+          description: "Client error rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+  # ==========================================================================
+  # Upstream Health Alerts
+  # ==========================================================================
+
+  - name: upstream_health
+    interval: 30s
+    rules:
+      # Upstream server down
+      - alert: UpstreamServerDown
+        expr: nginx_upstream_server_fails_total > 10
+        for: 2m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "Upstream {{ $labels.upstream }} has failing servers"
+          description: "Upstream {{ $labels.upstream }} has {{ $value }} failed health checks"
+          runbook_url: "https://docs.insightserenity.com/runbooks/upstream-down"
+
+      # All upstream servers down for a backend
+      - alert: AllUpstreamsDown
+        expr: |
+          sum(nginx_upstream_server_up{upstream=~"admin_backend|customer_backend"}) by (upstream) == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "All upstream servers down for {{ $labels.upstream }}"
+          description: "All backend servers are unavailable for {{ $labels.upstream }}"
+          runbook_url: "https://docs.insightserenity.com/runbooks/all-upstreams-down"
+
+  # ==========================================================================
+  # Performance Alerts
+  # ==========================================================================
+
+  - name: gateway_performance
+    interval: 30s
+    rules:
+      # Too many active connections
+      - alert: HighConnectionCount
+        expr: nginx_connections_active > 3000
+        for: 5m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "High connection count on {{ $labels.instance }}"
+          description: "Active connections: {{ $value }} (threshold: 3000)"
+
+      # Connection queue building up
+      - alert: ConnectionQueueing
+        expr: nginx_connections_waiting > 500
+        for: 5m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "Connections queueing on {{ $labels.instance }}"
+          description: "Waiting connections: {{ $value }} (threshold: 500)"
+
+  # ==========================================================================
+  # Security Alerts
+  # ==========================================================================
+
+  - name: gateway_security
+    interval: 60s
+    rules:
+      # SSL certificate expiring soon (< 7 days)
+      - alert: SSLCertificateExpiringSoon
+        expr: (ssl_certificate_expiry_seconds < 7 * 24 * 3600) and (ssl_certificate_expiry_seconds > 0)
+        for: 1h
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "SSL certificate expiring soon"
+          description: "SSL certificate for {{ $labels.instance }} expires in {{ $value | humanizeDuration }}"
+          runbook_url: "https://docs.insightserenity.com/runbooks/ssl-renewal"
+
+      # SSL certificate expired
+      - alert: SSLCertificateExpired
+        expr: ssl_certificate_expiry_seconds < 0
+        for: 1m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "SSL certificate expired"
+          description: "SSL certificate for {{ $labels.instance }} has expired"
+          runbook_url: "https://docs.insightserenity.com/runbooks/ssl-expired"
+
+      # High rate limit rejections
+      - alert: HighRateLimitRejections
+        expr: |
+          sum(rate(nginx_http_requests_total{status="429"}[5m])) by (instance)
+          /
+          sum(rate(nginx_http_requests_total[5m])) by (instance)
+          > 0.05
+        for: 10m
+        labels:
+          severity: info
+          component: gateway
+        annotations:
+          summary: "High rate limit rejections on {{ $labels.instance }}"
+          description: "{{ $value | humanizePercentage }} of requests are being rate limited"

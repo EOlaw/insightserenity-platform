@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/Users/eolaw/Desktop/insightserenity-platform/servers/admin-server/seeders/logs/.0c1183eb774b84d00359d11622ac33c49fe1109d-audit.json",
+    "files": [
+        {
+            "date": 1766897519313,
+            "name": "/Users/eolaw/Desktop/insightserenity-platform/servers/admin-server/seeders/logs/seed-permissions-error-2025-12-27.log",
+            "hash": "da079065f257c8de44cf54a005b76f6e0a510659b144c08609da41ae979827f5"
+        }
+    ],
+    "hashType": "sha256"
+}

@@ -52,6 +52,10 @@ const paymentManagementRoutes = require('./modules/core-business/billing-managem
 const projectRoutes = require('./modules/core-business/project-management/routes/project.routes');
 // const notificationRoutes = require('./modules/core-business/notifications/routes'); // Disabled for now
 
+// ⭐ NEW: Billing & Credit Management Routes
+const paymentRoutes = require('./modules/core-business/billing/routes/payment-routes');
+const creditRoutes = require('./modules/core-business/billing/routes/credit-routes');
+
 // Import route modules - Hosted Organizations
 const organizationRoutes = require('./modules/hosted-organizations/organization-management/routes/organization.routes');
 const subscriptionRoutes = require('./modules/hosted-organizations/subscription-management/routes/subscription.routes');
@@ -627,6 +631,10 @@ class CustomerServicesApp {
         apiRouter.use('/billing', paymentManagementRoutes);
         apiRouter.use('/projects', projectRoutes);
         // apiRouter.use('/notifications', notificationRoutes); // Disabled for now - will implement later
+
+        // ⭐ NEW: Stripe Payment & Credit Management Routes
+        apiRouter.use('/payments', paymentRoutes);  // New Stripe payment processing
+        apiRouter.use('/credits', creditRoutes);    // New credit management
 
         // ==================== HOSTED ORGANIZATIONS ROUTES ====================
         apiRouter.use('/organizations', organizationRoutes);

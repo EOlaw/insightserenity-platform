@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consultation Starting Soon</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); padding: 35px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 26px; font-weight: 600; }
+        .content { padding: 35px 30px; }
+        .urgent-badge { background-color: #dc2626; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .time-box { background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #ffffff; padding: 30px; text-align: center; border-radius: 8px; margin: 25px 0; }
+        .time-box .countdown { font-size: 42px; font-weight: 700; margin: 10px 0; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: 600; margin: 20px 0; font-size: 16px; }
+        .detail-row { margin-bottom: 10px; font-size: 15px; }
+        .detail-label { font-weight: 600; color: #6b7280; }
+        .detail-value { color: #111827; }
+        .footer { background-color: #f8fafc; padding: 20px; text-align: center; color: #6b7280; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>🔔 Starting in 1 Hour!</h1>
+        </div>
+
+        <div class="content">
+            <div class="urgent-badge">URGENT REMINDER</div>
+
+            <p style="font-size: 17px; line-height: 1.6; font-weight: 500;">
+                Hi <strong>{{clientName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Your consultation with <strong>{{consultantName}}</strong> starts in approximately 1 hour.
+            </p>
+
+            <div class="time-box">
+                <div style="font-size: 14px; opacity: 0.9;">STARTING IN</div>
+                <div class="countdown">~60 Minutes</div>
+                <div style="font-size: 18px; font-weight: 600; margin-top: 10px;">{{scheduledTime}}</div>
+                <div style="font-size: 14px; opacity: 0.9; margin-top: 5px;">{{consultationTitle}}</div>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{meetingLink}}" class="cta-button">🚀 JOIN MEETING NOW</a>
+            </div>
+
+            <div style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 16px; margin: 25px 0; border-radius: 4px;">
+                <strong>⚡ Quick Checklist:</strong>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px;">
+                    <li>Test your audio and video</li>
+                    <li>Have your questions ready</li>
+                    <li>Find a quiet space</li>
+                    <li>Join 5 minutes early if possible</li>
+                </ul>
+            </div>
+
+            <div style="text-align: center; margin-top: 25px;">
+                <div class="detail-row">
+                    <span class="detail-label">Duration:</span> <span class="detail-value">{{duration}} minutes</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Booking ID:</span> <span class="detail-value"><code>{{consultationId}}</code></span>
+                </div>
+            </div>
+
+            <p style="font-size: 13px; color: #6b7280; text-align: center; margin-top: 30px;">
+                Need help? Contact support immediately.
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0;"><strong>Insight Serenity</strong></p>
+        </div>
+    </div>
+</body>
+</html>

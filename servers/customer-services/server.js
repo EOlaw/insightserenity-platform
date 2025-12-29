@@ -479,6 +479,18 @@ class CustomerServicesServer {
             this.isRunning = true;
             this.startTime = new Date();
 
+            // ⭐ START CRON SCHEDULER (consultation reminders, credit expiration, etc.)
+            if (process.env.NODE_ENV !== 'test') {
+                try {
+                    const scheduler = require('./jobs/consultation-scheduler');
+                    scheduler.start();
+                    this.logger.info('Consultation scheduler started successfully');
+                } catch (error) {
+                    this.logger.error('Failed to start consultation scheduler', { error: error.message });
+                    // Don't fail server startup if scheduler fails
+                }
+            }
+
             // Setup signal handlers for worker
             this._setupWorkerSignalHandlers();
 
@@ -489,8 +501,8 @@ class CustomerServicesServer {
 
             // Send ready message to master if in cluster
             if (cluster.isWorker) {
-                process.send({ 
-                    type: 'ready', 
+                process.send({
+                    type: 'ready',
                     pid: process.pid,
                     infrastructureInitialized: this.infrastructureInitialized
                 });

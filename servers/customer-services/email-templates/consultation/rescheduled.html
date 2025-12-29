@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consultation Rescheduled</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
+        .content { padding: 40px 30px; }
+        .reschedule-badge { background-color: #8b5cf6; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+        .comparison-container { margin: 25px 0; }
+        .time-box { padding: 25px; border-radius: 8px; margin: 15px 0; }
+        .old-time { background-color: #fee2e2; border: 2px solid #ef4444; text-decoration: line-through; opacity: 0.7; }
+        .new-time { background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%); border: 3px solid #8b5cf6; }
+        .arrow { text-align: center; font-size: 32px; color: #8b5cf6; margin: 10px 0; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }
+        .info-item { background-color: #f5f3ff; padding: 12px; border-radius: 6px; border-left: 3px solid #8b5cf6; }
+        .info-label { font-size: 12px; color: #6d28d9; font-weight: 600; text-transform: uppercase; margin-bottom: 5px; }
+        .info-value { font-size: 16px; font-weight: 600; color: #5b21b6; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: 600; margin: 15px 10px; font-size: 16px; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>🔄 Consultation Rescheduled</h1>
+        </div>
+
+        <div class="content">
+            <div class="reschedule-badge">SCHEDULE UPDATED</div>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Hi <strong>{{recipientName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Your consultation <strong>{{consultationTitle}}</strong> has been rescheduled to a new date and time.
+            </p>
+
+            <div class="comparison-container">
+                <div class="time-box old-time">
+                    <div style="font-size: 14px; font-weight: 600; color: #991b1b; margin-bottom: 10px;">❌ Previous Time</div>
+                    <div style="font-size: 20px; font-weight: 600; color: #7f1d1d;">{{oldDate}} at {{oldTime}}</div>
+                </div>
+
+                <div class="arrow">⬇️</div>
+
+                <div class="time-box new-time">
+                    <div style="font-size: 14px; font-weight: 600; color: #6d28d9; margin-bottom: 10px;">✅ New Time</div>
+                    <div style="font-size: 24px; font-weight: 700; color: #5b21b6;">{{newDate}} at {{newTime}}</div>
+                    <div style="font-size: 14px; color: #6d28d9; margin-top: 8px;">Duration: {{duration}} minutes</div>
+                </div>
+            </div>
+
+            <div style="background-color: #f5f3ff; padding: 25px; border-radius: 8px; margin: 25px 0; border: 2px solid #8b5cf6;">
+                <h3 style="margin-top: 0; color: #5b21b6;">Session Details</h3>
+
+                <div class="info-grid">
+                    {{#if isClient}}
+                    <div class="info-item">
+                        <div class="info-label">Consultant</div>
+                        <div class="info-value">{{consultantName}}</div>
+                    </div>
+                    {{else}}
+                    <div class="info-item">
+                        <div class="info-label">Client</div>
+                        <div class="info-value">{{clientName}}</div>
+                    </div>
+                    {{/if}}
+                    <div class="info-item">
+                        <div class="info-label">Company</div>
+                        <div class="info-value">{{companyName}}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Session Type</div>
+                        <div class="info-value">{{sessionType}}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Location</div>
+                        <div class="info-value">{{#if meetingUrl}}Remote (Zoom){{else}}{{meetingLocation}}{{/if}}</div>
+                    </div>
+                </div>
+
+                {{#if objectives}}
+                <div style="margin-top: 20px;">
+                    <h4 style="color: #6d28d9; margin-bottom: 10px;">Session Objectives:</h4>
+                    <ul style="margin: 0; padding-left: 20px; color: #5b21b6;">
+                        {{#each objectives}}
+                        <li style="margin: 8px 0;">{{this}}</li>
+                        {{/each}}
+                    </ul>
+                </div>
+                {{/if}}
+            </div>
+
+            {{#if rescheduledBy}}
+            <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong style="color: #92400e;">ℹ️ Rescheduled By:</strong>
+                <p style="margin: 8px 0 0 0; font-size: 14px; color: #78350f;">
+                    {{rescheduledBy}} on {{rescheduledDate}}
+                </p>
+                {{#if rescheduleReason}}
+                <p style="margin: 8px 0 0 0; font-size: 14px; color: #78350f;">
+                    <strong>Reason:</strong> {{rescheduleReason}}
+                </p>
+                {{/if}}
+            </div>
+            {{/if}}
+
+            <div style="text-align: center; margin: 30px 0;">
+                {{#if meetingUrl}}
+                <a href="{{meetingUrl}}" class="cta-button">Join Zoom Meeting</a>
+                {{/if}}
+                <a href="{{addToCalendarUrl}}" class="cta-button" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">Add to Calendar</a>
+            </div>
+
+            {{#if newMeetingUrl}}
+            <div style="background-color: #dbeafe; border-left: 4px solid #3b82f6; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong style="color: #1e40af;">📹 New Zoom Meeting Created</strong>
+                <p style="margin: 8px 0 0 0; font-size: 14px; color: #1e3a8a;">
+                    A new Zoom meeting link has been generated for the rescheduled session. The previous link is no longer valid.
+                </p>
+                <a href="{{newMeetingUrl}}" style="color: #2563eb; font-size: 14px; word-break: break-all; text-decoration: none; font-weight: 600;">{{newMeetingUrl}}</a>
+            </div>
+            {{/if}}
+
+            <div style="background-color: #d1fae5; border-left: 4px solid #10b981; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong style="color: #065f46;">✅ What's Been Updated:</strong>
+                <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 14px; color: #064e3b;">
+                    <li>Your calendar has been automatically updated</li>
+                    <li>Email reminders will be sent for the new time</li>
+                    {{#if meetingUrl}}
+                    <li>A fresh Zoom meeting link has been created</li>
+                    {{/if}}
+                    {{#if isClient}}
+                    <li>No additional credits will be charged</li>
+                    {{/if}}
+                </ul>
+            </div>
+
+            <p style="font-size: 14px; color: #6b7280; text-align: center; margin-top: 30px;">
+                Need to reschedule again? <a href="{{rescheduleUrl}}" style="color: #8b5cf6;">Click here</a> or contact <strong>{{supportEmail}}</strong>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Professional Business Consulting
+            </p>
+            <p style="margin: 5px 0; font-size: 12px;">
+                <a href="{{dashboardUrl}}" style="color: #8b5cf6; text-decoration: none;">Dashboard</a> |
+                <a href="{{upcomingSessionsUrl}}" style="color: #8b5cf6; text-decoration: none;">Upcoming Sessions</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

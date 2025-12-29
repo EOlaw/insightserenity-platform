@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upcoming Consultation - 24 Hour Reminder</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
+        .content { padding: 40px 30px; }
+        .reminder-badge { background-color: #10b981; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+        .consultation-box { background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); padding: 30px; border-radius: 8px; margin: 25px 0; border: 2px solid #10b981; }
+        .time-box { background-color: #ffffff; padding: 20px; border-radius: 6px; margin: 15px 0; text-align: center; border: 2px dashed #10b981; }
+        .countdown { font-size: 42px; font-weight: 700; color: #059669; margin: 10px 0; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }
+        .info-item { background-color: #f0fdf4; padding: 12px; border-radius: 6px; border-left: 3px solid #10b981; }
+        .info-label { font-size: 12px; color: #065f46; font-weight: 600; text-transform: uppercase; margin-bottom: 5px; }
+        .info-value { font-size: 16px; font-weight: 600; color: #064e3b; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: 600; margin: 15px 10px; font-size: 16px; }
+        .preparation-section { background-color: #f0fdf4; padding: 20px; border-radius: 6px; margin: 20px 0; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>📅 Consultation Tomorrow</h1>
+        </div>
+
+        <div class="content">
+            <div class="reminder-badge">TOMORROW AT {{scheduledTime}}</div>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Hi <strong>{{consultantName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Friendly reminder: You have a consultation session scheduled for tomorrow with <strong>{{clientName}}</strong>.
+            </p>
+
+            <div class="consultation-box">
+                <h3 style="margin-top: 0; color: #064e3b;">{{consultationTitle}}</h3>
+
+                <div class="time-box">
+                    <div style="font-size: 14px; color: #065f46; opacity: 0.9;">SESSION STARTS IN</div>
+                    <div class="countdown">~24 Hours</div>
+                    <div style="font-size: 18px; font-weight: 600; color: #064e3b;">
+                        {{scheduledDate}} at {{scheduledTime}}
+                    </div>
+                    <div style="font-size: 14px; color: #065f46; margin-top: 8px;">
+                        Duration: {{duration}} minutes
+                    </div>
+                </div>
+
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Client</div>
+                        <div class="info-value">{{clientName}}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Company</div>
+                        <div class="info-value">{{companyName}}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Session Type</div>
+                        <div class="info-value">{{sessionType}}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Meeting Location</div>
+                        <div class="info-value">{{#if meetingUrl}}Remote (Zoom){{else}}{{meetingLocation}}{{/if}}</div>
+                    </div>
+                </div>
+
+                {{#if objectives}}
+                <div style="margin-top: 20px;">
+                    <h4 style="color: #065f46; margin-bottom: 10px;">Session Objectives:</h4>
+                    <ul style="margin: 0; padding-left: 20px; color: #064e3b;">
+                        {{#each objectives}}
+                        <li style="margin: 8px 0;">{{this}}</li>
+                        {{/each}}
+                    </ul>
+                </div>
+                {{/if}}
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+                {{#if meetingUrl}}
+                <a href="{{meetingUrl}}" class="cta-button">Join Zoom Meeting</a>
+                {{/if}}
+                <a href="{{viewDetailsUrl}}" class="cta-button" style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);">View Full Details</a>
+            </div>
+
+            <div class="preparation-section">
+                <h4 style="margin-top: 0; color: #065f46;">📋 Pre-Session Checklist:</h4>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px; line-height: 1.8;">
+                    <li>Review client's company profile and previous sessions</li>
+                    <li>Prepare materials related to session objectives</li>
+                    <li>Test your audio/video setup (if remote)</li>
+                    <li>Allocate 5-10 minutes before for final preparation</li>
+                    <li>Have your notes and resources ready</li>
+                </ul>
+            </div>
+
+            {{#if clientNotes}}
+            <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong>📝 Client Notes:</strong>
+                <p style="margin: 8px 0 0 0; font-size: 14px;">{{clientNotes}}</p>
+            </div>
+            {{/if}}
+
+            <p style="font-size: 14px; color: #6b7280; text-align: center; margin-top: 30px;">
+                Need to reschedule? Contact support at <strong>{{supportEmail}}</strong>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Consultant Portal
+            </p>
+            <p style="margin: 5px 0; font-size: 12px;">
+                <a href="{{consultantDashboardUrl}}" style="color: #10b981; text-decoration: none;">Dashboard</a> |
+                <a href="{{scheduleUrl}}" style="color: #10b981; text-decoration: none;">My Schedule</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

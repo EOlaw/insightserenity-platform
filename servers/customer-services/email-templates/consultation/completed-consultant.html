@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consultation Completed</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
+        .content { padding: 40px 30px; }
+        .success-badge { background-color: #10b981; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+        .summary-box { background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); padding: 30px; border-radius: 8px; margin: 25px 0; border: 2px solid #10b981; }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin: 20px 0; }
+        .stat-item { background-color: #ffffff; padding: 15px; border-radius: 6px; text-align: center; border: 2px solid #10b981; }
+        .stat-value { font-size: 28px; font-weight: 700; color: #059669; }
+        .stat-label { font-size: 12px; color: #065f46; font-weight: 600; margin-top: 5px; text-transform: uppercase; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: 600; margin: 15px 10px; font-size: 16px; }
+        .action-section { background-color: #fef3c7; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #f59e0b; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>✅ Session Completed!</h1>
+        </div>
+
+        <div class="content">
+            <div class="success-badge">SUCCESSFULLY COMPLETED</div>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Hi <strong>{{consultantName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Great job! Your consultation session with <strong>{{clientName}}</strong> has been marked as completed.
+            </p>
+
+            <div class="summary-box">
+                <h3 style="margin-top: 0; color: #064e3b; text-align: center;">{{consultationTitle}}</h3>
+
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value">{{actualDuration}}</div>
+                        <div class="stat-label">Minutes</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">{{completedDate}}</div>
+                        <div class="stat-label">Date</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">{{sessionType}}</div>
+                        <div class="stat-label">Type</div>
+                    </div>
+                </div>
+
+                <div style="background-color: #ffffff; padding: 20px; border-radius: 6px; margin-top: 20px;">
+                    <div style="margin: 8px 0;"><strong>Client:</strong> {{clientName}}</div>
+                    <div style="margin: 8px 0;"><strong>Company:</strong> {{companyName}}</div>
+                    <div style="margin: 8px 0;"><strong>Session ID:</strong> {{consultationId}}</div>
+                    {{#if creditsUsed}}
+                    <div style="margin: 8px 0;"><strong>Credits Used:</strong> {{creditsUsed}}</div>
+                    {{/if}}
+                </div>
+            </div>
+
+            <div class="action-section">
+                <h4 style="margin-top: 0; color: #92400e;">📝 Next Steps - Action Required:</h4>
+                <ol style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px; line-height: 1.8;">
+                    <li><strong>Submit Session Notes</strong> - Document key discussion points and outcomes</li>
+                    <li><strong>Add Action Items</strong> - List client's next steps and deadlines</li>
+                    <li><strong>Upload Resources</strong> - Share any materials discussed during the session</li>
+                    <li><strong>Schedule Follow-up</strong> (if needed) - Recommend next session if applicable</li>
+                </ol>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{{submitNotesUrl}}" class="cta-button">Submit Session Notes</a>
+                <a href="{{viewDetailsUrl}}" class="cta-button" style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);">View Full Details</a>
+            </div>
+
+            <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong>💰 Payment Processing:</strong>
+                <p style="margin: 8px 0 0 0; font-size: 14px;">
+                    {{#if creditsUsed}}
+                    Client's credits have been automatically deducted. No additional action needed.
+                    {{else}}
+                    Payment will be processed based on the session agreement. You'll be notified once completed.
+                    {{/if}}
+                </p>
+            </div>
+
+            {{#if recordingUrl}}
+            <div style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong>📹 Session Recording:</strong>
+                <p style="margin: 8px 0; font-size: 14px;">
+                    Your Zoom session was recorded. The recording will be available in your dashboard within 24 hours.
+                </p>
+                <a href="{{recordingUrl}}" style="color: #dc2626; font-size: 14px; text-decoration: none; font-weight: 600;">View Recording →</a>
+            </div>
+            {{/if}}
+
+            <div style="background-color: #f0fdf4; padding: 18px; border-radius: 6px; margin: 20px 0; text-align: center;">
+                <div style="font-size: 16px; font-weight: 600; color: #065f46; margin-bottom: 10px;">
+                    🌟 Thank You for Your Expertise!
+                </div>
+                <p style="margin: 0; font-size: 14px; color: #064e3b;">
+                    Your client will receive a feedback request to help us maintain quality standards.
+                </p>
+            </div>
+
+            <p style="font-size: 14px; color: #6b7280; text-align: center; margin-top: 25px;">
+                View all completed sessions in your <a href="{{consultantDashboardUrl}}" style="color: #10b981;">dashboard</a>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Consultant Portal
+            </p>
+            <p style="margin: 5px 0; font-size: 12px;">
+                <a href="{{scheduleUrl}}" style="color: #10b981; text-decoration: none;">My Schedule</a> |
+                <a href="{{earningsUrl}}" style="color: #10b981; text-decoration: none;">Earnings</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

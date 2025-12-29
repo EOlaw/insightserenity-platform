@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consultation Booking Confirmed</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7fa;
+            color: #333333;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px 30px;
+            text-align: center;
+            color: #ffffff;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .success-badge {
+            background-color: #10b981;
+            color: #ffffff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        .consultation-details {
+            background-color: #f8fafc;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        .detail-row {
+            display: flex;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .detail-row:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #6b7280;
+            width: 140px;
+            flex-shrink: 0;
+        }
+        .detail-value {
+            color: #111827;
+            flex-grow: 1;
+        }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #ffffff;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .cta-button:hover {
+            opacity: 0.9;
+        }
+        .info-box {
+            background-color: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 16px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 30px;
+            text-align: center;
+            color: #6b7280;
+            font-size: 14px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        @media only screen and (max-width: 600px) {
+            .email-container {
+                margin: 0;
+                border-radius: 0;
+            }
+            .content {
+                padding: 30px 20px;
+            }
+            .detail-row {
+                flex-direction: column;
+            }
+            .detail-label {
+                margin-bottom: 5px;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>✓ Consultation Booked</h1>
+        </div>
+
+        <div class="content">
+            <div class="success-badge">CONFIRMED</div>
+
+            <p style="font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+                Hi <strong>{{clientName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Your consultation has been successfully scheduled. We're looking forward to working with you.
+            </p>
+
+            <div class="consultation-details">
+                <div class="detail-row">
+                    <div class="detail-label">Consultation:</div>
+                    <div class="detail-value"><strong>{{consultationTitle}}</strong></div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Consultant:</div>
+                    <div class="detail-value">{{consultantName}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Date & Time:</div>
+                    <div class="detail-value">{{scheduledDate}} at {{scheduledTime}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Duration:</div>
+                    <div class="detail-value">{{duration}} minutes</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Location:</div>
+                    <div class="detail-value">{{location}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Booking ID:</div>
+                    <div class="detail-value"><code>{{consultationId}}</code></div>
+                </div>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{dashboardUrl}}" class="cta-button">View in Dashboard</a>
+            </div>
+
+            <div class="info-box">
+                <strong>📅 What's Next?</strong>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+                    <li>You'll receive a reminder 24 hours before your consultation</li>
+                    <li>Another reminder will be sent 1 hour before</li>
+                    <li>Join the meeting using the link provided in the reminders</li>
+                </ul>
+            </div>
+
+            <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">
+                Need to reschedule or cancel? Visit your <a href="{{dashboardUrl}}" style="color: #667eea;">dashboard</a>
+                or reply to this email.
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Professional Business Consulting
+            </p>
+            <p style="margin: 10px 0;">
+                <a href="{{unsubscribeUrl}}">Unsubscribe</a> |
+                <a href="{{privacyUrl}}">Privacy Policy</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consultation Session Started</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
+        .content { padding: 40px 30px; }
+        .status-badge { background-color: #3b82f6; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+        .session-box { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); padding: 30px; text-align: center; border-radius: 8px; margin: 25px 0; border: 2px solid #3b82f6; }
+        .live-indicator { background-color: #dc2626; color: #ffffff; padding: 8px 20px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 700; margin: 15px 0; animation: blink 2s infinite; }
+        @keyframes blink { 0%, 50%, 100% { opacity: 1; } 25%, 75% { opacity: 0.5; } }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }
+        .info-item { background-color: #f0f9ff; padding: 12px; border-radius: 6px; border-left: 3px solid #3b82f6; }
+        .info-label { font-size: 12px; color: #1e40af; font-weight: 600; text-transform: uppercase; margin-bottom: 5px; }
+        .info-value { font-size: 16px; font-weight: 600; color: #1e3a8a; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: 600; margin: 15px 0; font-size: 16px; }
+        .tips-section { background-color: #fef3c7; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #f59e0b; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>🎯 Session In Progress</h1>
+        </div>
+
+        <div class="content">
+            <div class="status-badge">SESSION ACTIVE</div>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Hi <strong>{{consultantName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Your consultation session with <strong>{{clientName}}</strong> has officially started. This is a confirmation that the session is now being tracked.
+            </p>
+
+            <div class="session-box">
+                <div class="live-indicator">🔴 LIVE SESSION</div>
+
+                <h3 style="margin: 20px 0 10px 0; color: #1e3a8a;">{{consultationTitle}}</h3>
+
+                <div style="font-size: 18px; font-weight: 600; color: #1e40af; margin: 15px 0;">
+                    Started: {{startedTime}}
+                </div>
+
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Client</div>
+                        <div class="info-value">{{clientName}}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Company</div>
+                        <div class="info-value">{{companyName}}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Scheduled Duration</div>
+                        <div class="info-value">{{duration}} min</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Session Type</div>
+                        <div class="info-value">{{sessionType}}</div>
+                    </div>
+                </div>
+
+                {{#if objectives}}
+                <div style="margin-top: 20px; text-align: left;">
+                    <h4 style="color: #1e40af; margin-bottom: 10px;">Session Goals:</h4>
+                    <ul style="margin: 0; padding-left: 20px; color: #1e3a8a;">
+                        {{#each objectives}}
+                        <li style="margin: 8px 0;">{{this}}</li>
+                        {{/each}}
+                    </ul>
+                </div>
+                {{/if}}
+            </div>
+
+            {{#if meetingUrl}}
+            <div style="text-align: center; margin: 25px 0;">
+                <a href="{{meetingUrl}}" class="cta-button">Rejoin Meeting (if disconnected)</a>
+            </div>
+            {{/if}}
+
+            <div class="tips-section">
+                <h4 style="margin-top: 0; color: #92400e;">💡 Session Best Practices:</h4>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px; line-height: 1.8;">
+                    <li>Keep track of time to cover all objectives</li>
+                    <li>Take brief notes for post-session summary</li>
+                    <li>Allow 5-10 minutes at the end for Q&A and next steps</li>
+                    <li>Ensure client understands action items before ending</li>
+                    <li>Ask if they need any clarifications</li>
+                </ul>
+            </div>
+
+            <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong>📝 Post-Session Reminder:</strong>
+                <p style="margin: 8px 0 0 0; font-size: 14px;">
+                    After the session, you'll receive a link to submit your session notes and mark the consultation as completed. This helps maintain quality records and client satisfaction.
+                </p>
+            </div>
+
+            <p style="font-size: 14px; color: #6b7280; text-align: center; margin-top: 25px;">
+                Session being tracked automatically. Good luck! 🎯
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Consultant Portal
+            </p>
+            <p style="margin: 5px 0; font-size: 12px;">
+                Need support during the session? Call <strong>{{supportPhone}}</strong>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

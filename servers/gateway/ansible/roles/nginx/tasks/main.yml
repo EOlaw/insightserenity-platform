@@ -1,0 +1,83 @@
+---
+# ============================================================================
+# Ansible Role: Install and Configure NGINX
+# ============================================================================
+
+- name: Install NGINX
+  apt:
+    name:
+      - nginx
+      - nginx-extras
+    state: present
+    update_cache: yes
+
+- name: Create NGINX directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /etc/nginx/upstreams
+    - /etc/nginx/sites-available
+    - /etc/nginx/sites-enabled
+    - /var/cache/nginx/api_cache
+    - /var/cache/nginx/static_cache
+    - /var/www/static
+    - /var/www/certbot
+
+- name: Copy NGINX main configuration
+  copy:
+    src: ../../../../nginx/nginx.conf
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+
+- name: Copy upstream configuration
+  copy:
+    src: ../../../../nginx/upstreams/backends.conf
+    dest: /etc/nginx/upstreams/backends.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+
+- name: Copy site configuration
+  copy:
+    src: ../../../../nginx/sites-available/api.insightserenity.com.conf
+    dest: /etc/nginx/sites-available/api.insightserenity.com.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+
+- name: Enable site
+  file:
+    src: /etc/nginx/sites-available/api.insightserenity.com.conf
+    dest: /etc/nginx/sites-enabled/api.insightserenity.com.conf
+    state: link
+  notify: reload nginx
+
+- name: Remove default site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: reload nginx
+
+- name: Test NGINX configuration
+  command: nginx -t
+  register: nginx_test
+  changed_when: false
+  failed_when: nginx_test.rc != 0
+
+- name: Enable NGINX service
+  systemd:
+    name: nginx
+    enabled: yes
+    state: started
+
+- name: Install nginx-prometheus-exporter
+  include_tasks: prometheus-exporter.yml

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consultation Cancelled</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
+        .content { padding: 40px 30px; }
+        .cancel-badge { background-color: #6b7280; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+        .cancel-box { background-color: #f3f4f6; padding: 30px; border-radius: 8px; margin: 25px 0; border: 2px solid #9ca3af; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }
+        .info-item { background-color: #ffffff; padding: 12px; border-radius: 6px; border-left: 3px solid #6b7280; }
+        .info-label { font-size: 12px; color: #4b5563; font-weight: 600; text-transform: uppercase; margin-bottom: 5px; }
+        .info-value { font-size: 16px; font-weight: 600; color: #374151; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: 600; margin: 15px 10px; font-size: 16px; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>❌ Consultation Cancelled</h1>
+        </div>
+
+        <div class="content">
+            <div class="cancel-badge">CANCELLED</div>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Hi <strong>{{consultantName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                The consultation session with <strong>{{clientName}}</strong> has been cancelled.
+            </p>
+
+            <div class="cancel-box">
+                <h3 style="margin-top: 0; color: #374151;">{{consultationTitle}}</h3>
+
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Client</div>
+                        <div class="info-value">{{clientName}}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Company</div>
+                        <div class="info-value">{{companyName}}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Was Scheduled For</div>
+                        <div class="info-value">{{scheduledDate}}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Time</div>
+                        <div class="info-value">{{scheduledTime}}</div>
+                    </div>
+                </div>
+
+                <div style="background-color: #ffffff; padding: 15px; border-radius: 6px; margin-top: 20px;">
+                    <div style="font-size: 14px; color: #4b5563; margin-bottom: 8px;"><strong>Cancelled:</strong> {{cancelledDate}} at {{cancelledTime}}</div>
+                    <div style="font-size: 14px; color: #4b5563;"><strong>Cancelled By:</strong> {{cancelledBy}}</div>
+                </div>
+
+                {{#if cancellationReason}}
+                <div style="background-color: #fef3c7; padding: 15px; border-radius: 6px; margin-top: 15px; border-left: 4px solid #f59e0b;">
+                    <strong style="color: #92400e;">Reason:</strong>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #78350f;">{{cancellationReason}}</p>
+                </div>
+                {{/if}}
+            </div>
+
+            {{#if creditsRefunded}}
+            <div style="background-color: #d1fae5; border-left: 4px solid #10b981; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong style="color: #065f46;">💳 Credits Refunded</strong>
+                <p style="margin: 8px 0 0 0; font-size: 14px; color: #064e3b;">
+                    The client's {{creditsRefunded}} credit(s) have been automatically refunded to their account.
+                </p>
+            </div>
+            {{/if}}
+
+            {{#if zoomMeetingCancelled}}
+            <div style="background-color: #dbeafe; border-left: 4px solid #3b82f6; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong style="color: #1e40af;">📹 Zoom Meeting Cancelled</strong>
+                <p style="margin: 8px 0 0 0; font-size: 14px; color: #1e3a8a;">
+                    The associated Zoom meeting has been cancelled and removed from your calendar.
+                </p>
+            </div>
+            {{/if}}
+
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{{scheduleUrl}}" class="cta-button">View My Schedule</a>
+                <a href="{{availabilityUrl}}" class="cta-button" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">Update Availability</a>
+            </div>
+
+            <div style="background-color: #f0f9ff; padding: 18px; border-radius: 6px; margin: 20px 0;">
+                <h4 style="margin-top: 0; color: #1e40af;">📊 Impact on Your Schedule:</h4>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px; line-height: 1.8; color: #1e3a8a;">
+                    <li>This time slot is now available for new bookings</li>
+                    <li>No payment will be processed for this session</li>
+                    <li>Your availability calendar has been automatically updated</li>
+                    {{#if canRebook}}
+                    <li>The client may rebook with you at a future date</li>
+                    {{/if}}
+                </ul>
+            </div>
+
+            {{#if refundPolicy}}
+            <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 16px; margin: 20px 0; border-radius: 4px;">
+                <strong style="color: #991b1b;">ℹ️ Cancellation Policy Applied:</strong>
+                <p style="margin: 8px 0 0 0; font-size: 14px; color: #7f1d1d;">
+                    {{refundPolicy}}
+                </p>
+            </div>
+            {{/if}}
+
+            <p style="font-size: 14px; color: #6b7280; text-align: center; margin-top: 30px;">
+                Questions about this cancellation? Contact support at <strong>{{supportEmail}}</strong>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Consultant Portal
+            </p>
+            <p style="margin: 5px 0; font-size: 12px;">
+                <a href="{{consultantDashboardUrl}}" style="color: #6b7280; text-decoration: none;">Dashboard</a> |
+                <a href="{{upcomingSessionsUrl}}" style="color: #6b7280; text-decoration: none;">Upcoming Sessions</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,39 @@
+[
+  {
+    "httpRequest": {
+      "method": "GET",
+      "path": "/health"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": {
+        "status": "healthy",
+        "service": "admin-server",
+        "timestamp": "2025-12-28T10:00:00Z",
+        "version": "2.0.1"
+      }
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "GET",
+      "path": "/api/v1/admin/.*"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": {
+        "success": true,
+        "data": {
+          "message": "Mock admin response",
+          "timestamp": "2025-12-28T10:00:00Z"
+        }
+      }
+    }
+  }
+]

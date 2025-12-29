@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Confirmation</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 650px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 30px; font-weight: 700; }
+        .content { padding: 40px 35px; }
+        .success-badge { background-color: #10b981; color: #ffffff; padding: 10px 20px; border-radius: 25px; display: inline-block; font-size: 16px; font-weight: 700; margin-bottom: 25px; }
+        .invoice-box { background-color: #f8fafc; border: 2px solid #e5e7eb; padding: 30px; margin: 25px 0; border-radius: 6px; }
+        .invoice-header { display: flex; justify-content: space-between; margin-bottom: 25px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
+        .invoice-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .invoice-table th { background-color: #f1f5f9; padding: 14px; text-align: left; font-weight: 600; border-bottom: 2px solid #cbd5e1; }
+        .invoice-table td { padding: 14px; border-bottom: 1px solid #f1f5f9; }
+        .total-row { background-color: #f8fafc; font-weight: 700; font-size: 16px; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; margin: 10px 5px; }
+        .button-secondary { background: #ffffff; color: #10b981; border: 2px solid #10b981; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+        @media only screen and (max-width: 600px) {
+            .invoice-header { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>✓ Payment Successful</h1>
+        </div>
+
+        <div class="content">
+            <div class="success-badge">PAYMENT CONFIRMED</div>
+
+            <p style="font-size: 17px; line-height: 1.7;">
+                Hi <strong>{{companyName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.7;">
+                Thank you for your purchase! Your payment has been successfully processed and your consultation credits have been added to your account.
+            </p>
+
+            <div class="invoice-box">
+                <div class="invoice-header">
+                    <div>
+                        <h2 style="margin: 0 0 8px 0; color: #111827;">INVOICE</h2>
+                        <p style="margin: 0; color: #6b7280;">Invoice #{{invoiceNumber}}</p>
+                        <p style="margin: 0; color: #6b7280;">Date: {{invoiceDate}}</p>
+                    </div>
+                    <div style="text-align: right;">
+                        <p style="margin: 0; color: #6b7280; font-size: 14px;">Bill To:</p>
+                        <p style="margin: 5px 0 0 0; font-weight: 600;">{{companyName}}</p>
+                        <p style="margin: 0; color: #6b7280; font-size: 14px;">{{billingEmail}}</p>
+                    </div>
+                </div>
+
+                <table class="invoice-table">
+                    <thead>
+                        <tr>
+                            <th>Package</th>
+                            <th style="text-align: center;">Credits</th>
+                            <th style="text-align: right;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>
+                                <strong>{{packageName}}</strong><br>
+                                <span style="font-size: 13px; color: #6b7280;">{{packageDescription}}</span>
+                            </td>
+                            <td style="text-align: center;">{{creditsAdded}}</td>
+                            <td style="text-align: right;">${{packagePrice}}</td>
+                        </tr>
+                        {{#if platformFee}}
+                        <tr>
+                            <td colspan="2">Platform Fee ({{platformFeePercent}}%)</td>
+                            <td style="text-align: right;">${{platformFee}}</td>
+                        </tr>
+                        {{/if}}
+                        <tr class="total-row">
+                            <td colspan="2">TOTAL</td>
+                            <td style="text-align: right;">${{totalAmount}}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #6b7280;">Payment Method:</span>
+                        <span style="font-weight: 600;">{{paymentMethod}}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #6b7280;">Transaction ID:</span>
+                        <span style="font-family: monospace; font-size: 13px;">{{transactionId}}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #6b7280;">Status:</span>
+                        <span style="color: #10b981; font-weight: 700;">PAID</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="background-color: #ecfdf5; padding: 20px; border-radius: 6px; margin: 25px 0; text-align: center;">
+                <h3 style="margin-top: 0; color: #059669;">Your New Credit Balance</h3>
+                <div style="font-size: 42px; font-weight: 700; color: #10b981; margin: 15px 0;">{{totalCredits}}</div>
+                <div style="font-size: 16px; color: #047857;">Consultation Credits Available</div>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{{bookConsultationUrl}}" class="cta-button">Book Consultation</a>
+                <a href="{{downloadInvoiceUrl}}" class="cta-button button-secondary">Download Invoice</a>
+            </div>
+
+            <div style="background-color: #eff6ff; padding: 16px; border-radius: 6px; margin: 20px 0;">
+                <strong>📋 Receipt Details:</strong>
+                <p style="margin: 10px 0 0 0; font-size: 14px;">
+                    A copy of this receipt has been sent to <strong>{{billingEmail}}</strong>.
+                    For tax purposes, please keep this invoice for your records.
+                </p>
+            </div>
+
+            <p style="font-size: 14px; color: #6b7280; text-align: center; margin-top: 30px;">
+                Questions about your invoice? <a href="mailto:{{supportEmail}}" style="color: #10b981;">Contact Support</a>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Professional Business Consulting
+            </p>
+            <p style="margin: 10px 0; font-size: 12px;">
+                Tax ID: {{taxId}} | <a href="{{termsUrl}}">Terms of Service</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

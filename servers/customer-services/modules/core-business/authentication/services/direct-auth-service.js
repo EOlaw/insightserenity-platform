@@ -27,6 +27,7 @@ const database = require('../../../../../../shared/lib/database');
 const NotificationService = require('../../notifications/services/notification-service');
 const AnalyticsService = require('../../analytics/services/analytics-service');
 const OnboardingService = require('../../onboarding/services/onboarding-service');
+const CreditManagementService = require('../../billing/services/credit-management-service');
 
 // Get entity strategy registry and check if we need to create a related entity
 const EntityStrategyRegistry = require('../../../../../../shared/lib/database/services/entity-strategy-registry');
@@ -1504,6 +1505,24 @@ class DirectAuthService {
                     error: emailError.message,
                     userId: user._id || user.id
                 });
+            }
+
+            // ⭐ AUTO-ASSIGN FREE TRIAL CREDIT (non-blocking)
+            if (user.roles && user.roles.includes('client') && user.clientId) {
+                try {
+                    await CreditManagementService.assignFreeTrialCredit(user.clientId);
+                    logger.info('Free trial credit assigned to client', {
+                        clientId: user.clientId,
+                        userId: user._id || user.id
+                    });
+                } catch (creditError) {
+                    logger.error('Failed to assign free trial credit (non-blocking)', {
+                        error: creditError.message,
+                        clientId: user.clientId,
+                        userId: user._id || user.id
+                    });
+                    // Don't fail verification if credit assignment fails
+                }
             }
 
             return {

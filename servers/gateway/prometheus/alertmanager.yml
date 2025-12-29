@@ -1,0 +1,195 @@
+# ============================================================================
+# AlertManager Configuration
+# ============================================================================
+# Description: Alert routing and notification configuration
+# Version: 1.0.0
+# ============================================================================
+
+global:
+  # Default timeout for SMTP
+  smtp_smarthost: 'localhost:25'
+  smtp_from: 'alerts@insightserenity.com'
+  smtp_require_tls: false
+
+  # Slack webhook URL (configure in production)
+  # slack_api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+
+# ============================================================================
+# Templates
+# ============================================================================
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# ============================================================================
+# Routing Tree
+# ============================================================================
+
+route:
+  # Default receiver for all alerts
+  receiver: 'default'
+
+  # Group alerts by these labels
+  group_by: ['alertname', 'severity', 'component']
+
+  # Wait before sending initial notification
+  group_wait: 10s
+
+  # Wait before sending additional notifications for same group
+  group_interval: 10s
+
+  # Repeat notifications after this interval
+  repeat_interval: 12h
+
+  # Child routes (more specific)
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 3h
+      continue: true  # Also send to other receivers
+
+    # Critical alerts to Slack
+    - match:
+        severity: critical
+      receiver: 'slack-critical'
+
+    # Warning alerts
+    - match:
+        severity: warning
+      receiver: 'slack-warnings'
+      group_wait: 30s
+      group_interval: 10m
+      repeat_interval: 6h
+
+    # Info alerts (low priority)
+    - match:
+        severity: info
+      receiver: 'email'
+      group_wait: 5m
+      group_interval: 30m
+      repeat_interval: 24h
+
+    # Database alerts (special handling)
+    - match:
+        component: database
+      receiver: 'database-team'
+      group_wait: 30s
+      continue: true
+
+# ============================================================================
+# Inhibition Rules
+# ============================================================================
+# Suppress certain alerts when others are firing
+
+inhibit_rules:
+  # If GatewayDown is firing, suppress HighErrorRate and HighLatency
+  - source_match:
+      alertname: 'GatewayDown'
+    target_match_re:
+      alertname: '(HighErrorRate|HighLatency|UpstreamServerDown)'
+    equal: ['instance']
+
+  # If BackendServiceDown, suppress resource alerts for that instance
+  - source_match:
+      alertname: 'BackendServiceDown'
+    target_match_re:
+      alertname: '(HighMemoryUsage|HighCPUUsage|LowDiskSpace)'
+    equal: ['instance']
+
+  # If AllUpstreamsDown, suppress individual UpstreamServerDown
+  - source_match:
+      alertname: 'AllUpstreamsDown'
+    target_match:
+      alertname: 'UpstreamServerDown'
+    equal: ['upstream']
+
+  # Critical alerts suppress warnings for same issue
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+# ============================================================================
+# Receivers
+# ============================================================================
+
+receivers:
+  # Default receiver (email)
+  - name: 'default'
+    email_configs:
+      - to: 'devops@insightserenity.com'
+        headers:
+          Subject: '[{{ .GroupLabels.severity | toUpper }}] {{ .GroupLabels.alertname }}'
+        html: '{{ template "email.default.html" . }}'
+
+  # PagerDuty for critical alerts
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+        description: '{{ .GroupLabels.alertname }} - {{ .CommonAnnotations.summary }}'
+        details:
+          severity: '{{ .GroupLabels.severity }}'
+          component: '{{ .GroupLabels.component }}'
+          description: '{{ .CommonAnnotations.description }}'
+          runbook: '{{ .CommonAnnotations.runbook_url }}'
+
+  # Slack for critical alerts
+  - name: 'slack-critical'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+        channel: '#alerts-critical'
+        title: '🚨 {{ .GroupLabels.alertname }}'
+        text: '{{ .CommonAnnotations.summary }}'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        fields:
+          - title: 'Severity'
+            value: '{{ .GroupLabels.severity }}'
+            short: true
+          - title: 'Component'
+            value: '{{ .GroupLabels.component }}'
+            short: true
+          - title: 'Description'
+            value: '{{ .CommonAnnotations.description }}'
+          - title: 'Runbook'
+            value: '{{ .CommonAnnotations.runbook_url }}'
+
+  # Slack for warnings
+  - name: 'slack-warnings'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+        channel: '#alerts-warnings'
+        title: '⚠️ {{ .GroupLabels.alertname }}'
+        text: '{{ .CommonAnnotations.summary }}'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+
+  # Email for general notifications
+  - name: 'email'
+    email_configs:
+      - to: 'devops@insightserenity.com'
+        headers:
+          Subject: '[INFO] {{ .GroupLabels.alertname }}'
+
+  # Database team
+  - name: 'database-team'
+    email_configs:
+      - to: 'dba@insightserenity.com'
+        headers:
+          Subject: '[DATABASE] {{ .GroupLabels.alertname }}'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+        channel: '#database-alerts'
+
+# ============================================================================
+# Silences and Maintenances
+# ============================================================================
+# Silences can be created via:
+# - AlertManager UI: http://localhost:9093
+# - API: POST /api/v1/silences
+# - CLI: amtool silence add alertname=GatewayDown --duration=1h

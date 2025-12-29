@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "start:dev": "nodemon server.js",
     "start:cluster": "NODE_ENV=production ENABLE_CLUSTER=true node server.js",
     "start:production": "NODE_ENV=production node server.js",
     "start:development": "NODE_ENV=development nodemon server.js",

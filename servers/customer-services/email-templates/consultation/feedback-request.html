@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>We'd Love Your Feedback</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
+        .content { padding: 40px 30px; }
+        .rating-box { text-align: center; margin: 30px 0; }
+        .star { font-size: 40px; margin: 0 5px; text-decoration: none; display: inline-block; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: 600; margin: 20px 0; font-size: 16px; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>⭐ How Was Your Consultation?</h1>
+        </div>
+
+        <div class="content">
+            <p style="font-size: 16px; line-height: 1.6; text-align: center;">
+                Hi <strong>{{clientName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6; text-align: center;">
+                We hope your consultation with <strong>{{consultantName}}</strong> was valuable.<br>
+                We'd love to hear about your experience!
+            </p>
+
+            <div class="rating-box">
+                <p style="font-size: 14px; color: #6b7280; margin-bottom: 15px;">Rate your experience:</p>
+                <div style="margin: 20px 0;">
+                    <a href="{{feedbackUrl}}?rating=5" class="star">⭐</a>
+                    <a href="{{feedbackUrl}}?rating=4" class="star">⭐</a>
+                    <a href="{{feedbackUrl}}?rating=3" class="star">⭐</a>
+                    <a href="{{feedbackUrl}}?rating=2" class="star">⭐</a>
+                    <a href="{{feedbackUrl}}?rating=1" class="star">⭐</a>
+                </div>
+                <p style="font-size: 12px; color: #9ca3af;">Click on the stars above to rate</p>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{feedbackUrl}}" class="cta-button">Leave Detailed Feedback</a>
+            </div>
+
+            <div style="background-color: #f5f3ff; padding: 20px; border-radius: 6px; margin: 30px 0; text-align: center;">
+                <p style="margin: 0; font-size: 14px; color: #6b7280;">
+                    <strong>Your feedback helps us:</strong><br>
+                    ✓ Improve our services<br>
+                    ✓ Match you with the right consultants<br>
+                    ✓ Ensure quality experiences
+                </p>
+            </div>
+
+            <p style="font-size: 13px; color: #9ca3af; text-align: center; margin-top: 30px;">
+                This won't take more than 2 minutes
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0;">
+                <strong>Insight Serenity</strong> | Professional Business Consulting
+            </p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,45 @@
+---
+# ============================================================================
+# Ansible Playbook: Deploy NGINX Gateway
+# ============================================================================
+# Description: Complete deployment of API Gateway infrastructure
+# Usage: ansible-playbook -i inventory/production deploy-gateway.yml
+# ============================================================================
+
+- name: Deploy InsightSerenity API Gateway
+  hosts: gateways
+  become: yes
+  gather_facts: yes
+
+  vars:
+    nginx_version: "1.24"
+    domain_name: "api.insightserenity.com"
+    ssl_email: "devops@insightserenity.com"
+    environment: "production"
+
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+  roles:
+    - common
+    - nginx
+    - keepalived
+    - monitoring
+    - ssl
+
+  tasks:
+    - name: Verify deployment
+      uri:
+        url: "https://{{ domain_name }}/health"
+        validate_certs: yes
+        return_content: yes
+      register: health_check
+      failed_when: "'healthy' not in health_check.content"
+      delegate_to: localhost
+
+    - name: Display deployment status
+      debug:
+        msg: "Gateway deployment completed successfully on {{ inventory_hostname }}"

@@ -19,6 +19,9 @@ const database = require('../../../../../../shared/lib/database');
 const NotificationService = require('../../notifications/services/notification-service');
 const AnalyticsService = require('../../analytics/services/analytics-service');
 const PaymentService = require('../../billing-management/services/payment-service');
+const CreditManagementService = require('../../billing/services/credit-management-service');
+const ConsultationNotificationService = require('./consultation-notification-service');
+const ZoomService = require('../../../integrations/video-conferencing/zoom-service');
 
 /**
  * Consultation Status Constants
@@ -196,31 +199,35 @@ class ConsultationService {
                 consultationData.scheduledEnd
             );
 
-            // ==================== PAYMENT VALIDATION LOGIC ====================
-            // Enforce business rule: All consultations must be paid OR use free trial/credits
-            const paymentValidation = await this.paymentService.validateConsultationPayment(
+            // ==================== CREDIT AVAILABILITY CHECK ====================
+            // Check if client has sufficient credits to book this consultation
+            const creditCheck = await CreditManagementService.checkCreditAvailability(
                 consultationData.clientId,
-                durationMinutes,
-                { tenantId: options.tenantId || consultant.tenantId }
+                1, // 1 consultation credit
+                { useFreeTrialCredit: consultationData.useFreeTrialCredit || false }
             );
 
-            if (!paymentValidation.valid) {
-                logger.warn('Consultation creation blocked - payment required', {
+            if (!creditCheck.available) {
+                logger.warn('Consultation creation blocked - insufficient credits', {
                     clientId: consultationData.clientId,
-                    durationMinutes,
-                    message: paymentValidation.message
+                    reason: creditCheck.reason,
+                    availableCredits: creditCheck.availableCredits
                 });
                 throw AppError.forbidden(
-                    paymentValidation.message || 'Payment or consultation credits required to book this consultation',
-                    { reason: 'insufficient_credits' }
+                    `Insufficient credits: ${creditCheck.reason}`,
+                    {
+                        reason: 'INSUFFICIENT_CREDITS',
+                        availableCredits: creditCheck.availableCredits,
+                        requiredCredits: 1
+                    }
                 );
             }
 
-            // Log payment method being used
-            logger.info('Payment validation passed', {
+            // Log credit availability check passed
+            logger.info('Credit availability check passed', {
                 clientId: consultationData.clientId,
-                paymentMethod: paymentValidation.method,
-                message: paymentValidation.message
+                availableCredits: creditCheck.availableCredits,
+                requiredCredits: 1
             });
 
             // Generate consultation ID
@@ -300,62 +307,73 @@ class ConsultationService {
                 clientId: consultationRecord.clientId
             });
 
-            // ==================== POST-CREATION PAYMENT PROCESSING ====================
-            // Handle payment method-specific actions after successful consultation creation
-            try {
-                if (paymentValidation.method === 'free_trial') {
-                    // Mark free trial as used
-                    await this.paymentService.markFreeTrialUsed(
-                        consultationData.clientId,
-                        consultationRecord._id,
-                        { tenantId: options.tenantId || consultant.tenantId }
-                    );
-                    logger.info('Free trial marked as used', {
-                        clientId: consultationData.clientId,
-                        consultationId: consultationRecord.consultationId
-                    });
-                } else if (paymentValidation.method === 'credits') {
-                    // Deduct consultation credit from client account
-                    await this.paymentService.deductConsultationCredit(
-                        consultationData.clientId,
-                        consultationRecord._id,
-                        {
-                            tenantId: options.tenantId || consultant.tenantId,
-                            durationMinutes,
-                            consultationId: consultationRecord.consultationId
+            // ⭐ CREATE ZOOM MEETING (non-blocking)
+            let zoomMeetingUrl = null;
+            if (consultationData.location?.type === 'remote' || !consultationData.location) {
+                try {
+                    // Get consultant details for Zoom host
+                    const consultantDetails = await Consultant.findById(consultationData.consultantId)
+                        .populate('userId', 'email');
+
+                    const zoomMeeting = await ZoomService.createMeeting({
+                        topic: consultationData.title,
+                        agenda: consultationData.description || consultationData.objectives?.join(', '),
+                        startTime: consultationData.scheduledStart,
+                        duration: Math.ceil((new Date(consultationData.scheduledEnd) - new Date(consultationData.scheduledStart)) / 60000),
+                        timezone: consultationData.timezone || this.config.defaultTimezone,
+                        hostEmail: consultantDetails?.userId?.email || process.env.ZOOM_DEFAULT_HOST_EMAIL,
+                        settings: {
+                            hostVideo: true,
+                            participantVideo: true,
+                            joinBeforeHost: false,
+                            muteUponEntry: true,
+                            waitingRoom: true,
+                            autoRecording: 'cloud' // Record for quality assurance
                         }
-                    );
-                    logger.info('Consultation credit deducted', {
-                        clientId: consultationData.clientId,
-                        consultationId: consultationRecord.consultationId,
-                        creditsDeducted: 1
                     });
+
+                    // Update consultation with Zoom meeting details
+                    consultationRecord.location = {
+                        type: 'remote',
+                        platform: 'zoom',
+                        meetingId: zoomMeeting.meetingId,
+                        meetingUrl: zoomMeeting.joinUrl,
+                        meetingPassword: zoomMeeting.password,
+                        hostUrl: zoomMeeting.startUrl,
+                        timezone: consultationData.timezone || this.config.defaultTimezone
+                    };
+
+                    await consultationRecord.save();
+                    zoomMeetingUrl = zoomMeeting.joinUrl;
+
+                    logger.info('Zoom meeting created and linked to consultation', {
+                        consultationId: consultationRecord.consultationId,
+                        meetingId: zoomMeeting.meetingId,
+                        joinUrl: zoomMeeting.joinUrl
+                    });
+
+                } catch (zoomError) {
+                    logger.error('Failed to create Zoom meeting (non-blocking)', {
+                        consultationId: consultationRecord.consultationId,
+                        error: zoomError.message
+                    });
+                    // Don't fail booking if Zoom fails - consultant can manually add link
                 }
-                // If method is 'payment', it means payment was already processed before booking
-            } catch (paymentError) {
-                // Log error but don't fail the consultation creation
-                // The consultation exists, but we need to handle payment issues separately
-                logger.error('Error processing post-creation payment logic', {
+            }
+
+            // ⭐ SEND BOOKING CONFIRMATION (non-blocking)
+            try {
+                await ConsultationNotificationService.sendBookingConfirmation(consultationRecord._id);
+                logger.info('Booking confirmation sent', {
                     consultationId: consultationRecord.consultationId,
-                    paymentMethod: paymentValidation.method,
-                    error: paymentError.message
+                    includedMeetingLink: !!zoomMeetingUrl
                 });
-
-                // Optionally: Mark consultation with payment issue flag
-                // This allows admin to review and handle manually
-                consultationRecord.metadata.paymentProcessingError = true;
-                consultationRecord.metadata.paymentErrorDetails = paymentError.message;
-                await consultationRecord.save();
-            }
-
-            // Send confirmation notification
-            if (this.config.sendConfirmationEmail) {
-                await this._sendConfirmationNotification(consultationRecord);
-            }
-
-            // Schedule reminders
-            if (this.config.sendReminderEmail) {
-                await this._scheduleReminders(consultationRecord);
+            } catch (notificationError) {
+                logger.error('Failed to send booking confirmation (non-blocking)', {
+                    consultationId: consultationRecord.consultationId,
+                    error: notificationError.message
+                });
+                // Don't fail booking if email fails
             }
 
             // Track analytics
@@ -790,6 +808,18 @@ class ConsultationService {
 
             logger.info('Consultation started', { consultationId });
 
+            // ⭐ SEND STARTED NOTIFICATION (non-blocking)
+            try {
+                await ConsultationNotificationService.sendConsultationStarted(consultationId);
+                logger.info('Started notification sent', { consultationId });
+            } catch (notificationError) {
+                logger.error('Failed to send started notification (non-blocking)', {
+                    consultationId,
+                    error: notificationError.message
+                });
+                // Don't fail start if email fails
+            }
+
             return consultation;
 
         } catch (error) {
@@ -821,11 +851,33 @@ class ConsultationService {
 
             logger.info('Consultation completed', { consultationId });
 
-            // Send follow-up notification
-            await this._sendFollowUpNotification(consultation);
+            // ⭐ AUTO-DEDUCT CREDITS ON COMPLETION (non-blocking)
+            try {
+                const deductionResult = await CreditManagementService.deductCreditsOnCompletion(consultationId);
+                logger.info('Credits deducted on consultation completion', {
+                    consultationId,
+                    creditsDeducted: deductionResult.creditsDeducted,
+                    clientId: consultation.clientId
+                });
+            } catch (creditError) {
+                logger.error('Failed to deduct credits on completion (non-blocking)', {
+                    consultationId,
+                    error: creditError.message
+                });
+                // Don't fail completion if credit deduction fails
+            }
 
-            // Request feedback
-            await this._requestFeedback(consultation);
+            // ⭐ SEND COMPLETION NOTIFICATION (non-blocking)
+            try {
+                await ConsultationNotificationService.sendConsultationCompleted(consultationId);
+                logger.info('Completion notification sent', { consultationId });
+            } catch (notificationError) {
+                logger.error('Failed to send completion notification (non-blocking)', {
+                    consultationId,
+                    error: notificationError.message
+                });
+                // Don't fail completion if email fails
+            }
 
             // Track analytics
             await this._trackConsultationCompleted(consultation);
@@ -942,8 +994,42 @@ class ConsultationService {
                 });
             }
 
-            // Send cancellation notification
-            await this._sendCancellationNotification(consultation, reason);
+            // ⭐ CANCEL ZOOM MEETING (non-blocking)
+            if (consultation.location?.platform === 'zoom' && consultation.location?.meetingId) {
+                try {
+                    await ZoomService.deleteMeeting(consultation.location.meetingId, {
+                        notifyHosts: true,
+                        notifyRegistrants: false
+                    });
+                    logger.info('Zoom meeting cancelled', {
+                        consultationId,
+                        meetingId: consultation.location.meetingId
+                    });
+                } catch (zoomError) {
+                    logger.error('Failed to cancel Zoom meeting (non-blocking)', {
+                        consultationId,
+                        meetingId: consultation.location.meetingId,
+                        error: zoomError.message
+                    });
+                    // Don't fail cancellation if Zoom cancellation fails
+                }
+            }
+
+            // ⭐ SEND CANCELLATION NOTIFICATION (non-blocking)
+            try {
+                await ConsultationNotificationService.sendCancellationNotification(
+                    consultationId,
+                    options.canceledBy || 'client',
+                    reason
+                );
+                logger.info('Cancellation notification sent', { consultationId });
+            } catch (notificationError) {
+                logger.error('Failed to send cancellation notification (non-blocking)', {
+                    consultationId,
+                    error: notificationError.message
+                });
+                // Don't fail cancellation if email fails
+            }
 
             // Track analytics
             await this._trackConsultationCancelled(consultation, reason);

@@ -33,8 +33,7 @@ const routes = require('./routes');
 
 // Import middleware
 const { authenticate } = require('./middleware/auth-middleware');
-const { authorize } = require('./middleware/permission-middleware');
-const { rateLimiter } = require('./middleware/rate-limiter');
+const { authorize } = require('./middleware/authorization-middleware');
 
 /**
  * Admin Application Class
@@ -713,22 +712,76 @@ class AdminApp {
     setupRateLimiting() {
         const rateLimitConfig = this.appConfig.get('rateLimiting');
 
-        // Global rate limiter
-        const globalLimiter = rateLimiter({
-            windowMs: rateLimitConfig.windowMs,
-            maxRequests: rateLimitConfig.max,
-            message: rateLimitConfig.message,
-            standardHeaders: rateLimitConfig.standardHeaders,
-            legacyHeaders: rateLimitConfig.legacyHeaders
-        });
+        // Simple in-memory rate limiter
+        const requestCounts = new Map();
 
-        this.app.use('/api', globalLimiter);
+        const rateLimitMiddleware = (req, res, next) => {
+            const key = req.ip || req.connection.remoteAddress;
+            const now = Date.now();
+            const windowStart = now - rateLimitConfig.windowMs;
+
+            // Get or initialize request records for this IP
+            if (!requestCounts.has(key)) {
+                requestCounts.set(key, []);
+            }
+
+            const requests = requestCounts.get(key);
+
+            // Remove old requests outside the window
+            const recentRequests = requests.filter(timestamp => timestamp > windowStart);
+
+            if (recentRequests.length >= rateLimitConfig.max) {
+                this.logger.warn('Rate limit exceeded', { ip: key, count: recentRequests.length });
+
+                if (rateLimitConfig.standardHeaders) {
+                    res.setHeader('RateLimit-Limit', rateLimitConfig.max);
+                    res.setHeader('RateLimit-Remaining', 0);
+                    res.setHeader('RateLimit-Reset', new Date(windowStart + rateLimitConfig.windowMs).toISOString());
+                }
+
+                return res.status(429).json({
+                    success: false,
+                    error: {
+                        message: rateLimitConfig.message || 'Too many requests, please try again later',
+                        code: 'RATE_LIMIT_EXCEEDED'
+                    }
+                });
+            }
+
+            // Add current request
+            recentRequests.push(now);
+            requestCounts.set(key, recentRequests);
+
+            if (rateLimitConfig.standardHeaders) {
+                res.setHeader('RateLimit-Limit', rateLimitConfig.max);
+                res.setHeader('RateLimit-Remaining', rateLimitConfig.max - recentRequests.length);
+            }
+
+            next();
+        };
+
+        this.app.use('/api', rateLimitMiddleware);
         this.middlewareStack.push('rate-limiter');
 
         this.logger.debug('Rate limiting configured', {
             windowMs: rateLimitConfig.windowMs,
             max: rateLimitConfig.max
         });
+
+        // Cleanup old entries periodically (every 5 minutes)
+        setInterval(() => {
+            const now = Date.now();
+            const windowStart = now - rateLimitConfig.windowMs;
+
+            for (const [key, requests] of requestCounts.entries()) {
+                const recentRequests = requests.filter(timestamp => timestamp > windowStart);
+                if (recentRequests.length === 0) {
+                    requestCounts.delete(key);
+                } else {
+                    requestCounts.set(key, recentRequests);
+                }
+            }
+        }, 5 * 60 * 1000);
     }
 
     /**
@@ -996,7 +1049,7 @@ class AdminApp {
         });
 
         // Mount admin routes
-        // this.app.use('/api/v1/admin', routes);
+        this.app.use('/api/v1/admin', routes);
 
         this.middlewareStack.push('api-routes');
         this.logger.debug('API routes configured');

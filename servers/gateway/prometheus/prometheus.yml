@@ -1,0 +1,245 @@
+# ============================================================================
+# Prometheus Configuration for InsightSerenity Gateway
+# ============================================================================
+# Description: Metrics collection for gateway and backend services
+# Version: 1.0.0
+# ============================================================================
+
+global:
+  # Scrape interval for all jobs (default)
+  scrape_interval: 15s
+
+  # Timeout for scraping targets
+  scrape_timeout: 10s
+
+  # Evaluation interval for rules
+  evaluation_interval: 15s
+
+  # External labels (added to all metrics)
+  external_labels:
+    cluster: 'insightserenity-production'
+    environment: 'production'
+    region: 'us-east-1'
+
+# ============================================================================
+# Alertmanager Configuration
+# ============================================================================
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'localhost:9093'
+      timeout: 10s
+
+# ============================================================================
+# Rule Files
+# ============================================================================
+
+rule_files:
+  - '/etc/prometheus/rules/*.yml'
+
+# ============================================================================
+# Scrape Configurations
+# ============================================================================
+
+scrape_configs:
+  # ==========================================================================
+  # Prometheus Self-Monitoring
+  # ==========================================================================
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          role: 'monitoring'
+
+  # ==========================================================================
+  # NGINX Gateway Metrics
+  # ==========================================================================
+
+  - job_name: 'nginx-gateway'
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+          - '10.0.1.101:9113'  # Gateway 1 - nginx-prometheus-exporter
+          - '10.0.1.102:9113'  # Gateway 2 - nginx-prometheus-exporter
+        labels:
+          service: 'gateway'
+          component: 'nginx'
+
+  # ==========================================================================
+  # Admin Backend Services
+  # ==========================================================================
+
+  - job_name: 'admin-backend'
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - '10.0.2.101:9090'  # Admin backend 1
+          - '10.0.2.102:9090'  # Admin backend 2
+          - '10.0.2.103:9090'  # Admin backend 3
+        labels:
+          service: 'admin-server'
+          component: 'backend'
+
+  # ==========================================================================
+  # Customer Backend Services
+  # ==========================================================================
+
+  - job_name: 'customer-backend'
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - '10.0.3.101:9090'  # Customer backend 1
+          - '10.0.3.102:9090'  # Customer backend 2
+          - '10.0.3.103:9090'  # Customer backend 3
+          - '10.0.3.104:9090'  # Customer backend 4
+          - '10.0.3.105:9090'  # Customer backend 5
+        labels:
+          service: 'customer-services'
+          component: 'backend'
+
+  # ==========================================================================
+  # Node Exporter (System Metrics)
+  # ==========================================================================
+
+  - job_name: 'node-exporter'
+    scrape_interval: 30s
+    static_configs:
+      # Gateway nodes
+      - targets:
+          - '10.0.1.101:9100'
+          - '10.0.1.102:9100'
+        labels:
+          role: 'gateway'
+          service: 'infrastructure'
+
+      # Admin backend nodes
+      - targets:
+          - '10.0.2.101:9100'
+          - '10.0.2.102:9100'
+          - '10.0.2.103:9100'
+        labels:
+          role: 'admin-backend'
+          service: 'infrastructure'
+
+      # Customer backend nodes
+      - targets:
+          - '10.0.3.101:9100'
+          - '10.0.3.102:9100'
+          - '10.0.3.103:9100'
+        labels:
+          role: 'customer-backend'
+          service: 'infrastructure'
+
+  # ==========================================================================
+  # Redis Cluster Metrics
+  # ==========================================================================
+
+  - job_name: 'redis'
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - '10.0.5.101:9121'  # Redis master - redis_exporter
+          - '10.0.5.102:9121'  # Redis replica 1
+          - '10.0.5.103:9121'  # Redis replica 2
+        labels:
+          service: 'redis'
+          component: 'cache'
+
+  # ==========================================================================
+  # MongoDB Cluster Metrics
+  # ==========================================================================
+
+  - job_name: 'mongodb'
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - '10.0.4.101:9216'  # MongoDB primary - mongodb_exporter
+          - '10.0.4.102:9216'  # MongoDB secondary 1
+          - '10.0.4.103:9216'  # MongoDB secondary 2
+        labels:
+          service: 'mongodb'
+          component: 'database'
+
+  # ==========================================================================
+  # Blackbox Exporter (Endpoint Monitoring)
+  # ==========================================================================
+
+  - job_name: 'blackbox-http'
+    scrape_interval: 60s
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://api.insightserenity.com/health
+          - https://api.insightserenity.com/api/v1/health
+        labels:
+          probe: 'http'
+          service: 'api'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: localhost:9115  # Blackbox exporter address
+
+  # ==========================================================================
+  # SSL Certificate Expiry Monitoring
+  # ==========================================================================
+
+  - job_name: 'blackbox-ssl'
+    scrape_interval: 300s  # Every 5 minutes
+    metrics_path: /probe
+    params:
+      module: [tls_connect]
+    static_configs:
+      - targets:
+          - api.insightserenity.com:443
+        labels:
+          probe: 'ssl'
+          service: 'api'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: localhost:9115
+
+# ============================================================================
+# Remote Write (Optional - for long-term storage)
+# ============================================================================
+
+# remote_write:
+#   - url: 'https://prometheus.remote.storage/api/v1/write'
+#     basic_auth:
+#       username: 'your_username'
+#       password: 'your_password'
+#     queue_config:
+#       capacity: 10000
+#       max_shards: 50
+#       max_samples_per_send: 1000
+
+# ============================================================================
+# Remote Read (Optional)
+# ============================================================================
+
+# remote_read:
+#   - url: 'https://prometheus.remote.storage/api/v1/read'
+#     basic_auth:
+#       username: 'your_username'
+#       password: 'your_password'
+
+# ============================================================================
+# Storage Configuration
+# ============================================================================
+
+# Configured via command line flags:
+# --storage.tsdb.path=/var/lib/prometheus
+# --storage.tsdb.retention.time=30d
+# --storage.tsdb.retention.size=50GB

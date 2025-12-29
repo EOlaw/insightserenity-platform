@@ -9,6 +9,8 @@
 
 const { AppError } = require('../../../shared/lib/utils/app-error');
 const { getLogger } = require('../../../shared/lib/utils/logger');
+const { TokenService } = require('../modules/user-management-system/authentication/services');
+const { SessionService } = require('../modules/user-management-system/sessions/services');
 
 const logger = getLogger({ serviceName: 'auth-middleware' });
 
@@ -33,21 +35,47 @@ const authenticate = async (req, res, next) => {
             throw new AppError('Authentication token required', 401, 'NO_TOKEN');
         }
 
-        // TODO: Verify JWT token and extract user information
-        // For now, this is a placeholder implementation
-        // You will need to implement actual JWT verification here
+        // Verify JWT token
+        const decoded = TokenService.verifyAccessToken(token);
 
-        // Placeholder: Simulate authenticated user
+        // Validate session
+        const session = await SessionService.validateSession(decoded.sessionId, token);
+
+        if (!session || !session.isActive) {
+            throw new AppError('Invalid or expired session', 401, 'INVALID_SESSION');
+        }
+
+        // Update session activity
+        session.lastActivity = new Date();
+        await session.save();
+
+        // Attach user and session information to request
         req.user = {
-            id: 'placeholder-user-id',
-            email: 'admin@insightserenity.com',
-            role: 'admin',
-            permissions: ['admin:read', 'admin:write', 'admin:delete'],
-            tenantId: 'placeholder-tenant-id'
+            id: session.adminUser._id.toString(),
+            email: session.adminUser.email,
+            firstName: session.adminUser.firstName,
+            lastName: session.adminUser.lastName,
+            fullName: `${session.adminUser.firstName} ${session.adminUser.lastName}`,
+            role: session.adminUser.role,
+            permissions: session.adminUser.permissions,
+            department: session.adminUser.department,
+            isActive: session.adminUser.isActive
         };
 
-        logger.debug('User authenticated', {
+        req.session = {
+            id: session._id.toString(),
+            sessionId: session.sessionId,
+            ipAddress: session.ipAddress,
+            deviceInfo: session.deviceInfo,
+            isMfaVerified: session.isMfaVerified,
+            expiresAt: session.expiresAt
+        };
+
+        logger.debug('User authenticated successfully', {
             userId: req.user.id,
+            email: req.user.email,
+            role: req.user.role,
+            sessionId: req.session.sessionId,
             requestId: req.requestId
         });
 
@@ -55,12 +83,23 @@ const authenticate = async (req, res, next) => {
     } catch (error) {
         logger.warn('Authentication failed', {
             error: error.message,
+            errorCode: error.code,
             requestId: req.requestId,
-            ip: req.ip
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
         });
 
         if (error instanceof AppError) {
             return next(error);
+        }
+
+        // Handle specific JWT errors
+        if (error.name === 'TokenExpiredError') {
+            return next(new AppError('Token has expired', 401, 'TOKEN_EXPIRED'));
+        }
+
+        if (error.name === 'JsonWebTokenError') {
+            return next(new AppError('Invalid token', 401, 'INVALID_TOKEN'));
         }
 
         next(new AppError('Authentication failed', 401, 'AUTH_FAILED'));
@@ -69,6 +108,8 @@ const authenticate = async (req, res, next) => {
 
 /**
  * Optional authentication - authenticates if token present, continues without auth if not
+ * Useful for endpoints that can work with or without authentication
+ *
  * @param {express.Request} req - Express request object
  * @param {express.Response} res - Express response object
  * @param {express.NextFunction} next - Express next function
@@ -77,6 +118,7 @@ const optionalAuthenticate = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
 
+        // If no auth header, continue without authentication
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return next();
         }
@@ -87,23 +129,48 @@ const optionalAuthenticate = async (req, res, next) => {
             return next();
         }
 
-        // TODO: Verify JWT token and extract user information
-        // Placeholder implementation
-        req.user = {
-            id: 'placeholder-user-id',
-            email: 'admin@insightserenity.com',
-            role: 'admin',
-            permissions: ['admin:read', 'admin:write', 'admin:delete'],
-            tenantId: 'placeholder-tenant-id'
-        };
+        // Try to verify token
+        const decoded = TokenService.verifyAccessToken(token);
 
-        logger.debug('User optionally authenticated', {
-            userId: req.user.id,
-            requestId: req.requestId
-        });
+        // Validate session
+        const session = await SessionService.validateSession(decoded.sessionId, token);
+
+        if (session && session.isActive) {
+            // Update session activity
+            session.lastActivity = new Date();
+            await session.save();
+
+            // Attach user info to request
+            req.user = {
+                id: session.adminUser._id.toString(),
+                email: session.adminUser.email,
+                firstName: session.adminUser.firstName,
+                lastName: session.adminUser.lastName,
+                fullName: `${session.adminUser.firstName} ${session.adminUser.lastName}`,
+                role: session.adminUser.role,
+                permissions: session.adminUser.permissions,
+                department: session.adminUser.department,
+                isActive: session.adminUser.isActive
+            };
+
+            req.session = {
+                id: session._id.toString(),
+                sessionId: session.sessionId,
+                ipAddress: session.ipAddress,
+                deviceInfo: session.deviceInfo,
+                isMfaVerified: session.isMfaVerified,
+                expiresAt: session.expiresAt
+            };
+
+            logger.debug('User optionally authenticated', {
+                userId: req.user.id,
+                requestId: req.requestId
+            });
+        }
 
         next();
     } catch (error) {
+        // For optional auth, just continue without authentication on error
         logger.debug('Optional authentication skipped', {
             error: error.message,
             requestId: req.requestId
@@ -113,7 +180,9 @@ const optionalAuthenticate = async (req, res, next) => {
 };
 
 /**
- * Verify user is an administrator
+ * Verify user is an administrator (admin or super_admin role)
+ * Use this for endpoints that only admins should access
+ *
  * @param {express.Request} req - Express request object
  * @param {express.Response} res - Express response object
  * @param {express.NextFunction} next - Express next function
@@ -123,7 +192,7 @@ const requireAdmin = (req, res, next) => {
         return next(new AppError('Authentication required', 401, 'NO_AUTH'));
     }
 
-    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
         logger.warn('Admin access denied', {
             userId: req.user.id,
             role: req.user.role,
@@ -137,34 +206,79 @@ const requireAdmin = (req, res, next) => {
 };
 
 /**
- * Verify user belongs to specific tenant
+ * Verify user is a super admin
+ * Use this for critical endpoints that only super admins should access
+ *
  * @param {express.Request} req - Express request object
  * @param {express.Response} res - Express response object
  * @param {express.NextFunction} next - Express next function
  */
-const requireTenant = (req, res, next) => {
+const requireSuperAdmin = (req, res, next) => {
     if (!req.user) {
         return next(new AppError('Authentication required', 401, 'NO_AUTH'));
     }
 
-    const tenantId = req.headers['x-tenant-id'] || req.query.tenantId || req.body.tenantId;
-
-    if (!tenantId) {
-        return next(new AppError('Tenant ID required', 400, 'NO_TENANT_ID'));
-    }
-
-    if (req.user.tenantId !== tenantId && req.user.role !== 'superadmin') {
-        logger.warn('Tenant access denied', {
+    if (req.user.role !== 'super_admin') {
+        logger.warn('Super admin access denied', {
             userId: req.user.id,
-            userTenantId: req.user.tenantId,
-            requestedTenantId: tenantId,
+            role: req.user.role,
             requestId: req.requestId
         });
 
-        return next(new AppError('Tenant access denied', 403, 'TENANT_ACCESS_DENIED'));
+        return next(new AppError('Super admin access required', 403, 'SUPER_ADMIN_REQUIRED'));
     }
 
-    req.tenantId = tenantId;
+    next();
+};
+
+/**
+ * Verify user's account is active
+ *
+ * @param {express.Request} req - Express request object
+ * @param {express.Response} res - Express response object
+ * @param {express.NextFunction} next - Express next function
+ */
+const requireActiveAccount = (req, res, next) => {
+    if (!req.user) {
+        return next(new AppError('Authentication required', 401, 'NO_AUTH'));
+    }
+
+    if (!req.user.isActive) {
+        logger.warn('Inactive account access attempt', {
+            userId: req.user.id,
+            email: req.user.email,
+            requestId: req.requestId
+        });
+
+        return next(new AppError('Your account has been deactivated', 403, 'ACCOUNT_DEACTIVATED'));
+    }
+
+    next();
+};
+
+/**
+ * Verify session has MFA verification
+ * Use this for endpoints that require MFA-verified sessions
+ *
+ * @param {express.Request} req - Express request object
+ * @param {express.Response} res - Express response object
+ * @param {express.NextFunction} next - Express next function
+ */
+const requireMfaVerified = (req, res, next) => {
+    if (!req.user) {
+        return next(new AppError('Authentication required', 401, 'NO_AUTH'));
+    }
+
+    if (!req.session || !req.session.isMfaVerified) {
+        logger.warn('MFA verification required', {
+            userId: req.user.id,
+            sessionId: req.session?.sessionId,
+            requestId: req.requestId
+        });
+
+        return next(new AppError('MFA verification required', 403, 'MFA_REQUIRED'));
+    }
+
     next();
 };
 
@@ -172,5 +286,7 @@ module.exports = {
     authenticate,
     optionalAuthenticate,
     requireAdmin,
-    requireTenant
+    requireSuperAdmin,
+    requireActiveAccount,
+    requireMfaVerified
 };

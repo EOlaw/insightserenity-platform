@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Consultation Booking</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
+        .content { padding: 40px 30px; }
+        .success-badge { background-color: #10b981; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+        .consultation-details { background-color: #f8fafc; border-left: 4px solid #667eea; padding: 20px; margin: 25px 0; border-radius: 4px; }
+        .detail-row { display: flex; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e5e7eb; }
+        .detail-row:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+        .detail-label { font-weight: 600; color: #6b7280; width: 140px; flex-shrink: 0; }
+        .detail-value { color: #111827; flex-grow: 1; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; margin: 20px 0; text-align: center; }
+        .info-box { background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 4px; }
+        .footer { background-color: #f8fafc; padding: 30px; text-align: center; color: #6b7280; font-size: 14px; border-top: 1px solid #e5e7eb; }
+        .footer a { color: #667eea; text-decoration: none; }
+        @media only screen and (max-width: 600px) {
+            .email-container { margin: 0; border-radius: 0; }
+            .content { padding: 30px 20px; }
+            .detail-row { flex-direction: column; }
+            .detail-label { margin-bottom: 5px; width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>📅 New Consultation Booked</h1>
+        </div>
+
+        <div class="content">
+            <div class="success-badge">NEW BOOKING</div>
+
+            <p style="font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+                Hi <strong>{{consultantName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                A new consultation has been scheduled with you. Please review the details below and prepare accordingly.
+            </p>
+
+            <div class="consultation-details">
+                <div class="detail-row">
+                    <div class="detail-label">Client:</div>
+                    <div class="detail-value"><strong>{{clientName}}</strong> ({{clientCompany}})</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Consultation:</div>
+                    <div class="detail-value"><strong>{{consultationTitle}}</strong></div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Date & Time:</div>
+                    <div class="detail-value">{{scheduledDate}} at {{scheduledTime}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Duration:</div>
+                    <div class="detail-value">{{duration}} minutes</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Type:</div>
+                    <div class="detail-value">{{consultationType}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Booking ID:</div>
+                    <div class="detail-value"><code>{{consultationId}}</code></div>
+                </div>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{consultantDashboardUrl}}" class="cta-button">View Consultation Details</a>
+            </div>
+
+            <div class="info-box">
+                <strong>⚡ Action Required:</strong>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+                    <li>Review client information and consultation objectives</li>
+                    <li>Prepare materials and agenda</li>
+                    <li>Ensure your calendar is updated</li>
+                    <li>Test your meeting link before the session</li>
+                </ul>
+            </div>
+
+            <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">
+                Client contact: {{clientEmail}} | {{clientPhone}}
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Professional Business Consulting
+            </p>
+            <p style="margin: 10px 0;">
+                <a href="{{unsubscribeUrl}}">Notification Settings</a> |
+                <a href="{{supportUrl}}">Support</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

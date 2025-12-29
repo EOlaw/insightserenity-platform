@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credits Expiring Soon</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333333; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); padding: 40px 30px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
+        .content { padding: 40px 30px; }
+        .warning-badge { background-color: #f97316; color: #ffffff; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: 600; margin-bottom: 20px; }
+        .expiry-box { background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); padding: 30px; text-align: center; border-radius: 8px; margin: 25px 0; border: 2px solid #f97316; }
+        .days-remaining { font-size: 48px; font-weight: 700; color: #ea580c; margin: 10px 0; }
+        .credit-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .credit-table th { background-color: #f8fafc; padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb; }
+        .credit-table td { padding: 12px; border-bottom: 1px solid #f1f5f9; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: 600; margin: 15px 0; font-size: 16px; }
+        .footer { background-color: #f8fafc; padding: 25px; text-align: center; color: #6b7280; font-size: 13px; border-top: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>⏰ Credits Expiring Soon</h1>
+        </div>
+
+        <div class="content">
+            <div class="warning-badge">EXPIRING IN 7 DAYS</div>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Hi <strong>{{clientName}}</strong>,
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.6;">
+                Some of your consultation credits will expire in 7 days. Book consultations now to use them before they're gone!
+            </p>
+
+            <div class="expiry-box">
+                <div style="font-size: 14px; color: #9a3412; font-weight: 600;">EXPIRES IN</div>
+                <div class="days-remaining">7 DAYS</div>
+                <div style="font-size: 16px; color: #9a3412; font-weight: 600;">{{expiringCredits}} {{#if (eq expiringCredits 1)}}Credit{{else}}Credits{{/if}}</div>
+            </div>
+
+            <table class="credit-table">
+                <thead>
+                    <tr>
+                        <th>Package</th>
+                        <th style="text-align: center;">Credits</th>
+                        <th style="text-align: right;">Expires On</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each expiringPackages}}
+                    <tr>
+                        <td><strong>{{this.packageName}}</strong></td>
+                        <td style="text-align: center;">{{this.creditsRemaining}}</td>
+                        <td style="text-align: right;">{{this.expiryDate}}</td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+
+            <div style="text-align: center;">
+                <a href="{{bookConsultationUrl}}" class="cta-button">Book Consultation Now</a>
+            </div>
+
+            <div style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 16px; margin: 25px 0; border-radius: 4px;">
+                <strong>⚠️ Important:</strong>
+                <p style="margin: 8px 0 0 0; font-size: 14px;">
+                    Expired credits cannot be recovered or extended. Make sure to use them before the expiry date!
+                </p>
+            </div>
+
+            <p style="font-size: 14px; color: #6b7280; text-align: center; margin-top: 25px;">
+                Check your full credit balance in your <a href="{{dashboardUrl}}" style="color: #f97316;">dashboard</a>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Insight Serenity</strong><br>
+                Professional Business Consulting
+            </p>
+        </div>
+    </div>
+</body>
+</html>

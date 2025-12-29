@@ -462,12 +462,57 @@ class ConnectionManager extends EventEmitter {
                 results: discovered.map(m => ({ name: m.name, database: m.database }))
             });
 
-            // Register discovered models if needed
+            // Register discovered models
+            let registered = 0;
+            let failed = 0;
             for (const modelInfo of discovered) {
-                if (modelInfo && modelInfo.name && modelInfo.database) {
-                    this.logger.debug(`Found model ${modelInfo.name} for ${modelInfo.database} database`);
+                if (modelInfo && modelInfo.name && modelInfo.database && modelInfo.path) {
+                    try {
+                        // Get the database connection
+                        const connection = this.databaseManager.getConnection(modelInfo.database);
+                        if (!connection) {
+                            throw new Error(`Database connection "${modelInfo.database}" not found`);
+                        }
+
+                        // Load the model definition
+                        const ModelDefinition = require(modelInfo.path);
+
+                        // Compile the model with the correct connection
+                        let model;
+                        if (ModelDefinition.schema && ModelDefinition.modelName) {
+                            // ConnectionManager-compatible export with schema
+                            model = connection.model(ModelDefinition.modelName, ModelDefinition.schema);
+                        } else if (ModelDefinition.schema) {
+                            // Has schema but no modelName - derive from filename
+                            const modelName = modelInfo.name.split('-').map(part =>
+                                part.charAt(0).toUpperCase() + part.slice(1)
+                            ).join('');
+                            model = connection.model(modelName, ModelDefinition.schema);
+                        } else {
+                            // Assume direct model export (already compiled)
+                            model = ModelDefinition;
+                        }
+
+                        // Register the compiled model
+                        this.modelRouter.registerModel(modelInfo.name, model, modelInfo.database);
+                        registered++;
+                        this.logger.debug(`Registered model ${modelInfo.name} for ${modelInfo.database} database`);
+                    } catch (error) {
+                        failed++;
+                        this.logger.warn(`Failed to register model ${modelInfo.name}`, {
+                            error: error.message,
+                            database: modelInfo.database,
+                            path: modelInfo.path
+                        });
+                    }
                 }
             }
+
+            this.logger.info('Model registration completed', {
+                discovered: discovered.length,
+                registered,
+                failed
+            });
 
         } catch (error) {
             // Don't throw error for model discovery failures - log and continue
@@ -814,12 +859,13 @@ class ConnectionManager extends EventEmitter {
     }
 
     /**
-     * Gets model by name
+     * Gets model by name and database
      * @param {string} modelName - Model name
+     * @param {string} databaseName - Database name
      * @returns {mongoose.Model} Model instance
      */
-    getModel(modelName) {
-        return this.modelRouter.getModel(modelName);
+    getModel(modelName, databaseName) {
+        return this.modelRouter.getModel(modelName, databaseName);
     }
 
     /**

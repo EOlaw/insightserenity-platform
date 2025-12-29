@@ -1,0 +1,198 @@
+# ============================================================================
+# Backend Service Alert Rules
+# ============================================================================
+# Description: Prometheus alert rules for backend service monitoring
+# Version: 1.0.0
+# ============================================================================
+
+groups:
+  # ==========================================================================
+  # Backend Service Availability
+  # ==========================================================================
+
+  - name: backend_availability
+    interval: 30s
+    rules:
+      # Backend service down
+      - alert: BackendServiceDown
+        expr: up{job=~"admin-backend|customer-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Backend service {{ $labels.instance }} is down"
+          description: "{{ $labels.job }} instance {{ $labels.instance }} has been down for more than 1 minute"
+          runbook_url: "https://docs.insightserenity.com/runbooks/backend-down"
+
+      # Multiple backends down
+      - alert: MultipleBackendsDown
+        expr: |
+          count(up{job=~"admin-backend|customer-backend"} == 0) by (job) > 1
+        for: 2m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Multiple {{ $labels.job }} instances are down"
+          description: "{{ $value }} instances of {{ $labels.job }} are down"
+
+  # ==========================================================================
+  # Resource Utilization
+  # ==========================================================================
+
+  - name: backend_resources
+    interval: 60s
+    rules:
+      # High memory usage (>85%)
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 85%)"
+          runbook_url: "https://docs.insightserenity.com/runbooks/high-memory"
+
+      # Critical memory usage (>95%)
+      - alert: CriticalMemoryUsage
+        expr: |
+          (
+            1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+          ) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Critical memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 95%)"
+
+      # High CPU usage (>80%)
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% (threshold: 80%)"
+
+      # Disk space low (<15% free)
+      - alert: LowDiskSpace
+        expr: |
+          (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}
+            /
+            node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}
+          ) < 0.15
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk {{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free (threshold: 15%)"
+
+      # Disk space critical (<5% free)
+      - alert: CriticalDiskSpace
+        expr: |
+          (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}
+            /
+            node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}
+          ) < 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Critical disk space on {{ $labels.instance }}"
+          description: "Disk {{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free (threshold: 5%)"
+
+  # ==========================================================================
+  # Database Alerts
+  # ==========================================================================
+
+  - name: database_health
+    interval: 60s
+    rules:
+      # MongoDB replica set member down
+      - alert: MongoDBMemberDown
+        expr: mongodb_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "MongoDB member {{ $labels.instance }} is down"
+          description: "MongoDB replica set member is unavailable"
+          runbook_url: "https://docs.insightserenity.com/runbooks/mongodb-down"
+
+      # MongoDB replication lag high
+      - alert: MongoDBReplicationLag
+        expr: mongodb_replset_member_replication_lag > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "MongoDB replication lag on {{ $labels.instance }}"
+          description: "Replication lag is {{ $value }} seconds (threshold: 10s)"
+
+      # MongoDB connection pool exhausted
+      - alert: MongoDBConnectionPoolExhausted
+        expr: |
+          mongodb_connections_current / mongodb_connections_available > 0.9
+        for: 3m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "MongoDB connection pool nearly exhausted"
+          description: "Connection pool usage is {{ $value | humanizePercentage }}"
+
+      # Redis down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis instance {{ $labels.instance }} is down"
+          description: "Redis cache is unavailable"
+          runbook_url: "https://docs.insightserenity.com/runbooks/redis-down"
+
+      # Redis memory usage high
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Redis memory usage high on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      # Redis low hit rate
+      - alert: RedisLowHitRate
+        expr: |
+          rate(redis_keyspace_hits_total[5m])
+          /
+          (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m]))
+          < 0.80
+        for: 15m
+        labels:
+          severity: info
+          component: cache
+        annotations:
+          summary: "Redis cache hit rate low"
+          description: "Hit rate is {{ $value | humanizePercentage }} (threshold: 80%)"

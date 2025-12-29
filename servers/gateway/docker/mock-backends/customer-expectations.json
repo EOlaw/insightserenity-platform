@@ -1,0 +1,39 @@
+[
+  {
+    "httpRequest": {
+      "method": "GET",
+      "path": "/health"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": {
+        "status": "healthy",
+        "service": "customer-services",
+        "timestamp": "2025-12-28T10:00:00Z",
+        "version": "1.0.0"
+      }
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "GET",
+      "path": "/api/v1/.*"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": {
+        "success": true,
+        "data": {
+          "message": "Mock customer response",
+          "timestamp": "2025-12-28T10:00:00Z"
+        }
+      }
+    }
+  }
+]
