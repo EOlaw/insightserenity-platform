@@ -11,7 +11,7 @@ import Cookies from 'js-cookie'
 
 // ==================== Configuration ====================
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://localhost:3001/api'
 const API_VERSION = 'v1'
 const AUTH_TOKEN_KEY = 'auth-token'
 const REFRESH_TOKEN_KEY = 'refresh-token'
