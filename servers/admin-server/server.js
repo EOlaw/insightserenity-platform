@@ -628,16 +628,15 @@ class AdminServer extends EventEmitter {
      * @returns {Promise<void>}
      */
     async createServer() {
-        const isProduction = this.config.get('server.environment') === 'production';
         const sslEnabled = this.config.get('ssl.enabled');
 
-        if (isProduction && sslEnabled) {
+        if (sslEnabled) {
             const httpsOptions = this.buildHttpsOptions();
             this.server = https.createServer(httpsOptions, this.app);
-            this.logger.info('HTTPS server created');
+            this.logger.info('HTTPS server created with SSL/TLS');
         } else {
             this.server = http.createServer(this.app);
-            this.logger.info('HTTP server created');
+            this.logger.info('HTTP server created (SSL disabled)');
         }
 
         this.server.timeout = this.config.get('timeouts.server');

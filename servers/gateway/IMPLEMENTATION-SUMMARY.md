@@ -216,7 +216,7 @@ All scripts are executable and production-ready.
 - SSL certificate generation
 - Deployment verification
 
-#### Inventory (`ansible/playbooks/inventory/production`)
+#### Inventory (`ansible/playbooks/inventory/production.ansible`)
 - 2 gateway nodes (master/backup)
 - 3 admin backend nodes
 - 5 customer backend nodes

@@ -121,11 +121,11 @@ cd servers/gateway
 cd servers/gateway/ansible
 
 # Test connectivity
-ansible -i playbooks/inventory/production gateways -m ping
+ansible -i playbooks/inventory/production.ansible gateways -m ping
 
 # Deploy gateway
 ansible-playbook \
-  -i playbooks/inventory/production \
+  -i playbooks/inventory/production.ansible \
   playbooks/deploy-gateway.yml \
   --extra-vars "environment=production"
 ```

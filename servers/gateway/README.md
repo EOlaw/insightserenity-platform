@@ -84,11 +84,11 @@ terraform apply tfplan
 cd servers/gateway/ansible
 
 # Test connectivity
-ansible -i playbooks/inventory/production gateways -m ping
+ansible -i playbooks/inventory/production.ansible gateways -m ping
 
 # Deploy
 ansible-playbook \
-  -i playbooks/inventory/production \
+  -i playbooks/inventory/production.ansible \
   playbooks/deploy-gateway.yml
 ```
 
@@ -175,7 +175,7 @@ servers/gateway/
 
 Edit inventory files for your environment:
 
-**Production**: `ansible/playbooks/inventory/production`
+**Production**: `ansible/playbooks/inventory/production.ansible`
 ```ini
 [gateways]
 gateway-1 ansible_host=10.0.1.101 is_master=true priority=100
@@ -381,10 +381,10 @@ cd terraform
 terraform apply -var="gateway_instance_count=3"
 
 # Update Ansible inventory
-vim ansible/playbooks/inventory/production
+vim ansible/playbooks/inventory/production.ansible
 
 # Deploy to new instance
-ansible-playbook -i playbooks/inventory/production \
+ansible-playbook -i playbooks/inventory/production.ansible \
   playbooks/deploy-gateway.yml \
   --limit gateway-3
 ```

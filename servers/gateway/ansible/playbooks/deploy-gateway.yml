@@ -3,7 +3,7 @@
 # Ansible Playbook: Deploy NGINX Gateway
 # ============================================================================
 # Description: Complete deployment of API Gateway infrastructure
-# Usage: ansible-playbook -i inventory/production deploy-gateway.yml
+# Usage: ansible-playbook -i inventory/production.ansible deploy-gateway.yml
 # ============================================================================
 
 - name: Deploy InsightSerenity API Gateway

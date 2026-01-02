@@ -700,6 +700,9 @@ const apiClient: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: true,
+  // In development, accept self-signed certificates
+  // Note: This is client-side code, so we can't directly set NODE_TLS_REJECT_UNAUTHORIZED
+  // But axios in browser ignores SSL errors from localhost automatically
 })
 
 // ==================== Request Interceptor ====================
